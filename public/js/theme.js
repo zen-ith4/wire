@@ -28,7 +28,7 @@ export const ACCENT_PRESETS = [
 // increments (e.g. 5/8/11/14/17) don't read as a visible change on
 // screen — these are chosen to actually look different level to level.
 export const AMBIENT_LEVELS = [0.05, 0.15, 0.28, 0.40, 0.55];
-export const DEFAULT_AMBIENT_LEVEL = 2; // index into AMBIENT_LEVELS (0-based) — "level 3 of 5"
+export const DEFAULT_AMBIENT_LEVEL = 3; // index into AMBIENT_LEVELS (0-based) — "level 3 of 5"
 
 // The other four gradient layers keep the same ratio to the peak
 // layer that the original hand-tuned design used, so raising the
@@ -75,21 +75,25 @@ let currentRgb = ACCENT_PRESETS.find(p => p.name === getCurrentAccentName())?.rg
 let currentLevel = getCurrentAmbientLevel();
 
 function paintUnderlay() {
-  const underlay = document.getElementById('ambient-underlay');
-  if (!underlay) return;
-
   const peak = AMBIENT_LEVELS[currentLevel];
+  
+  // 1. Expose the current intensity level to the entire CSS ecosystem
+  document.documentElement.style.setProperty('--ambient-strength', peak);
+  
+  const underlay = document.getElementById('ambient-underlay');
+  if (!underlay) return; // Even if the element is missing, CSS still gets the variable!
+
   const [a1, a2, a3, a4, a5] = LAYER_RATIOS.map(r => (peak * r).toFixed(3));
 
+  // 2. Update to use var(--indigo) rather than a hardcoded JS string, locking the hue
   underlay.style.background = `
-    radial-gradient(ellipse 100% 80% at 20% 10%, rgba(${currentRgb}, ${a1}) 0%, transparent 55%),
-    radial-gradient(ellipse 120% 90% at 85% 90%, rgba(${currentRgb}, ${a2}) 0%, transparent 55%),
-    radial-gradient(ellipse 80% 70% at 50% 40%, rgba(${currentRgb}, ${a3}) 0%, transparent 60%),
-    radial-gradient(ellipse 60% 100% at 10% 80%, rgba(${currentRgb}, ${a4}) 0%, transparent 50%),
-    radial-gradient(ellipse 70% 60% at 90% 15%, rgba(${currentRgb}, ${a5}) 0%, transparent 50%),
+    radial-gradient(ellipse 100% 80% at 20% 10%, rgba(var(--indigo), ${a1}) 0%, transparent 55%),
+    radial-gradient(ellipse 120% 90% at 85% 90%, rgba(var(--indigo), ${a2}) 0%, transparent 55%),
+    radial-gradient(ellipse 80% 70% at 50% 40%, rgba(var(--indigo), ${a3}) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 100% at 10% 80%, rgba(var(--indigo), ${a4}) 0%, transparent 50%),
+    radial-gradient(ellipse 70% 60% at 90% 15%, rgba(var(--indigo), ${a5}) 0%, transparent 50%),
     #050508`;
 }
-
 /**
  * Applies a preset's colors to the CSS custom properties every
  * accent-aware rule in style.css reads from, and repaints the

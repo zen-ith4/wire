@@ -183,15 +183,22 @@ export async function renderFiles() {
     myFoldersById = new Map(mineFolders.map(f => [f.id, f]));
 
     if (folders.length === 0) {
-      main.innerHTML = `<div class="card">${emptyState(ICONS.folders, 'No folders yet', 'Create one below, or ask an admin to grant you access.')}</div>`;
+      currentFolderId = null;
+      currentSubpath = '';
+      currentEntries = [];
+      currentCanWrite = false;
+      renderFileCard([], { entries: [], can_write: false });
       return;
     }
+
     if (!currentFolderId || !folders.find(f => f.id == currentFolderId)) {
       currentFolderId = folders[0].id;
+      currentSubpath = '';
     }
+    
     const data = await api(`/api/files/list/${currentFolderId}?subpath=${encodeURIComponent(currentSubpath)}`);
-    currentEntries = data.entries;
-    currentCanWrite = data.can_write;
+    currentEntries = data.entries || [];
+    currentCanWrite = data.can_write || false;
     renderFileCard(folders, data);
   } catch (e) {
     main.innerHTML = `<div class="card">${emptyState(ICONS.empty, 'Something went wrong', escapeHtml(e.message))}</div>`;
@@ -224,8 +231,13 @@ function renderFileCard(folders, data) {
   const main = document.getElementById('content-area');
   const crumbs = currentSubpath ? currentSubpath.split('/') : [];
 
+  let rootName = 'No folders';
+  if (folders.length > 0) {
+    rootName = folders.find(f => f.id == currentFolderId)?.display_name || 'Root';
+  }
+
   let breadcrumbHtml = `<div class="breadcrumb">
-    <a onclick="goToPath('')">${folders.find(f => f.id == currentFolderId)?.display_name || 'Root'}</a>`;
+    <a onclick="goToPath('')">${escapeHtml(rootName)}</a>`;
 
   crumbs.forEach((c, i) => {
     const pathTo = crumbs.slice(0, i + 1).join('/');
@@ -236,28 +248,57 @@ function renderFileCard(folders, data) {
   });
   breadcrumbHtml += `</div>`;
 
-  let rowsHtml = '';
-  if (data.entries.length === 0) {
-    rowsHtml = `<tr><td colspan="4">${emptyState(ICONS.folder, 'This folder is empty', 'Upload something to see it here.')}</td></tr>`;
+  let mainThreadContent = '';
+
+  if (folders.length === 0) {
+    mainThreadContent = `
+      <div style="display:flex; justify-content:center; align-items:center; height:100%;">
+        ${emptyState(ICONS.folders, 'No folders yet', 'Create one from the sidebar, or ask an admin to grant you access.')}
+      </div>
+    `;
   } else {
-    sortEntries();
-    currentEntries.forEach(entry => {
-      const isDir = entry.type === 'dir';
-      rowsHtml += `<tr class="file-row">
-        <td onclick="${isDir ? `enterFolder('${escapeAttr(entry.name)}')` : `previewFile('${escapeAttr(entry.name)}')`}">
-          <div class="file-name">${fileIcon(entry.name, entry.type)}<span>${escapeHtml(entry.name)}</span></div>
-        </td>
-        <td class="col-right">${isDir ? '—' : formatBytes(entry.size)}</td>
-        <td class="col-right">${formatDate(entry.modified)}</td>
-        <td>
-          <div class="row-actions">
-            ${!isDir ? `<button class="icon-btn" title="Download" onclick="event.stopPropagation(); downloadFile('${escapeAttr(entry.name)}')">${ICONS.download}</button>
-            <button class="icon-btn" title="Copy link" onclick="event.stopPropagation(); copyLink('${escapeAttr(entry.name)}')">${ICONS.link}</button>` : ''}
-          </div>
-        </td>
-      </tr>`;
-    });
+    let rowsHtml = '';
+    if (data.entries.length === 0) {
+      rowsHtml = `<tr><td colspan="4">${emptyState(ICONS.folder, 'This folder is empty', 'Upload something to see it here.')}</td></tr>`;
+    } else {
+      sortEntries();
+      currentEntries.forEach(entry => {
+        const isDir = entry.type === 'dir';
+        rowsHtml += `<tr class="file-row">
+          <td onclick="${isDir ? `enterFolder('${escapeAttr(entry.name)}')` : `previewFile('${escapeAttr(entry.name)}')`}">
+            <div class="file-name">${fileIcon(entry.name, entry.type)}<span>${escapeHtml(entry.name)}</span></div>
+          </td>
+          <td class="col-right">${isDir ? '—' : formatBytes(entry.size)}</td>
+          <td class="col-right">${formatDate(entry.modified)}</td>
+          <td>
+            <div class="row-actions">
+              ${!isDir ? `<button class="icon-btn" title="Download" onclick="event.stopPropagation(); downloadFile('${escapeAttr(entry.name)}')">${ICONS.download}</button>
+              <button class="icon-btn" title="Copy link" onclick="event.stopPropagation(); copyLink('${escapeAttr(entry.name)}')">${ICONS.link}</button>` : ''}
+            </div>
+          </td>
+        </tr>`;
+      });
+    }
+
+    mainThreadContent = `
+      ${progressBarHtml('file-upload-progress')}
+      <table class="file-table">
+        <thead><tr>
+          <th onclick="toggleSort('name')">Name</th>
+          <th class="col-right" onclick="toggleSort('size')">Size</th>
+          <th class="col-right" onclick="toggleSort('modified')">Modified</th>
+          <th></th>
+        </tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    `;
   }
+
+  const topBarControls = folders.length > 0 ? `
+    <div style="flex:1;"></div>
+    <span class="text-muted" style="font-size:12px;flex-shrink:0;">${data.entries.length} item${data.entries.length === 1 ? '' : 's'}</span>
+    ${currentCanWrite ? `<button class="btn btn-primary btn-sm" onclick="document.getElementById('upload-input').click()">${ICONS.upload} Upload</button>` : ''}
+  ` : `<div style="flex:1;"></div>`;
 
   main.innerHTML = `
     <div class="dm-layout">
@@ -276,21 +317,10 @@ function renderFileCard(folders, data) {
       <div class="dm-thread">
         <div class="chat-top-bar">
           ${breadcrumbHtml}
-          <div style="flex:1;"></div>
-          <span class="text-muted" style="font-size:12px;flex-shrink:0;">${data.entries.length} item${data.entries.length === 1 ? '' : 's'}</span>
-          ${currentCanWrite ? `<button class="btn btn-primary btn-sm" onclick="document.getElementById('upload-input').click()">${ICONS.upload} Upload</button>` : ''}
+          ${topBarControls}
         </div>
         <div style="flex:1;overflow-y:auto;padding:16px 24px;">
-          ${progressBarHtml('file-upload-progress')}
-          <table class="file-table">
-            <thead><tr>
-              <th onclick="toggleSort('name')">Name</th>
-              <th class="col-right" onclick="toggleSort('size')">Size</th>
-              <th class="col-right" onclick="toggleSort('modified')">Modified</th>
-              <th></th>
-            </tr></thead>
-            <tbody>${rowsHtml}</tbody>
-          </table>
+          ${mainThreadContent}
         </div>
       </div>
     </div>

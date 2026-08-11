@@ -1,0 +1,13 @@
+node_modules/
+
+*.db
+*.sqlite
+*.sqlite3
+
+data/
+logs/
+
+converted_cache/
+zip_tmp/
+
+.vscode/

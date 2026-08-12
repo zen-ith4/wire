@@ -1,0 +1,54 @@
+/* ================================================================
+   SETTINGS — reproduces .settings-layout/.settings-section/.settings-row
+   ================================================================ */
+.settings-layout{max-width:640px;margin:0 auto;width:100%;}
+.settings-section{margin-bottom:32px;padding-bottom:28px;border-bottom:1px solid var(--border-soft);}
+.settings-section:last-child{border-bottom:none;margin-bottom:0;padding-bottom:0;}
+.settings-section-title{font-size:11px;font-weight:550;text-transform:uppercase;letter-spacing:.06em;color:var(--muted2);margin-bottom:16px;}
+.settings-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;gap:20px;min-height:44px;}
+.settings-row:not(:last-child){border-bottom:1px solid var(--border-soft);}
+.settings-row-label{font-size:13.5px;font-weight:460;color:var(--text);letter-spacing:-0.01em;}
+.settings-row-sublabel{font-size:11.5px;color:var(--muted2);font-weight:430;margin-top:1px;}
+.settings-label{font-size:12px;font-weight:550;color:var(--muted);margin-bottom:8px;display:block;}
+
+.settings-avatar-big{width:72px;height:72px;border-radius:50%;background:var(--ink2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:24px;color:var(--muted);flex-shrink:0;position:relative;}
+.settings-avatar-actions{display:flex;gap:8px;}
+
+/* ---- Accent picker ---- */
+.accent-swatches{display:flex;gap:10px;flex-wrap:wrap;}
+.accent-swatch{
+  width:28px;height:28px;border-radius:50%;cursor:pointer;
+  border:2px solid transparent;position:relative;flex-shrink:0;
+  background:var(--swatch-color);
+  transition:transform var(--ease-fast),border-color var(--ease-fast);
+}
+.accent-swatch:hover{transform:scale(1.08);border-color:#3A3A46;}
+.accent-swatch.selected{border-color:#8A8A96;box-shadow:0 0 0 3px var(--accent-bg);}
+.accent-swatch.selected::after{
+  content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  width:8px;height:8px;border-radius:50%;background:#fff;opacity:.85;
+}
+
+.ambient-levels{display:flex;gap:6px;}
+.ambient-level-btn{
+  width:28px;height:28px;border-radius:50%;cursor:pointer;
+  border:1px solid var(--border);background:var(--ink2);color:var(--muted);
+  font-size:11.5px;font-weight:600;display:flex;align-items:center;justify-content:center;
+  transition:background var(--ease-fast),border-color var(--ease-fast),color var(--ease-fast),transform var(--ease-fast);
+}
+.ambient-level-btn:hover{background:var(--hover);color:var(--text);transform:scale(1.06);}
+.ambient-level-btn.selected{background:rgb(var(--indigo));border-color:rgb(var(--indigo));color:#fff;}
+
+/* ---- Profile banner ---- */
+.profile-banner-wrap{position:relative;overflow:hidden;aspect-ratio:3.2/1;max-height:200px;border-radius:var(--radius-lg);}
+/* Settings previously tried to "bleed" this to the edge of the page
+   with a negative margin sized to a padding that .settings-layout no
+   longer has (that padding moved to .content when the shell was
+   restructured) — the leftover margin math was fighting the
+   max-width:640px column with nothing to counteract, which is what
+   made the banner render far too narrow / visibly cut off. Simplest
+   correct fix: it just fills the settings column at full width like
+   everything else on the page, no bleed trick needed. */
+.profile-banner-settings-wrap{margin:0 0 28px;}
+.profile-banner{width:100%;height:100%;background:var(--ink2);background-size:cover;background-position:center;transition:background-image .2s ease;}
+.profile-banner-actions{position:absolute;right:14px;bottom:14px;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;}

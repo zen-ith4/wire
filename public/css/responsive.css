@@ -1,0 +1,49 @@
+/* ================================================================
+   RESPONSIVE — all @media breakpoints, collected here and grouped
+   by the feature/section they modify. Base (non-media) rules for
+   each of these live in their respective component/feature/layout
+   file; only the breakpoint overrides live here.
+   ================================================================ */
+
+/* ---- Profile card (features/profile.css) ---- */
+@media (max-width:480px){
+  .profile-card-content{max-width:100%;}
+  .profile-card-content .profile-card-banner-wrap .profile-banner{aspect-ratio:2.4/1;}
+}
+
+/* ---- Messages (features/messages.css) ---- */
+@media (max-width:1100px){
+  .dm-sidebar{width:280px;min-width:280px;}
+}
+@media (max-width:760px){
+  .dm-sidebar, .dm-thread{width:100%;min-width:0;}
+  .dm-sidebar{border-right:none;}
+  .dm-back-btn{display:inline-flex;}
+  .dm-layout:not(.showing-thread) .dm-thread{display:none;}
+  .dm-layout.showing-thread .dm-sidebar{display:none;}
+}
+
+/* ---- Settings (features/settings.css) ---- */
+@media (max-width:1100px){
+  .content{padding:24px;}
+  .settings-layout{max-width:500px;}
+}
+@media (max-width:520px){
+  .profile-banner-wrap{aspect-ratio:2.2/1;}
+  .profile-banner-actions{right:10px;bottom:10px;gap:6px;}
+}
+
+/* ---- Emoji picker (features/emoji-picker.css) ---- */
+@media (max-width:480px){
+  .emoji-picker{width:calc(100vw - 24px);height:340px;}
+}
+
+/* ---- App shell / sidebar / topbar / cards (layout + components) ---- */
+@media (max-width:900px){
+  .sidebar{position:fixed;left:0;top:0;transform:translateX(-100%);transition:transform .2s ease;z-index:50;}
+  .sidebar.open{transform:translateX(0);}
+  .content{padding:20px 16px 50px;}
+  .topbar{padding:0 16px;}
+  button.mobile-menu-btn { display: flex; }
+  .card{padding:16px;}
+}

@@ -1,0 +1,43 @@
+:root{
+  /* ---- Tokens copied 1:1 from the provided reference ---- */
+  --void:#09090B;
+  --ink:#0D0D11;
+  --ink2:#111116;
+  --card:#111116;
+  --hover:#18181D;
+  --border:#232329;
+  --border-soft:#1c1c22;
+  --text:#F5F5F7;
+  --muted:#9A9AA3;
+  --muted2:#6B6B75;
+
+  /* Reference's accent system, fixed to its default "Neutral" preset
+     (the reference lets the demo user pick from 6 accent swatches —
+     that's a standalone demo feature, not something FileHub already
+     has, so it isn't wired up here; the visual result at the default
+     preset is reproduced exactly). Kept as an RGB triplet under the
+     old --indigo/--cyan variable names so every existing
+     rgb(var(--indigo)) / rgba(var(--indigo),X) call site throughout
+     this file keeps working unchanged. */
+  --indigo:92,92,110;
+  --cyan:92,92,110;
+  --accent-bg:rgba(92,92,110,.07);
+  --accent-hover-bg:rgba(92,92,110,.11);
+  --accent-ring:rgba(92,92,110,.42);
+  --accent-border:rgba(92,92,110,.28);
+
+  --green:120,170,140;
+  --red:198,120,120;
+  --amber:198,168,110;
+
+  --radius:8px;
+  --radius-lg:12px;
+
+  --sidebar-width:224px;
+  --topbar-height:48px;
+  --conv-panel-width:348px;
+
+  --ease-fast:120ms ease;
+  --ease-smooth:180ms ease;
+  --ambient-strength: 0.28;
+}

@@ -16,12 +16,23 @@ import { ICONS } from './icons.js';
 let currentPlaying = null; // the single player currently playing (may be null)
 
 const AUDIO_VOLUME_KEY = 'audio-player-volume';
+let lastUnmutedVolume = 1; // State to restore volume when unmuting
+
+// ============================================================
+// Volume Control & Cookie Persistence
+// ============================================================
 
 function setGlobalVolume(volume) {
   volume = Math.max(0, Math.min(1, volume));
 
-  localStorage.setItem(AUDIO_VOLUME_KEY, String(volume));
+  // 1. Persist volume using cookies (1 year expiration)
+  document.cookie = `${AUDIO_VOLUME_KEY}=${volume}; path=/; max-age=31536000`;
 
+  if (volume > 0) {
+    lastUnmutedVolume = volume;
+  }
+
+  // 2. Broadcast the volume update to all existing audio players on the page
   document.querySelectorAll('.audio-player').forEach((el) => {
     const player = el._audioPlayer;
 
@@ -30,21 +41,31 @@ function setGlobalVolume(volume) {
     }
 
     const slider = el.querySelector('.audio-player-volume-slider');
-    if (slider) {
+    if (slider && slider.value !== String(volume)) {
       slider.value = volume;
+    }
+    
+    // Update mute button appearance
+    const volBtn = el.querySelector('.audio-player-volume');
+    if (volBtn) {
+      volBtn.style.opacity = volume === 0 ? '0.4' : '1';
     }
   });
 }
+
 function getGlobalVolume() {
-  const stored = localStorage.getItem(AUDIO_VOLUME_KEY);
-  const volume = Number(stored);
-
-  if (!Number.isFinite(volume)) {
-    return 1;
+  // Read volume from cookie
+  const match = document.cookie.match(new RegExp('(^| )' + AUDIO_VOLUME_KEY + '=([^;]+)'));
+  if (match) {
+    const volume = Number(match[2]);
+    if (Number.isFinite(volume)) {
+      return Math.max(0, Math.min(1, volume));
+    }
   }
-
-  return Math.max(0, Math.min(1, volume));
+  // Sensible default if missing or invalid
+  return 1;
 }
+
 // ============================================================
 // Check whether a MIME type or file extension indicates an audio format.
 // Handles both 'audio/mpeg' and 'mp3' / 'song.mp3'.
@@ -126,11 +147,11 @@ function extractId3(blob) {
       if (id === 'TIT2' && !text.startsWith('\uFFFD')) {
         return { title: text.trim(), artist: undefined, album: undefined };
       }
-      if (id === 'TPE1' && !text.startsWith('\uFFFD') && !text.startsWith('�')) {
+      if (id === 'TPE1' && !text.startsWith('\uFFFD') && !text.startsWith('')) {
         const r = { title: undefined, artist: text.trim(), album: undefined };
         return r;
       }
-      if (id === 'TALB' && !text.startsWith('\uFFFD') && !text.startsWith('�')) {
+      if (id === 'TALB' && !text.startsWith('\uFFFD') && !text.startsWith('')) {
         const r = { title: undefined, artist: undefined, album: text.trim() };
         return r;
       }
@@ -154,6 +175,7 @@ function playAudio(msg, scope) {
   // Show loading state while fetching
   const title = msg.attachment_title || msg.attachment_name || 'Audio';
   const artist = msg.artist || '';
+  const currentVolume = getGlobalVolume();
 
   const template = `
   <div class="audio-player" data-msg-id="${msg.id}">
@@ -177,8 +199,14 @@ function playAudio(msg, scope) {
 
       <span class="audio-player-duration">--:--</span>
 
-      <div class="audio-player-volume-control">
-        <button type="button" class="audio-player-volume" title="Volume">
+      <!-- Compact & Expandable Volume Control -->
+      <div class="audio-player-volume-control" 
+           style="display: flex; align-items: center; overflow: hidden; width: 24px; transition: width 0.2s ease-out;" 
+           onmouseenter="this.style.width='90px'" 
+           onmouseleave="this.style.width='24px'">
+        
+        <button type="button" class="audio-player-volume" title="Mute / Unmute" 
+                style="flex-shrink: 0; background: none; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; width: 24px;">
           ${ICONS.volume}
         </button>
 
@@ -188,8 +216,9 @@ function playAudio(msg, scope) {
           min="0"
           max="1"
           step="0.01"
-          value="${getGlobalVolume()}"
+          value="${currentVolume}"
           title="Volume"
+          style="flex-shrink: 0; width: 60px; margin-left: 6px; cursor: pointer;"
         >
       </div>
 
@@ -207,9 +236,7 @@ function playAudio(msg, scope) {
   wrapper.innerHTML = template.trim();
   const playerEl = wrapper.firstElementChild;
 
-  // Each player owns its own state.  No global "current" is used to
-  // decide whether a fetch result is still valid — each fetch validates
-  // against ITS OWN player instance via the `player.destroyed` flag.
+  // Each player owns its own state.
   const player = {
     audio: null,
     ctx: null,
@@ -226,13 +253,31 @@ function playAudio(msg, scope) {
 
   playerEl._audioPlayer = player;
 
-  // Wire up play button — cannot call audio.play() until the real Audio element exists.
   const playBtn = playerEl.querySelector('.audio-player-play');
   const volumeSlider = playerEl.querySelector('.audio-player-volume-slider');
+  const volBtn = playerEl.querySelector('.audio-player-volume');
 
-  volumeSlider.addEventListener('input', () => {
-    setGlobalVolume(Number(volumeSlider.value));
-  });
+  // Wire up volume slider
+  if (volumeSlider) {
+    volumeSlider.addEventListener('input', () => {
+      setGlobalVolume(Number(volumeSlider.value));
+    });
+  }
+
+  // Wire up mute/unmute button
+  if (volBtn) {
+    volBtn.style.opacity = currentVolume === 0 ? '0.4' : '1';
+    volBtn.addEventListener('click', () => {
+      const vol = getGlobalVolume();
+      if (vol > 0) {
+        setGlobalVolume(0);
+      } else {
+        setGlobalVolume(lastUnmutedVolume);
+      }
+    });
+  }
+
+  // Wire up play button
   playBtn.addEventListener('click', () => {
     if (player.destroyed) return;
 
@@ -287,7 +332,7 @@ function playAudio(msg, scope) {
     }
   });
 
-  // Wire up seek bar click (now on the waveform container)
+  // Wire up seek bar click
   const progressBar = playerEl.querySelector('.audio-player-waveform');
   progressBar.addEventListener('click', (e) => {
     if (!player.audio || !player.audio.duration) return;
@@ -297,21 +342,20 @@ function playAudio(msg, scope) {
     player.audio.currentTime = pct * player.audio.duration;
   });
 
-  // Fetch the audio via fetchBlob (authenticates), then create the Audio element with the blob URL.
+  // Fetch the audio via fetchBlob, then create the Audio element.
   fetchBlob(attachmentUrl)
     .then((blob) => {
-      // Each fetch validates against ITS OWN player instance.
       if (player.destroyed) return;
 
       const objectURL = URL.createObjectURL(blob);
       player.blobUrl = objectURL;
 
-      // Create the Audio element with the real blob URL — no empty/dummy source.
       const audio = new Audio(objectURL);
+      
+      // Initialize with the globally managed cookie volume
       audio.volume = getGlobalVolume();
       player.audio = audio;
 
-      // Attach all audio event listeners to the real element.
       audio.addEventListener('loadedmetadata', () => {
         if (player.el) {
           const durEl = player.el.querySelector('.audio-player-duration');
@@ -340,10 +384,6 @@ function playAudio(msg, scope) {
           player.sourceNode.connect(player.analyser);
           player.analyser.connect(c.destination);
         }
-      });
-
-      audio.addEventListener('pause', () => {
-        // Keep context alive but don't disconnect
       });
 
       audio.addEventListener('ended', () => {
@@ -388,7 +428,6 @@ function playAudio(msg, scope) {
         if (attWrap) {
           attWrap.replaceWith(playerEl);
         } else {
-          // Append after the message content bubble
           const contentDiv = msgEl.querySelector(':scope > div > .chat-bubble, :scope > div > .chat-meta');
           if (contentDiv) {
             contentDiv.after(playerEl);
@@ -396,7 +435,7 @@ function playAudio(msg, scope) {
         }
       }
 
-      // If user already clicked play while waiting, start playback now.
+      // If user clicked play while waiting, start playback now.
       if (player.playRequested) {
         player.playRequested = false;
         playerEl.classList.remove('loading');
@@ -406,7 +445,6 @@ function playAudio(msg, scope) {
         player.audio.play().catch(() => showToast('Playback failed', 'error'));
         drawWaveform(player);
 
-        // Update global state
         if (currentPlaying && currentPlaying !== player) {
           currentPlaying.audio.pause();
           const prevBtn = currentPlaying.el.querySelector('.audio-player-play');
@@ -422,11 +460,9 @@ function playAudio(msg, scope) {
         currentPlaying = player;
       }
 
-      // Preload metadata for artist/title extraction (ID3v2)
       preloadMetadata(blob, msg, player);
     })
     .catch(() => {
-      // Each fetch validates against ITS OWN player instance.
       if (player.destroyed) return;
       if (player.el) {
         const errEl = player.el.querySelector('.audio-player-error');
@@ -439,7 +475,6 @@ function playAudio(msg, scope) {
 
 // ============================================================
 // Helper: create/resume AudioContext lazily.
-// Updates player.ctx and player.analyser so all code reads the real state.
 // ============================================================
 function ensureCtx(player) {
   if (!player.ctx) {
@@ -451,12 +486,7 @@ function ensureCtx(player) {
   return player.ctx;
 }
 
-/**
- * Preload metadata from the audio blob for artist/title extraction.
- * Uses ID3 parsing without affecting playback.
- */
 function preloadMetadata(blob, msg, player) {
-  // Only extract ID3 for MP3 files
   const isMp3 = msg.attachment_mime === 'audio/mpeg' ||
     (msg.attachment_name && msg.attachment_name.toLowerCase().endsWith('.mp3'));
 
@@ -475,7 +505,6 @@ function preloadMetadata(blob, msg, player) {
         artistEl.style.display = 'block';
       }
     }
-    // Update msg for potential re-render
     msg.artist = id3.artist;
     msg.attachment_title = id3.title;
   }
@@ -521,7 +550,6 @@ function drawWaveform(player) {
       const val = dataArray[idx] / 255;
       const barH = Math.max(1, val * h * 0.85);
 
-      // Catppuccin Mocha green gradient
       const gradient = ctx2d.createLinearGradient(0, h - barH, 0, h);
       gradient.addColorStop(0, 'rgba(166,227,161,0.9)');
       gradient.addColorStop(1, 'rgba(137,180,135,0.4)');
@@ -534,10 +562,6 @@ function drawWaveform(player) {
   draw();
 }
 
-// ============================================================
-// Pause the currently playing player (does NOT destroy it).
-// Each player remains in the DOM with its blob URL valid.
-// ============================================================
 function pauseCurrentPlayer() {
   if (!currentPlaying) return;
 
@@ -559,80 +583,49 @@ function pauseCurrentPlayer() {
   currentPlaying = null;
 }
 
-// ============================================================
-// Stop / destroy all currently playing audio.
-// Pauses every player that is currently playing.
-// Does NOT destroy players — they remain in the DOM.
-// ============================================================
 function stopAllPlayers() {
   if (currentPlaying) {
     pauseCurrentPlayer();
   }
 }
 
-// ============================================================
-// Destroy a specific player (revoke blob URL, remove DOM, etc.)
-// Called when a player is genuinely no longer needed.
-// ============================================================
 function destroyPlayer(player) {
   if (!player || player.destroyed) return;
   player.destroyed = true;
 
-  // Revoke the blob URL to free memory (exactly once per player)
   if (player.blobUrl) {
     try { URL.revokeObjectURL(player.blobUrl); } catch { /* ignore */ }
   }
 
-  // Stop audio
   try {
     player.audio.pause();
   } catch { /* ignore */ }
 
-  // Cancel animation frame
   if (player.animId !== null) {
     cancelAnimationFrame(player.animId);
     player.animId = null;
   }
 
-  // Disconnect AudioContext
   if (player.ctx) {
     try {
       player.ctx.close().catch(() => {});
     } catch { /* ignore */ }
   }
 
-  // Remove element from DOM
   if (player.el && player.el.parentNode) {
     player.el.remove();
   }
 
-  // Clear global state if this was the playing player
   if (currentPlaying === player) currentPlaying = null;
 }
 
-// ============================================================
-// Public API
-// ============================================================
-
-/**
- * Render an audio attachment inline.  Called from renderAttachment()
- * in attachments.js when an audio message is detected.
- *
- * @param {Object} msg - The message object (must have id, attachment_name, etc.)
- * @param {string} scope - 'chat' or 'dm'
- */
 export function renderAudio(msg, scope) {
   playAudio(msg, scope);
 }
 
-/** Stop the currently playing audio. */
 export function stopAll() {
   stopAllPlayers();
 }
-
-// ============================================================
-// Helpers
-// ============================================================
 
 function escapeHtml(text) {
   const div = document.createElement('div');

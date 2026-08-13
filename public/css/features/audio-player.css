@@ -1,0 +1,211 @@
+/* ================================================================
+ * AUDIO PLAYER — compact inline audio player for chat / DM
+ * Uses existing CSS variables for theming.
+ * ================================================================ */
+
+.audio-player {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  max-width: 360px;
+  min-width: 0;
+  box-sizing: border-box;
+  background: var(--ink2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  padding: 8px 10px;
+  margin-top: 6px;
+  transition:
+    background var(--ease-fast),
+    border-color var(--ease-fast);
+}
+
+/* ================================================================
+ * Header
+ * ================================================================ */
+
+.audio-player-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+}
+
+.audio-player-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--text);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.audio-player-current-time,
+.audio-player-duration {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--muted2);
+  font-weight: 430;
+  font-variant-numeric: tabular-nums;
+}
+
+.audio-player-artist {
+  display: none;
+}
+
+/* ================================================================
+ * Controls
+ * ================================================================ */
+
+.audio-player-controls {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-width: 0;
+}
+
+/* ================================================================
+ * Play / Pause
+ * ================================================================ */
+
+.audio-player-play {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  flex: 0 0 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius);
+  background: var(--accent-bg);
+  color: var(--accent);
+  cursor: pointer;
+  transition:
+    background var(--ease-fast),
+    border-color var(--ease-fast),
+    color var(--ease-fast);
+}
+
+.audio-player-play:hover {
+  background: var(--accent-hover-bg);
+  border-color: var(--accent);
+}
+
+.audio-player-play:active {
+  transform: scale(0.95);
+}
+
+.audio-player-play svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 2.5;
+}
+
+/* ================================================================
+ * Waveform / Seek area
+ * ================================================================ */
+
+.audio-player-waveform {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 30px;
+  overflow: hidden;
+  border-radius: var(--radius);
+  cursor: pointer;
+  background: var(--hover);
+}
+
+.audio-player-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* ================================================================
+ * Progress
+ * ================================================================ */
+
+.audio-player-progress-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0%;
+  height: 100%;
+  background: var(--accent-bg);
+  border-right: 1px solid var(--accent-border);
+  border-radius: var(--radius);
+  pointer-events: none;
+  transition: width 0.1s linear;
+}
+
+/* ================================================================
+ * Error
+ * ================================================================ */
+
+.audio-player-error {
+  display: none;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--red);
+  font-weight: 430;
+}
+
+.audio-player-error svg {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+
+/* ================================================================
+ * Loading
+ * ================================================================ */
+
+.audio-player.loading {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+/* ================================================================
+ * Own message
+ * ================================================================ */
+
+.chat-msg.own .audio-player {
+  background: var(--ink2);
+  align-self: flex-end;
+}
+
+/* ================================================================
+ * Responsive
+ * ================================================================ */
+
+@media (max-width: 640px) {
+  .audio-player {
+    max-width: 100%;
+    padding: 8px 10px;
+  }
+
+  .audio-player-play {
+    width: 32px;
+    height: 32px;
+    flex-basis: 32px;
+  }
+
+  .audio-player-play svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .audio-player-waveform {
+    height: 28px;
+  }
+}

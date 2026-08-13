@@ -6,6 +6,10 @@ import {
   escapeHtml,
   formatBytes
 } from './utils.js';
+<<<<<<< Updated upstream
+=======
+import { isAudio, renderAudio } from './audio-player.js';
+>>>>>>> Stashed changes
 
 // Track pending loads: key = `${prefix}-${id}`, value = { promise, controller }
 const pendingLoads = new Map();
@@ -204,3 +208,6 @@ export async function downloadAttachment(id, name, scope) {
 
 // Expose for inline onclick
 window.downloadAttachment = downloadAttachment;
+
+// Re-export audio player functions for chat.js / dm.js
+export { isAudio, renderAudio };

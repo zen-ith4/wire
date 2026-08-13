@@ -24,6 +24,7 @@ import { renderReactionsRow } from './reactions.js';
 import { createTypingEmitter, createTypingIndicator, wireTypingInput } from './typing.js';
 import { getSocket } from './socket.js';
 
+let chatRenderGeneration = 0;
 let chatOldest = null;
 let chatHasMore = true;
 const renderedChatIds = new Set();
@@ -65,6 +66,7 @@ export function clearAllChatTyping() {
 
 export async function renderChat() {
   const main = document.getElementById('content-area');
+  const generation = ++chatRenderGeneration;
   main.innerHTML = `
     <div class="chat-panel">
       <div class="chat-top-bar">
@@ -92,13 +94,16 @@ export async function renderChat() {
   chatTypingIndicator.clearAll();
   wirePasteImage('chat-input', window.sendChatFile);
   wireTypingInput('chat-input', chatTypingEmitter);
-  await loadRecentChat();
+  await loadRecentChat(generation);
 }
 
-async function loadRecentChat() {
+async function loadRecentChat(generation) {
   const container = document.getElementById('chat-messages');
   try {
     const messages = await api('/api/chat/messages/recent?limit=50');
+    // Stale render: abort if a newer render has replaced this one
+    if (generation !== chatRenderGeneration) return;
+
     renderedChatIds.clear();
     container.innerHTML = '';
     if (messages.length === 0) {
@@ -117,6 +122,8 @@ async function loadRecentChat() {
     });
     container.scrollTop = container.scrollHeight;
   } catch (e) {
+    // Stale render: abort if a newer render has replaced this one
+    if (generation !== chatRenderGeneration) return;
     container.innerHTML = emptyState(ICONS.empty, 'Failed to load chat', escapeHtml(e.message));
   }
 }
@@ -128,6 +135,9 @@ async function loadOlderChat() {
   if (btnRow) btnRow.querySelector('.load-more-btn').textContent = 'Loading…';
   try {
     const messages = await api(`/api/chat/messages/before?before=${encodeURIComponent(chatOldest)}&limit=50`);
+    // Stale render: abort if the load-more-row was removed by a newer render
+    const btnRow2 = document.getElementById('chat-load-more-row');
+    if (!btnRow2) return;
     if (btnRow) btnRow.remove();
     if (messages.length === 0) {
       chatHasMore = false;

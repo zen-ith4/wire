@@ -108,6 +108,7 @@ export function applyAccentPreset(preset, { persist = true } = {}) {
   root.style.setProperty('--accent-hover-bg', `rgba(${preset.rgb}, 0.11)`);
   root.style.setProperty('--accent-ring', `rgba(${preset.rgb}, 0.42)`);
   root.style.setProperty('--accent-border', `rgba(${preset.rgb}, 0.28)`);
+  root.style.setProperty('--accent', preset.rgb);
 
   currentRgb = preset.rgb;
   paintUnderlay();

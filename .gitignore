@@ -3,6 +3,10 @@ node_modules/
 *.db
 *.sqlite
 *.sqlite3
+*.db-shm
+*.db-wal 
+
+package-lock.json
 
 data/
 logs/

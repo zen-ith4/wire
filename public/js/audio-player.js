@@ -35,6 +35,16 @@ function setGlobalVolume(volume) {
     }
   });
 }
+function getGlobalVolume() {
+  const stored = localStorage.getItem(AUDIO_VOLUME_KEY);
+  const volume = Number(stored);
+
+  if (!Number.isFinite(volume)) {
+    return 1;
+  }
+
+  return Math.max(0, Math.min(1, volume));
+}
 // ============================================================
 // Check whether a MIME type or file extension indicates an audio format.
 // Handles both 'audio/mpeg' and 'mp3' / 'song.mp3'.
@@ -146,22 +156,28 @@ function playAudio(msg, scope) {
   const artist = msg.artist || '';
 
   const template = `
-    <div class="audio-player" data-msg-id="${msg.id}">
-      <div class="audio-player-header">
-        <div class="audio-player-title">${escapeHtml(title)}</div>
-        <span class="audio-player-current-time">0:00</span>
-      </div>
-      ${artist ? `<div class="audio-player-artist">${escapeHtml(artist)}</div>` : ''}
-      <div class="audio-player-controls">
-        <button type="button" class="audio-player-play" title="Play">
-          ${ICONS.play}
-        </button>
-        <div class="audio-player-waveform" title="Click to seek">
-          <canvas class="audio-player-canvas"></canvas>
-          <div class="audio-player-progress-fill" style="width:0%"></div>
-        </div>
-        <span class="audio-player-duration">--:--</span>
+  <div class="audio-player" data-msg-id="${msg.id}">
+    <div class="audio-player-header">
+      <div class="audio-player-title">${escapeHtml(title)}</div>
+      <span class="audio-player-current-time">0:00</span>
+    </div>
 
+    ${artist ? `<div class="audio-player-artist">${escapeHtml(artist)}</div>` : ''}
+
+    <div class="audio-player-controls">
+
+      <button type="button" class="audio-player-play" title="Play">
+        ${ICONS.play}
+      </button>
+
+      <div class="audio-player-waveform" title="Click to seek">
+        <canvas class="audio-player-canvas"></canvas>
+        <div class="audio-player-progress-fill" style="width:0%"></div>
+      </div>
+
+      <span class="audio-player-duration">--:--</span>
+
+      <div class="audio-player-volume-control">
         <button type="button" class="audio-player-volume" title="Volume">
           ${ICONS.volume}
         </button>
@@ -176,12 +192,16 @@ function playAudio(msg, scope) {
           title="Volume"
         >
       </div>
-      <div class="audio-player-error" style="display:none">
-        <span>${ICONS.alert}</span>
-        <span>Failed to load audio</span>
-      </div>
+
     </div>
-  `;
+
+    <div class="audio-player-error" style="display:none">
+      <span>${ICONS.alert}</span>
+      <span>Failed to load audio</span>
+    </div>
+
+  </div>
+`;
 
   const wrapper = document.createElement('div');
   wrapper.innerHTML = template.trim();

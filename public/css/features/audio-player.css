@@ -209,59 +209,89 @@
     height: 28px;
   }
 }
+/* ================================================================
+ * Volume
+ * ================================================================ */
+
 .audio-player-volume {
-  width: 24px;
-  height: 24px;
+  width: 18px;
+  height: 18px;
   padding: 0;
-  flex: 0 0 24px;
+  flex: 0 0 18px;
 
   display: flex;
   align-items: center;
   justify-content: center;
 
-  border: 1px solid var(--border-soft);
-  border-radius: 50%;
-  background: var(--hover);
+  border: 0;
+  background: transparent;
   color: var(--muted2);
 
   cursor: pointer;
+  opacity: 0.7;
+}
+
+.audio-player-volume:hover {
+  color: var(--text);
+  opacity: 1;
 }
 
 .audio-player-volume svg {
-  width: 12px;
-  height: 12px;
+  width: 13px;
+  height: 13px;
 }
 
+/* Hidden by default, appears when hovering the volume icon */
 .audio-player-volume-slider {
-  width: 55px;
+  width: 0;
   height: 3px;
-  margin: 0;
+  flex: 0 0 0;
   padding: 0;
+  margin: 0;
 
   appearance: none;
   -webkit-appearance: none;
 
+  opacity: 0;
+  pointer-events: none;
+
   background: var(--border-soft);
   border-radius: 999px;
   cursor: pointer;
+
+  transition:
+    width var(--ease-fast),
+    opacity var(--ease-fast);
+}
+
+.audio-player-controls:hover .audio-player-volume-slider {
+  width: 42px;
+  flex-basis: 42px;
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .audio-player-volume-slider::-webkit-slider-thumb {
   appearance: none;
   -webkit-appearance: none;
 
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
+
+  border: 0;
   border-radius: 50%;
   background: var(--accent);
+
   cursor: pointer;
 }
 
 .audio-player-volume-slider::-moz-range-thumb {
-  width: 8px;
-  height: 8px;
-  border: none;
+  width: 7px;
+  height: 7px;
+
+  border: 0;
   border-radius: 50%;
   background: var(--accent);
+
   cursor: pointer;
 }

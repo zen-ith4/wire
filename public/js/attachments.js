@@ -18,7 +18,14 @@ export function renderAttachment(msg, scope) {
     msg.attachment_mime.startsWith('image/');
 
   const prefix = scope === 'dm' ? 'dm-att' : 'att';
+  const isAudioAttachment =
+    isAudio(msg.attachment_mime) ||
+    isAudio(msg.attachment_name);
 
+  if (isAudioAttachment) {
+    setTimeout(() => renderAudio(msg, scope), 0);
+    return '';
+  }
   if (isImage) {
     return `
     <div class="chat-attachment-image-wrap">

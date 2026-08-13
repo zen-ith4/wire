@@ -300,31 +300,37 @@ function playAudio(msg, scope) {
 
       <span class="audio-player-duration">--:--</span>
 
-      <a href="${attachmentUrl}" download="${escapeHtml(msg.attachment_name || 'audio')}" class="audio-player-download" title="Download">
+      <!-- Download button (using fetchBlob) -->
+      <button type="button" class="audio-player-download" title="Download"
+              style="background:none;border:none;padding:2px;cursor:pointer;">
         ${ICONS.download}
-      </a>
+      </button>
 
-      <div class="audio-player-volume-control" 
-           style="display: flex; align-items: center; overflow: hidden; width: 24px; transition: width 0.2s ease-out;" 
-           onmouseenter="this.style.width='90px'" 
-           onmouseleave="this.style.width='24px'">
-        
-        <button type="button" class="audio-player-volume" title="Mute / Unmute" 
-                style="flex-shrink: 0; background: none; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; width: 24px;">
-          ${ICONS.volume}
-        </button>
+<div class="audio-player-volume-control">
 
-        <input
-          type="range"
-          class="audio-player-volume-slider"
-          min="0"
-          max="1"
-          step="0.01"
-          value="${currentVolume}"
-          title="Volume"
-          style="flex-shrink: 0; width: 60px; margin-left: 6px; cursor: pointer;"
-        >
-      </div>
+  <button
+    type="button"
+    class="audio-player-volume"
+    title="Mute / Unmute"
+  >
+    ${ICONS.volume}
+  </button>
+
+  <div class="audio-player-volume-slider-wrap">
+    <input
+      type="range"
+      class="audio-player-volume-slider"
+      min="0"
+      max="1"
+      step="0.01"
+      value="${currentVolume}"
+      title="Volume"
+    >
+  </div>
+
+</div>
+
+</div>
 
     </div>
 
@@ -361,6 +367,7 @@ function playAudio(msg, scope) {
   const playBtn = playerEl.querySelector('.audio-player-play');
   const volumeSlider = playerEl.querySelector('.audio-player-volume-slider');
   const volBtn = playerEl.querySelector('.audio-player-volume');
+  const downloadBtn = playerEl.querySelector('.audio-player-download');
 
   updateSliderFill(volumeSlider);
 
@@ -402,6 +409,24 @@ function playAudio(msg, scope) {
       player.audio.play().catch(() => showToast('Playback failed', 'error'));
     }
   });
+
+  // Download handler using fetchBlob
+  if (downloadBtn) {
+    downloadBtn.addEventListener('click', () => {
+      fetchBlob(attachmentUrl)
+        .then((blob) => {
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = msg.attachment_name || msg.attachment_title || 'audio';
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+        })
+        .catch(() => showToast('Download failed', 'error'));
+    });
+  }
 
   const progressBar = playerEl.querySelector('.audio-player-waveform');
   progressBar.addEventListener('click', (e) => {
@@ -652,7 +677,7 @@ export function stopAll() {
 }
 
 // ============================================================
-// Cleanup / utility
+// Cleanup (if needed)
 // ============================================================
 
 function destroyPlayer(player) {

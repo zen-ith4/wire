@@ -15,12 +15,27 @@ import { ICONS } from './icons.js';
 
 let currentPlaying = null; // the single player currently playing (may be null)
 
+// Each player is reused when the same message is rendered again.
+// Key = `${scope}:${msg.id}`.
+const playerRegistry = new Map();
+
 const AUDIO_VOLUME_KEY = 'audio-player-volume';
 let lastUnmutedVolume = 1; // State to restore volume when unmuting
 
 // ============================================================
 // Volume Control & Cookie Persistence
 // ============================================================
+
+// Chrome/WebKit has no native pseudo-element for a range input's
+// "filled" portion (Firefox has ::-moz-range-progress, WebKit doesn't),
+// so we paint the fill ourselves with a two-stop gradient on the input's
+// own background and keep it in sync on every value change.
+function updateSliderFill(slider) {
+  if (!slider) return;
+  const pct = Math.max(0, Math.min(1, Number(slider.value))) * 100;
+  slider.style.background =
+    `linear-gradient(to right, rgb(var(--indigo)) 0%, rgb(var(--indigo)) ${pct}%, var(--border-soft) ${pct}%, var(--border-soft) 100%)`;
+}
 
 function setGlobalVolume(volume) {
   volume = Math.max(0, Math.min(1, volume));
@@ -32,21 +47,24 @@ function setGlobalVolume(volume) {
     lastUnmutedVolume = volume;
   }
 
-  // 2. Broadcast the volume update to all existing audio players on the page
-  document.querySelectorAll('.audio-player').forEach((el) => {
-    const player = el._audioPlayer;
+  // 2. Broadcast the volume update to all registered players,
+  //    even if their DOM element is currently detached from the page.
+  playerRegistry.forEach((player) => {
+    if (player.destroyed) return;
 
-    if (player?.audio) {
+    if (player.audio) {
       player.audio.volume = volume;
     }
 
-    const slider = el.querySelector('.audio-player-volume-slider');
-    if (slider && slider.value !== String(volume)) {
-      slider.value = volume;
+    const slider = player.el?.querySelector('.audio-player-volume-slider');
+    if (slider) {
+      if (slider.value !== String(volume)) {
+        slider.value = volume;
+      }
+      updateSliderFill(slider);
     }
-    
-    // Update mute button appearance
-    const volBtn = el.querySelector('.audio-player-volume');
+
+    const volBtn = player.el?.querySelector('.audio-player-volume');
     if (volBtn) {
       volBtn.style.opacity = volume === 0 ? '0.4' : '1';
     }
@@ -54,7 +72,6 @@ function setGlobalVolume(volume) {
 }
 
 function getGlobalVolume() {
-  // Read volume from cookie
   const match = document.cookie.match(new RegExp('(^| )' + AUDIO_VOLUME_KEY + '=([^;]+)'));
   if (match) {
     const volume = Number(match[2]);
@@ -62,30 +79,25 @@ function getGlobalVolume() {
       return Math.max(0, Math.min(1, volume));
     }
   }
-  // Sensible default if missing or invalid
   return 1;
 }
 
 // ============================================================
 // Check whether a MIME type or file extension indicates an audio format.
-// Handles both 'audio/mpeg' and 'mp3' / 'song.mp3'.
 // ============================================================
 export function isAudio(mimeTypeOrName) {
   if (!mimeTypeOrName) return false;
 
   const s = String(mimeTypeOrName).toLowerCase().trim();
 
-  // Direct MIME-type match (e.g. 'audio/mpeg', 'audio/ogg')
   if (/^audio\//i.test(s)) return true;
 
-  // Extension from a path / filename
   const dot = s.lastIndexOf('.');
   if (dot > 0) {
     const ext = s.slice(dot + 1);
     return AUDIO_EXTS.has(ext);
   }
 
-  // Bare extension (e.g. 'mp3' without dots)
   return AUDIO_EXTS.has(s);
 }
 
@@ -97,19 +109,16 @@ const AUDIO_EXTS = new Set([
 
 // ============================================================
 // MP3 ID3v2 extraction (lightweight)
-// Returns { title, artist, album } or null on failure.
 // ============================================================
 function extractId3(blob) {
   try {
     const view = new DataView(blob.buffer, blob.byteOffset, Math.min(blob.size, 1024 * 1024));
-    // Must start with "ID3"
-    if (view.getUint8(0) !== 0x49 || view.getUint8(1) !== 0x44 || view.getUint8(2) !== 0x38) {
+    if (view.getUint8(0) !== 0x49 || view.getUint8(1) !== 0x44 || view.getUint8(2) !== 0x33) {
       return null;
     }
     const major = view.getUint8(3);
     if (major < 0x02 || major > 0x04) return null;
 
-    // Read size (synchsafe integer, 4 bytes)
     const s1 = view.getUint8(4);
     const s2 = view.getUint8(5);
     const s3 = view.getUint8(6);
@@ -124,7 +133,6 @@ function extractId3(blob) {
         view.getUint8(offset + 2), view.getUint8(offset + 3));
       if (id[0] === '\0' || id[1] === '\0' || id[2] === '\0' || id[3] === '\0') break;
 
-      // Skip if not a valid frame ID (all printable)
       if (!/[a-zA-Z0-9]{4}/.test(id)) {
         offset++;
         continue;
@@ -147,13 +155,11 @@ function extractId3(blob) {
       if (id === 'TIT2' && !text.startsWith('\uFFFD')) {
         return { title: text.trim(), artist: undefined, album: undefined };
       }
-      if (id === 'TPE1' && !text.startsWith('\uFFFD') && !text.startsWith('')) {
-        const r = { title: undefined, artist: text.trim(), album: undefined };
-        return r;
+      if (id === 'TPE1' && !text.startsWith('\uFFFD')) {
+        return { title: undefined, artist: text.trim(), album: undefined };
       }
-      if (id === 'TALB' && !text.startsWith('\uFFFD') && !text.startsWith('')) {
-        const r = { title: undefined, artist: undefined, album: text.trim() };
-        return r;
+      if (id === 'TALB' && !text.startsWith('\uFFFD')) {
+        return { title: undefined, artist: undefined, album: text.trim() };
       }
 
       offset = frameEnd;
@@ -165,6 +171,87 @@ function extractId3(blob) {
 }
 
 // ============================================================
+// Helpers
+// ============================================================
+
+function getPlayerKey(msg, scope) {
+  return `${scope}:${msg.id}`;
+}
+
+function updatePlaybackUI(player, isPlaying) {
+  if (!player.el) return;
+
+  const btn = player.el.querySelector('.audio-player-play');
+  if (btn) {
+    btn.innerHTML = isPlaying ? ICONS.pause : ICONS.play;
+    btn.title = isPlaying ? 'Pause' : 'Play';
+  }
+
+  player.el.classList.toggle('playing', !!isPlaying);
+  player.el.classList.toggle('paused', !isPlaying);
+}
+
+// Sync UI and global currentPlaying from the actual audio element state.
+// Used when an existing player is re-attached to a newly rendered message.
+function syncPlayerUI(player) {
+  if (!player.el || !player.audio) return;
+
+  const isPlaying = !player.audio.paused && !player.audio.ended;
+  updatePlaybackUI(player, isPlaying);
+
+  if (isPlaying) {
+    if (currentPlaying !== player) {
+      currentPlaying = player;
+    }
+    drawWaveform(player);
+  }
+}
+
+function syncPlayerVolume(player) {
+  const volume = getGlobalVolume();
+
+  if (player.audio) {
+    player.audio.volume = volume;
+  }
+
+  const slider = player.el?.querySelector('.audio-player-volume-slider');
+  if (slider) {
+    slider.value = String(volume);
+    updateSliderFill(slider);
+  }
+
+  const volBtn = player.el?.querySelector('.audio-player-volume');
+  if (volBtn) {
+    volBtn.style.opacity = volume === 0 ? '0.4' : '1';
+  }
+}
+
+// Attach the player element to the correct location under the message DOM.
+function mountPlayer(player, msg) {
+  if (!player.el) return;
+
+  const msgEl = document.querySelector(`.chat-msg[data-msg-id="${msg.id}"]`);
+  if (!msgEl) return;
+
+  // Remove any other audio-player under this message (avoid duplicates).
+  msgEl.querySelectorAll('.audio-player').forEach((el) => {
+    if (el !== player.el) el.remove();
+  });
+
+  const attWrap = msgEl.querySelector(':scope > div > .chat-attachment, :scope > div > .chat-attachment-image-wrap');
+  if (attWrap) {
+    attWrap.replaceWith(player.el);
+  } else {
+    const contentDiv = msgEl.querySelector(':scope > div > .chat-bubble, :scope > div > .chat-meta');
+    if (contentDiv) {
+      contentDiv.after(player.el);
+    } else {
+      msgEl.appendChild(player.el);
+    }
+  }
+}
+
+// ============================================================
 // Internal: play a message's audio
 // ============================================================
 function playAudio(msg, scope) {
@@ -172,7 +259,21 @@ function playAudio(msg, scope) {
     ? `/api/dm/attachments/${msg.id}`
     : `/api/chat/attachments/${msg.id}`;
 
-  // Show loading state while fetching
+  const key = getPlayerKey(msg, scope);
+
+  // Reuse the same player/audio for this message if it already exists.
+  const existing = playerRegistry.get(key);
+  if (existing && !existing.destroyed) {
+    mountPlayer(existing, msg);
+    syncPlayerVolume(existing);
+    syncPlayerUI(existing);
+    return;
+  }
+
+  if (existing && existing.destroyed) {
+    playerRegistry.delete(key);
+  }
+
   const title = msg.attachment_title || msg.attachment_name || 'Audio';
   const artist = msg.artist || '';
   const currentVolume = getGlobalVolume();
@@ -199,7 +300,10 @@ function playAudio(msg, scope) {
 
       <span class="audio-player-duration">--:--</span>
 
-      <!-- Compact & Expandable Volume Control -->
+      <a href="${attachmentUrl}" download="${escapeHtml(msg.attachment_name || 'audio')}" class="audio-player-download" title="Download">
+        ${ICONS.download}
+      </a>
+
       <div class="audio-player-volume-control" 
            style="display: flex; align-items: center; overflow: hidden; width: 24px; transition: width 0.2s ease-out;" 
            onmouseenter="this.style.width='90px'" 
@@ -236,8 +340,8 @@ function playAudio(msg, scope) {
   wrapper.innerHTML = template.trim();
   const playerEl = wrapper.firstElementChild;
 
-  // Each player owns its own state.
   const player = {
+    key,
     audio: null,
     ctx: null,
     analyser: null,
@@ -251,20 +355,22 @@ function playAudio(msg, scope) {
     destroyed: false,
   };
 
+  playerRegistry.set(key, player);
   playerEl._audioPlayer = player;
 
   const playBtn = playerEl.querySelector('.audio-player-play');
   const volumeSlider = playerEl.querySelector('.audio-player-volume-slider');
   const volBtn = playerEl.querySelector('.audio-player-volume');
 
-  // Wire up volume slider
+  updateSliderFill(volumeSlider);
+
   if (volumeSlider) {
     volumeSlider.addEventListener('input', () => {
+      updateSliderFill(volumeSlider);
       setGlobalVolume(Number(volumeSlider.value));
     });
   }
 
-  // Wire up mute/unmute button
   if (volBtn) {
     volBtn.style.opacity = currentVolume === 0 ? '0.4' : '1';
     volBtn.addEventListener('click', () => {
@@ -277,62 +383,26 @@ function playAudio(msg, scope) {
     });
   }
 
-  // Wire up play button
   playBtn.addEventListener('click', () => {
     if (player.destroyed) return;
 
     if (!player.audio) {
-      // Audio element not ready yet — remember the request and wait for fetchBlob
       player.playRequested = true;
       playerEl.classList.add('loading');
       playBtn.title = 'Loading…';
       return;
     }
 
-    const isPlaying = !player.audio.paused;
-    if (isPlaying) {
-      // Pause this player
+    // Let the native play/pause events update the UI and global state.
+    if (!player.audio.paused) {
       player.audio.pause();
-      playBtn.innerHTML = ICONS.play;
-      playBtn.title = 'Play';
-      playerEl.classList.remove('playing');
-      playerEl.classList.add('paused');
-      cancelAnimationFrame(player.animId);
-      player.animId = null;
-
-      // Update global state
-      if (currentPlaying === player) currentPlaying = null;
     } else {
-      // Pause the previously playing player (if different)
-      if (currentPlaying && currentPlaying !== player) {
-        currentPlaying.audio.pause();
-        const prevBtn = currentPlaying.el.querySelector('.audio-player-play');
-        if (prevBtn) {
-          prevBtn.innerHTML = ICONS.play;
-          prevBtn.title = 'Play';
-        }
-        currentPlaying.el.classList.remove('playing');
-        currentPlaying.el.classList.add('paused');
-        cancelAnimationFrame(currentPlaying.animId);
-        currentPlaying.animId = null;
-      }
-
-      // Audio is ready — start playback immediately
       const c = ensureCtx(player);
       if (c.state === 'suspended') c.resume();
       player.audio.play().catch(() => showToast('Playback failed', 'error'));
-      playBtn.innerHTML = ICONS.pause;
-      playBtn.title = 'Pause';
-      playerEl.classList.remove('paused');
-      playerEl.classList.add('playing');
-      drawWaveform(player);
-
-      // Update global state
-      currentPlaying = player;
     }
   });
 
-  // Wire up seek bar click
   const progressBar = playerEl.querySelector('.audio-player-waveform');
   progressBar.addEventListener('click', (e) => {
     if (!player.audio || !player.audio.duration) return;
@@ -342,7 +412,6 @@ function playAudio(msg, scope) {
     player.audio.currentTime = pct * player.audio.duration;
   });
 
-  // Fetch the audio via fetchBlob, then create the Audio element.
   fetchBlob(attachmentUrl)
     .then((blob) => {
       if (player.destroyed) return;
@@ -351,10 +420,47 @@ function playAudio(msg, scope) {
       player.blobUrl = objectURL;
 
       const audio = new Audio(objectURL);
-      
-      // Initialize with the globally managed cookie volume
-      audio.volume = getGlobalVolume();
       player.audio = audio;
+
+      audio.volume = getGlobalVolume();
+
+      // === Native media events — these fire for media keys as well as UI clicks ===
+      audio.addEventListener('play', () => {
+        if (player.destroyed) return;
+
+        const c = ensureCtx(player);
+        if (c.state === 'suspended') c.resume();
+
+        if (!player.sourceNode) {
+          player.sourceNode = c.createMediaElementSource(audio);
+          player.analyser = c.createAnalyser();
+          player.analyser.fftSize = 256;
+          player.sourceNode.connect(player.analyser);
+          player.analyser.connect(c.destination);
+        }
+
+        // Pause any other currently-playing player.
+        if (currentPlaying && currentPlaying !== player && currentPlaying.audio && !currentPlaying.audio.paused) {
+          currentPlaying.audio.pause();
+        }
+
+        currentPlaying = player;
+        updatePlaybackUI(player, true);
+        drawWaveform(player);
+      });
+
+      audio.addEventListener('pause', () => {
+        if (player.destroyed) return;
+
+        cancelAnimationFrame(player.animId);
+        player.animId = null;
+
+        updatePlaybackUI(player, false);
+
+        if (currentPlaying === player) {
+          currentPlaying = null;
+        }
+      });
 
       audio.addEventListener('loadedmetadata', () => {
         if (player.el) {
@@ -372,18 +478,6 @@ function playAudio(msg, scope) {
           bar.style.width = `${pct}%`;
         }
         if (timeEl) timeEl.textContent = formatTime(audio.currentTime);
-      });
-
-      audio.addEventListener('play', () => {
-        const c = ensureCtx(player);
-        if (c.state === 'suspended') c.resume();
-        if (!player.sourceNode) {
-          player.sourceNode = c.createMediaElementSource(audio);
-          player.analyser = c.createAnalyser();
-          player.analyser.fftSize = 256;
-          player.sourceNode.connect(player.analyser);
-          player.analyser.connect(c.destination);
-        }
       });
 
       audio.addEventListener('ended', () => {
@@ -421,45 +515,19 @@ function playAudio(msg, scope) {
         }
       });
 
-      // Attach to the message element
-      const msgEl = document.querySelector(`.chat-msg[data-msg-id="${msg.id}"]`);
-      if (msgEl) {
-        const attWrap = msgEl.querySelector(':scope > div > .chat-attachment, :scope > div > .chat-attachment-image-wrap');
-        if (attWrap) {
-          attWrap.replaceWith(playerEl);
-        } else {
-          const contentDiv = msgEl.querySelector(':scope > div > .chat-bubble, :scope > div > .chat-meta');
-          if (contentDiv) {
-            contentDiv.after(playerEl);
-          }
-        }
-      }
+      // Attach the fully-created player to the message DOM.
+      mountPlayer(player, msg);
 
-      // If user clicked play while waiting, start playback now.
+      // If the user clicked play while we were still fetching the blob.
       if (player.playRequested) {
         player.playRequested = false;
         playerEl.classList.remove('loading');
-        playBtn.title = 'Pause';
         const c = ensureCtx(player);
         if (c.state === 'suspended') c.resume();
         player.audio.play().catch(() => showToast('Playback failed', 'error'));
-        drawWaveform(player);
-
-        if (currentPlaying && currentPlaying !== player) {
-          currentPlaying.audio.pause();
-          const prevBtn = currentPlaying.el.querySelector('.audio-player-play');
-          if (prevBtn) {
-            prevBtn.innerHTML = ICONS.play;
-            prevBtn.title = 'Play';
-          }
-          currentPlaying.el.classList.remove('playing');
-          currentPlaying.el.classList.add('paused');
-          cancelAnimationFrame(currentPlaying.animId);
-          currentPlaying.animId = null;
-        }
-        currentPlaying = player;
       }
 
+      syncPlayerVolume(player);
       preloadMetadata(blob, msg, player);
     })
     .catch(() => {
@@ -515,7 +583,7 @@ function preloadMetadata(blob, msg, player) {
 // ============================================================
 function drawWaveform(player) {
   if (!player || !player.el || player.animId !== null) return;
-  if (player.audio.paused) return;
+  if (!player.audio || player.audio.paused) return;
 
   const canvas = player.el.querySelector('.audio-player-canvas');
   const analyser = player.analyser;
@@ -528,7 +596,7 @@ function drawWaveform(player) {
   const dataArray = new Uint8Array(bufferLength);
 
   function draw() {
-    if (!player.el || player.audio.paused) {
+    if (!player.el || !player.audio || player.audio.paused) {
       player.animId = null;
       return;
     }
@@ -562,36 +630,38 @@ function drawWaveform(player) {
   draw();
 }
 
-function pauseCurrentPlayer() {
-  if (!currentPlaying) return;
+// ============================================================
+// Public API
+// ============================================================
 
-  const p = currentPlaying;
-  try {
-    p.audio.pause();
-  } catch { /* ignore */ }
-
-  const btn = p.el.querySelector('.audio-player-play');
-  if (btn) {
-    btn.innerHTML = ICONS.play;
-    btn.title = 'Play';
-  }
-  p.el.classList.remove('playing');
-  p.el.classList.add('paused');
-  cancelAnimationFrame(p.animId);
-  p.animId = null;
-
-  currentPlaying = null;
+export function renderAudio(msg, scope) {
+  playAudio(msg, scope);
 }
 
-function stopAllPlayers() {
-  if (currentPlaying) {
-    pauseCurrentPlayer();
-  }
+export function stopAll() {
+  playerRegistry.forEach((player) => {
+    if (player.destroyed || !player.audio) return;
+    try {
+      if (!player.audio.paused) {
+        player.audio.pause();
+      }
+    } catch {
+      // ignore
+    }
+  });
 }
+
+// ============================================================
+// Cleanup / utility
+// ============================================================
 
 function destroyPlayer(player) {
   if (!player || player.destroyed) return;
   player.destroyed = true;
+
+  if (player.key) {
+    playerRegistry.delete(player.key);
+  }
 
   if (player.blobUrl) {
     try { URL.revokeObjectURL(player.blobUrl); } catch { /* ignore */ }
@@ -617,14 +687,6 @@ function destroyPlayer(player) {
   }
 
   if (currentPlaying === player) currentPlaying = null;
-}
-
-export function renderAudio(msg, scope) {
-  playAudio(msg, scope);
-}
-
-export function stopAll() {
-  stopAllPlayers();
 }
 
 function escapeHtml(text) {

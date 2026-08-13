@@ -6,10 +6,8 @@ import {
   escapeHtml,
   formatBytes
 } from './utils.js';
-<<<<<<< Updated upstream
-=======
+
 import { isAudio, renderAudio } from './audio-player.js';
->>>>>>> Stashed changes
 
 // Track pending loads: key = `${prefix}-${id}`, value = { promise, controller }
 const pendingLoads = new Map();

@@ -44,6 +44,25 @@ export const ICONS = {
   pause: `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
     <path d="M7 5h4v14H7zM13 5h4v14h-4z"/>
   </svg>`,
+  volume: `
+  <svg viewBox="0 0 24 24" fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true">
+    <path d="M11 5L6 9H3V15H6L11 19V5Z"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"/>
+    <path d="M15 9C16.333 10.333 16.333 13.667 15 15"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"/>
+    <path d="M18 6.5C21.333 9.833 21.333 14.167 18 17.5"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"/>
+  </svg>
+  `,
 };
 
 export function fileIcon(name, type) {

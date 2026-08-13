@@ -15,6 +15,26 @@ import { ICONS } from './icons.js';
 
 let currentPlaying = null; // the single player currently playing (may be null)
 
+const AUDIO_VOLUME_KEY = 'audio-player-volume';
+
+function setGlobalVolume(volume) {
+  volume = Math.max(0, Math.min(1, volume));
+
+  localStorage.setItem(AUDIO_VOLUME_KEY, String(volume));
+
+  document.querySelectorAll('.audio-player').forEach((el) => {
+    const player = el._audioPlayer;
+
+    if (player?.audio) {
+      player.audio.volume = volume;
+    }
+
+    const slider = el.querySelector('.audio-player-volume-slider');
+    if (slider) {
+      slider.value = volume;
+    }
+  });
+}
 // ============================================================
 // Check whether a MIME type or file extension indicates an audio format.
 // Handles both 'audio/mpeg' and 'mp3' / 'song.mp3'.
@@ -141,6 +161,20 @@ function playAudio(msg, scope) {
           <div class="audio-player-progress-fill" style="width:0%"></div>
         </div>
         <span class="audio-player-duration">--:--</span>
+
+        <button type="button" class="audio-player-volume" title="Volume">
+          ${ICONS.volume}
+        </button>
+
+        <input
+          type="range"
+          class="audio-player-volume-slider"
+          min="0"
+          max="1"
+          step="0.01"
+          value="${getGlobalVolume()}"
+          title="Volume"
+        >
       </div>
       <div class="audio-player-error" style="display:none">
         <span>${ICONS.alert}</span>
@@ -156,10 +190,29 @@ function playAudio(msg, scope) {
   // Each player owns its own state.  No global "current" is used to
   // decide whether a fetch result is still valid — each fetch validates
   // against ITS OWN player instance via the `player.destroyed` flag.
-  const player = { audio: null, ctx: null, analyser: null, sourceNode: null, animId: null, el: playerEl, msgId: msg.id, scope, blobUrl: null, playRequested: false, destroyed: false };
+  const player = {
+    audio: null,
+    ctx: null,
+    analyser: null,
+    sourceNode: null,
+    animId: null,
+    el: playerEl,
+    msgId: msg.id,
+    scope,
+    blobUrl: null,
+    playRequested: false,
+    destroyed: false,
+  };
+
+  playerEl._audioPlayer = player;
 
   // Wire up play button — cannot call audio.play() until the real Audio element exists.
   const playBtn = playerEl.querySelector('.audio-player-play');
+  const volumeSlider = playerEl.querySelector('.audio-player-volume-slider');
+
+  volumeSlider.addEventListener('input', () => {
+    setGlobalVolume(Number(volumeSlider.value));
+  });
   playBtn.addEventListener('click', () => {
     if (player.destroyed) return;
 
@@ -235,6 +288,7 @@ function playAudio(msg, scope) {
 
       // Create the Audio element with the real blob URL — no empty/dummy source.
       const audio = new Audio(objectURL);
+      audio.volume = getGlobalVolume();
       player.audio = audio;
 
       // Attach all audio event listeners to the real element.

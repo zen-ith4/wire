@@ -11,6 +11,9 @@ package-lock.json
 data/
 logs/
 
+dm-uploads/*
+chat-uploads/*
+
 converted_cache/
 zip_tmp/
 

@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 
 const { authenticate } = require('../middleware/authenticate');
+const { mediaAuth } = require('../middleware/mediaAuth');
 const { dmUpload } = require('../config/multer');
 
 const {
@@ -18,12 +19,14 @@ const {
 } = require('../controllers/dm.controller');
 
 
+
 // Conversation list
 router.get(
   '/conversations',
   authenticate,
   getConversations
 );
+
 
 
 // Total unread messages
@@ -34,12 +37,14 @@ router.get(
 );
 
 
+
 // Recent DM messages
 router.get(
   '/messages/:peerId/recent',
   authenticate,
   getRecentMessages
 );
+
 
 
 // Older messages pagination
@@ -50,6 +55,7 @@ router.get(
 );
 
 
+
 // New messages polling
 router.get(
   '/messages/:peerId/since',
@@ -58,12 +64,14 @@ router.get(
 );
 
 
+
 // Send text DM
 router.post(
   '/messages',
   authenticate,
   sendMessage
 );
+
 
 
 // Send DM with file
@@ -75,15 +83,21 @@ router.post(
 );
 
 
-// Download DM attachment
+
+// Download / stream DM attachment
+//
+// IMPORTANT:
+// <video> and <audio> need mediaAuth because they cannot
+// attach Authorization headers themselves.
 router.get(
   '/attachments/:messageId',
-  authenticate,
+  mediaAuth,
   getAttachment
 );
 
 
-// Delete a DM (sender or admin only — checked in controller)
+
+// Delete a DM
 router.delete(
   '/messages/:messageId',
   authenticate,
@@ -91,12 +105,14 @@ router.delete(
 );
 
 
-// Toggle a reaction on a DM (either participant — checked in controller)
+
+// Toggle reaction
 router.post(
   '/messages/:messageId/reactions',
   authenticate,
   toggleReaction
 );
+
 
 
 module.exports = router;

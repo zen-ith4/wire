@@ -15,7 +15,7 @@ import {
   hideUploadProgress,
   xhrUpload
 } from './upload.js';
-import { renderAttachment, loadChatImage } from './attachments.js';
+import { renderAttachment, loadChatImage, mountAttachmentMedia } from './attachments.js';
 import { avatarHtml } from './avatar.js';
 import { getCurrentUser } from './auth.js';
 import { showConfirm } from './confirm.js';
@@ -186,7 +186,7 @@ function buildChatMessageEl(msg) {
   div.dataset.msgId = msg.id;
   div.innerHTML = `
     ${avatarHtml(msg.user_id, msg.username, 'chat-avatar')}
-    <div>
+    <div class="chat-msg-content">
       <div class="chat-meta">
         <span class="chat-sender">${escapeHtml(msg.username)}</span>
         <span class="chat-time">${formatDate(msg.timestamp)}</span>
@@ -200,6 +200,10 @@ function buildChatMessageEl(msg) {
   if (msg.has_attachment && msg.attachment_mime && msg.attachment_mime.startsWith('image/')) {
     queueMicrotask(() => loadChatImage(msg.id, 'chat'));
   }
+  // Initialize the audio/video player (if any) directly on this
+  // element. No document-wide query and no timing dependency: `div`
+  // doesn't even need to be attached to the document yet.
+  mountAttachmentMedia(msg, div, 'chat');
   return div;
 }
 

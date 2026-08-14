@@ -38,32 +38,10 @@ export const ICONS = {
   edit: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>`,
   lock: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`,
   alert: `<svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`,
-  play: `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-  <path d="M8 5v14l11-7z"/>
-</svg>`,
-
-  pause: `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-    <path d="M7 5h4v14H7zM13 5h4v14h-4z"/>
-  </svg>`,
-  volume: `
-  <svg viewBox="0 0 24 24" fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden="true">
-    <path d="M11 5L6 9H3V15H6L11 19V5Z"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"/>
-    <path d="M15 9C16.333 10.333 16.333 13.667 15 15"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"/>
-    <path d="M18 6.5C21.333 9.833 21.333 14.167 18 17.5"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"/>
-  </svg>
-  `,
+  play: `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>`,
+  pause: `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>`,
+  volume: `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M11 5L6 9H3V15H6L11 19V5Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M15 9C16.333 10.333 16.333 13.667 15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M18 6.5C21.333 9.833 21.333 14.167 18 17.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`,
+  fullscreen: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">    <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>  </svg>`,
 };
 
 export function fileIcon(name, type) {

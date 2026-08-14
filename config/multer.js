@@ -18,23 +18,61 @@ const AVATAR_MIME_MAP = {
   '.gif': 'image/gif',
 };
 
+const VIDEO_MIME_MAP = {
+  // Common
+  '.mp4': 'video/mp4',
+  '.m4v': 'video/x-m4v',
+  '.webm': 'video/webm',
+  '.mov': 'video/quicktime',
+  '.mkv': 'video/x-matroska',
+  '.avi': 'video/x-msvideo',
+  '.wmv': 'video/x-ms-wmv',
+  '.flv': 'video/x-flv',
+  '.f4v': 'video/x-f4v',
+
+  // MPEG / Transport streams
+  '.mpeg': 'video/mpeg',
+  '.mpg': 'video/mpeg',
+  '.mpe': 'video/mpeg',
+  '.m2v': 'video/mpeg',
+  '.m2ts': 'video/mp2t',
+  '.mts': 'video/mp2t',
+  '.ts': 'video/mp2t',
+
+  // 3GP / Mobile
+  '.3gp': 'video/3gpp',
+  '.3g2': 'video/3gpp2',
+
+  // OGG / Matroska family
+  '.ogv': 'video/ogg',
+  '.ogm': 'video/ogg',
+
+  // Flash
+  '.swf': 'application/x-shockwave-flash',
+
+  // MPEG-4 variants
+  '.f4p': 'video/mp4',
+};
+
 const CHAT_MIME_MAP = {
+  // Images
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
   '.png': 'image/png',
   '.gif': 'image/gif',
   '.webp': 'image/webp',
 
-  '.mp4': 'video/mp4',
-  '.webm': 'video/webm',
-  '.mov': 'video/quicktime',
+  // Videos
+  ...VIDEO_MIME_MAP,
 
+  // Audio
   '.mp3': 'audio/mpeg',
   '.wav': 'audio/wav',
   '.ogg': 'audio/ogg',
   '.flac': 'audio/flac',
   '.m4a': 'audio/mp4',
 
+  // Documents
   '.pdf': 'application/pdf',
   '.zip': 'application/zip',
   '.txt': 'text/plain',
@@ -162,6 +200,7 @@ const fileUpload = multer({
 module.exports = {
   AVATAR_MIME_MAP,
   CHAT_MIME_MAP,
+  VIDEO_MIME_MAP, // Added this in case you need to export it directly elsewhere
 
   avatarUpload,
   bannerUpload,

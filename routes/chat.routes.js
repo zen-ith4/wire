@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 
 const { authenticate } = require('../middleware/authenticate');
+const { mediaAuth } = require('../middleware/mediaAuth');
 const { chatUpload } = require('../config/multer');
 
 const {
@@ -16,12 +17,14 @@ const {
 } = require('../controllers/chat.controller');
 
 
+
 // Get latest chat messages
 router.get(
   '/messages/recent',
   authenticate,
   getRecentMessages
 );
+
 
 
 // Get messages before a specific message
@@ -32,6 +35,7 @@ router.get(
 );
 
 
+
 // Get messages since timestamp/id
 router.get(
   '/messages',
@@ -40,12 +44,14 @@ router.get(
 );
 
 
+
 // Send text message
 router.post(
   '/messages',
   authenticate,
   sendMessage
 );
+
 
 
 // Send message with attachment
@@ -57,15 +63,21 @@ router.post(
 );
 
 
-// Download message attachment
+
+// Download / stream message attachment
+//
+// IMPORTANT:
+// This uses mediaAuth instead of authenticate because
+// <video src=""> cannot send Authorization headers.
 router.get(
   '/attachments/:messageId',
-  authenticate,
+  mediaAuth,
   getAttachment
 );
 
 
-// Delete a message (sender or admin only — checked in controller)
+
+// Delete a message
 router.delete(
   '/messages/:messageId',
   authenticate,
@@ -73,12 +85,14 @@ router.delete(
 );
 
 
-// Toggle a reaction on a message (add if not present, remove if it is)
+
+// Toggle reaction
 router.post(
   '/messages/:messageId/reactions',
   authenticate,
   toggleReaction
 );
+
 
 
 module.exports = router;

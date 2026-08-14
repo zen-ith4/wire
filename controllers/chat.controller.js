@@ -251,77 +251,145 @@ function sendMessageWithAttachment(req,res) {
 
 
 
-function getAttachment(req,res) {
+function getAttachment(req, res) {
+  const messageId = Number(req.params.messageId);
 
-  const messageId =
-    Number(req.params.messageId);
-
-
-  if(!Number.isInteger(messageId)){
-
+  if (!Number.isInteger(messageId)) {
     return res.status(400).json({
-      error:'Invalid message id'
+      error: 'Invalid message id'
     });
-
   }
 
+  const msg = findChatMessageById(messageId);
 
-  const msg =
-    findChatMessageById(
-      messageId
-    );
-
-
-  if(
-    !msg ||
-    !msg.attachment_path
-  ){
-
+  if (!msg || !msg.attachment_path) {
     return res.status(404).json({
-      error:'Attachment not found'
+      error: 'Attachment not found'
     });
-
   }
 
+  const filePath = path.join(
+    constants.CHAT_UPLOAD_DIR,
+    msg.attachment_path
+  );
 
-  const filePath =
-    path.join(
-      constants.CHAT_UPLOAD_DIR,
-      msg.attachment_path
-    );
-
-
-  if(!fs.existsSync(filePath)){
-
+  if (!fs.existsSync(filePath)) {
     return res.status(404).json({
-      error:'Attachment not found'
+      error: 'Attachment not found'
     });
-
   }
 
+  const stat = fs.statSync(filePath);
+  const fileSize = stat.size;
+
+  const contentType =
+    msg.attachment_mime ||
+    'application/octet-stream';
 
   const disposition =
     req.query.download
       ? 'attachment'
       : 'inline';
 
-
-  res.setHeader(
-    'Content-Type',
-    msg.attachment_mime ||
-    'application/octet-stream'
-  );
-
-
+  res.setHeader('Content-Type', contentType);
   res.setHeader(
     'Content-Disposition',
     `${disposition}; filename*=UTF-8''${encodeURIComponent(msg.attachment_name)}`
   );
 
+  // Download request: send the whole file
+  if (req.query.download) {
+    res.setHeader('Content-Length', fileSize);
 
-  fs.createReadStream(filePath)
-    .pipe(res);
+    return fs.createReadStream(filePath).pipe(res);
+  }
 
+  // Browser requested a specific byte range
+  const range = req.headers.range;
+
+  if (!range) {
+    res.setHeader('Content-Length', fileSize);
+    res.setHeader('Accept-Ranges', 'bytes');
+
+    return fs.createReadStream(filePath).pipe(res);
+  }
+
+  const match = range.match(/bytes=(\d*)-(\d*)/);
+
+  if (!match) {
+    return res.status(416).setHeader(
+      'Content-Range',
+      `bytes */${fileSize}`
+    ).end();
+  }
+
+  let start = match[1] ? Number(match[1]) : 0;
+  let end = match[2] ? Number(match[2]) : fileSize - 1;
+
+  // Handle suffix ranges: bytes=-500000
+  if (!match[1] && match[2]) {
+    const suffixLength = Number(match[2]);
+
+    start = Math.max(
+      fileSize - suffixLength,
+      0
+    );
+
+    end = fileSize - 1;
+  }
+
+  // Invalid range
+  if (
+    start < 0 ||
+    end >= fileSize ||
+    start > end
+  ) {
+    return res.status(416)
+      .setHeader(
+        'Content-Range',
+        `bytes */${fileSize}`
+      )
+      .end();
+  }
+
+  const chunkSize = end - start + 1;
+
+  res.status(206);
+
+  res.setHeader(
+    'Content-Range',
+    `bytes ${start}-${end}/${fileSize}`
+  );
+
+  res.setHeader(
+    'Accept-Ranges',
+    'bytes'
+  );
+
+  res.setHeader(
+    'Content-Length',
+    chunkSize
+  );
+
+  const stream = fs.createReadStream(filePath, {
+    start,
+    end
+  });
+
+  stream.on('error', (err) => {
+    console.error(
+      'Attachment stream error:',
+      err.message
+    );
+
+    if (!res.headersSent) {
+      res.status(500).end();
+    } else {
+      res.destroy();
+    }
+  });
+
+  stream.pipe(res);
 }
 
 

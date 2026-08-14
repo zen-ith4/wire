@@ -25,6 +25,7 @@ function findUserById(id) {
         bio,
         avatar_path,
         banner_path,
+        accent_color,
         created_at
       FROM users
       WHERE id = ?
@@ -117,6 +118,21 @@ function updateBio(userId, bio) {
 }
 
 
+function updateAccentColor(userId, accentColor) {
+
+  return getDb()
+    .prepare(`
+      UPDATE users
+      SET accent_color = ?
+      WHERE id = ?
+    `)
+    .run(
+      accentColor,
+      userId
+    );
+}
+
+
 function updateAvatar(userId, avatarPath) {
 
   return getDb()
@@ -148,8 +164,6 @@ function updateBanner(userId, bannerPath) {
 
 
 // Sums attachment_size across chat + DM messages this user has sent.
-// Reuses columns that already exist for the download/preview
-// features — no new tables, no new tracking needed.
 function getStorageUsage(userId) {
 
   const chatTotal = getDb()
@@ -226,7 +240,7 @@ function listUsersExcept(userId) {
       WHERE id != ?
       ORDER BY username
     `)
-    .all(userId);
+    .all();
 }
 
 
@@ -239,6 +253,7 @@ module.exports = {
   createAdmin,
 
   updateBio,
+  updateAccentColor,
   updateAvatar,
   updateBanner,
   updatePassword,

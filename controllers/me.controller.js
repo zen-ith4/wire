@@ -7,6 +7,7 @@ const {
   findUserById,
   findUserWithPassword,
   updateBio: updateUserBio,
+  updateAccentColor: updateUserAccentColor,
   updateAvatar: updateUserAvatar,
   updateBanner: updateUserBanner,
   updatePassword: updateUserPassword,
@@ -34,14 +35,41 @@ function getMe(req, res) {
     bio: user.bio || '',
     has_avatar: !!user.avatar_path,
     has_banner: !!user.banner_path,
+    accent_color: user.accent_color || null,
     created_at: user.created_at
+  });
+}
+
+
+// PUT /me/accent
+function updateAccentColor(req, res) {
+  const accentColor =
+    typeof req.body?.accent_color === 'string'
+      ? req.body.accent_color.trim()
+      : '';
+
+  if (!/^#[0-9a-fA-F]{6}$/.test(accentColor)) {
+    return res.status(400).json({
+      error: 'Invalid accent color'
+    });
+  }
+
+  const normalizedColor = accentColor.toUpperCase();
+
+  updateUserAccentColor(
+    req.user.id,
+    normalizedColor
+  );
+
+  res.json({
+    success: true,
+    accent_color: normalizedColor
   });
 }
 
 
 // PUT /me
 function updateBio(req, res) {
-
   const bio =
     typeof req.body?.bio === 'string'
       ? req.body.bio.trim().slice(0, 300)
@@ -61,12 +89,10 @@ function updateBio(req, res) {
 
 // PUT /me/password
 function changePassword(req, res) {
-
   const {
     current_password,
     new_password
   } = req.body || {};
-
 
   if (!current_password || !new_password) {
     return res.status(400).json({
@@ -74,16 +100,13 @@ function changePassword(req, res) {
     });
   }
 
-
   if (new_password.length < 6) {
     return res.status(400).json({
       error: 'New password must be at least 6 characters'
     });
   }
 
-
   const user = findUserWithPassword(req.user.id);
-
 
   if (!user) {
     return res.status(404).json({
@@ -91,19 +114,16 @@ function changePassword(req, res) {
     });
   }
 
-
   if (!comparePassword(current_password, user.password_hash)) {
     return res.status(401).json({
       error: 'Current password is incorrect'
     });
   }
 
-
   updateUserPassword(
     req.user.id,
     new_password
   );
-
 
   res.json({
     success: true
@@ -113,24 +133,19 @@ function changePassword(req, res) {
 
 // POST /me/avatar
 function uploadAvatar(req, res) {
-
   if (!req.file) {
     return res.status(400).json({
       error: 'No image uploaded'
     });
   }
 
-
   const user = findUserById(req.user.id);
 
-
   if (user?.avatar_path) {
-
     const oldPath = path.join(
       constants.AVATAR_DIR,
       user.avatar_path
     );
-
 
     if (fs.existsSync(oldPath)) {
       fs.unlink(oldPath, err => {
@@ -144,12 +159,10 @@ function uploadAvatar(req, res) {
     }
   }
 
-
   updateUserAvatar(
     req.user.id,
     req.file.filename
   );
-
 
   res.json({
     success: true
@@ -159,17 +172,13 @@ function uploadAvatar(req, res) {
 
 // DELETE /me/avatar
 function removeAvatar(req, res) {
-
   const user = findUserById(req.user.id);
 
-
   if (user?.avatar_path) {
-
     const filePath = path.join(
       constants.AVATAR_DIR,
       user.avatar_path
     );
-
 
     if (fs.existsSync(filePath)) {
       fs.unlink(filePath, err => {
@@ -183,12 +192,10 @@ function removeAvatar(req, res) {
     }
   }
 
-
   updateUserAvatar(
     req.user.id,
     null
   );
-
 
   res.json({
     success: true
@@ -197,13 +204,10 @@ function removeAvatar(req, res) {
 
 
 // GET /avatar/:userId
-// Public avatar
 function getAvatar(req, res) {
-
   const user = findUserById(
     req.params.userId
   );
-
 
   if (!user || !user.avatar_path) {
     return res.status(404).json({
@@ -211,12 +215,10 @@ function getAvatar(req, res) {
     });
   }
 
-
   const filePath = path.join(
     constants.AVATAR_DIR,
     user.avatar_path
   );
-
 
   if (!fs.existsSync(filePath)) {
     return res.status(404).json({
@@ -224,28 +226,23 @@ function getAvatar(req, res) {
     });
   }
 
-
   const ext = path.extname(
     user.avatar_path
   ).toLowerCase();
 
-
   const mime =
     AVATAR_MIME_MAP[ext] ||
     'application/octet-stream';
-
 
   res.setHeader(
     'Content-Type',
     mime
   );
 
-
   res.setHeader(
     'Cache-Control',
     'no-cache'
   );
-
 
   fs.createReadStream(filePath)
     .pipe(res);
@@ -254,24 +251,19 @@ function getAvatar(req, res) {
 
 // POST /me/banner
 function uploadBanner(req, res) {
-
   if (!req.file) {
     return res.status(400).json({
       error: 'No image uploaded'
     });
   }
 
-
   const user = findUserById(req.user.id);
 
-
   if (user?.banner_path) {
-
     const oldPath = path.join(
       constants.BANNER_DIR,
       user.banner_path
     );
-
 
     if (fs.existsSync(oldPath)) {
       fs.unlink(oldPath, err => {
@@ -285,12 +277,10 @@ function uploadBanner(req, res) {
     }
   }
 
-
   updateUserBanner(
     req.user.id,
     req.file.filename
   );
-
 
   res.json({
     success: true
@@ -300,17 +290,13 @@ function uploadBanner(req, res) {
 
 // DELETE /me/banner
 function removeBanner(req, res) {
-
   const user = findUserById(req.user.id);
 
-
   if (user?.banner_path) {
-
     const filePath = path.join(
       constants.BANNER_DIR,
       user.banner_path
     );
-
 
     if (fs.existsSync(filePath)) {
       fs.unlink(filePath, err => {
@@ -324,12 +310,10 @@ function removeBanner(req, res) {
     }
   }
 
-
   updateUserBanner(
     req.user.id,
     null
   );
-
 
   res.json({
     success: true
@@ -338,13 +322,10 @@ function removeBanner(req, res) {
 
 
 // GET /banner/:userId
-// Public banner image, same access model as GET /avatar/:userId.
 function getBanner(req, res) {
-
   const user = findUserById(
     req.params.userId
   );
-
 
   if (!user || !user.banner_path) {
     return res.status(404).json({
@@ -352,12 +333,10 @@ function getBanner(req, res) {
     });
   }
 
-
   const filePath = path.join(
     constants.BANNER_DIR,
     user.banner_path
   );
-
 
   if (!fs.existsSync(filePath)) {
     return res.status(404).json({
@@ -365,28 +344,23 @@ function getBanner(req, res) {
     });
   }
 
-
   const ext = path.extname(
     user.banner_path
   ).toLowerCase();
 
-
   const mime =
     AVATAR_MIME_MAP[ext] ||
     'application/octet-stream';
-
 
   res.setHeader(
     'Content-Type',
     mime
   );
 
-
   res.setHeader(
     'Cache-Control',
     'no-cache'
   );
-
 
   fs.createReadStream(filePath)
     .pipe(res);
@@ -394,12 +368,11 @@ function getBanner(req, res) {
 
 
 // GET /me/:userId
-// Public profile lookup for *other* users — used by the profile card
-// that opens when clicking someone's avatar in Chat/DMs. Read-only;
-// editing (window.saveBio in settings.js) only ever targets req.user.id.
 function getUserProfile(req, res) {
-
-  const userId = parseInt(req.params.userId, 10);
+  const userId = parseInt(
+    req.params.userId,
+    10
+  );
 
   if (!Number.isInteger(userId)) {
     return res.status(400).json({
@@ -431,6 +404,7 @@ function getUserProfile(req, res) {
 module.exports = {
   getMe,
   updateBio,
+  updateAccentColor,
   changePassword,
   uploadAvatar,
   removeAvatar,

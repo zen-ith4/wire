@@ -1,16 +1,5 @@
 // ============================================================
 // Accent theming + ambient background intensity
-//
-// Two independent, separately-persisted preferences:
-//   - accent color (the interactive-accent CSS variables + the hue
-//     of the ambient glow)
-//   - ambient intensity (how strong that glow is — 5 discrete
-//     levels, deliberately large jumps between them so picking a
-//     different level actually reads as a different level, not a
-//     barely-perceptible nudge)
-//
-// Both are applied at app bootstrap (see app.js) so they're correct
-// from the very first paint, including on the login screen.
 // ============================================================
 
 export const ACCENT_PRESETS = [
@@ -22,18 +11,10 @@ export const ACCENT_PRESETS = [
   { name: 'Red',     hex: '#9A5D5D', rgb: '154, 93, 93' },
 ];
 
-// Peak alpha (the gradient layer's strongest stop) for each of the 5
-// intensity levels. The gaps between them widen on purpose (10 → 13
-// → 12 → 15 points) rather than stepping evenly, since small equal
-// increments (e.g. 5/8/11/14/17) don't read as a visible change on
-// screen — these are chosen to actually look different level to level.
 export const AMBIENT_LEVELS = [0.05, 0.15, 0.28, 0.40, 0.55];
-export const DEFAULT_AMBIENT_LEVEL = 3; // index into AMBIENT_LEVELS (0-based) — "level 3 of 5"
 
-// The other four gradient layers keep the same ratio to the peak
-// layer that the original hand-tuned design used, so raising the
-// level scales the whole glow proportionally instead of distorting
-// its shape.
+export const DEFAULT_AMBIENT_LEVEL = 3;
+
 const LAYER_RATIOS = [1, 0.9, 0.5, 0.65, 0.6];
 
 const ACCENT_STORAGE_KEY = 'filehub-accent';
@@ -42,9 +23,7 @@ const AMBIENT_STORAGE_KEY = 'filehub-ambient-level';
 function safeGetStorage(key) {
   try {
     return localStorage.getItem(key);
-  } catch (e) {
-    // Private-browsing / storage-disabled edge cases shouldn't break
-    // the app — just fall back to the default silently.
+  } catch {
     return null;
   }
 }
@@ -52,95 +31,305 @@ function safeGetStorage(key) {
 function safeSetStorage(key, value) {
   try {
     localStorage.setItem(key, value);
-  } catch (e) {
-    // Same as above — persistence is a nice-to-have, not required
-    // for the preference to apply for the current session.
+  } catch {
+    // localStorage isn't required for the current session.
   }
 }
 
-export function getCurrentAccentName() {
-  return safeGetStorage(ACCENT_STORAGE_KEY) || ACCENT_PRESETS[0].name;
+
+// ============================================================
+// Accent helpers
+// ============================================================
+
+export function getCurrentAccentHex() {
+  const saved = safeGetStorage(ACCENT_STORAGE_KEY);
+
+  if (
+    typeof saved === 'string' &&
+    /^#[0-9a-fA-F]{6}$/.test(saved)
+  ) {
+    return saved.toUpperCase();
+  }
+
+  const preset = ACCENT_PRESETS.find(
+    p => p.name === saved
+  );
+
+  return preset?.hex || ACCENT_PRESETS[0].hex;
 }
+
+
+export function getCurrentAccentName() {
+  const hex = getCurrentAccentHex();
+
+  const preset = ACCENT_PRESETS.find(
+    p => p.hex.toUpperCase() === hex.toUpperCase()
+  );
+
+  return preset?.name || null;
+}
+
+
+// ============================================================
+// Ambient
+// ============================================================
 
 export function getCurrentAmbientLevel() {
-  const raw = Number(safeGetStorage(AMBIENT_STORAGE_KEY));
-  return Number.isInteger(raw) && raw >= 0 && raw < AMBIENT_LEVELS.length ? raw : DEFAULT_AMBIENT_LEVEL;
+  const raw = Number(
+    safeGetStorage(AMBIENT_STORAGE_KEY)
+  );
+
+  return Number.isInteger(raw)
+    && raw >= 0
+    && raw < AMBIENT_LEVELS.length
+      ? raw
+      : DEFAULT_AMBIENT_LEVEL;
 }
 
-// Module state — the underlay needs both the current color and the
-// current intensity to repaint itself, but each is changed
-// independently (picking a new accent shouldn't reset the chosen
-// intensity, and vice versa).
-let currentRgb = ACCENT_PRESETS.find(p => p.name === getCurrentAccentName())?.rgb || ACCENT_PRESETS[0].rgb;
-let currentLevel = getCurrentAmbientLevel();
+
+function hexToRgb(hex) {
+  const clean = hex.replace('#', '');
+
+  const value = Number.parseInt(clean, 16);
+
+  return {
+    r: (value >> 16) & 255,
+    g: (value >> 8) & 255,
+    b: value & 255
+  };
+}
+
+
+function rgbStringFromHex(hex) {
+  const { r, g, b } = hexToRgb(hex);
+
+  return `${r}, ${g}, ${b}`;
+}
+
+
+let currentRgb =
+  ACCENT_PRESETS[0].rgb;
+
+let currentLevel =
+  getCurrentAmbientLevel();
+
+
+// ============================================================
+// Ambient background
+// ============================================================
 
 function paintUnderlay() {
   const peak = AMBIENT_LEVELS[currentLevel];
-  
-  // 1. Expose the current intensity level to the entire CSS ecosystem
-  document.documentElement.style.setProperty('--ambient-strength', peak);
-  
-  const underlay = document.getElementById('ambient-underlay');
-  if (!underlay) return; // Even if the element is missing, CSS still gets the variable!
 
-  const [a1, a2, a3, a4, a5] = LAYER_RATIOS.map(r => (peak * r).toFixed(3));
+  document.documentElement.style.setProperty(
+    '--ambient-strength',
+    peak
+  );
 
-  // 2. Update to use var(--indigo) rather than a hardcoded JS string, locking the hue
+  const underlay =
+    document.getElementById('ambient-underlay');
+
+  if (!underlay) return;
+
+  const [
+    a1,
+    a2,
+    a3,
+    a4,
+    a5
+  ] = LAYER_RATIOS.map(
+    r => (peak * r).toFixed(3)
+  );
+
   underlay.style.background = `
-    radial-gradient(ellipse 100% 80% at 20% 10%, rgba(var(--indigo), ${a1}) 0%, transparent 55%),
-    radial-gradient(ellipse 120% 90% at 85% 90%, rgba(var(--indigo), ${a2}) 0%, transparent 55%),
-    radial-gradient(ellipse 80% 70% at 50% 40%, rgba(var(--indigo), ${a3}) 0%, transparent 60%),
-    radial-gradient(ellipse 60% 100% at 10% 80%, rgba(var(--indigo), ${a4}) 0%, transparent 50%),
-    radial-gradient(ellipse 70% 60% at 90% 15%, rgba(var(--indigo), ${a5}) 0%, transparent 50%),
-    #050508`;
+    radial-gradient(
+      ellipse 100% 80% at 20% 10%,
+      rgba(var(--indigo), ${a1}) 0%,
+      transparent 55%
+    ),
+    radial-gradient(
+      ellipse 120% 90% at 85% 90%,
+      rgba(var(--indigo), ${a2}) 0%,
+      transparent 55%
+    ),
+    radial-gradient(
+      ellipse 80% 70% at 50% 40%,
+      rgba(var(--indigo), ${a3}) 0%,
+      transparent 60%
+    ),
+    radial-gradient(
+      ellipse 60% 100% at 10% 80%,
+      rgba(var(--indigo), ${a4}) 0%,
+      transparent 50%
+    ),
+    radial-gradient(
+      ellipse 70% 60% at 90% 15%,
+      rgba(var(--indigo), ${a5}) 0%,
+      transparent 50%
+    ),
+    #050508
+  `;
 }
-/**
- * Applies a preset's colors to the CSS custom properties every
- * accent-aware rule in style.css reads from, and repaints the
- * ambient underlay to match (same hue, current intensity level).
- */
-export function applyAccentPreset(preset, { persist = true } = {}) {
-  const root = document.documentElement;
 
-  root.style.setProperty('--indigo', preset.rgb);
-  root.style.setProperty('--cyan', preset.rgb);
-  root.style.setProperty('--accent-bg', `rgba(${preset.rgb}, 0.07)`);
-  root.style.setProperty('--accent-hover-bg', `rgba(${preset.rgb}, 0.11)`);
-  root.style.setProperty('--accent-ring', `rgba(${preset.rgb}, 0.42)`);
-  root.style.setProperty('--accent-border', `rgba(${preset.rgb}, 0.28)`);
-  root.style.setProperty('--accent', preset.rgb);
 
-  currentRgb = preset.rgb;
+// ============================================================
+// Apply arbitrary HEX accent
+// ============================================================
+
+export function applyAccent(
+  hex,
+  { persist = true } = {}
+) {
+  if (
+    typeof hex !== 'string' ||
+    !/^#[0-9a-fA-F]{6}$/.test(hex)
+  ) {
+    return false;
+  }
+
+  const normalized =
+    hex.toUpperCase();
+
+  const rgb =
+    rgbStringFromHex(normalized);
+
+  const root =
+    document.documentElement;
+
+  root.style.setProperty(
+    '--indigo',
+    rgb
+  );
+
+  root.style.setProperty(
+    '--cyan',
+    rgb
+  );
+
+  root.style.setProperty(
+    '--accent-bg',
+    `rgba(${rgb}, 0.07)`
+  );
+
+  root.style.setProperty(
+    '--accent-hover-bg',
+    `rgba(${rgb}, 0.11)`
+  );
+
+  root.style.setProperty(
+    '--accent-ring',
+    `rgba(${rgb}, 0.42)`
+  );
+
+  root.style.setProperty(
+    '--accent-border',
+    `rgba(${rgb}, 0.28)`
+  );
+
+  root.style.setProperty(
+    '--accent',
+    rgb
+  );
+
+  currentRgb = rgb;
+
   paintUnderlay();
 
   if (persist) {
-    safeSetStorage(ACCENT_STORAGE_KEY, preset.name);
+    safeSetStorage(
+      ACCENT_STORAGE_KEY,
+      normalized
+    );
   }
+
+  return true;
 }
 
-/**
- * Sets the ambient glow's intensity (0-4, see AMBIENT_LEVELS) without
- * touching the currently-selected accent color.
- */
-export function applyAmbientLevel(levelIndex, { persist = true } = {}) {
-  if (!Number.isInteger(levelIndex) || levelIndex < 0 || levelIndex >= AMBIENT_LEVELS.length) return;
+
+// ============================================================
+// Preset
+// ============================================================
+
+export function applyAccentPreset(
+  preset,
+  options = {}
+) {
+  if (!preset?.hex) {
+    return false;
+  }
+
+  return applyAccent(
+    preset.hex,
+    options
+  );
+}
+
+
+// ============================================================
+// Ambient
+// ============================================================
+
+export function applyAmbientLevel(
+  levelIndex,
+  { persist = true } = {}
+) {
+  if (
+    !Number.isInteger(levelIndex) ||
+    levelIndex < 0 ||
+    levelIndex >= AMBIENT_LEVELS.length
+  ) {
+    return false;
+  }
 
   currentLevel = levelIndex;
+
   paintUnderlay();
 
   if (persist) {
-    safeSetStorage(AMBIENT_STORAGE_KEY, String(levelIndex));
+    safeSetStorage(
+      AMBIENT_STORAGE_KEY,
+      String(levelIndex)
+    );
   }
+
+  return true;
 }
 
-/**
- * Call once at app bootstrap — reads any saved accent + ambient
- * level (or falls back to defaults) and applies both immediately.
- */
-export function initAccent() {
-  const savedName = getCurrentAccentName();
-  const preset = ACCENT_PRESETS.find(p => p.name === savedName) || ACCENT_PRESETS[0];
-  currentLevel = getCurrentAmbientLevel();
-  applyAccentPreset(preset, { persist: false });
-  return preset;
+
+// ============================================================
+// Initialization
+// ============================================================
+
+export function initAccent(
+  userAccentColor = null
+) {
+  currentLevel =
+    getCurrentAmbientLevel();
+
+  let hex = null;
+
+  // Server/database value has priority.
+  if (
+    typeof userAccentColor === 'string' &&
+    /^#[0-9a-fA-F]{6}$/.test(userAccentColor)
+  ) {
+    hex = userAccentColor.toUpperCase();
+  }
+
+  // Otherwise use localStorage.
+  if (!hex) {
+    hex = getCurrentAccentHex();
+  }
+
+  applyAccent(
+    hex,
+    { persist: false }
+  );
+
+  return hex;
+}
+
+
+export function getCurrentAmbientLevelValue() {
+  return AMBIENT_LEVELS[currentLevel];
 }

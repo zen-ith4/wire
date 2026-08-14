@@ -3,6 +3,7 @@ const VALID_COLUMNS = {
     bio: "bio TEXT",
     avatar_path: "avatar_path TEXT",
     banner_path: "banner_path TEXT",
+    accent_color: "accent_color TEXT DEFAULT NULL",
     is_active: "is_active INTEGER DEFAULT 1"
   },
 

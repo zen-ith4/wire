@@ -10,6 +10,7 @@ import { startAutoEnhance } from './ui-enhance.js';
 import { initDragDrop } from './dragdrop.js';
 import { initAccent } from './theme.js';
 import './profile-card.js';
+import './image-viewer.js';
 
 const NAV_ITEMS = [
   { view: 'files', label: 'My Files', icon: ICONS.folders },

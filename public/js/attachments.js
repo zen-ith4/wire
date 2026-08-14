@@ -27,9 +27,19 @@ export function renderAttachment(msg, scope) {
     return '';
   }
   if (isImage) {
+    // chat messages carry `username`/`user_id`, DM messages carry
+    // `sender_username`/`sender_id` — the image viewer needs the
+    // sender's identity (not the logged-in user's), so pass both through.
+    const username = msg.username || msg.sender_username || '';
+    const userId = msg.user_id ?? msg.sender_id ?? '';
     return `
     <div class="chat-attachment-image-wrap">
-      <div class="chat-attachment-image" id="${prefix}-${msg.id}">
+      <div class="chat-attachment-image" id="${prefix}-${msg.id}"
+        data-scope="${scope}"
+        data-filename="${escapeAttr(msg.attachment_name)}"
+        data-username="${escapeAttr(username)}"
+        data-user-id="${escapeAttr(userId)}"
+        onclick="window.openImageViewer(this)">
         <div class="loading-state">
           <div class="spin"></div>
         </div>

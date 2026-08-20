@@ -151,7 +151,7 @@ function fillProfile(user) {
 
   const sectionEl =
     document.getElementById(
-      'profile-section'
+      'sidebar-profile-section'
     );
 
   if (nameEl) {
@@ -160,10 +160,19 @@ function fillProfile(user) {
   }
 
   if (initialsEl) {
-    initialsEl.textContent =
+    const initialsSpan =
+      initialsEl.querySelector('.avatar-initials');
+
+    const initialsText =
       (user.username || '?')
         .charAt(0)
         .toUpperCase();
+
+    if (initialsSpan) {
+      initialsSpan.textContent = initialsText;
+    } else {
+      initialsEl.textContent = initialsText;
+    }
 
     // Tag the sidebar avatar with the current user's id so it's
     // included when refreshAvatarEverywhere() broadcasts an update
@@ -179,7 +188,15 @@ function fillProfile(user) {
 
   if (sectionEl) {
     sectionEl.title =
-      user.username;
+      `View ${user.username}'s profile`;
+
+    // My own PFP -> my own profile. Same read-only profile card
+    // every other avatar in the app opens (avatar.js's
+    // .clickable-avatar); profile-card.js already special-cases
+    // isSelf (hides the "Send Message" button) so this "just works".
+    sectionEl.onclick = () => {
+      window.openProfileCard?.(user.id);
+    };
   }
 }
 

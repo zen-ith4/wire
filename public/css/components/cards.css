@@ -5,9 +5,12 @@
    surface class since those are the only panel components the
    reference actually shows. */
 .card {
-  background:
-    radial-gradient(120% 120% at 50% -10%, rgba(var(--indigo), calc(var(--ambient-strength) * 0.18)) 0%, transparent 70%),
-    rgba(17,17,22,.82);
+  /* Flat translucent glass, no local gradient wash — see the note in
+     content.css. The single global ambient layer shows through the
+     card's backdrop-filter blur instead of the card painting its own
+     separate colored patch (which used to look like a bubble abruptly
+     cut off at the card's rounded corners). */
+  background:rgba(var(--ink2-rgb), .78);
   backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
   border:1px solid var(--border);
   border-radius:var(--radius-lg);

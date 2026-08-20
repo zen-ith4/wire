@@ -21,6 +21,12 @@
      this file keeps working unchanged. */
   --indigo:92,92,110;
   --cyan:92,92,110;
+  /* Secondary atmospheric hue, hue-shifted from --indigo (see
+     secondaryRgbString() in theme.js). Static fallback here matches
+     the "Neutral" accent's shift so the very first paint (before
+     theme.js runs) isn't a plain single-color wash; applyAccent()
+     recomputes and overwrites this for whichever accent is active. */
+  --indigo-2:96,88,118;
   --accent-bg:rgba(92,92,110,.07);
   --accent-hover-bg:rgba(92,92,110,.11);
   --accent-ring:rgba(92,92,110,.42);
@@ -40,4 +46,12 @@
   --ease-fast:120ms ease;
   --ease-smooth:180ms ease;
   --ambient-strength: 0.28;
+
+  /* RGB triplets of the flat panel colors above, for rgba() use on
+     glass surfaces (sidebar/topbar/cards) that need to stay
+     translucent so the global atmospheric background layer
+     continues visually behind them instead of being blocked. */
+  --ink-rgb:13,13,17;
+  --ink2-rgb:17,17,22;
+  --void-rgb:9,9,11;
 }

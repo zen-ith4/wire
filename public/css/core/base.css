@@ -1,29 +1,40 @@
 /* ---------- Ambient underlay ----------
-   The reference's soft glow behind the whole app — several large,
-   very low-opacity radial gradients in the single accent color,
-   sitting behind everything else via z-index. Fixed to the accent's
-   default value (see the --indigo comment in tokens.css); .bg/.bg-blob/
-   .bg-grid stay in index.html for backward compatibility but render
-   nothing on their own now — #ambient-underlay does the job. */
+   A single continuous atmospheric background layer, fixed behind the
+   whole app (z-index:0, sibling of .app which is z-index:1). This is
+   the *only* place decorative color should be drawn — sidebar/topbar/
+   content/cards used to each paint their own local gradient patch,
+   which is exactly what made the background look like separate
+   "bubbles" cut off by container edges; those are gone now (see
+   sidebar.css/content.css/cards.css) and every one of those surfaces
+   is translucent instead, so this one field reads through all of
+   them without a seam.
+   .bg/.bg-blob/.bg-grid stay in index.html for backward compatibility
+   but render nothing on their own — this element does the job. */
 .bg{position:fixed;inset:0;z-index:0;pointer-events:none;background:var(--void);}
 .bg-blob{display:none;}
 .bg-grid{display:none;}
 #ambient-underlay {
   position:fixed;inset:0;z-index:0;pointer-events:none;
-  /* Soft blur fuses the overlapping gradients below into one continuous
-     wash instead of several separately-edged glows; cheap since this is
-     a single static layer (no animation, painted once per accent/level
-     change), not a per-frame cost. Slightly lighter on small screens
-     via the media query at the bottom of this file. */
-  filter:blur(48px);
+  /* Wide, many-stop gradient falloffs (below, and mirrored in
+     theme.js's paintUnderlay) already avoid a hard ring where two
+     fields meet, so this blur only needs to take the last bit of
+     softness off — not do the heavy lifting itself. Cheap either
+     way: a single static layer, repainted only on accent/level
+     change, not a per-frame cost. */
+  filter:blur(36px);
+  /* screen (not the default alpha-stack "normal") on the five color
+     layers so overlaps brighten/blend like light sources meeting
+     instead of just stacking translucency into a muddier patch —
+     the base fill stays "normal" underneath everything else. */
+  background-blend-mode:screen,screen,screen,screen,screen,normal;
   background:
-    radial-gradient(ellipse 100% 80% at 20% 10%, rgba(var(--indigo), calc(var(--ambient-strength) * 1)) 0%, rgba(var(--indigo), calc(var(--ambient-strength) * 0.42)) 30%, transparent 62%),
-    radial-gradient(ellipse 120% 90% at 85% 90%, rgba(var(--indigo), calc(var(--ambient-strength) * 0.9)) 0%, rgba(var(--indigo), calc(var(--ambient-strength) * 0.38)) 30%, transparent 62%),
-    radial-gradient(ellipse 80% 70% at 50% 40%, rgba(var(--indigo), calc(var(--ambient-strength) * 0.5)) 0%, rgba(var(--indigo), calc(var(--ambient-strength) * 0.2)) 30%, transparent 65%),
-    radial-gradient(ellipse 60% 100% at 10% 80%, rgba(var(--indigo), calc(var(--ambient-strength) * 0.65)) 0%, rgba(var(--indigo), calc(var(--ambient-strength) * 0.27)) 30%, transparent 60%),
-    radial-gradient(ellipse 70% 60% at 90% 15%, rgba(var(--indigo), calc(var(--ambient-strength) * 0.6)) 0%, rgba(var(--indigo), calc(var(--ambient-strength) * 0.25)) 30%, transparent 58%),
+    radial-gradient(ellipse 140% 100% at 12% 0%, rgba(var(--indigo), calc(var(--ambient-strength) * 1)) 0%, rgba(var(--indigo), calc(var(--ambient-strength) * 0.5)) 26%, rgba(var(--indigo), calc(var(--ambient-strength) * 0.18)) 52%, transparent 78%),
+    radial-gradient(ellipse 150% 110% at 92% 100%, rgba(var(--indigo-2), calc(var(--ambient-strength) * 0.9)) 0%, rgba(var(--indigo-2), calc(var(--ambient-strength) * 0.45)) 26%, rgba(var(--indigo-2), calc(var(--ambient-strength) * 0.16)) 52%, transparent 78%),
+    radial-gradient(ellipse 120% 100% at 50% 42%, rgba(var(--indigo), calc(var(--ambient-strength) * 0.5)) 0%, rgba(var(--indigo), calc(var(--ambient-strength) * 0.22)) 30%, transparent 72%),
+    radial-gradient(ellipse 95% 105% at 4% 88%, rgba(var(--indigo-2), calc(var(--ambient-strength) * 0.65)) 0%, rgba(var(--indigo-2), calc(var(--ambient-strength) * 0.29)) 28%, transparent 68%),
+    radial-gradient(ellipse 90% 85% at 96% 8%, rgba(var(--indigo), calc(var(--ambient-strength) * 0.6)) 0%, rgba(var(--indigo), calc(var(--ambient-strength) * 0.27)) 28%, transparent 66%),
     #050508;
 }
 @media (max-width:720px){
-  #ambient-underlay{filter:blur(26px);}
+  #ambient-underlay{filter:blur(20px);}
 }

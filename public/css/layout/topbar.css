@@ -1,22 +1,13 @@
+/* No boxed background/border here on purpose — a transparent row
+   floating directly over the global ambient background (base.css).
+   There used to be a "my profile" pill living in this bar too; it's
+   gone (see sidebar.css/.sidebar-profile for where that moved, and
+   messages.css/.dm-peer-profile for the only liquid-glass profile
+   element that's left, inside an open DM). */
 .topbar {
   height:var(--topbar-height);min-height:var(--topbar-height);
   display:flex;align-items:center;justify-content:space-between;
   padding:0 24px;
-  border-bottom:1px solid var(--border);
-  background:
-    linear-gradient(90deg, rgba(var(--indigo), calc(var(--ambient-strength) * 0.3)) 0%, transparent 45%),
-    rgba(9,9,11,.82);
-  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
-  z-index:5;
+  position:relative;z-index:5;
 }
 .topbar-title{font-size:14px;font-weight:550;color:var(--text);letter-spacing:-0.01em;}
-.profile{display:flex;align-items:center;gap:9px;cursor:pointer;}
-.profile-avatar{
-  width:28px;height:28px;border-radius:50%;
-  background:var(--ink2);border:1px solid var(--border);
-  display:flex;align-items:center;justify-content:center;
-  font-size:11px;font-weight:550;color:var(--muted);
-  cursor:pointer;transition:border-color var(--ease-fast);
-}
-.profile-avatar:hover{border-color:#3A3A44;}
-.profile-name{display:none;} /* reference shows initials-only with a title tooltip, no separate name label */

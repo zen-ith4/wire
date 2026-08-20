@@ -1,6 +1,9 @@
 .content {
   flex:1;overflow-y:auto;min-height:0;padding:24px 28px 60px;position:relative;z-index:1;
-  background:radial-gradient(ellipse 70% 50% at 100% 0%, rgba(var(--indigo), calc(var(--ambient-strength) * 0.25)) 0%, transparent 55%);
+  /* No local background here on purpose — the global #ambient-underlay
+     layer shows straight through so the atmosphere continues
+     unbroken from the sidebar into the content area instead of each
+     drawing its own separate patch. */
 }
 /* Chat/Messages ("flush" routes, see router.js): no outer padding
    or scroll of their own — the messaging layout fills this

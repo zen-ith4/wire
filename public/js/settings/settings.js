@@ -514,6 +514,40 @@ export async function renderSettings() {
 
         </div>
 
+
+        <!-- ================================================== -->
+        <!-- Account -->
+        <!-- ================================================== -->
+
+        <div class="settings-section">
+
+          <div class="settings-section-title">
+            Account
+          </div>
+
+          <div class="settings-row">
+
+            <div>
+              <div class="settings-row-label">
+                Sign out
+              </div>
+
+              <div class="settings-row-sublabel">
+                End your session on this device
+              </div>
+            </div>
+
+            <button
+              type="button"
+              class="btn btn-sm btn-danger"
+              onclick="window.logout()">
+              Sign out
+            </button>
+
+          </div>
+
+        </div>
+
       </div>
     `;
 

@@ -107,6 +107,81 @@ function rgbStringFromHex(hex) {
 }
 
 
+// ============================================================
+// Secondary atmospheric hue
+//
+// The ambient background now reads as one continuous field lit from
+// two softly-different color temperatures (see paintUnderlay())
+// rather than a single-hue wash. Deriving the second color from the
+// active accent — instead of hardcoding e.g. "purple + blue" — means
+// it stays coherent no matter which accent preset the user picks,
+// including the desaturated "Neutral" default (low saturation in ==
+// low saturation out, so it doesn't invent color that isn't there).
+// ============================================================
+
+function rgbToHsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  let h = 0, s = 0;
+  const l = (max + min) / 2;
+
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+      case g: h = (b - r) / d + 2; break;
+      default: h = (r - g) / d + 4; break;
+    }
+    h /= 6;
+  }
+
+  return { h, s, l };
+}
+
+function hslToRgb(h, s, l) {
+  if (s === 0) {
+    const v = Math.round(l * 255);
+    return { r: v, g: v, b: v };
+  }
+
+  const hue2rgb = (p, q, t) => {
+    if (t < 0) t += 1;
+    if (t > 1) t -= 1;
+    if (t < 1 / 6) return p + (q - p) * 6 * t;
+    if (t < 1 / 2) return q;
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+    return p;
+  };
+
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+
+  return {
+    r: Math.round(hue2rgb(p, q, h + 1 / 3) * 255),
+    g: Math.round(hue2rgb(p, q, h) * 255),
+    b: Math.round(hue2rgb(p, q, h - 1 / 3) * 255)
+  };
+}
+
+// Hue-shift ~40° and lift lightness/saturation slightly, so the
+// second glow reads as a related-but-distinct light source (e.g.
+// Blue -> blue-violet, Emerald -> teal, Red -> orange) instead of a
+// duplicate of the accent.
+function secondaryRgbString(rgbString) {
+  const [r, g, b] = rgbString.split(',').map((n) => Number(n.trim()));
+  const { h, s, l } = rgbToHsl(r, g, b);
+
+  const shifted = hslToRgb(
+    (h + 0.11) % 1,
+    Math.min(1, s * 0.92 + 0.04),
+    Math.min(0.8, l * 1.12 + 0.04)
+  );
+
+  return `${shifted.r}, ${shifted.g}, ${shifted.b}`;
+}
+
+
 let currentRgb =
   ACCENT_PRESETS[0].rgb;
 
@@ -141,36 +216,44 @@ function paintUnderlay() {
     r => (peak * r).toFixed(3)
   );
 
+  // Five large, soft, overlapping fields (alternating the accent's
+  // two hues) instead of a handful of separate small "bubbles" —
+  // wide multi-stop falloffs mean neighboring fields fade into each
+  // other with no ring/edge where they meet, and the oversized third
+  // field bridges the middle of the viewport so the whole thing
+  // reads as one continuous atmosphere rather than four corner glows.
   underlay.style.background = `
     radial-gradient(
-      ellipse 100% 80% at 20% 10%,
+      ellipse 140% 100% at 12% 0%,
       rgba(var(--indigo), ${a1}) 0%,
-      rgba(var(--indigo), ${(peak * LAYER_RATIOS[0] * 0.42).toFixed(3)}) 30%,
-      transparent 62%
+      rgba(var(--indigo), ${(peak * LAYER_RATIOS[0] * 0.5).toFixed(3)}) 26%,
+      rgba(var(--indigo), ${(peak * LAYER_RATIOS[0] * 0.18).toFixed(3)}) 52%,
+      transparent 78%
     ),
     radial-gradient(
-      ellipse 120% 90% at 85% 90%,
-      rgba(var(--indigo), ${a2}) 0%,
-      rgba(var(--indigo), ${(peak * LAYER_RATIOS[1] * 0.42).toFixed(3)}) 30%,
-      transparent 62%
+      ellipse 150% 110% at 92% 100%,
+      rgba(var(--indigo-2), ${a2}) 0%,
+      rgba(var(--indigo-2), ${(peak * LAYER_RATIOS[1] * 0.5).toFixed(3)}) 26%,
+      rgba(var(--indigo-2), ${(peak * LAYER_RATIOS[1] * 0.18).toFixed(3)}) 52%,
+      transparent 78%
     ),
     radial-gradient(
-      ellipse 80% 70% at 50% 40%,
+      ellipse 120% 100% at 50% 42%,
       rgba(var(--indigo), ${a3}) 0%,
-      rgba(var(--indigo), ${(peak * LAYER_RATIOS[2] * 0.4).toFixed(3)}) 30%,
-      transparent 65%
+      rgba(var(--indigo), ${(peak * LAYER_RATIOS[2] * 0.45).toFixed(3)}) 30%,
+      transparent 72%
     ),
     radial-gradient(
-      ellipse 60% 100% at 10% 80%,
-      rgba(var(--indigo), ${a4}) 0%,
-      rgba(var(--indigo), ${(peak * LAYER_RATIOS[3] * 0.42).toFixed(3)}) 30%,
-      transparent 60%
+      ellipse 95% 105% at 4% 88%,
+      rgba(var(--indigo-2), ${a4}) 0%,
+      rgba(var(--indigo-2), ${(peak * LAYER_RATIOS[3] * 0.45).toFixed(3)}) 28%,
+      transparent 68%
     ),
     radial-gradient(
-      ellipse 70% 60% at 90% 15%,
+      ellipse 90% 85% at 96% 8%,
       rgba(var(--indigo), ${a5}) 0%,
-      rgba(var(--indigo), ${(peak * LAYER_RATIOS[4] * 0.42).toFixed(3)}) 30%,
-      transparent 58%
+      rgba(var(--indigo), ${(peak * LAYER_RATIOS[4] * 0.45).toFixed(3)}) 28%,
+      transparent 66%
     ),
     #050508
   `;
@@ -204,6 +287,11 @@ export function applyAccent(
   root.style.setProperty(
     '--indigo',
     rgb
+  );
+
+  root.style.setProperty(
+    '--indigo-2',
+    secondaryRgbString(rgb)
   );
 
   root.style.setProperty(

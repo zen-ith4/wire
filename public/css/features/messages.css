@@ -22,13 +22,11 @@
   display:flex;
   flex-direction:column;
   min-height:0;
-  background:
-    radial-gradient(
-      150% 100% at 0% 0%,
-      rgba(var(--indigo), calc(var(--ambient-strength) * 0.3)) 0%,
-      transparent 70%
-    ),
-    rgba(13,13,17,.85);
+  /* Flat translucent glass — no local gradient patch. The single
+     global ambient layer (base.css/#ambient-underlay) shows through
+     instead, so this panel doesn't look like its own separately-lit
+     "bubble" next to .dm-thread. */
+  background:rgba(var(--ink-rgb), .85);
   backdrop-filter:blur(12px);
   -webkit-backdrop-filter:blur(12px);
 }
@@ -205,17 +203,25 @@ input.conv-search-input:focus{
   min-width:0;
   min-height:0;
   height:100%;
-  background:
-    radial-gradient(
-      120% 100% at 50% -10%,
-      rgba(var(--indigo), calc(var(--ambient-strength) * 0.25)) 0%,
-      transparent 70%
-    ),
-    rgba(9,9,11,.82);
+  position:relative; /* anchors the floating .chat-top-bar (below) so it
+                         overlaps .chat-messages instead of sitting in
+                         normal flow above it */
+  /* Same reasoning as .dm-sidebar above — flat glass, no local
+     gradient of its own. */
+  background:rgba(var(--void-rgb), .82);
   backdrop-filter:blur(12px);
   -webkit-backdrop-filter:blur(12px);
 }
 
+/* Plain in-flow bar. Still used as-is by the Files breadcrumb view
+   (files.js, reuses .dm-thread + .chat-top-bar for its folder-path
+   header — unrelated to chat) and by the "New message" picker screen
+   (.dm-thread-header, dm.js/openNewDmPicker). Neither of those has a
+   .chat-messages stream under it, so this base rule stays a normal
+   non-floating row; only the DM peer header (dm.js) opts into the
+   floating glass treatment below via the extra .chat-header-glass
+   class — group chat keeps this plain in-flow bar too, since its
+   header has no other-user profile to give the treatment to. */
 .dm-thread-header,
 .chat-top-bar{
   display:flex;
@@ -227,11 +233,72 @@ input.conv-search-input:focus{
   background:transparent;
 }
 
+/* ---------- Liquid-glass floating header (open DM / chat only) ----------
+   Applied via the extra .chat-header-glass class (see dm.js)
+   so the plain .chat-top-bar rule above is left alone for its other,
+   non-chat reuse (Files breadcrumb bar). This turns the bar into ONE
+   floating glass surface anchored to .dm-thread/.chat-panel via
+   position:absolute, sitting OVER .chat-messages rather than above it
+   in normal flow. Because .chat-messages is no longer pushed down by
+   an in-flow header, the message stream starts at the very top of the
+   scroll container and visibly scrolls in behind/underneath this
+   glass as the thread scrolls — the glass's own rounded edge + blur
+   is what reads as the boundary, not a hard divider line. */
+.chat-top-bar.chat-header-glass{
+  position:absolute;
+  top:14px;
+  left:16px;
+  right:16px;
+  z-index:30;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:6px 14px 6px 6px;
+  border-radius:20px;
+  border-bottom:none;
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.06) 0%, rgba(255,255,255,.012) 60%),
+    rgba(var(--ink2-rgb), .40);
+  border:1px solid rgba(0, 0, 0, 0.08);
+  box-shadow:
+    inset 0 1px 0 rgba(0, 0, 0, 0.05),
+    0 6px 18px rgba(0,0,0,.18);
+  backdrop-filter:blur(20px) saturate(1.4);
+  -webkit-backdrop-filter:blur(20px) saturate(1.4);
+  transition:background var(--ease-fast),border-color var(--ease-fast);
+}
+
+/* The other person's avatar + name + status, grouped as ONE unit
+   inside the glass bar above (not a separate glass surface of its
+   own — see sidebar.css/.sidebar-profile for the deliberately-plain
+   "my profile" entry, which never gets this treatment). */
+.dm-peer-profile{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  min-width:0;
+  flex:1;
+  cursor:pointer;
+}
+.dm-peer-profile:hover .chat-top-name{
+  color:var(--text);
+  opacity:.82;
+}
+.dm-peer-meta{
+  display:flex;
+  flex-direction:column;
+  gap:1px;
+  min-width:0;
+}
+
 .chat-top-name{
   font-size:13.5px;
   font-weight:500;
   color:var(--text);
   letter-spacing:-0.01em;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
 }
 
 .chat-top-status{
@@ -258,6 +325,7 @@ input.conv-search-input:focus{
 
 .dm-back-btn{
   display:none;
+  flex-shrink:0;
 }
 
 .chat-messages{
@@ -269,6 +337,19 @@ input.conv-search-input:focus{
   gap:4px;
   margin-bottom:0;
   max-height:none;
+}
+
+/* Only when the floating glass header (above) is present: top padding
+   clears it at rest (14px offset + ~46px glass height + 16px
+   breathing room ≈ 76px). The stream still starts at the very top of
+   the scroll container (see .dm-thread/.chat-panel position:relative
+   above), so once scrolled, earlier messages travel up behind/
+   underneath the glass instead of stopping short of it. Scoped to
+   this sibling combinator, not the base rule, so the group chat's
+   plain in-flow header (chat.js, no .chat-header-glass) doesn't get
+   pushed down by phantom space it doesn't need. */
+.chat-top-bar.chat-header-glass + .chat-messages{
+  padding-top:76px;
 }
 
 .chat-msg{

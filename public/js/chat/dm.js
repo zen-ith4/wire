@@ -5,6 +5,7 @@ import {
   emptyState,
   loadingState,
   escapeHtml,
+  escapeAttr,
   formatDate,
   insertAtCursor
 } from '../core/utils.js';
@@ -298,12 +299,14 @@ window.openDmConversation = async function(peerId, username) {
 
   const thread = document.getElementById('dm-thread');
   thread.innerHTML = `
-    <div class="chat-top-bar">
+    <div class="chat-top-bar chat-header-glass">
       <button class="icon-btn dm-back-btn" title="Back" onclick="window.closeDmThreadMobile()">${ICONS.arrowLeft}</button>
-      ${avatarHtml(peerId, username, 'chat-top-avatar', false)}
-      <div>
-        <div class="chat-top-name">${escapeHtml(username)}</div>
-        <div class="chat-top-status${isUserOnline(peerId) ? ' online' : ''}" id="dm-thread-status">${isUserOnline(peerId) ? 'Online' : 'Offline'}</div>
+      <div class="dm-peer-profile" title="View ${escapeAttr(username)}'s profile" onclick="window.openProfileCard(${Number(peerId)})">
+        ${avatarHtml(peerId, username, 'chat-top-avatar', false)}
+        <div class="dm-peer-meta">
+          <div class="chat-top-name">${escapeHtml(username)}</div>
+          <div class="chat-top-status${isUserOnline(peerId) ? ' online' : ''}" id="dm-thread-status">${isUserOnline(peerId) ? 'Online' : 'Offline'}</div>
+        </div>
       </div>
     </div>
     <div class="chat-messages" id="dm-messages">${loadingState()}</div>

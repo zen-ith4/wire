@@ -240,7 +240,7 @@ function listUsersExcept(userId) {
       WHERE id != ?
       ORDER BY username
     `)
-    .all();
+    .all(userId);
 }
 
 

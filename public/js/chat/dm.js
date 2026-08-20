@@ -1,5 +1,5 @@
-import { api } from './api.js';
-import { ICONS } from './icons.js';
+import { api } from '../core/api.js';
+import { ICONS } from '../icons.js';
 import {
   showToast,
   emptyState,
@@ -7,22 +7,22 @@ import {
   escapeHtml,
   formatDate,
   insertAtCursor
-} from './utils.js';
+} from '../core/utils.js';
 import {
   progressBarHtml,
   showUploadProgress,
   updateUploadProgress,
   hideUploadProgress,
   xhrUpload
-} from './upload.js';
-import { renderAttachment, loadChatImage, mountAttachmentMedia } from './attachments.js';
-import { avatarHtml } from './avatar.js';
-import { getCurrentUser } from './auth.js';
-import { showConfirm } from './confirm.js';
-import { openEmojiPicker } from './emoji-picker.js';
+} from '../files/upload.js';
+import { renderAttachment, loadChatImage, mountAttachmentMedia } from '../media/attachments.js';
+import { avatarHtml } from '../ui/avatar.js';
+import { getCurrentUser } from '../core/auth.js';
+import { showConfirm } from '../ui/confirm.js';
+import { openEmojiPicker } from '../ui/emoji-picker.js';
 import { renderReactionsRow } from './reactions.js';
 import { createTypingEmitter, createTypingIndicator, wireTypingInput } from './typing.js';
-import { getSocket } from './socket.js';
+import { getSocket } from '../core/socket.js';
 import { isUserOnline, onPresenceChange } from './presence.js';
 
 // State

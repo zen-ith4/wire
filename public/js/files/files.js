@@ -1,6 +1,6 @@
-import { api, fetchBlob } from './api.js';
-import { ICONS, fileIcon } from './icons.js';
-import { showToast, loadingState, emptyState, formatBytes, formatDate, escapeHtml, escapeAttr } from './utils.js';
+import { api, fetchBlob } from '../core/api.js';
+import { ICONS, fileIcon } from '../icons.js';
+import { showToast, loadingState, emptyState, formatBytes, formatDate, escapeHtml, escapeAttr } from '../core/utils.js';
 import { 
   progressBarHtml, 
   showUploadProgress, 
@@ -8,7 +8,7 @@ import {
   hideUploadProgress,
   xhrUpload 
 } from './upload.js';
-import { openPreview } from './preview.js';
+import { openPreview } from '../media/preview.js';
 import { escapeJsString } from './share.js';
 
 let currentFolderId = null;

@@ -1,6 +1,6 @@
-import { api } from './api.js';
-import { ICONS } from './icons.js';
-import { showToast, emptyState, loadingState, escapeHtml, formatDate } from './utils.js';
+import { api } from '../core/api.js';
+import { ICONS } from '../icons.js';
+import { showToast, emptyState, loadingState, escapeHtml, formatDate } from '../core/utils.js';
 
 export async function renderWireguard() {
   const main = document.getElementById('content-area');

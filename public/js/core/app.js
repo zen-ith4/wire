@@ -9,17 +9,18 @@ import {
 
 import { showToast } from './utils.js';
 import { api } from './api.js';
-import { applyAvatar } from './avatar.js';
-import { ICONS } from './icons.js';
-import { refreshUnreadBadge } from './dm.js';
-import { startAutoEnhance } from './ui-enhance.js';
-import { initDragDrop } from './dragdrop.js';
+import { applyAvatar } from '../ui/avatar.js';
+import { ICONS } from '../icons.js';
+import { refreshUnreadBadge } from '../chat/dm.js';
+import { startAutoEnhance } from '../ui/ui-enhance.js';
+import { initDragDrop } from '../files/dragdrop.js';
 import {
   initAccent
-} from './theme.js';
+} from '../settings/theme.js';
+import { initSidebarResize } from '../ui/sidebar-resize.js';
 
-import './profile-card.js';
-import './image-viewer.js';
+import '../ui/profile-card.js';
+import '../media/image-viewer.js';
 
 
 const NAV_ITEMS = [
@@ -164,6 +165,12 @@ function fillProfile(user) {
         .charAt(0)
         .toUpperCase();
 
+    // Tag the sidebar avatar with the current user's id so it's
+    // included when refreshAvatarEverywhere() broadcasts an update
+    // after the user changes their profile photo — same mechanism
+    // avatarHtml() uses for every other avatar in the app.
+    initialsEl.dataset.avatarUser = user.id;
+
     applyAvatar(
       'profile-initials',
       user.id
@@ -240,6 +247,10 @@ async function bootstrap() {
   // Apply local theme immediately so the UI
   // doesn't start completely unstyled.
   initAccent();
+
+  // Restore saved sidebar width + wire up the drag handle, same idea:
+  // do it early so there's no flash of the default width.
+  initSidebarResize();
 
   const token =
     getToken();

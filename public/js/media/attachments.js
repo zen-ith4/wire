@@ -1,11 +1,11 @@
-import { fetchBlob } from './api.js';
-import { ICONS } from './icons.js';
+import { fetchBlob } from '../core/api.js';
+import { ICONS } from '../icons.js';
 import {
   showToast,
   escapeAttr,
   escapeHtml,
   formatBytes
-} from './utils.js';
+} from '../core/utils.js';
 
 import { isAudio, renderAudio } from './audio-player.js';
 import { isVideo, renderVideo } from './video-player.js';

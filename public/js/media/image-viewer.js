@@ -10,7 +10,7 @@
 // ============================================================
 
 import { downloadAttachment } from './attachments.js';
-import { avatarHtml } from './avatar.js';
+import { avatarHtml } from '../ui/avatar.js';
 
 // Cycle through a few sensible zoom levels rather than free-form
 // scaling — keeps the image centered and predictable to reset.

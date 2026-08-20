@@ -1,5 +1,36 @@
-import { ICONS } from './icons.js';
-import { escapeAttr, escapeHtml } from './utils.js';
+import { ICONS } from '../icons.js';
+import { escapeAttr, escapeHtml } from '../core/utils.js';
+
+// ======================================================
+// PLAYBACK STATE PERSISTENCE (across tab/view switches)
+//
+// renderChat()/renderDm() do a full teardown+rebuild of the message
+// list on every navigation - including navigating back to a view you
+// were already on - which destroys and recreates every <audio>
+// element from scratch. A freshly created <audio> element always
+// starts silent at 0:00, so without this, playback position (and
+// whether it was even playing) is lost any time the user switches
+// tabs and comes back.
+//
+// This module-level map is NOT part of the DOM, so it survives that
+// teardown untouched. It's kept up to date continuously via the
+// player's own existing playback event listeners (no separate
+// "about to be destroyed" hook is needed, since nothing calls back
+// into this module before the DOM wipe happens) and consulted once,
+// right after a player for the same message is (re)created, to
+// silently resume exactly where the user left off.
+// ======================================================
+
+const audioPlaybackState = new Map();
+
+function saveAudioState(messageId, audio, playing) {
+  audioPlaybackState.set(messageId, {
+    currentTime: audio.currentTime,
+    playing,
+    volume: audio.volume,
+    muted: audio.muted,
+  });
+}
 
 // ======================================================
 // AUDIO DETECTION
@@ -215,18 +246,39 @@ export function renderAudio(msg, scope, containerEl) {
     const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
     audio.currentTime = ratio * duration;
     updateProgressFill();
+    saveAudioState(messageId, audio, intendedPlaying);
   };
 
   // ====================================================
   // PLAY / PAUSE
+  //
+  // `intendedPlaying` tracks what the user actually asked for, and is
+  // ONLY ever set from that explicit action (the button here, or a
+  // successful auto-resume below) - never from the audio element's
+  // own `play`/`pause` events. Those events are not a reliable proxy
+  // for user intent: tearing down this player's parent via
+  // innerHTML (which renderChat()/renderDm() do on every navigation,
+  // including navigating back to a tab you were already on) makes
+  // the browser implicitly fire a `pause` event on the element as
+  // part of removing it. An earlier version of this fix saved that
+  // teardown-triggered pause as if the user had paused it, which
+  // silently overwrote "was playing" with false a split second before
+  // it was needed - position restored correctly, but it never
+  // resumed. Driving the saved "playing" flag off `intendedPlaying`
+  // instead keeps it immune to that.
   // ====================================================
+
+  let intendedPlaying = false;
 
   playBtn.addEventListener('click', () => {
     if (audio.paused) {
+      intendedPlaying = true;
       audio.play().catch((error) => {
+        intendedPlaying = false;
         console.error('Audio playback failed:', error);
       });
     } else {
+      intendedPlaying = false;
       audio.pause();
     }
   });
@@ -234,11 +286,13 @@ export function renderAudio(msg, scope, containerEl) {
   audio.addEventListener('play', () => {
     iconPlay.style.display = 'none';
     iconPause.style.display = 'block';
+    saveAudioState(messageId, audio, intendedPlaying);
   });
 
   audio.addEventListener('pause', () => {
     iconPlay.style.display = 'block';
     iconPause.style.display = 'none';
+    saveAudioState(messageId, audio, intendedPlaying);
   });
 
   // ====================================================
@@ -247,12 +301,39 @@ export function renderAudio(msg, scope, containerEl) {
 
   setLoading(true);
 
+  // Restore playback position/volume left over from before this
+  // player was torn down and rebuilt (see audioPlaybackState above).
+  // Applied once metadata is available, since currentTime can't be
+  // set meaningfully before the browser knows the track's duration.
+  const savedState = audioPlaybackState.get(messageId);
+
   audio.addEventListener('loadedmetadata', () => {
     setLoading(false);
     const duration = audio.duration;
     if (Number.isFinite(duration) && duration > 0) {
       durationEl.textContent = formatTime(duration);
     }
+
+    if (savedState) {
+      audio.currentTime = Math.min(savedState.currentTime, duration || savedState.currentTime);
+      audio.volume = savedState.volume;
+      audio.muted = savedState.muted;
+      volumeSlider.value = savedState.muted ? 0 : savedState.volume;
+      updateVolumeSliderFill();
+      currentTimeEl.textContent = formatTime(audio.currentTime);
+
+      if (savedState.playing) {
+        intendedPlaying = true;
+        audio.play().catch((error) => {
+          // Autoplay can be blocked by the browser (e.g. no recent
+          // enough user gesture) - fall back to leaving it
+          // paused-but-seeked-to-position rather than erroring out.
+          intendedPlaying = false;
+          console.error('Audio resume failed:', error);
+        });
+      }
+    }
+
     updateProgressFill();
   });
 
@@ -274,11 +355,16 @@ export function renderAudio(msg, scope, containerEl) {
   audio.addEventListener('timeupdate', () => {
     currentTimeEl.textContent = formatTime(audio.currentTime);
     updateProgressFill();
+    saveAudioState(messageId, audio, intendedPlaying);
   });
 
   audio.addEventListener('ended', () => {
     iconPlay.style.display = 'block';
     iconPause.style.display = 'none';
+    intendedPlaying = false;
+    // A track that finished naturally shouldn't "resume" mid-playback
+    // from near its end the next time this player is rebuilt.
+    audioPlaybackState.delete(messageId);
   });
 
   // ====================================================
@@ -316,6 +402,7 @@ export function renderAudio(msg, scope, containerEl) {
     audio.volume = volume;
     audio.muted = volume === 0;
     updateVolumeSliderFill();
+    saveAudioState(messageId, audio, intendedPlaying);
   });
 
   volumeBtn.addEventListener('click', () => {
@@ -325,6 +412,7 @@ export function renderAudio(msg, scope, containerEl) {
     }
     volumeSlider.value = audio.muted ? 0 : audio.volume;
     updateVolumeSliderFill();
+    saveAudioState(messageId, audio, intendedPlaying);
   });
 
   // ====================================================

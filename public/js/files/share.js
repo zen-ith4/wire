@@ -1,7 +1,7 @@
-import { api } from './api.js';
-import { ICONS } from './icons.js';
-import { showToast, emptyState, loadingState, escapeHtml, escapeAttr } from './utils.js';
-import { showConfirm } from './confirm.js';
+import { api } from '../core/api.js';
+import { ICONS } from '../icons.js';
+import { showToast, emptyState, loadingState, escapeHtml, escapeAttr } from '../core/utils.js';
+import { showConfirm } from '../ui/confirm.js';
 import { renderFiles } from './files.js';
 
 // Helper: escape a string for safe embedding inside a single-quoted JavaScript string

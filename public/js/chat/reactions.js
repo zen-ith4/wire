@@ -8,11 +8,11 @@
 // chat.js and dm.js).
 // ============================================================
 
-import { api } from './api.js';
-import { escapeHtml, showToast } from './utils.js';
-import { getCurrentUser } from './auth.js';
-import { openEmojiPicker } from './emoji-picker.js';
-import { ICONS } from './icons.js';
+import { api } from '../core/api.js';
+import { escapeHtml, showToast } from '../core/utils.js';
+import { getCurrentUser } from '../core/auth.js';
+import { openEmojiPicker } from '../ui/emoji-picker.js';
+import { ICONS } from '../icons.js';
 
 const MESSAGES_CONTAINER_ID = {
   chat: 'chat-messages',

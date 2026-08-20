@@ -1,4 +1,5 @@
-import { ICONS } from './icons.js';
+import { ICONS } from '../icons.js';
+import { downloadAttachment } from './attachments.js';
 
 // ======================================================
 // VIDEO DETECTION
@@ -126,6 +127,14 @@ export function renderVideo(msg, scope, containerEl) {
         </div>
 
         <button
+          class="video-ctrl-btn download-btn"
+          title="Download"
+          type="button"
+        >
+          ${ICONS.download}
+        </button>
+
+        <button
           class="video-ctrl-btn fullscreen-btn"
           title="Fullscreen"
           type="button"
@@ -160,6 +169,7 @@ export function renderVideo(msg, scope, containerEl) {
   const volumeSlider = playerEl.querySelector('.volume-slider');
   const muteBtn = playerEl.querySelector('.mute-btn');
   const fullscreenBtn = playerEl.querySelector('.fullscreen-btn');
+  const downloadBtn = playerEl.querySelector('.download-btn');
 
   // ====================================================
   // HELPERS
@@ -256,6 +266,18 @@ export function renderVideo(msg, scope, containerEl) {
     }
     volumeSlider.value = video.muted ? 0 : video.volume;
     updateVolumeFill();
+  });
+
+  // ====================================================
+  // DOWNLOAD
+  // ====================================================
+  // Reuses the same downloadAttachment() the image download button
+  // calls (attachments.js) — downloads the original file via the
+  // existing /api/{chat,dm}/attachments/:id?download=1 endpoint,
+  // not the in-player video source, and doesn't touch playback.
+  downloadBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    downloadAttachment(msg.id, msg.attachment_name, scope);
   });
 
   // ====================================================

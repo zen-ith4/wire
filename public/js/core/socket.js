@@ -1,6 +1,6 @@
 import { getCurrentUser } from './auth.js';
 
-import { addChatMessage, removeChatMessage, showChatTyping, hideChatTyping, clearAllChatTyping } from './chat.js';
+import { addChatMessage, removeChatMessage, showChatTyping, hideChatTyping, clearAllChatTyping } from '../chat/chat.js';
 
 import {
   addDmMessage,
@@ -11,10 +11,11 @@ import {
   showDmTyping,
   hideDmTyping,
   clearAllDmTyping,
-} from './dm.js';
+} from '../chat/dm.js';
 
-import { setOnlineSnapshot, setUserOnline, setUserOffline } from './presence.js';
-import { updateMessageReactions } from './reactions.js';
+import { setOnlineSnapshot, setUserOnline, setUserOffline } from '../chat/presence.js';
+import { updateMessageReactions } from '../chat/reactions.js';
+import { refreshAvatarEverywhere, refreshBannerEverywhere } from '../ui/avatar.js';
 
 let socket = null;
 
@@ -80,6 +81,10 @@ export function initSocket(token) {
   socket.on('dm-reaction-update', ({ message_id, reactions }) => {
     updateMessageReactions('dm', message_id, reactions);
   });
+
+  socket.on('profile:avatar-updated', handleProfileAvatarUpdated);
+
+  socket.on('profile:banner-updated', handleProfileBannerUpdated);
 
   return socket;
 }
@@ -172,4 +177,24 @@ function handleDmTyping({ sender_id, sender_username }) {
 
 function handleDmStopTyping({ sender_id }) {
   hideDmTyping(sender_id);
+}
+
+// The server broadcasts these to every connected client (see
+// services/socket.service.js), including every socket the uploading
+// user themselves has open. That last part is intentional, not just
+// tolerated: settings.js's own refreshAvatarEverywhere() call after a
+// successful upload only ever reaches the tab that made the request -
+// if that same account is also open in a second tab/device (or just
+// has the DM list / a profile card showing their own avatar open
+// elsewhere), nothing local updates that view. Re-running the refresh
+// unconditionally here is what actually covers those cases; the one
+// downside is a single harmless extra fetch in the originating tab
+// (invalidateAvatar()/invalidateBanner() + a re-fetch of something
+// already fresh), which is cheap and one-shot, not a repeating cost.
+function handleProfileAvatarUpdated({ user_id }) {
+  refreshAvatarEverywhere(user_id);
+}
+
+function handleProfileBannerUpdated({ user_id }) {
+  refreshBannerEverywhere(user_id);
 }

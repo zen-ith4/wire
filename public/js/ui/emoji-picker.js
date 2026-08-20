@@ -17,7 +17,7 @@
 // what lets one picker serve two very different features.
 // ============================================================
 
-import { CATEGORIES, EMOJI, SKIN_TONE_MODIFIERS } from './vendor/emoji-data.js';
+import { CATEGORIES, EMOJI, SKIN_TONE_MODIFIERS } from '../vendor/emoji-data.js';
 
 const RECENTS_KEY = 'filehub-emoji-recents';
 const SKIN_KEY = 'filehub-emoji-skin';

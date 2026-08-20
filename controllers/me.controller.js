@@ -16,6 +16,10 @@ const {
 
 const { comparePassword } = require('../utils/password');
 const { AVATAR_MIME_MAP } = require('../config/multer');
+const {
+  emitProfileAvatarUpdate,
+  emitProfileBannerUpdate,
+} = require('../services/socket.service');
 
 
 // GET /me
@@ -164,6 +168,8 @@ function uploadAvatar(req, res) {
     req.file.filename
   );
 
+  emitProfileAvatarUpdate(req.user.id);
+
   res.json({
     success: true
   });
@@ -196,6 +202,8 @@ function removeAvatar(req, res) {
     req.user.id,
     null
   );
+
+  emitProfileAvatarUpdate(req.user.id);
 
   res.json({
     success: true
@@ -282,6 +290,8 @@ function uploadBanner(req, res) {
     req.file.filename
   );
 
+  emitProfileBannerUpdate(req.user.id);
+
   res.json({
     success: true
   });
@@ -314,6 +324,8 @@ function removeBanner(req, res) {
     req.user.id,
     null
   );
+
+  emitProfileBannerUpdate(req.user.id);
 
   res.json({
     success: true

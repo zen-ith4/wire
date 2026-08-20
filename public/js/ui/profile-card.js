@@ -8,12 +8,12 @@
 // has that flow (settings.js -> window.saveBio).
 // ============================================================
 
-import { api } from './api.js';
-import { escapeHtml, escapeAttr, loadingState, formatBytes } from './utils.js';
+import { api } from '../core/api.js';
+import { escapeHtml, escapeAttr, loadingState, formatBytes } from '../core/utils.js';
 import { avatarHtml, bannerHtml } from './avatar.js';
-import { isUserOnline, onPresenceChange } from './presence.js';
-import { getCurrentUser } from './auth.js';
-import { navigate } from './router.js';
+import { isUserOnline, onPresenceChange } from '../chat/presence.js';
+import { getCurrentUser } from '../core/auth.js';
+import { navigate } from '../core/router.js';
 
 let openProfileId = null; // which user the open card belongs to, or null if closed
 

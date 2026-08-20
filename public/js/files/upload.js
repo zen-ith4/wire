@@ -1,4 +1,4 @@
-import { getToken } from './auth.js';
+import { getToken } from '../core/auth.js';
 
 
 export function progressBarHtml(id) {

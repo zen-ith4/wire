@@ -1,11 +1,11 @@
-import { api } from './api.js';
-import { ICONS } from './icons.js';
+import { api } from '../core/api.js';
+import { ICONS } from '../icons.js';
 import {
   showToast,
   loadingState,
   emptyState,
   escapeHtml
-} from './utils.js';
+} from '../core/utils.js';
 
 import {
   progressBarHtml,
@@ -13,21 +13,21 @@ import {
   updateUploadProgress,
   hideUploadProgress,
   xhrUpload
-} from './upload.js';
+} from '../files/upload.js';
 
 import {
   getCurrentUser,
   setCurrentUser
-} from './auth.js';
+} from '../core/auth.js';
 
 import {
   applyAvatar,
-  invalidateAvatar,
   bannerHtml,
-  invalidateBanner
-} from './avatar.js';
+  refreshAvatarEverywhere,
+  refreshBannerEverywhere
+} from '../ui/avatar.js';
 
-import { showConfirm } from './confirm.js';
+import { showConfirm } from '../ui/confirm.js';
 
 import {
   ACCENT_PRESETS,
@@ -204,40 +204,27 @@ export async function renderSettings() {
               </div>
             </div>
 
-            <div
-              class="custom-accent-control"
-              style="
-                display:flex;
-                align-items:center;
-                gap:10px;
-              ">
+            <div class="custom-accent-control">
 
-              <input
-                type="color"
-                id="custom-accent-color"
-                value="${escapeHtml(currentAccentHex)}"
-                title="Choose custom accent color"
-                style="
-                  width:44px;
-                  height:36px;
-                  padding:3px;
-                  cursor:pointer;
-                  border-radius:8px;
-                "
-              />
+              <span
+                class="custom-accent-swatch-wrap"
+                title="Choose custom accent color">
+                <input
+                  type="color"
+                  id="custom-accent-color"
+                  value="${escapeHtml(currentAccentHex)}"
+                  title="Choose custom accent color"
+                />
+              </span>
 
               <input
                 type="text"
                 id="custom-accent-hex"
+                class="custom-accent-hex-input"
                 value="${escapeHtml(currentAccentHex)}"
                 maxlength="7"
                 placeholder="#5F84AD"
                 spellcheck="false"
-                style="
-                  width:100px;
-                  font-family:monospace;
-                  text-transform:uppercase;
-                "
               />
 
               <button
@@ -350,7 +337,8 @@ export async function renderSettings() {
 
               <div
                 class="settings-avatar-big"
-                id="settings-avatar">
+                id="settings-avatar"
+                data-avatar-user="${Number(me.id)}">
 
                 ${escapeHtml(
                   (me.username || '?')
@@ -1048,23 +1036,12 @@ window.uploadAvatar = async function () {
       getCurrentUser();
 
     if (user?.id) {
-      invalidateAvatar(user.id);
+      refreshAvatarEverywhere(user.id);
     }
 
     input.value = '';
 
     await renderSettings();
-
-    const refreshedUser =
-      getCurrentUser();
-
-    if (refreshedUser?.id) {
-
-      applyAvatar(
-        'profile-initials',
-        refreshedUser.id
-      );
-    }
 
     showToast(
       'Photo updated',
@@ -1120,21 +1097,10 @@ window.removeAvatar = async function () {
       getCurrentUser();
 
     if (user?.id) {
-      invalidateAvatar(user.id);
+      refreshAvatarEverywhere(user.id);
     }
 
     await renderSettings();
-
-    const refreshedUser =
-      getCurrentUser();
-
-    if (refreshedUser?.id) {
-
-      applyAvatar(
-        'profile-initials',
-        refreshedUser.id
-      );
-    }
 
     showToast(
       'Photo removed',
@@ -1238,7 +1204,7 @@ window.uploadBanner = async function () {
       getCurrentUser();
 
     if (user?.id) {
-      invalidateBanner(user.id);
+      refreshBannerEverywhere(user.id);
     }
 
     input.value = '';
@@ -1299,7 +1265,7 @@ window.removeBanner = async function () {
       getCurrentUser();
 
     if (user?.id) {
-      invalidateBanner(user.id);
+      refreshBannerEverywhere(user.id);
     }
 
     await renderSettings();

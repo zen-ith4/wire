@@ -1,17 +1,17 @@
 import { getCurrentUser } from './auth.js';
 
-import { renderFiles } from './files.js';
-import { renderChat } from './chat.js';
-import { renderDm } from './dm.js';
-import { renderSettings } from './settings.js';
+import { renderFiles } from '../files/files.js';
+import { renderChat } from '../chat/chat.js';
+import { renderDm } from '../chat/dm.js';
+import { renderSettings } from '../settings/settings.js';
 
 import {
   renderAdminUsers,
   renderAdminFolders,
   renderAdminPermissions,
-} from './admin.js';
+} from '../settings/admin.js';
 
-import { renderWireguard } from './wireguard.js';
+import { renderWireguard } from '../wireguard/wireguard.js';
 
 const routes = {
   files: {

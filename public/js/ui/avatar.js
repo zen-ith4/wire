@@ -1,6 +1,6 @@
-import { fetchBlob } from './api.js';
-import { escapeHtml } from './utils.js';
-import { isUserOnline, onPresenceChange } from './presence.js';
+import { fetchBlob } from '../core/api.js';
+import { escapeHtml } from '../core/utils.js';
+import { isUserOnline, onPresenceChange } from '../chat/presence.js';
 
 // ---------------------------------------------------------------------------
 // Media Cache & Pending Requests
@@ -30,6 +30,36 @@ const cacheInsertOrder = [];      // cache key insertion order (most recent at e
 // ---------------------------------------------------------------------------
 
 /**
+ * Registers `signal` as an interested party in a shared, in-flight
+ * fetch. Multiple callers (different elements, or the same element
+ * reloaded multiple times) can all be waiting on the *same* underlying
+ * request via the dedup path below. The shared request must only be
+ * cancelled once every last one of them has dropped out - not the
+ * instant any single one does - otherwise one element's own routine
+ * reentry-abort (e.g. applyAvatar() called again for that element)
+ * kills the network request for every other consumer still relying on
+ * its result, even ones that never asked to cancel anything.
+ */
+function registerWaiter(entry, signal) {
+  if (!signal) return;
+
+  entry.waiters++;
+
+  const drop = () => {
+    entry.waiters--;
+    if (entry.waiters <= 0) {
+      entry.controller.abort();
+    }
+  };
+
+  if (signal.aborted) {
+    drop();
+  } else {
+    signal.addEventListener('abort', drop, { once: true });
+  }
+}
+
+/**
  * Shared fetch/cache implementation for both avatars and banners.
  */
 async function getMediaUrl(kind, userId, endpoint, signal = null) {
@@ -40,22 +70,23 @@ async function getMediaUrl(kind, userId, endpoint, signal = null) {
     return mediaCache[key];
   }
 
-  // 2. Deduplicate in-flight requests – return the existing promise
+  // 2. Deduplicate in-flight requests - return the existing promise.
+  // Register as a waiter so THIS caller's abort can't unilaterally
+  // cancel a fetch other callers still need (see registerWaiter above).
   if (pendingFetches.has(key)) {
-    return pendingFetches.get(key).promise;
+    const entry = pendingFetches.get(key);
+    registerWaiter(entry, signal);
+    return entry.promise;
   }
 
-  // 3. Create an AbortController for this request (or use external signal)
+  // 3. First caller for this key: create the shared AbortController
+  // that the actual network request will use, and register this
+  // caller as its first waiter.
   const controller = new AbortController();
-  if (signal) {
-    if (signal.aborted) {
-      controller.abort();
-    } else {
-      signal.addEventListener('abort', () => controller.abort(), { once: true });
-    }
-  }
+  const entry = { controller, waiters: 0, promise: null };
+  registerWaiter(entry, signal);
 
-  const promise = (async () => {
+  entry.promise = (async () => {
     try {
       const blob = await fetchBlob(endpoint, {
         signal: controller.signal
@@ -75,6 +106,24 @@ async function getMediaUrl(kind, userId, endpoint, signal = null) {
       updateCacheOrder(key);
       return objectURL;
     } catch (e) {
+      // An aborted request (element removed/re-requested mid-flight,
+      // page navigated away, etc.) is not an answer about whether the
+      // media exists - it's just an incomplete attempt. Caching `null`
+      // for it would permanently "poison" this key: every future
+      // getAvatarUrl()/getBannerUrl() call hits the `key in mediaCache`
+      // check up top and returns the cached `null` without ever
+      // fetching again, until something happens to call
+      // invalidateAvatar()/invalidateBanner() for this exact user.
+      // That's a real path to a stuck old/blank avatar that only a
+      // manual page refresh (which rebuilds the whole module and its
+      // cache from scratch) would clear. Only genuine failures - the
+      // media doesn't exist (404), or is corrupt - should be cached,
+      // so we don't hammer the server with repeat requests for
+      // something that's actually just missing.
+      if (e.name === 'AbortError') {
+        return null;
+      }
+
       // Store null in cache to avoid repeated requests for missing media
       mediaCache[key] = null;
       updateCacheOrder(key);
@@ -84,8 +133,8 @@ async function getMediaUrl(kind, userId, endpoint, signal = null) {
     }
   })();
 
-  pendingFetches.set(key, { promise, controller });
-  return promise;
+  pendingFetches.set(key, entry);
+  return entry.promise;
 }
 
 /**
@@ -243,6 +292,7 @@ export function avatarHtml(userId, username, className = 'chat-avatar', showPres
   <div
     class="${className} clickable-avatar"
     id="${id}"
+    data-avatar-user="${Number(userId)}"
     onclick="event.stopPropagation(); window.openProfileCard(${Number(userId)})"
     title="View profile">
     <span class="avatar-initials">${escapeHtml(initials)}</span>${dotHtml}
@@ -261,7 +311,35 @@ export function bannerHtml(userId, className = 'profile-banner') {
     applyBanner(id, userId);
   });
 
-  return `<div class="${className}" id="${id}"></div>`;
+  return `<div class="${className}" id="${id}" data-banner-user="${Number(userId)}"></div>`;
+}
+
+/**
+ * Refresh a user's avatar everywhere it's currently mounted in the DOM
+ * (sidebar, chat/DM messages, DM list, profile card, settings, etc.),
+ * without a page reload.
+ *
+ * Rather than manually patching individual known elements (which misses
+ * any avatar rendered elsewhere in the UI at the time of the update),
+ * this drops the cached copy and re-applies to every element tagged
+ * with data-avatar-user for this user — the same broadcast pattern
+ * already used for presence dots.
+ */
+export function refreshAvatarEverywhere(userId) {
+  invalidateAvatar(userId);
+  document
+    .querySelectorAll(`[data-avatar-user="${userId}"]`)
+    .forEach(el => applyAvatar(el.id, userId));
+}
+
+/**
+ * Same as refreshAvatarEverywhere(), for banners.
+ */
+export function refreshBannerEverywhere(userId) {
+  invalidateBanner(userId);
+  document
+    .querySelectorAll(`[data-banner-user="${userId}"]`)
+    .forEach(el => applyBanner(el.id, userId));
 }
 
 // Registered once for the lifetime of the app (not per avatar — see

@@ -145,27 +145,32 @@ function paintUnderlay() {
     radial-gradient(
       ellipse 100% 80% at 20% 10%,
       rgba(var(--indigo), ${a1}) 0%,
-      transparent 55%
+      rgba(var(--indigo), ${(peak * LAYER_RATIOS[0] * 0.42).toFixed(3)}) 30%,
+      transparent 62%
     ),
     radial-gradient(
       ellipse 120% 90% at 85% 90%,
       rgba(var(--indigo), ${a2}) 0%,
-      transparent 55%
+      rgba(var(--indigo), ${(peak * LAYER_RATIOS[1] * 0.42).toFixed(3)}) 30%,
+      transparent 62%
     ),
     radial-gradient(
       ellipse 80% 70% at 50% 40%,
       rgba(var(--indigo), ${a3}) 0%,
-      transparent 60%
+      rgba(var(--indigo), ${(peak * LAYER_RATIOS[2] * 0.4).toFixed(3)}) 30%,
+      transparent 65%
     ),
     radial-gradient(
       ellipse 60% 100% at 10% 80%,
       rgba(var(--indigo), ${a4}) 0%,
-      transparent 50%
+      rgba(var(--indigo), ${(peak * LAYER_RATIOS[3] * 0.42).toFixed(3)}) 30%,
+      transparent 60%
     ),
     radial-gradient(
       ellipse 70% 60% at 90% 15%,
       rgba(var(--indigo), ${a5}) 0%,
-      transparent 50%
+      rgba(var(--indigo), ${(peak * LAYER_RATIOS[4] * 0.42).toFixed(3)}) 30%,
+      transparent 58%
     ),
     #050508
   `;

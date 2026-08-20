@@ -1,9 +1,9 @@
-import { api } from './api.js';
-import { ICONS } from './icons.js';
-import { showToast, emptyState, loadingState, escapeHtml } from './utils.js';
-import { getCurrentUser } from './auth.js';   // to protect self-deletion
-import { showConfirm } from './confirm.js';
-import { avatarHtml } from './avatar.js';
+import { api } from '../core/api.js';
+import { ICONS } from '../icons.js';
+import { showToast, emptyState, loadingState, escapeHtml } from '../core/utils.js';
+import { getCurrentUser } from '../core/auth.js';   // to protect self-deletion
+import { showConfirm } from '../ui/confirm.js';
+import { avatarHtml } from '../ui/avatar.js';
 
 /* ==================== USERS ==================== */
 export async function renderAdminUsers() {

@@ -5,10 +5,10 @@
 // (Group Chat / DM / My Files) and forwards dropped files to the
 // existing upload functions.
 // ============================================================
-import { uploadChatFiles } from './chat.js';
-import { uploadDmFiles, getDmActivePeer } from './dm.js';
+import { uploadChatFiles } from '../chat/chat.js';
+import { uploadDmFiles, getDmActivePeer } from '../chat/dm.js';
 import { uploadFilesMultiple, canUploadToCurrentFolder } from './files.js';
-import { showToast } from './utils.js';
+import { showToast } from '../core/utils.js';
 
 let dragDepth = 0;
 let overlay = null;

@@ -1,6 +1,6 @@
-import { fetchBlob } from './api.js';
-import { ICONS } from './icons.js';
-import { loadingState, emptyState, escapeHtml, escapeAttr } from './utils.js';
+import { fetchBlob } from '../core/api.js';
+import { ICONS } from '../icons.js';
+import { loadingState, emptyState, escapeHtml, escapeAttr } from '../core/utils.js';
 
 // State to manage concurrency
 let abortController = null;

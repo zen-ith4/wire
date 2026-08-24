@@ -1,0 +1,166 @@
+/* ================================================================
+   Wire — connect screen stylesheet.
+   This file intentionally mirrors, value-for-value, the design
+   tokens and component patterns already used by the website in:
+     public/css/core/tokens.css   (colors, radius, easing)
+     public/css/core/reset.css    (base font/body)
+     public/css/core/base.css     (#ambient-underlay treatment)
+     public/css/pages/login.css   (.login-wrap/.login-card/.login-mark)
+     public/css/components/buttons.css (.btn/.btn-primary)
+     public/css/components/forms.css   (input[type=text])
+     public/css/components/cards.css   (.card glass surface)
+     public/css/components/common.css  (.spin/.loading-state)
+     public/css/components/badges.css  (status colors)
+   It is a local copy (not an @import of those files) because this
+   page is loaded from file:// before any server is connected, so it
+   can't reach the remote site's /css/ assets — but every value below
+   is kept in sync with the source files above.
+   ================================================================ */
+
+:root{
+  --void:#09090B;
+  --ink:#0D0D11;
+  --ink2:#111116;
+  --card:#111116;
+  --hover:#18181D;
+  --border:#232329;
+  --border-soft:#1c1c22;
+  --text:#F5F5F7;
+  --muted:#9A9AA3;
+  --muted2:#6B6B75;
+
+  --indigo:92,92,110;
+  --indigo-2:96,88,118;
+  --accent-bg:rgba(92,92,110,.07);
+  --accent-hover-bg:rgba(92,92,110,.11);
+  --accent-ring:rgba(92,92,110,.42);
+  --accent-border:rgba(92,92,110,.28);
+
+  --green:120,170,140;
+  --red:198,120,120;
+
+  --radius:8px;
+  --radius-lg:12px;
+
+  --ease-fast:120ms ease;
+  --ease-smooth:180ms ease;
+  --ambient-strength:0.28;
+
+  --ink2-rgb:17,17,22;
+}
+
+*{box-sizing:border-box;}
+[hidden]{display:none !important;}
+html,body{height:100%;}
+body{
+  margin:0;
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+  font-weight:450;
+  background:#060608;
+  color:var(--text);
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+  letter-spacing:-0.01em;
+  line-height:1.5;
+  -webkit-user-select:none;
+  user-select:none;
+}
+::-webkit-scrollbar{width:5px;height:5px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:#2A2A33;border-radius:10px;}
+::selection{background:var(--accent-ring);color:#fff;}
+:focus-visible{outline:2px solid var(--accent-ring);outline-offset:2px;border-radius:3px;}
+
+/* ---------- Ambient underlay (same layer as the main app shell) ---------- */
+.bg{position:fixed;inset:0;z-index:0;pointer-events:none;background:var(--void);}
+#ambient-underlay{
+  position:fixed;inset:0;z-index:0;pointer-events:none;
+  filter:blur(36px);
+  background-blend-mode:screen,screen,screen,screen,screen,normal;
+  background:
+    radial-gradient(ellipse 140% 100% at 12% 0%, rgba(var(--indigo), calc(var(--ambient-strength) * 1)) 0%, rgba(var(--indigo), calc(var(--ambient-strength) * 0.5)) 26%, rgba(var(--indigo), calc(var(--ambient-strength) * 0.18)) 52%, transparent 78%),
+    radial-gradient(ellipse 150% 110% at 92% 100%, rgba(var(--indigo-2), calc(var(--ambient-strength) * 0.9)) 0%, rgba(var(--indigo-2), calc(var(--ambient-strength) * 0.45)) 26%, rgba(var(--indigo-2), calc(var(--ambient-strength) * 0.16)) 52%, transparent 78%),
+    radial-gradient(ellipse 120% 100% at 50% 42%, rgba(var(--indigo), calc(var(--ambient-strength) * 0.5)) 0%, rgba(var(--indigo), calc(var(--ambient-strength) * 0.22)) 30%, transparent 72%),
+    radial-gradient(ellipse 95% 105% at 4% 88%, rgba(var(--indigo-2), calc(var(--ambient-strength) * 0.65)) 0%, rgba(var(--indigo-2), calc(var(--ambient-strength) * 0.29)) 28%, transparent 68%),
+    radial-gradient(ellipse 90% 85% at 96% 8%, rgba(var(--indigo), calc(var(--ambient-strength) * 0.6)) 0%, rgba(var(--indigo), calc(var(--ambient-strength) * 0.27)) 28%, transparent 66%),
+    #050508;
+}
+
+/* ---------- Login-style card (matches public/css/pages/login.css) ---------- */
+.login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;position:relative;z-index:1;padding:20px;}
+.login-card{width:100%;max-width:380px;text-align:center;}
+
+.card{
+  background:rgba(var(--ink2-rgb), .78);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  border:1px solid var(--border);
+  border-radius:var(--radius-lg);
+  padding:24px;
+}
+
+.login-mark{
+  width:56px;height:56px;border-radius:var(--radius-lg);margin:0 auto 18px;
+  display:flex;align-items:center;justify-content:center;
+  background:rgb(var(--indigo));overflow:hidden;
+}
+.login-mark img{width:100%;height:100%;object-fit:cover;display:block;}
+
+.login-card h1{font-size:18px;margin:0 0 6px;font-weight:600;color:var(--text);}
+.login-card p.hint{font-size:13px;color:var(--muted);margin:0 0 24px;}
+.login-card form{display:flex;flex-direction:column;gap:10px;}
+
+/* ---------- Input (matches public/css/components/forms.css) ---------- */
+input[type="text"]{
+  width:100%;
+  background:var(--ink2);border:1px solid var(--border);color:var(--text);
+  padding:11px 14px;border-radius:var(--radius);font-size:13px;font-family:inherit;
+  outline:none;transition:border-color var(--ease-fast),background var(--ease-fast),box-shadow var(--ease-fast);
+  -webkit-user-select:text;user-select:text;
+}
+input[type="text"]:focus{
+  border-color:var(--accent-border);background:#14141A;box-shadow:0 0 0 3px var(--accent-bg);
+}
+input[type="text"]::placeholder{color:var(--muted2);}
+
+/* ---------- Button (matches public/css/components/buttons.css) ---------- */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  width:100%;padding:11px;border-radius:var(--radius);font-size:13.5px;font-weight:550;
+  background:var(--ink2);border:1px solid var(--border);color:var(--text);
+  cursor:pointer;transition:all var(--ease-fast);font-family:inherit;
+}
+.btn-primary{background:rgb(var(--indigo));border-color:rgb(var(--indigo));color:#fff;}
+.btn-primary:hover{background:#87879C;border-color:#87879C;}
+.btn-primary:disabled{opacity:.6;cursor:default;background:rgb(var(--indigo));border-color:rgb(var(--indigo));}
+
+/* ---------- Status area (spinner from common.css, colors from badges.css) ---------- */
+.status-area{min-height:16px;margin-top:14px;}
+
+.status-line{
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  font-size:12.5px;padding:9px 10px;border-radius:var(--radius);
+}
+.status-line.info{color:var(--muted);}
+.status-line.error{background:rgba(var(--red),.12);border:1px solid rgba(var(--red),.3);color:#D6A3A3;}
+.status-line.ok{background:rgba(var(--green),.12);border:1px solid rgba(var(--green),.3);color:#A9C7B4;}
+
+.spin{width:14px;height:14px;border-radius:50%;border:2px solid var(--border);border-top-color:#fff;animation:spin .7s linear infinite;flex-shrink:0;}
+.status-line.info .spin{border-top-color:rgb(var(--indigo));}
+@keyframes spin{to{transform:rotate(360deg);}}
+
+/* ---------- Forget-server link ---------- */
+.forget-link{
+  display:block;width:100%;margin-top:14px;background:none;border:none;
+  color:var(--muted);font-size:12px;cursor:pointer;text-decoration:underline;
+  padding:4px;font-family:inherit;
+}
+.forget-link:hover{color:var(--text);}
+
+/* ---------- Responsive: keep the card comfortable at small window sizes ---------- */
+@media (max-width:420px){
+  .login-card{max-width:100%;}
+  .card{padding:20px;}
+}
+@media (max-height:480px){
+  .login-wrap{align-items:flex-start;padding-top:32px;}
+}

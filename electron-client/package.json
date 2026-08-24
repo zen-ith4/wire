@@ -1,0 +1,72 @@
+{
+  "name": "wire-desktop-client",
+  "version": "1.0.0",
+  "description": "Wire desktop client (Electron). Connects to a remote Wire server chosen by the user. Contains NO backend/server code.",
+  "main": "main.js",
+  "author": "Wire",
+  "homepage": "https://example.com/wire",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis --linux AppImage deb",
+    "dist:win": "electron-builder --win nsis",
+    "dist:linux": "electron-builder --linux AppImage deb",
+    "dist:dir": "electron-builder --dir"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.wire.desktopclient",
+    "productName": "Wire",
+    "asar": true,
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*",
+      "build/icon.png",
+      "package.json",
+      "!**/*.map"
+    ],
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Wire",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico"
+    },
+    "linux": {
+      "icon": "build/icons",
+      "category": "Network",
+      "target": [
+        { "target": "AppImage", "arch": ["x64"] },
+        { "target": "deb", "arch": ["x64"] }
+      ],
+      "maintainer": "Wire",
+      "synopsis": "Wire desktop client"
+    },
+    "deb": {
+      "depends": ["libnotify4", "libnss3", "libxss1", "libxtst6", "xdg-utils"],
+      "artifactName": "${productName}-${version}.${ext}"
+    }
+  }
+}

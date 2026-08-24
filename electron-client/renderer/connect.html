@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self';" />
+  <title>Wire — Connect to Server</title>
+
+  <!-- Same typography as the main app (see public/index.html) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;550;600;700&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="connect.css" />
+</head>
+<body>
+  <!-- Same ambient-underlay + .bg treatment as the main app shell -->
+  <div id="ambient-underlay"></div>
+  <div class="bg"></div>
+
+  <div class="login-wrap">
+    <div class="card login-card">
+      <div class="login-mark">
+        <img src="img/logo.jpg" alt="Wire" />
+      </div>
+
+      <h1 id="connect-title">Connect to Server</h1>
+      <p class="hint" id="connect-hint">Enter your Wire server address to continue</p>
+
+      <form id="connect-form" novalidate>
+        <input
+          type="text"
+          id="address"
+          name="address"
+          placeholder="192.168.1.100:3000 or https://example.com"
+          autocomplete="off"
+          autocorrect="off"
+          autocapitalize="off"
+          spellcheck="false"
+        />
+        <button type="submit" class="btn btn-primary" id="connect-btn">
+          <span id="connect-btn-label">Connect</span>
+        </button>
+      </form>
+
+      <div id="status-area" class="status-area"></div>
+
+      <button type="button" id="forget-btn" class="forget-link" hidden>Forget saved server</button>
+    </div>
+  </div>
+
+  <script src="connect.js"></script>
+</body>
+</html>

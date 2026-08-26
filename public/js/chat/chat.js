@@ -8,13 +8,6 @@ import {
   formatDate,
   insertAtCursor
 } from '../core/utils.js';
-import {
-  progressBarHtml,
-  showUploadProgress,
-  updateUploadProgress,
-  hideUploadProgress,
-  xhrUpload
-} from '../files/upload.js';
 import { renderAttachment, loadChatImage, mountAttachmentMedia } from '../media/attachments.js';
 import { avatarHtml } from '../ui/avatar.js';
 import { getCurrentUser } from '../core/auth.js';
@@ -23,11 +16,13 @@ import { openEmojiPicker } from '../ui/emoji-picker.js';
 import { renderReactionsRow } from './reactions.js';
 import { createTypingEmitter, createTypingIndicator, wireTypingInput } from './typing.js';
 import { getSocket } from '../core/socket.js';
+import { createComposer } from './composer.js';
 
 let chatRenderGeneration = 0;
 let chatOldest = null;
 let chatHasMore = true;
 const renderedChatIds = new Set();
+let chatComposer = null;
 
 // ---------- Typing indicator ----------
 function renderChatTyping(usernames) {
@@ -77,14 +72,16 @@ export async function renderChat() {
         </div>
       </div>
       <div class="chat-messages" id="chat-messages">${loadingState()}</div>
-      ${progressBarHtml('chat-upload-progress')}
       <div class="typing-indicator" id="chat-typing-indicator"></div>
-      <div class="chat-input-area">
-        <input type="file" id="chat-file-input" class="hidden" onchange="window.sendChatFile()">
-        <button class="btn btn-ghost btn-icon" title="Attach a file" onclick="document.getElementById('chat-file-input').click()">${ICONS.paperclip}</button>
-        <button class="btn btn-ghost btn-icon emoji-trigger" title="Emoji" onclick="window.openChatEmojiPicker(this)">${ICONS.emoji}</button>
-        <input type="text" id="chat-input" placeholder="Type a message…" onkeypress="if(event.key==='Enter') window.sendChat()">
-        <button onclick="window.sendChat()" class="btn-send" title="Send message">${ICONS.send}</button>
+      <div class="composer-wrapper">
+        <div class="attach-staging" id="chat-attach-staging"></div>
+        <div class="chat-input-area">
+          <input type="file" id="chat-file-input" class="hidden" multiple>
+          <button class="btn btn-ghost btn-icon" title="Attach a file" onclick="document.getElementById('chat-file-input').click()">${ICONS.paperclip}</button>
+          <button class="btn btn-ghost btn-icon emoji-trigger" title="Emoji" onclick="window.openChatEmojiPicker(this)">${ICONS.emoji}</button>
+          <textarea id="chat-input" rows="1" placeholder="Type a message…"></textarea>
+          <button onclick="window.sendChat()" class="btn-send" title="Send message (Enter) — Shift+Enter for a new line">${ICONS.send}</button>
+        </div>
       </div>
     </div>
   `;
@@ -92,7 +89,18 @@ export async function renderChat() {
   chatHasMore = true;
   renderedChatIds.clear();
   chatTypingIndicator.clearAll();
-  wirePasteImage('chat-input', window.sendChatFile);
+
+  chatComposer = createComposer({
+    inputId: 'chat-input',
+    fileInputId: 'chat-file-input',
+    stagingId: 'chat-attach-staging',
+    sendTextUrl: '/api/chat/messages',
+    uploadUrl: '/api/chat/upload',
+    buildTextBody: (content) => ({ content }),
+    onMessage: (message) => addChatMessage(message),
+    typingEmitter: chatTypingEmitter,
+  });
+  wirePasteImage('chat-input', (file) => chatComposer.addFiles([file]));
   wireTypingInput('chat-input', chatTypingEmitter);
   await loadRecentChat(generation);
 }
@@ -254,70 +262,19 @@ window.deleteChatMessage = async function(id) {
   }
 };
 
-window.sendChat = async function() {
-  const input = document.getElementById('chat-input');
-  const content = input.value.trim();
-  if (!content) return;
-  chatTypingEmitter.stop();
-  try {
-    const message = await api('/api/chat/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content }),
-    });
-    input.value = '';
-    addChatMessage(message);
-  } catch (e) {
-    showToast(e.message, 'error');
-  }
+window.sendChat = function() {
+  if (chatComposer) chatComposer.send();
 };
 
-// Core single-file upload, shared by the file-picker/paste flow
-// (window.sendChatFile) and the drag-and-drop flow (uploadChatFiles).
-async function uploadOneChatFile(file, caption, progressLabel) {
-  const form = new FormData();
-  form.append('file', file, file.name);
-  if (caption) form.append('content', caption);
-  showUploadProgress('chat-upload-progress', progressLabel || file.name);
-  try {
-    const message = await xhrUpload('/api/chat/upload', form, (pct) => updateUploadProgress('chat-upload-progress', pct));
-    addChatMessage(message);
-    return true;
-  } catch (e) {
-    showToast(`${file.name}: ${e.message}`, 'error');
-    return false;
-  } finally {
-    hideUploadProgress('chat-upload-progress');
-  }
+// Drag-and-drop entry point (see dragdrop.js). Stages the dropped
+// files above the input (same as picking/pasting) rather than
+// uploading them immediately — the user reviews/captions/removes
+// before anything is actually sent.
+export function uploadChatFiles(fileList) {
+  if (chatComposer) chatComposer.addFiles(fileList);
 }
 
-window.sendChatFile = async function(pastedFile) {
-  const input = document.getElementById('chat-file-input');
-  const file = pastedFile || input.files[0];
-  if (!file) return;
-  const captionInput = document.getElementById('chat-input');
-  const caption = captionInput ? captionInput.value.trim() : '';
-  chatTypingEmitter.stop();
-  const ok = await uploadOneChatFile(file, caption);
-  if (ok) {
-    if (!pastedFile) input.value = '';
-    if (captionInput) captionInput.value = '';   // پاک کردن کپشن بعد از آپلود موفق
-  }
-};
-
-// Drag-and-drop entry point (see dragdrop.js). Unlike the file-picker
-// flow, drops can carry multiple files at once — each becomes its own
-// message, uploaded sequentially through the same endpoint/progress
-// bar so "(2/5)" style progress stays meaningful with one shared bar.
-export async function uploadChatFiles(fileList) {
-  const files = Array.from(fileList);
-  for (let i = 0; i < files.length; i++) {
-    const label = files.length > 1 ? `${files[i].name} (${i + 1}/${files.length})` : files[i].name;
-    await uploadOneChatFile(files[i], '', label);
-  }
-}
-
-function wirePasteImage(inputId, sendFn) {
+function wirePasteImage(inputId, addFn) {
   const input = document.getElementById(inputId);
   if (!input) return;
   input.addEventListener('paste', (e) => {
@@ -330,7 +287,7 @@ function wirePasteImage(inputId, sendFn) {
         if (!blob) continue;
         const ext = (item.type.split('/')[1] || 'png').replace('jpeg', 'jpg');
         const file = new File([blob], `pasted-${Date.now()}.${ext}`, { type: item.type });
-        sendFn(file);
+        addFn(file);
         return;
       }
     }

@@ -179,13 +179,19 @@ const bannerUpload = createUploader({
 const chatUpload = createUploader({
   dir: constants.CHAT_UPLOAD_DIR,
   maxSizeMB: constants.CHAT_UPLOAD_MAX_MB,
-  mimeMap: CHAT_MIME_MAP,
+  // No mimeMap/fileFilter here on purpose: chat attachments accept
+  // any reasonable file type (same as the general "My Files" uploader
+  // below), not just the small predefined list in CHAT_MIME_MAP.
+  // CHAT_MIME_MAP is still used elsewhere (see chat.controller.js) to
+  // *label* a known extension's mime type when the browser-supplied
+  // one is missing/generic — it's just no longer used to *reject*
+  // uploads here.
 });
 
 const dmUpload = createUploader({
   dir: constants.DM_UPLOAD_DIR,
   maxSizeMB: constants.DM_UPLOAD_MAX_MB,
-  mimeMap: CHAT_MIME_MAP,
+  // Same relaxed policy as chatUpload above — see comment there.
 });
 
 const fileUpload = multer({

@@ -9,13 +9,6 @@ import {
   formatDate,
   insertAtCursor
 } from '../core/utils.js';
-import {
-  progressBarHtml,
-  showUploadProgress,
-  updateUploadProgress,
-  hideUploadProgress,
-  xhrUpload
-} from '../files/upload.js';
 import { renderAttachment, loadChatImage, mountAttachmentMedia } from '../media/attachments.js';
 import { avatarHtml } from '../ui/avatar.js';
 import { getCurrentUser } from '../core/auth.js';
@@ -25,12 +18,14 @@ import { renderReactionsRow } from './reactions.js';
 import { createTypingEmitter, createTypingIndicator, wireTypingInput } from './typing.js';
 import { getSocket } from '../core/socket.js';
 import { isUserOnline, onPresenceChange } from './presence.js';
+import { createComposer } from './composer.js';
 
 // State
 let dmActivePeer = null;
 let dmOldest = null;
 let dmHasMore = true;
 const renderedDmIds = new Set();
+let dmComposer = null;
 
 // Cache for conversation data (used for delegated clicks)
 let dmConvMap = new Map();
@@ -310,18 +305,32 @@ window.openDmConversation = async function(peerId, username) {
       </div>
     </div>
     <div class="chat-messages" id="dm-messages">${loadingState()}</div>
-    ${progressBarHtml('dm-upload-progress')}
     <div class="typing-indicator" id="dm-typing-indicator"></div>
-    <div class="chat-input-area">
-      <input type="file" id="dm-file-input" class="hidden" onchange="window.sendDmFile()">
-      <button class="btn btn-ghost btn-icon" title="Attach" onclick="document.getElementById('dm-file-input').click()">${ICONS.paperclip}</button>
-      <button class="btn btn-ghost btn-icon emoji-trigger" title="Emoji" onclick="window.openDmEmojiPicker(this)">${ICONS.emoji}</button>
-      <input type="text" id="dm-input" placeholder="Message ${escapeHtml(username)}…" onkeypress="if(event.key==='Enter') window.sendDm()">
-      <button onclick="window.sendDm()" class="btn-send" title="Send message">${ICONS.send}</button>
+    <div class="composer-wrapper">
+      <div class="attach-staging" id="dm-attach-staging"></div>
+      <div class="chat-input-area">
+        <input type="file" id="dm-file-input" class="hidden" multiple>
+        <button class="btn btn-ghost btn-icon" title="Attach" onclick="document.getElementById('dm-file-input').click()">${ICONS.paperclip}</button>
+        <button class="btn btn-ghost btn-icon emoji-trigger" title="Emoji" onclick="window.openDmEmojiPicker(this)">${ICONS.emoji}</button>
+        <textarea id="dm-input" rows="1" placeholder="Message ${escapeHtml(username)}…"></textarea>
+        <button onclick="window.sendDm()" class="btn-send" title="Send message (Enter) — Shift+Enter for a new line">${ICONS.send}</button>
+      </div>
     </div>
   `;
 
-  wirePasteImage('dm-input', window.sendDmFile);
+  dmComposer = createComposer({
+    inputId: 'dm-input',
+    fileInputId: 'dm-file-input',
+    stagingId: 'dm-attach-staging',
+    sendTextUrl: '/api/dm/messages',
+    uploadUrl: '/api/dm/upload',
+    buildTextBody: (content) => ({ recipient_id: dmActivePeer.id, content }),
+    buildFormExtra: (form) => form.append('recipient_id', dmActivePeer.id),
+    onMessage: (message) => addDmMessage(message),
+    typingEmitter: dmTypingEmitter,
+    canSend: () => !!dmActivePeer,
+  });
+  wirePasteImage('dm-input', (file) => dmComposer.addFiles([file]));
   wireTypingInput('dm-input', dmTypingEmitter);
   await loadRecentDm();
 
@@ -508,82 +517,25 @@ window.deleteDmMessage = async function(id) {
 };
 
 // ---------- Send message ----------
-window.sendDm = async function() {
-  if (!dmActivePeer) return;
-  const input = document.getElementById('dm-input');
-  const content = input.value.trim();
-  if (!content) return;
-  dmTypingEmitter.stop();
-  try {
-    const message = await api('/api/dm/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ recipient_id: dmActivePeer.id, content }),
-    });
-    input.value = '';
-    addDmMessage(message);
-  } catch (e) {
-    showToast(e.message, 'error');
-  }
-};
-
-// ---------- Send file ----------
-// Core single-file upload, shared by the file-picker/paste flow
-// (window.sendDmFile) and the drag-and-drop flow (uploadDmFiles).
-async function uploadOneDmFile(file, caption, progressLabel) {
-  const form = new FormData();
-  form.append('file', file, file.name);
-  form.append('recipient_id', dmActivePeer.id);
-  if (caption) form.append('content', caption);
-
-  showUploadProgress('dm-upload-progress', progressLabel || file.name);
-  try {
-    const message = await xhrUpload('/api/dm/upload', form, (pct) => updateUploadProgress('dm-upload-progress', pct));
-    addDmMessage(message);
-    return true;
-  } catch (e) {
-    showToast(`${file.name}: ${e.message}`, 'error');
-    return false;
-  } finally {
-    hideUploadProgress('dm-upload-progress');
-  }
-}
-
-window.sendDmFile = async function(pastedFile) {
-  if (!dmActivePeer) return;
-  const input = document.getElementById('dm-file-input');
-  const file = pastedFile || input.files[0];
-  if (!file) return;
-
-  const captionInput = document.getElementById('dm-input');
-  const caption = captionInput ? captionInput.value.trim() : '';
-
-  dmTypingEmitter.stop();
-  const ok = await uploadOneDmFile(file, caption);
-  if (ok) {
-    if (!pastedFile) input.value = '';
-    if (captionInput) captionInput.value = '';
-  }
+window.sendDm = function() {
+  if (dmComposer) dmComposer.send();
 };
 
 // Drag-and-drop entry point (see dragdrop.js). Requires an open
 // conversation — dragdrop.js already checks getDmActivePeer() before
 // calling this, but the guard is repeated here since this is exported
-// and could be called directly.
-export async function uploadDmFiles(fileList) {
-  if (!dmActivePeer) {
+// and could be called directly. Stages the dropped files above the
+// input (same as picking/pasting) rather than uploading immediately.
+export function uploadDmFiles(fileList) {
+  if (!dmActivePeer || !dmComposer) {
     showToast('Open a conversation first', 'error');
     return;
   }
-  const files = Array.from(fileList);
-  for (let i = 0; i < files.length; i++) {
-    const label = files.length > 1 ? `${files[i].name} (${i + 1}/${files.length})` : files[i].name;
-    await uploadOneDmFile(files[i], '', label);
-  }
+  dmComposer.addFiles(fileList);
 }
 
 // ---------- Paste image helper (duplicated from chat.js – ideally move to utils) ----------
-function wirePasteImage(inputId, sendFn) {
+function wirePasteImage(inputId, addFn) {
   const input = document.getElementById(inputId);
   if (!input) return;
   input.addEventListener('paste', (e) => {
@@ -596,7 +548,7 @@ function wirePasteImage(inputId, sendFn) {
         if (!blob) continue;
         const ext = (item.type.split('/')[1] || 'png').replace('jpeg', 'jpg');
         const file = new File([blob], `pasted-${Date.now()}.${ext}`, { type: item.type });
-        sendFn(file);
+        addFn(file);
         return;
       }
     }

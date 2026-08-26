@@ -454,9 +454,55 @@ input.conv-search-input:focus{
   line-height:1.45;
   letter-spacing:-0.01em;
   font-weight:440;
-  word-break:break-word;
-  width:fit-content;
-  max-width:70%;
+  /* Preserve real newlines (Shift+Enter) exactly as the user typed
+     them, while still letting long runs of text wrap normally. */ 
+  white-space:pre-wrap;
+  /* overflow-wrap (standard) instead of the legacy word-break:break-word
+     alias: only breaks a word when it genuinely can't fit, without
+     forcing a break at every opportunity. */
+  overflow-wrap:break-word;
+  word-break:normal;
+  /*
+   * NOTE: deliberately NOT using width:fit-content here.
+   * .chat-bubble is a flex item of `.chat-msg.own` (flex-direction:
+   * row-reverse). Combining width:fit-content with a wrapping
+   * property (word-break/overflow-wrap) on a flex item inside a
+   * *reversed* flex container hits a real, reproducible Chromium
+   * layout bug: the browser's fit-content/intrinsic-size pass
+   * collapses toward min-content, so short messages like "hi there"
+   * or "salam khobi" would render one word per line even though the
+   * bubble had plenty of room. `flex:0 0 auto` below already gives
+   * this item its natural (shrink-to-fit) width without invoking
+   * that broken code path — confirmed via isolated repro before/after.
+   *
+   * ALSO deliberately not capping max-width here with a percentage.
+   * .chat-bubble's containing block (.chat-msg-content) is itself
+   * shrink-to-fit (auto width, no stretch) all the way up to
+   * `.chat-msg`, which is ALSO shrink-to-fit (own messages use
+   * align-self:flex-end, not stretch). A percentage max-width here
+   * would resolve against that indeterminate/circular chain, and
+   * Chromium mis-resolves it badly for short text (reproducibly
+   * clamps to ~50-100px regardless of available space — same
+   * underlying bug family as above). `.chat-msg{max-width:75%}` a few
+   * rules above already caps the *whole row* against `.chat-messages`
+   * — a proper definite-width ancestor — so it alone is what actually
+   * limits how wide a message gets; this element doesn't need its own
+   * (broken) copy of that constraint.
+   */
+  /*
+   * max-width:100% (not a smaller percentage like the old 70%):
+   * resolves against this element's own immediate parent
+   * (.chat-msg-content) without walking further up an indeterminate
+   * shrink-to-fit chain — see the width:fit-content note above for
+   * why a smaller percentage caused Chromium to mis-resolve this
+   * badly (reproducibly clamped short messages to ~50-100px). 100%
+   * still does real work: it's what makes very long unbroken text
+   * (e.g. a URL with no spaces) actually wrap/shrink to fit instead
+   * of overflowing past the message column, while `.chat-msg{max-width:75%}`
+   * (relative to `.chat-messages`, a proper definite-width ancestor)
+   * is what caps how wide the row gets in the first place.
+   */
+  max-width:100%;
   flex:0 0 auto;
 }
 
@@ -673,30 +719,63 @@ input.conv-search-input:focus{
   padding-top:2px;
 }
 
+/* ---------- Composer wrapper (holds staging + input area as one surface) ---------- */
+
+.composer-wrapper{
+  margin:0 20px 20px;
+  background:#14141A;
+  border:1px solid var(--border);
+  border-radius:var(--radius-lg);
+  display:flex;
+  flex-direction:column;
+  flex-shrink:0;
+  transition:border-color var(--ease-fast);
+}
+
+.composer-wrapper:focus-within{
+  border-color:var(--accent-border);
+}
+
 /* ---------- Chat input ---------- */
 
 .chat-input-area{
-  padding:12px 20px 16px;
-  border-top:1px solid var(--border);
+  padding:10px 16px;
+  border-top:none;
   display:flex;
   gap:10px;
-  align-items:center;
+  align-items:flex-end;
   flex-shrink:0;
   background:transparent;
 }
 
-.chat-input-area input[type=text]{
+.chat-input-area input[type=text],
+.chat-input-area textarea{
   flex:1;
   min-width:0;
-  padding:10px 15px;
-  border-radius:var(--radius-lg);
+  padding:10px 0;
+  border-radius:0;
   font-size:13.5px;
   font-weight:440;
   line-height:1.5;
+  background:transparent !important;
+  border:none;
+  outline:none;
 }
 
-.chat-input-area input[type=text]:focus{
-  background:#14141A;
+.chat-input-area textarea{
+  /* Auto-grow is handled in JS (composer.js) by setting an explicit
+     height up to a max, so the resize handle would be redundant and
+     the textarea starts at a single input-like line. */
+  resize:none;
+  max-height:140px;
+  min-height:41px;
+  font-family:inherit;
+  white-space:pre-wrap;
+}
+
+.chat-input-area input[type=text]:focus,
+.chat-input-area textarea:focus{
+  background:transparent !important;
 }
 
 .chat-input-area > .btn{
@@ -707,6 +786,121 @@ input.conv-search-input:focus{
   width:40px;
   height:40px;
   border-radius:var(--radius);
+}
+
+.chat-input-area .btn-send{
+  flex-shrink:0;
+}
+
+/* ---------- Attachment staging (files picked/dropped/pasted but not yet sent) ---------- */
+
+.attach-staging{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  padding:0 16px;
+  max-height:0;
+  overflow:hidden;
+  transition:
+    max-height .15s ease,
+    padding .15s ease;
+}
+
+.attach-staging.active{
+  max-height:220px;
+  padding:16px 16px 0;
+  overflow-y:auto;
+}
+
+.attach-chip{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  background:var(--ink2);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  padding:6px 8px 6px 10px;
+  max-width:220px;
+  position:relative;
+  overflow:hidden;
+}
+
+.attach-chip.error{
+  border-color:rgba(var(--red),.4);
+  background:rgba(var(--red),.08);
+}
+
+.attach-chip-icon{
+  display:flex;
+  align-items:center;
+  flex-shrink:0;
+}
+
+.attach-chip-info{
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  gap:1px;
+}
+
+.attach-chip-name{
+  font-size:12.5px;
+  font-weight:500;
+  color:var(--text);
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  max-width:140px;
+}
+
+.attach-chip-meta{
+  font-size:11px;
+  color:var(--muted2);
+}
+
+.attach-chip.error .attach-chip-meta{
+  color:#D6A3A3;
+}
+
+.attach-chip-remove{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  flex-shrink:0;
+  width:22px;
+  height:22px;
+  border-radius:6px;
+  background:transparent;
+  border:none;
+  color:var(--muted2);
+  cursor:pointer;
+  transition:background .15s, color .15s;
+}
+
+.attach-chip-remove:hover{
+  background:rgba(var(--red),.15);
+  color:#D6A3A3;
+}
+
+.attach-chip.uploading{
+  padding-bottom:9px;
+}
+
+.attach-chip-progress{
+  position:absolute;
+  left:0;
+  right:0;
+  bottom:0;
+  height:3px;
+  background:var(--border);
+  overflow:hidden;
+}
+
+.attach-chip-progress-fill{
+  height:100%;
+  width:0%;
+  background:rgb(var(--indigo));
+  transition:width .12s ease;
 }
 
 /* ---------- Empty state ---------- */

@@ -14,6 +14,7 @@ import { getCurrentUser } from '../core/auth.js';
 import { showConfirm } from '../ui/confirm.js';
 import { openEmojiPicker } from '../ui/emoji-picker.js';
 import { renderReactionsRow } from './reactions.js';
+import { buildReplyQuoteHtml, buildReplyPreview } from './reply.js';
 import { createTypingEmitter, createTypingIndicator, wireTypingInput } from './typing.js';
 import { getSocket } from '../core/socket.js';
 import { createComposer } from './composer.js';
@@ -22,6 +23,11 @@ let chatRenderGeneration = 0;
 let chatOldest = null;
 let chatHasMore = true;
 const renderedChatIds = new Set();
+// Keeps the last-rendered message object for each currently-visible
+// chat message id, so the Reply button (which only has an id, via
+// its inline onclick) can look up what it's actually replying to
+// without a round trip.
+const chatMsgById = new Map();
 let chatComposer = null;
 
 // ---------- Typing indicator ----------
@@ -74,6 +80,7 @@ export async function renderChat() {
       <div class="chat-messages" id="chat-messages">${loadingState()}</div>
       <div class="typing-indicator" id="chat-typing-indicator"></div>
       <div class="composer-wrapper">
+        <div class="reply-preview-bar" id="chat-reply-preview"></div>
         <div class="attach-staging" id="chat-attach-staging"></div>
         <div class="chat-input-area">
           <input type="file" id="chat-file-input" class="hidden" multiple>
@@ -88,12 +95,14 @@ export async function renderChat() {
   chatOldest = null;
   chatHasMore = true;
   renderedChatIds.clear();
+  chatMsgById.clear();
   chatTypingIndicator.clearAll();
 
   chatComposer = createComposer({
     inputId: 'chat-input',
     fileInputId: 'chat-file-input',
     stagingId: 'chat-attach-staging',
+    replyPreviewId: 'chat-reply-preview',
     sendTextUrl: '/api/chat/messages',
     uploadUrl: '/api/chat/upload',
     buildTextBody: (content) => ({ content }),
@@ -113,6 +122,7 @@ async function loadRecentChat(generation) {
     if (generation !== chatRenderGeneration) return;
 
     renderedChatIds.clear();
+    chatMsgById.clear();
     container.innerHTML = '';
     if (messages.length === 0) {
       container.innerHTML = emptyState(ICONS.chat, 'No messages yet', 'Say hello 👋');
@@ -126,6 +136,7 @@ async function loadRecentChat(generation) {
     }
     messages.forEach(msg => {
       renderedChatIds.add(msg.id);
+      chatMsgById.set(msg.id, msg);
       container.appendChild(buildChatMessageEl(msg));
     });
     container.scrollTop = container.scrollHeight;
@@ -162,6 +173,7 @@ async function loadOlderChat() {
     messages.forEach(msg => {
       if (!renderedChatIds.has(msg.id)) {
         renderedChatIds.add(msg.id);
+        chatMsgById.set(msg.id, msg);
         frag.appendChild(buildChatMessageEl(msg));
       }
     });
@@ -198,8 +210,10 @@ function buildChatMessageEl(msg) {
       <div class="chat-meta">
         <span class="chat-sender">${escapeHtml(msg.username)}</span>
         <span class="chat-time">${formatDate(msg.timestamp)}</span>
+        <button type="button" class="chat-msg-reply" title="Reply" onclick="window.replyToChatMessage(${msg.id})">${ICONS.reply}</button>
         ${canDelete ? `<button type="button" class="chat-msg-delete" title="Delete message" onclick="window.deleteChatMessage(${msg.id})">${ICONS.trash}</button>` : ''}
       </div>
+      ${buildReplyQuoteHtml(msg, 'chat')}
       ${msg.content ? `<div class="chat-bubble">${escapeHtml(msg.content)}</div>` : ''}
       ${msg.has_attachment ? renderAttachment(msg, 'chat') : ''}
       ${renderReactionsRow(msg, 'chat')}
@@ -218,6 +232,7 @@ function buildChatMessageEl(msg) {
 export function addChatMessage(msg) {
   if (renderedChatIds.has(msg.id)) return;
   renderedChatIds.add(msg.id);
+  chatMsgById.set(msg.id, msg);
   const container = document.getElementById('chat-messages');
   if (!container) return;
   const el = buildChatMessageEl(msg);
@@ -233,6 +248,7 @@ export function addChatMessage(msg) {
 // 'chat' room) both call this.
 export function removeChatMessage(id) {
   renderedChatIds.delete(id);
+  chatMsgById.delete(id);
   const container = document.getElementById('chat-messages');
   if (!container) return;
   const el = container.querySelector(`.chat-msg[data-msg-id="${id}"]`);
@@ -250,6 +266,12 @@ window.openChatEmojiPicker = function(triggerEl) {
     anchorEl: triggerEl,
     onSelect: (char) => insertAtCursor(input, char),
   });
+};
+
+window.replyToChatMessage = function(id) {
+  const msg = chatMsgById.get(id);
+  if (!msg || !chatComposer) return;
+  chatComposer.setReplyTo(buildReplyPreview(msg));
 };
 
 window.deleteChatMessage = async function(id) {

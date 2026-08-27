@@ -48,6 +48,25 @@ function addAttachmentFlag(message) {
 }
 
 
+// Accepts whatever the client sent for reply_to_id (string, number,
+// missing, null, garbage) and normalizes it to either a positive
+// integer or null. Deliberately does NOT require the id to currently
+// exist — CHAT_SELECT's LEFT JOIN already degrades a dangling/unknown
+// id to reply_to: null, which the frontend renders as "Original
+// message deleted", the same graceful fallback a genuinely-deleted
+// message gets. No extra existence-check query needed.
+function normalizeReplyToId(value) {
+
+  if (value === undefined || value === null || value === '') {
+    return null;
+  }
+
+  const id = Number.parseInt(value, 10);
+
+  return (Number.isInteger(id) && id > 0) ? id : null;
+}
+
+
 
 function getRecentMessagesHandler(req,res) {
 
@@ -153,6 +172,10 @@ function sendMessage(req,res) {
       .slice(0,2000);
 
 
+  const replyToId =
+    normalizeReplyToId(req.body?.reply_to_id);
+
+
   const timestamp =
     new Date().toISOString();
 
@@ -161,7 +184,8 @@ function sendMessage(req,res) {
     insertChatMessage(
       req.user.id,
       text,
-      timestamp
+      timestamp,
+      replyToId
     );
 
 
@@ -218,6 +242,10 @@ function sendMessageWithAttachment(req,res) {
       .slice(0,2000);
 
 
+  const replyToId =
+    normalizeReplyToId(req.body?.reply_to_id);
+
+
   const timestamp =
     new Date().toISOString();
 
@@ -230,7 +258,8 @@ function sendMessageWithAttachment(req,res) {
       req.file.filename,
       originalName,
       req.file.size,
-      mime
+      mime,
+      replyToId
     );
 
 

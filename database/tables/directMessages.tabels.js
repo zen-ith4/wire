@@ -17,6 +17,12 @@ CREATE TABLE IF NOT EXISTS direct_messages (
   attachment_size INTEGER,
   attachment_mime TEXT,
 
+  -- Same reasoning as messages.reply_to_id (see that table): no
+  -- FOREIGN KEY cascade/null-on-delete, so a reply can still show a
+  -- graceful "Original message deleted" fallback after the original
+  -- is gone instead of losing the fact that this was a reply at all.
+  reply_to_id INTEGER,
+
   FOREIGN KEY (sender_id)
     REFERENCES users(id)
     ON DELETE CASCADE,

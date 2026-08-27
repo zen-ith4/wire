@@ -13,11 +13,66 @@ const CHAT_SELECT = `
     m.created_at AS timestamp,
     m.attachment_name,
     m.attachment_size,
-    m.attachment_mime
+    m.attachment_mime,
+    m.reply_to_id,
+    rm.id AS reply_id,
+    rm.user_id AS reply_user_id,
+    ru.username AS reply_username,
+    rm.content AS reply_content,
+    rm.created_at AS reply_timestamp,
+    rm.attachment_name AS reply_attachment_name,
+    rm.attachment_mime AS reply_attachment_mime
   FROM messages m
   JOIN users u
     ON u.id = m.user_id
+  LEFT JOIN messages rm
+    ON rm.id = m.reply_to_id
+  LEFT JOIN users ru
+    ON ru.id = rm.user_id
 `;
+
+
+// Collapses the flat reply_* columns produced by CHAT_SELECT's LEFT
+// JOIN into a nested `reply_to` object (or null), matching the shape
+// the frontend's buildReplyQuoteHtml()/buildReplyPreview() expect.
+// A message with reply_to_id set but reply_id missing means the
+// original was deleted — reply_to_id is kept (so we still know this
+// was a reply) while reply_to comes back null, which is exactly what
+// reply.js's "Original message deleted" fallback checks for.
+function shapeReplyTo(row) {
+
+  const {
+    reply_id,
+    reply_user_id,
+    reply_username,
+    reply_content,
+    reply_timestamp,
+    reply_attachment_name,
+    reply_attachment_mime,
+    ...rest
+  } = row;
+
+  rest.reply_to = (rest.reply_to_id != null && reply_id != null)
+    ? {
+        id: reply_id,
+        user_id: reply_user_id,
+        username: reply_username,
+        content: reply_content,
+        timestamp: reply_timestamp,
+        has_attachment: Boolean(reply_attachment_name),
+        attachment_name: reply_attachment_name,
+        attachment_mime: reply_attachment_mime,
+      }
+    : null;
+
+  return rest;
+
+}
+
+
+function shapeReplyToAll(rows) {
+  return rows.map(shapeReplyTo);
+}
 
 
 function normalizeLimit(limit) {
@@ -47,7 +102,7 @@ function getRecentMessages(limit = 50) {
       .all(limit);
 
 
-  return rows.reverse();
+  return shapeReplyToAll(rows.reverse());
 }
 
 
@@ -71,7 +126,7 @@ function getMessagesBefore(before, limit = 50) {
       );
 
 
-  return rows.reverse();
+  return shapeReplyToAll(rows.reverse());
 }
 
 
@@ -81,7 +136,7 @@ function getMessagesSince(since, limit = 50) {
   limit = normalizeLimit(limit);
 
 
-  return getDb()
+  const rows = getDb()
     .prepare(`
       ${CHAT_SELECT}
       WHERE m.created_at > ?
@@ -93,6 +148,8 @@ function getMessagesSince(since, limit = 50) {
       limit
     );
 
+  return shapeReplyToAll(rows);
+
 }
 
 
@@ -100,7 +157,8 @@ function getMessagesSince(since, limit = 50) {
 function insertChatMessage(
   userId,
   content,
-  timestamp
+  timestamp,
+  replyToId = null
 ) {
 
   return getDb()
@@ -109,14 +167,16 @@ function insertChatMessage(
       (
         user_id,
         content,
-        created_at
+        created_at,
+        reply_to_id
       )
-      VALUES (?, ?, ?)
+      VALUES (?, ?, ?, ?)
     `)
     .run(
       userId,
       content,
-      timestamp
+      timestamp,
+      replyToId
     );
 
 }
@@ -130,7 +190,8 @@ function insertChatMessageWithAttachment(
   filename,
   originalName,
   size,
-  mime
+  mime,
+  replyToId = null
 ) {
 
   return getDb()
@@ -143,9 +204,10 @@ function insertChatMessageWithAttachment(
         attachment_path,
         attachment_name,
         attachment_size,
-        attachment_mime
+        attachment_mime,
+        reply_to_id
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `)
     .run(
       userId,
@@ -154,7 +216,8 @@ function insertChatMessageWithAttachment(
       filename,
       originalName,
       size,
-      mime
+      mime,
+      replyToId
     );
 
 }
@@ -177,12 +240,14 @@ function findChatMessageById(id) {
 
 function findChatMessageWithUser(id) {
 
-  return getDb()
+  const row = getDb()
     .prepare(`
       ${CHAT_SELECT}
       WHERE m.id = ?
     `)
     .get(id);
+
+  return row ? shapeReplyTo(row) : row;
 
 }
 

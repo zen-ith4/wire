@@ -15,6 +15,7 @@ import { getCurrentUser } from '../core/auth.js';
 import { showConfirm } from '../ui/confirm.js';
 import { openEmojiPicker } from '../ui/emoji-picker.js';
 import { renderReactionsRow } from './reactions.js';
+import { buildReplyQuoteHtml, buildReplyPreview } from './reply.js';
 import { createTypingEmitter, createTypingIndicator, wireTypingInput } from './typing.js';
 import { getSocket } from '../core/socket.js';
 import { isUserOnline, onPresenceChange } from './presence.js';
@@ -25,6 +26,9 @@ let dmActivePeer = null;
 let dmOldest = null;
 let dmHasMore = true;
 const renderedDmIds = new Set();
+// Same purpose as chat.js's chatMsgById — lets the Reply button look
+// up the message it's attached to from just an id.
+const dmMsgById = new Map();
 let dmComposer = null;
 
 // Cache for conversation data (used for delegated clicks)
@@ -281,6 +285,7 @@ window.openDmConversation = async function(peerId, username) {
   dmOldest = null;
   dmHasMore = true;
   renderedDmIds.clear();
+  dmMsgById.clear();
 
   document.querySelector('.dm-layout')?.classList.add('showing-thread');
 
@@ -307,6 +312,7 @@ window.openDmConversation = async function(peerId, username) {
     <div class="chat-messages" id="dm-messages">${loadingState()}</div>
     <div class="typing-indicator" id="dm-typing-indicator"></div>
     <div class="composer-wrapper">
+      <div class="reply-preview-bar" id="dm-reply-preview"></div>
       <div class="attach-staging" id="dm-attach-staging"></div>
       <div class="chat-input-area">
         <input type="file" id="dm-file-input" class="hidden" multiple>
@@ -322,6 +328,7 @@ window.openDmConversation = async function(peerId, username) {
     inputId: 'dm-input',
     fileInputId: 'dm-file-input',
     stagingId: 'dm-attach-staging',
+    replyPreviewId: 'dm-reply-preview',
     sendTextUrl: '/api/dm/messages',
     uploadUrl: '/api/dm/upload',
     buildTextBody: (content) => ({ recipient_id: dmActivePeer.id, content }),
@@ -355,6 +362,7 @@ async function loadRecentDm() {
   try {
     const messages = await api(`/api/dm/messages/${dmActivePeer.id}/recent?limit=50`);
     renderedDmIds.clear();
+    dmMsgById.clear();
     container.innerHTML = '';
 
     if (messages.length === 0) {
@@ -374,6 +382,7 @@ async function loadRecentDm() {
     const currentUser = getCurrentUser();
     for (const msg of messages) {
       renderedDmIds.add(msg.id);
+      dmMsgById.set(msg.id, msg);
       frag.appendChild(buildDmMessageEl(msg, currentUser));
     }
 
@@ -414,6 +423,7 @@ async function loadOlderDm() {
     for (const msg of messages) {
       if (!renderedDmIds.has(msg.id)) {
         renderedDmIds.add(msg.id);
+        dmMsgById.set(msg.id, msg);
         frag.appendChild(buildDmMessageEl(msg, currentUser));
       }
     }
@@ -451,8 +461,10 @@ function buildDmMessageEl(msg, currentUser) {
       <div class="chat-meta">
         <span class="chat-sender">${escapeHtml(msg.sender_username)}</span>
         <span class="chat-time">${formatDate(msg.timestamp)}</span>
+        <button type="button" class="chat-msg-reply" title="Reply" onclick="window.replyToDmMessage(${msg.id})">${ICONS.reply}</button>
         ${canDelete ? `<button type="button" class="chat-msg-delete" title="Delete message" onclick="window.deleteDmMessage(${msg.id})">${ICONS.trash}</button>` : ''}
       </div>
+      ${buildReplyQuoteHtml(msg, 'dm')}
       ${msg.content ? `<div class="chat-bubble">${escapeHtml(msg.content)}</div>` : ''}
       ${msg.has_attachment ? renderAttachment(msg, 'dm') : ''}
       ${renderReactionsRow(msg, 'dm')}
@@ -470,6 +482,7 @@ function buildDmMessageEl(msg, currentUser) {
 export function addDmMessage(msg) {
   if (renderedDmIds.has(msg.id)) return;
   renderedDmIds.add(msg.id);
+  dmMsgById.set(msg.id, msg);
   const container = document.getElementById('dm-messages');
   if (!container) return;
 
@@ -487,6 +500,7 @@ export function addDmMessage(msg) {
 // the 'dm-message-deleted' socket event both call this).
 export function removeDmMessage(id) {
   renderedDmIds.delete(id);
+  dmMsgById.delete(id);
   const container = document.getElementById('dm-messages');
   if (!container) return;
   const el = container.querySelector(`.chat-msg[data-msg-id="${id}"]`);
@@ -504,6 +518,12 @@ window.openDmEmojiPicker = function(triggerEl) {
     anchorEl: triggerEl,
     onSelect: (char) => insertAtCursor(input, char),
   });
+};
+
+window.replyToDmMessage = function(id) {
+  const msg = dmMsgById.get(id);
+  if (!msg || !dmComposer) return;
+  dmComposer.setReplyTo(buildReplyPreview(msg));
 };
 
 window.deleteDmMessage = async function(id) {

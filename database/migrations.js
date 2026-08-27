@@ -15,7 +15,12 @@ const VALID_COLUMNS = {
     attachment_path: "attachment_path TEXT",
     attachment_name: "attachment_name TEXT",
     attachment_size: "attachment_size INTEGER",
-    attachment_mime: "attachment_mime TEXT"
+    attachment_mime: "attachment_mime TEXT",
+    reply_to_id: "reply_to_id INTEGER"
+  },
+
+  direct_messages: {
+    reply_to_id: "reply_to_id INTEGER"
   }
 };
 

@@ -37,6 +37,7 @@ function iconForFile(file) {
  * @param {string} config.inputId - the composer <textarea> id
  * @param {string} config.fileInputId - the hidden <input type=file> id
  * @param {string} config.stagingId - container id for staged-file chips
+ * @param {string} [config.replyPreviewId] - container id for the "Replying to ..." bar
  * @param {string} config.sendTextUrl - endpoint for text-only messages
  * @param {string} config.uploadUrl - endpoint for a single file+caption upload
  * @param {(content:string) => object} config.buildTextBody - JSON body for a text-only send
@@ -50,6 +51,7 @@ export function createComposer(config) {
     inputId,
     fileInputId,
     stagingId,
+    replyPreviewId,
     sendTextUrl,
     uploadUrl,
     buildTextBody,
@@ -61,6 +63,11 @@ export function createComposer(config) {
 
   // Each entry: { key, file, status: 'pending'|'uploading'|'error', progress, error }
   let staged = [];
+
+  // The message currently being replied to (or null). Shape matches
+  // reply.js/buildReplyPreview(): { id, username, content,
+  // hasAttachment, attachmentName, attachmentMime }.
+  let currentReply = null;
 
   function getInput() {
     return document.getElementById(inputId);
@@ -127,6 +134,61 @@ export function createComposer(config) {
     renderStaging();
   }
 
+  // ---------- Reply preview ----------
+
+  function getReplyPreviewEl() {
+    return replyPreviewId ? document.getElementById(replyPreviewId) : null;
+  }
+
+  function replyPreviewText(reply) {
+    if (reply.content) return escapeHtml(reply.content);
+    if (reply.hasAttachment) {
+      const mime = reply.attachmentMime || '';
+      const kind = mime.startsWith('image/') ? 'Photo'
+        : mime.startsWith('video/') ? 'Video'
+        : mime.startsWith('audio/') ? 'Audio'
+        : (reply.attachmentName || 'Attachment');
+      return escapeHtml(kind);
+    }
+    return '';
+  }
+
+  function renderReplyPreview() {
+    const el = getReplyPreviewEl();
+    if (!el) return;
+    if (!currentReply) {
+      el.innerHTML = '';
+      el.classList.remove('active');
+      return;
+    }
+    el.classList.add('active');
+    el.innerHTML = `
+      <div class="reply-preview-icon">${ICONS.reply}</div>
+      <div class="reply-preview-body">
+        <div class="reply-preview-name">Replying to ${escapeHtml(currentReply.username)}</div>
+        <div class="reply-preview-text">${replyPreviewText(currentReply)}</div>
+      </div>
+      <button type="button" class="reply-preview-close" title="Cancel reply" onclick="window['__composerCancelReply_${stagingId}']()">${ICONS.close}</button>
+    `;
+  }
+
+  /** Called from chat.js/dm.js when the user clicks a message's Reply action. */
+  function setReplyTo(replyPreview) {
+    currentReply = replyPreview;
+    renderReplyPreview();
+    const input = getInput();
+    if (input) input.focus();
+  }
+
+  function clearReply() {
+    currentReply = null;
+    renderReplyPreview();
+  }
+  // Exposed per-instance (keyed by stagingId), same pattern as
+  // __composerRemove_ above, so the inline onclick on the preview's
+  // close button reaches the right composer.
+  window[`__composerCancelReply_${stagingId}`] = clearReply;
+
   // ---------- Textarea: auto-grow + Enter / Shift+Enter ----------
 
   function autoGrow() {
@@ -163,12 +225,13 @@ export function createComposer(config) {
 
   // ---------- Sending ----------
 
-  async function uploadStagedFile(item, caption) {
+  async function uploadStagedFile(item, caption, replyToId) {
     item.progress = 0;
     try {
       const form = new FormData();
       form.append('file', item.file, item.file.name);
       if (caption) form.append('content', caption);
+      if (replyToId) form.append('reply_to_id', replyToId);
       if (buildFormExtra) buildFormExtra(form);
       const message = await xhrUpload(uploadUrl, form, (pct) => {
         item.progress = pct;
@@ -194,18 +257,25 @@ export function createComposer(config) {
 
     typingEmitter.stop();
 
+    // Captured once at send time — the reply bar (and currentReply)
+    // is cleared right after the request goes out, same moment the
+    // input itself is cleared below, so it can't apply to whatever
+    // the user starts typing next.
+    const replyToId = currentReply ? currentReply.id : null;
+
     // Text-only message — unchanged single round trip.
     if (filesToSend.length === 0) {
       try {
         const message = await api(sendTextUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(buildTextBody(content)),
+          body: JSON.stringify({ ...buildTextBody(content), reply_to_id: replyToId }),
         });
         if (input) {
           input.value = '';
           resetTextareaHeight();
         }
+        clearReply();
         onMessage(message);
       } catch (e) {
         showToast(e.message, 'error');
@@ -225,6 +295,7 @@ export function createComposer(config) {
       input.value = '';
       resetTextareaHeight();
     }
+    clearReply();
     // Mark the whole batch "uploading" synchronously and render once
     // before any network activity starts, so the progress UI actually
     // appears from the first frame instead of only after everything
@@ -233,7 +304,10 @@ export function createComposer(config) {
     renderStaging();
 
     const results = await Promise.allSettled(
-      filesToSend.map((item, i) => uploadStagedFile(item, i === 0 ? content : ''))
+      // reply_to_id (like the caption) rides along with the first
+      // file only — there's no "one message, many attachments"
+      // concept on the backend to attach it to all of them at once.
+      filesToSend.map((item, i) => uploadStagedFile(item, i === 0 ? content : '', i === 0 ? replyToId : null))
     );
 
     // Drop everything that succeeded; keep failed items staged (with
@@ -265,6 +339,7 @@ export function createComposer(config) {
   wireTextarea();
   wireFileInput();
   renderStaging();
+  renderReplyPreview();
 
-  return { addFiles, removeFile, clearStaged, send };
+  return { addFiles, removeFile, clearStaged, send, setReplyTo, clearReply };
 }

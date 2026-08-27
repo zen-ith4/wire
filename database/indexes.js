@@ -17,6 +17,12 @@ function createIndexes(db) {
 
     CREATE INDEX IF NOT EXISTS idx_dm_unread
     ON direct_messages(recipient_id, read_at);
+
+    CREATE INDEX IF NOT EXISTS idx_messages_reply_to
+    ON messages(reply_to_id);
+
+    CREATE INDEX IF NOT EXISTS idx_dm_reply_to
+    ON direct_messages(reply_to_id);
   `);
 }
 

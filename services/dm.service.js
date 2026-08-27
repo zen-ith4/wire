@@ -6,10 +6,55 @@ const { getDb } = require('../config/database');
 const DM_SELECT = `
   SELECT dm.id, dm.sender_id, dm.recipient_id, su.username AS sender_username,
          dm.content, dm.created_at AS timestamp, dm.read_at,
-         dm.attachment_name, dm.attachment_size, dm.attachment_mime
+         dm.attachment_name, dm.attachment_size, dm.attachment_mime,
+         dm.reply_to_id,
+         rdm.id AS reply_id, rdm.sender_id AS reply_user_id,
+         rsu.username AS reply_username, rdm.content AS reply_content,
+         rdm.created_at AS reply_timestamp,
+         rdm.attachment_name AS reply_attachment_name,
+         rdm.attachment_mime AS reply_attachment_mime
   FROM direct_messages dm
   JOIN users su ON su.id = dm.sender_id
+  LEFT JOIN direct_messages rdm ON rdm.id = dm.reply_to_id
+  LEFT JOIN users rsu ON rsu.id = rdm.sender_id
 `;
+
+// Same nesting as chat.service.js's shapeReplyTo — see the comment
+// there for why reply_to_id is preserved even when reply_to is null
+// (deleted original message).
+function shapeReplyTo(row) {
+
+  const {
+    reply_id,
+    reply_user_id,
+    reply_username,
+    reply_content,
+    reply_timestamp,
+    reply_attachment_name,
+    reply_attachment_mime,
+    ...rest
+  } = row;
+
+  rest.reply_to = (rest.reply_to_id != null && reply_id != null)
+    ? {
+        id: reply_id,
+        user_id: reply_user_id,
+        username: reply_username,
+        content: reply_content,
+        timestamp: reply_timestamp,
+        has_attachment: Boolean(reply_attachment_name),
+        attachment_name: reply_attachment_name,
+        attachment_mime: reply_attachment_mime,
+      }
+    : null;
+
+  return rest;
+
+}
+
+function shapeReplyToAll(rows) {
+  return rows.map(shapeReplyTo);
+}
 
 function getConversations(userId) {
   return getDb().prepare(`
@@ -54,7 +99,7 @@ function getRecentDmMessages(userId, peerId, limit) {
     ORDER BY dm.created_at DESC LIMIT ?
   `).all(userId, peerId, peerId, userId, limit);
   rows.reverse();
-  return rows;
+  return shapeReplyToAll(rows);
 }
 
 function getDmMessagesBefore(userId, peerId, before, limit) {
@@ -65,31 +110,32 @@ function getDmMessagesBefore(userId, peerId, before, limit) {
     ORDER BY dm.created_at DESC LIMIT ?
   `).all(userId, peerId, peerId, userId, before, limit);
   rows.reverse();
-  return rows;
+  return shapeReplyToAll(rows);
 }
 
 function getDmMessagesSince(userId, peerId, since, limit) {
-  return getDb().prepare(`
+  const rows = getDb().prepare(`
     ${DM_SELECT}
     WHERE ((dm.sender_id = ? AND dm.recipient_id = ?) OR (dm.sender_id = ? AND dm.recipient_id = ?))
       AND dm.created_at > ?
     ORDER BY dm.created_at ASC LIMIT ?
   `).all(userId, peerId, peerId, userId, since, limit);
+  return shapeReplyToAll(rows);
 }
 
-function insertDmMessage(senderId, recipientId, content, timestamp) {
+function insertDmMessage(senderId, recipientId, content, timestamp, replyToId = null) {
   return getDb().prepare(`
-    INSERT INTO direct_messages (sender_id, recipient_id, content, created_at)
-    VALUES (?, ?, ?, ?)
-  `).run(senderId, recipientId, content, timestamp);
+    INSERT INTO direct_messages (sender_id, recipient_id, content, created_at, reply_to_id)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(senderId, recipientId, content, timestamp, replyToId);
 }
 
-function insertDmMessageWithAttachment(senderId, recipientId, content, timestamp, filename, originalName, size, mime) {
+function insertDmMessageWithAttachment(senderId, recipientId, content, timestamp, filename, originalName, size, mime, replyToId = null) {
   return getDb().prepare(`
     INSERT INTO direct_messages (sender_id, recipient_id, content, created_at,
-                                 attachment_path, attachment_name, attachment_size, attachment_mime)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(senderId, recipientId, content, timestamp, filename, originalName, size, mime);
+                                 attachment_path, attachment_name, attachment_size, attachment_mime, reply_to_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(senderId, recipientId, content, timestamp, filename, originalName, size, mime, replyToId);
 }
 
 function findDmMessageById(id) {
@@ -97,7 +143,8 @@ function findDmMessageById(id) {
 }
 
 function findDmMessageWithUser(id) {
-  return getDb().prepare(`${DM_SELECT} WHERE dm.id = ?`).get(id);
+  const row = getDb().prepare(`${DM_SELECT} WHERE dm.id = ?`).get(id);
+  return row ? shapeReplyTo(row) : row;
 }
 
 function deleteDmMessage(id) {

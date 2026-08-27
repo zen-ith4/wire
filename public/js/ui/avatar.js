@@ -155,9 +155,21 @@ export async function getBannerUrl(userId, signal = null) {
 }
 
 function invalidateMedia(key) {
-  const url = mediaCache[key];
-  if (url) {
-    URL.revokeObjectURL(url);
+  // Deliberately checked with `in`, not the cached value's
+  // truthiness: a user with no avatar/banner is cached as an
+  // explicit `null` (see the comment above in getMediaUrl's catch
+  // block — that's intentional, so we don't refetch a 404 on every
+  // render). `if (url)` here would treat that null the same as "not
+  // cached at all" and skip the delete below, so a first-ever upload
+  // (previous state: cached null) never actually clears the stale
+  // entry — getAvatarUrl()'s `key in mediaCache` check keeps
+  // returning the old cached null forever, and the new avatar only
+  // ever shows up after something else (a full page reload) rebuilds
+  // this module's cache from scratch. Same failure repeats after any
+  // delete-then-reupload, since delete also leaves a cached null.
+  if (key in mediaCache) {
+    const url = mediaCache[key];
+    if (url) URL.revokeObjectURL(url);
     delete mediaCache[key];
     const idx = cacheInsertOrder.indexOf(key);
     if (idx !== -1) cacheInsertOrder.splice(idx, 1);

@@ -22,6 +22,42 @@ const { toggleReaction, getReactionsForMessage, getReactionsForMessages } = requ
 const { emitNewDirectMessage, emitDirectMessageDeleted, emitDirectReactionUpdate } = require('../services/socket.service');
 const { clampLimit, withDmFlags, withReactions } = require('../utils/helpers');
 
+// Accepts whatever the client sent for reply_to_id and normalizes it
+// to either a positive integer or null. For DMs we additionally
+// require — beyond just being a well-formed id — that the referenced
+// message actually belongs to *this* conversation (sender/recipient
+// pair), otherwise a fabricated id could pull another conversation's
+// message content into this thread's reply preview. An id that's a
+// good match structurally but doesn't resolve (already deleted) is
+// still allowed through: DM_SELECT's LEFT JOIN degrades that to
+// reply_to: null, rendered as "Original message deleted".
+function normalizeDmReplyToId(value, userId, peerId) {
+
+  if (value === undefined || value === null || value === '') {
+    return null;
+  }
+
+  const id = Number.parseInt(value, 10);
+
+  if (!Number.isInteger(id) || id <= 0) {
+    return null;
+  }
+
+  const target = findDmMessageById(id);
+
+  if (!target) {
+    // Already gone — still a legitimate reply target (falls back to
+    // "Original message deleted"), just can't be conversation-checked.
+    return id;
+  }
+
+  const belongsToConversation =
+    (target.sender_id === userId && target.recipient_id === peerId) ||
+    (target.sender_id === peerId && target.recipient_id === userId);
+
+  return belongsToConversation ? id : null;
+}
+
 function getConversationsHandler(req, res) {
   const peers = getConversations(req.user.id);
 
@@ -98,8 +134,9 @@ function sendMessage(req, res) {
   }
 
   const trimmed = content.trim().slice(0, 2000);
+  const replyToId = normalizeDmReplyToId(req.body?.reply_to_id, req.user.id, Number(recipient_id));
   const timestamp = new Date().toISOString();
-  const info = insertDmMessage(req.user.id, recipient_id, trimmed, timestamp);
+  const info = insertDmMessage(req.user.id, recipient_id, trimmed, timestamp, replyToId);
 
   const fullMsg = findDmMessageWithUser(info.lastInsertRowid);
   fullMsg.has_attachment = !!fullMsg.attachment_name;
@@ -138,6 +175,7 @@ function sendMessageWithAttachment(req, res) {
   const ext = path.extname(originalName).toLowerCase();
   const mime = CHAT_MIME_MAP[ext] || req.file.mimetype || 'application/octet-stream';
   const caption = (req.body.content || '').trim().slice(0, 2000);
+  const replyToId = normalizeDmReplyToId(req.body?.reply_to_id, req.user.id, Number(recipient_id));
   const timestamp = new Date().toISOString();
 
   const info = insertDmMessageWithAttachment(
@@ -148,7 +186,8 @@ function sendMessageWithAttachment(req, res) {
     req.file.filename,
     originalName,
     req.file.size,
-    mime
+    mime,
+    replyToId
   );
 
   const fullMsg = findDmMessageWithUser(info.lastInsertRowid);

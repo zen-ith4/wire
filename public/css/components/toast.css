@@ -2,9 +2,7 @@
 .toast{position:fixed;top:20px;left:50%;
  transform:translateX(-50%);z-index:1000;padding:11px 18px;
  border-radius:var(--radius);font-size:13px;font-weight:500;
-background:
-  radial-gradient(100% 100% at 50% 0%, rgba(var(--indigo), calc(var(--ambient-strength) * 0.25)) 0%, transparent 80%),
-  rgba(17,17,22,.92);
+background:rgba(17,17,22,.92);
   backdrop-filter:blur(12px);
   border:1px solid var(--border);
   animation:toastIn .2s ease;

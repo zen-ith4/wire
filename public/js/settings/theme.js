@@ -11,11 +11,9 @@ export const ACCENT_PRESETS = [
   { name: 'Red',     hex: '#9A5D5D', rgb: '154, 93, 93' },
 ];
 
-export const AMBIENT_LEVELS = [0.05, 0.15, 0.28, 0.40, 0.55];
+export const AMBIENT_LEVELS = [0.06, 0.18, 0.34, 0.5, 0.7];
 
 export const DEFAULT_AMBIENT_LEVEL = 3;
-
-const LAYER_RATIOS = [1, 0.9, 0.5, 0.65, 0.6];
 
 const ACCENT_STORAGE_KEY = 'filehub-accent';
 const AMBIENT_STORAGE_KEY = 'filehub-ambient-level';
@@ -191,6 +189,13 @@ let currentLevel =
 
 // ============================================================
 // Ambient background
+//
+// Just two soft accent-colored glows, full viewport width: one
+// hugging the top edge, one hugging the bottom edge. No corner/
+// center blobs — those (plus the local glows every modal/toast/
+// emoji-picker used to paint on top of their own translucent
+// backgrounds) were what made the background read as separate
+// circles cut off by container edges instead of one calm field.
 // ============================================================
 
 function paintUnderlay() {
@@ -206,54 +211,20 @@ function paintUnderlay() {
 
   if (!underlay) return;
 
-  const [
-    a1,
-    a2,
-    a3,
-    a4,
-    a5
-  ] = LAYER_RATIOS.map(
-    r => (peak * r).toFixed(3)
-  );
+  const mid = (peak * 0.45).toFixed(3);
 
-  // Five large, soft, overlapping fields (alternating the accent's
-  // two hues) instead of a handful of separate small "bubbles" —
-  // wide multi-stop falloffs mean neighboring fields fade into each
-  // other with no ring/edge where they meet, and the oversized third
-  // field bridges the middle of the viewport so the whole thing
-  // reads as one continuous atmosphere rather than four corner glows.
   underlay.style.background = `
     radial-gradient(
-      ellipse 140% 100% at 12% 0%,
-      rgba(var(--indigo), ${a1}) 0%,
-      rgba(var(--indigo), ${(peak * LAYER_RATIOS[0] * 0.5).toFixed(3)}) 26%,
-      rgba(var(--indigo), ${(peak * LAYER_RATIOS[0] * 0.18).toFixed(3)}) 52%,
-      transparent 78%
+      ellipse 110% 65% at 50% 0%,
+      rgba(var(--indigo), ${peak}) 0%,
+      rgba(var(--indigo), ${mid}) 45%,
+      transparent 85%
     ),
     radial-gradient(
-      ellipse 150% 110% at 92% 100%,
-      rgba(var(--indigo-2), ${a2}) 0%,
-      rgba(var(--indigo-2), ${(peak * LAYER_RATIOS[1] * 0.5).toFixed(3)}) 26%,
-      rgba(var(--indigo-2), ${(peak * LAYER_RATIOS[1] * 0.18).toFixed(3)}) 52%,
-      transparent 78%
-    ),
-    radial-gradient(
-      ellipse 120% 100% at 50% 42%,
-      rgba(var(--indigo), ${a3}) 0%,
-      rgba(var(--indigo), ${(peak * LAYER_RATIOS[2] * 0.45).toFixed(3)}) 30%,
-      transparent 72%
-    ),
-    radial-gradient(
-      ellipse 95% 105% at 4% 88%,
-      rgba(var(--indigo-2), ${a4}) 0%,
-      rgba(var(--indigo-2), ${(peak * LAYER_RATIOS[3] * 0.45).toFixed(3)}) 28%,
-      transparent 68%
-    ),
-    radial-gradient(
-      ellipse 90% 85% at 96% 8%,
-      rgba(var(--indigo), ${a5}) 0%,
-      rgba(var(--indigo), ${(peak * LAYER_RATIOS[4] * 0.45).toFixed(3)}) 28%,
-      transparent 66%
+      ellipse 110% 65% at 50% 100%,
+      rgba(var(--indigo-2), ${peak}) 0%,
+      rgba(var(--indigo-2), ${mid}) 45%,
+      transparent 85%
     ),
     #050508
   `;

@@ -2,9 +2,7 @@
 .modal{display:none;position:fixed;inset:0;background:rgba(5,5,8,.72);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);z-index:200;align-items:center;justify-content:center;padding:20px;}
 .modal.active{display:flex;}
 .modal-content {
-  background:
-    radial-gradient(100% 100% at 50% 0%, rgba(var(--indigo), calc(var(--ambient-strength) * 0.2)) 0%, transparent 80%),
-    rgba(17,17,22,.92);
+  background:rgba(17,17,22,.92);
   backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
   border:1px solid var(--border);
   border-radius:var(--radius-lg);
@@ -32,9 +30,7 @@
 .dropzone-box {
   display:flex;flex-direction:column;align-items:center;gap:8px;padding:46px 60px;border-radius:var(--radius-lg);
   border:1.5px dashed var(--accent-border);
-  background:
-  radial-gradient(120% 120% at 50% -10%, rgba(var(--indigo), calc(var(--ambient-strength) * 0.2)) 0%, transparent 70%),
-  rgba(17,17,22,.9);
+  background:rgba(17,17,22,.9);
   color:var(--text);text-align:center;
 }
 .dropzone-box svg{opacity:.85;color:rgb(var(--indigo));}

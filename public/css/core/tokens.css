@@ -45,7 +45,7 @@
 
   --ease-fast:120ms ease;
   --ease-smooth:180ms ease;
-  --ambient-strength: 0.28;
+  --ambient-strength: 0.34;
 
   /* RGB triplets of the flat panel colors above, for rgba() use on
      glass surfaces (sidebar/topbar/cards) that need to stay

@@ -5,7 +5,10 @@
      all the decorative color; this panel just needs to let it show
      through instead of drawing its own separate glow (which is what
      made the sidebar's edge look like a hard cut in the background). */
-  background:rgba(var(--ink-rgb), .74);
+  /* Translucent enough for the ambient glow (base.css) to read
+     clearly through the panel, Discord-style, instead of being
+     smothered by a near-opaque flat fill. */
+  background:rgba(var(--ink-rgb), .62);
   backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
   display:flex;flex-direction:column;
   border-right:1px solid var(--border);

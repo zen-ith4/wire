@@ -26,7 +26,10 @@
      global ambient layer (base.css/#ambient-underlay) shows through
      instead, so this panel doesn't look like its own separately-lit
      "bubble" next to .dm-thread. */
-  background:rgba(var(--ink-rgb), .85);
+  /* Translucent enough for the ambient glow (base.css) to read
+     through, instead of the near-opaque fill this used to be — that
+     opacity was blocking almost all of the glow on chat/DM pages. */
+  background:rgba(var(--ink-rgb), .62);
   backdrop-filter:blur(12px);
   -webkit-backdrop-filter:blur(12px);
 }
@@ -207,8 +210,11 @@ input.conv-search-input:focus{
                          overlaps .chat-messages instead of sitting in
                          normal flow above it */
   /* Same reasoning as .dm-sidebar above — flat glass, no local
-     gradient of its own. */
-  background:rgba(var(--void-rgb), .82);
+     gradient of its own, and translucent enough to actually let the
+     ambient glow through (this panel covers almost the whole
+     viewport on chat/DM pages, so its opacity dominates whether the
+     glow reads as visible at all). */
+  background:rgba(var(--void-rgb), .55);
   backdrop-filter:blur(12px);
   -webkit-backdrop-filter:blur(12px);
 }

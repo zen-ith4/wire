@@ -504,12 +504,15 @@ input.conv-search-input:focus{
    */
   max-width:100%;
   flex:0 0 auto;
+  align-self: flex-start;
+  width: fit-content;
 }
 
 .chat-msg.own .chat-bubble{
   background:#18181F;
   color:var(--text);
   border-radius:var(--radius-lg) var(--radius-lg) 3px var(--radius-lg);
+  align-self: flex-end;
 }
 
 /* line-height:1 here (rather than inheriting body's 1.5) is what

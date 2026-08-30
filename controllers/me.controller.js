@@ -407,6 +407,7 @@ function getUserProfile(req, res) {
     bio: user.bio || '',
     has_avatar: !!user.avatar_path,
     has_banner: !!user.banner_path,
+    accent_color: user.accent_color || null,
     created_at: user.created_at,
     storage_used: getStorageUsage(user.id)
   });

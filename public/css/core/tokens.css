@@ -54,4 +54,49 @@
   --ink-rgb:13,13,17;
   --ink2-rgb:17,17,22;
   --void-rgb:9,9,11;
+
+  /* Auto-contrast text color for anything painted directly in the
+     accent color (currently just the "own message" chat bubble) —
+     recomputed in theme.js's applyAccent() from the accent's
+     perceived brightness, so picking a pale/light accent doesn't
+     leave white text unreadable on a now-light bubble. This
+     fallback matches the default "Neutral" accent (#5C5C6E, dark
+     enough for white text). */
+  --accent-contrast:#fff;
+
+  /* Scrim behind modals/dropzone/image-viewer — a separate token
+     (not --void-rgb) because it needs to stay dark in BOTH themes
+     (dimming whatever's behind it), unlike every other panel above
+     which flips to a light fill in light mode. */
+  --scrim-rgb:5,5,8;
+}
+
+/* ============================================================
+   Light mode
+   Toggled via document.documentElement.dataset.theme = 'light'
+   (see applyTheme() in theme.js). Every panel/text/border token
+   above gets a light-mode counterpart here; anything built from
+   --accent-* or --indigo/--cyan is left alone since those are
+   already translucent overlays that read fine on either fill.
+   ============================================================ */
+:root[data-theme="light"]{
+  --void:#F4F4F6;
+  --ink:#FFFFFF;
+  --ink2:#FFFFFF;
+  --card:#FFFFFF;
+  --hover:#ECECEF;
+  --border:#DEDEE3;
+  --border-soft:#E6E6EA;
+  /* Once a surface is this light, white text is the thing that
+     needs to "turn black" — everything reading var(--text)/
+     var(--muted)/var(--muted2) anywhere in the app (chat bubbles,
+     cards, inputs, menus, badges, ...) flips to a dark ink instead
+     of the near-white used on the dark theme. */
+  --text:#16161A;
+  --muted:#5B5B66;
+  --muted2:#82828C;
+
+  --ink-rgb:255,255,255;
+  --ink2-rgb:255,255,255;
+  --void-rgb:244,244,246;
 }

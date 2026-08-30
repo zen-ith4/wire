@@ -17,6 +17,7 @@ export const DEFAULT_AMBIENT_LEVEL = 3;
 
 const ACCENT_STORAGE_KEY = 'filehub-accent';
 const AMBIENT_STORAGE_KEY = 'filehub-ambient-level';
+const THEME_STORAGE_KEY = 'filehub-theme';
 
 function safeGetStorage(key) {
   try {
@@ -85,7 +86,7 @@ export function getCurrentAmbientLevel() {
 }
 
 
-function hexToRgb(hex) {
+export function hexToRgb(hex) {
   const clean = hex.replace('#', '');
 
   const value = Number.parseInt(clean, 16);
@@ -98,10 +99,26 @@ function hexToRgb(hex) {
 }
 
 
-function rgbStringFromHex(hex) {
+export function rgbStringFromHex(hex) {
   const { r, g, b } = hexToRgb(hex);
 
   return `${r}, ${g}, ${b}`;
+}
+
+
+// Perceived brightness (ITU-R BT.601), 0-255. Used to auto-pick
+// black-or-white text for anything painted directly in the accent
+// color, so a light/pale custom accent doesn't strand white text on
+// a now-light background.
+export function contrastTextFor(rgbString) {
+  const [r, g, b] = rgbString
+    .split(',')
+    .map((n) => Number(n.trim()));
+
+  const brightness =
+    (r * 299 + g * 587 + b * 114) / 1000;
+
+  return brightness > 150 ? '#16161A' : '#FFFFFF';
 }
 
 
@@ -226,7 +243,7 @@ function paintUnderlay() {
       rgba(var(--indigo-2), ${mid}) 45%,
       transparent 85%
     ),
-    #050508
+    var(--void)
   `;
 }
 
@@ -293,6 +310,11 @@ export function applyAccent(
   root.style.setProperty(
     '--accent',
     rgb
+  );
+
+  root.style.setProperty(
+    '--accent-contrast',
+    contrastTextFor(rgb)
   );
 
   currentRgb = rgb;
@@ -396,4 +418,57 @@ export function initAccent(
 
 export function getCurrentAmbientLevelValue() {
   return AMBIENT_LEVELS[currentLevel];
+}
+
+
+// ============================================================
+// Light / dark theme
+// ============================================================
+
+export function getCurrentTheme() {
+  const saved = safeGetStorage(THEME_STORAGE_KEY);
+
+  return saved === 'light' ? 'light' : 'dark';
+}
+
+
+export function applyTheme(
+  theme,
+  { persist = true } = {}
+) {
+  const value =
+    theme === 'light' ? 'light' : 'dark';
+
+  if (value === 'light') {
+    document.documentElement.setAttribute(
+      'data-theme',
+      'light'
+    );
+  } else {
+    document.documentElement.removeAttribute(
+      'data-theme'
+    );
+  }
+
+  if (persist) {
+    safeSetStorage(
+      THEME_STORAGE_KEY,
+      value
+    );
+  }
+
+  return value;
+}
+
+
+export function initTheme() {
+  const theme =
+    getCurrentTheme();
+
+  applyTheme(
+    theme,
+    { persist: false }
+  );
+
+  return theme;
 }

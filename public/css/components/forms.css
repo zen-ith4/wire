@@ -4,7 +4,7 @@ input[type=text], input[type=password], select{
   outline:none;transition:border-color var(--ease-fast),background var(--ease-fast),box-shadow var(--ease-fast);
 }
 input[type=text]:focus, input[type=password]:focus, select:focus{
-  border-color:var(--accent-border);background:#14141A;box-shadow:0 0 0 3px var(--accent-bg);
+  border-color:var(--accent-border);background:var(--ink2);box-shadow:0 0 0 3px var(--accent-bg);
 }
 input::placeholder{color:var(--muted2);}
 select{appearance:none;background-image:url("data:image/svg+xml;utf8,<svg fill='%236b6b75' height='18' viewBox='0 0 24 24' width='18' xmlns='http://www.w3.org/2000/svg'><path d='M7 10l5 5 5-5z'/></svg>");background-repeat:no-repeat;background-position:right 10px center;padding-right:34px;}
@@ -22,7 +22,7 @@ textarea:focus{border-color:var(--accent-border);}
 .dselect-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .dselect-trigger svg{flex-shrink:0;color:var(--muted);transition:transform .15s ease;}
 .dselect.open .dselect-trigger svg{transform:rotate(180deg);}
-.dselect-menu{position:absolute;top:calc(100% + 6px);left:0;min-width:100%;z-index:80;background:rgba(17,17,22,.95);backdrop-filter:blur(16px);border:1px solid var(--border);border-radius:var(--radius-lg);padding:6px;max-height:260px;overflow-y:auto;opacity:0;transform:translateY(-4px);pointer-events:none;transition:opacity .12s ease, transform .12s ease;}
+.dselect-menu{position:absolute;top:calc(100% + 6px);left:0;min-width:100%;z-index:80;background:rgba(var(--ink2-rgb),.95);backdrop-filter:blur(16px);border:1px solid var(--border);border-radius:var(--radius-lg);padding:6px;max-height:260px;overflow-y:auto;opacity:0;transform:translateY(-4px);pointer-events:none;transition:opacity .12s ease, transform .12s ease;}
 .dselect.open .dselect-menu{opacity:1;transform:translateY(0);pointer-events:auto;}
 .dselect-option{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border-radius:var(--radius);font-size:13px;color:var(--text);cursor:pointer;white-space:nowrap;}
 .dselect-option:hover{background:var(--hover);}

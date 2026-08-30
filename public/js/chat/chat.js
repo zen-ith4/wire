@@ -18,6 +18,7 @@ import { buildReplyQuoteHtml, buildReplyPreview } from './reply.js';
 import { createTypingEmitter, createTypingIndicator, wireTypingInput } from './typing.js';
 import { getSocket } from '../core/socket.js';
 import { createComposer } from './composer.js';
+import { setMessageAccent } from './message-accent.js';
 
 let chatRenderGeneration = 0;
 let chatOldest = null;
@@ -204,6 +205,9 @@ function buildChatMessageEl(msg) {
   const div = document.createElement('div');
   div.className = 'chat-msg' + (own ? ' own' : '');
   div.dataset.msgId = msg.id;
+  // Every bubble uses the current viewer's own accent color,
+  // regardless of who sent the message (see message-accent.js).
+  setMessageAccent(div);
   div.innerHTML = `
     ${avatarHtml(msg.user_id, msg.username, 'chat-avatar')}
     <div class="chat-msg-content">

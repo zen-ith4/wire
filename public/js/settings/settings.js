@@ -28,6 +28,7 @@ import {
 } from '../ui/avatar.js';
 
 import { showConfirm } from '../ui/confirm.js';
+import { repaintAllMessageAccents } from '../chat/message-accent.js';
 
 import {
   ACCENT_PRESETS,
@@ -37,7 +38,9 @@ import {
   getCurrentAccentHex,
   AMBIENT_LEVELS,
   applyAmbientLevel,
-  getCurrentAmbientLevel
+  getCurrentAmbientLevel,
+  getCurrentTheme,
+  applyTheme
 } from './theme.js';
 
 
@@ -148,6 +151,14 @@ export async function renderSettings() {
 
 
     // ========================================================
+    // Theme (dark / light)
+    // ========================================================
+
+    const currentTheme =
+      getCurrentTheme();
+
+
+    // ========================================================
     // Settings HTML
     // ========================================================
 
@@ -162,6 +173,53 @@ export async function renderSettings() {
 
           <div class="settings-section-title">
             Appearance
+          </div>
+
+
+          <!-- Theme -->
+
+          <div class="settings-row">
+
+            <div>
+              <div class="settings-row-label">
+                Theme
+              </div>
+
+              <div class="settings-row-sublabel">
+                Switch between dark and light
+              </div>
+            </div>
+
+            <div
+              class="theme-toggle"
+              id="theme-toggle">
+
+              <button
+                type="button"
+                class="theme-toggle-btn${
+                  currentTheme === 'dark'
+                    ? ' selected'
+                    : ''
+                }"
+                data-theme="dark">
+                ${ICONS.moon || ''}
+                <span>Dark</span>
+              </button>
+
+              <button
+                type="button"
+                class="theme-toggle-btn${
+                  currentTheme === 'light'
+                    ? ' selected'
+                    : ''
+                }"
+                data-theme="light">
+                ${ICONS.sun || ''}
+                <span>Light</span>
+              </button>
+
+            </div>
+
           </div>
 
 
@@ -629,6 +687,11 @@ export async function renderSettings() {
 
         setCurrentUser(me);
 
+        // Live-repaint every currently-rendered message (all of them
+        // use the viewer's accent, not just "own" ones) instead of
+        // waiting for a re-render.
+        repaintAllMessageAccents();
+
         showToast(
           'Accent color updated',
           'success'
@@ -755,6 +818,11 @@ export async function renderSettings() {
 
           setCurrentUser(me);
 
+          // Live-repaint every currently-rendered message (all of
+          // them use the viewer's accent, not just "own" ones)
+          // instead of waiting for a re-render.
+          repaintAllMessageAccents();
+
           if (customColor) {
             customColor.value =
               data.accent_color;
@@ -783,6 +851,37 @@ export async function renderSettings() {
         }
       }
     );
+
+
+    // ==========================================================
+    // Theme toggle
+    // ==========================================================
+
+    const themeToggle =
+      document.getElementById('theme-toggle');
+
+    themeToggle?.addEventListener('click', (e) => {
+
+      const button =
+        e.target.closest('.theme-toggle-btn');
+
+      if (!button) return;
+
+      const theme =
+        button.dataset.theme;
+
+      applyTheme(theme);
+
+      document
+        .querySelectorAll(
+          '#theme-toggle .theme-toggle-btn'
+        )
+        .forEach(b => {
+          b.classList.remove('selected');
+        });
+
+      button.classList.add('selected');
+    });
 
 
     // ==========================================================

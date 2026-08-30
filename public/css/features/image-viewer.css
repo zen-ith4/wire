@@ -11,7 +11,7 @@
 .image-viewer{
   display:none;
   position:fixed;inset:0;z-index:250;
-  background:rgba(5,5,8,.92);
+  background:rgba(var(--scrim-rgb),.92);
   flex-direction:column;
   animation:imageViewerFadeIn var(--ease-smooth);
 }

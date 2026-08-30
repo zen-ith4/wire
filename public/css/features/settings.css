@@ -72,7 +72,19 @@
   transition:background var(--ease-fast),border-color var(--ease-fast),color var(--ease-fast),transform var(--ease-fast);
 }
 .ambient-level-btn:hover{background:var(--hover);color:var(--text);transform:scale(1.06);}
-.ambient-level-btn.selected{background:rgb(var(--indigo));border-color:rgb(var(--indigo));color:#fff;}
+.ambient-level-btn.selected{background:rgb(var(--indigo));border-color:rgb(var(--indigo));color:var(--accent-contrast);}
+
+.theme-toggle{display:flex;gap:6px;}
+.theme-toggle-btn{
+  display:flex;align-items:center;gap:6px;cursor:pointer;
+  padding:7px 14px;border-radius:var(--radius);
+  border:1px solid var(--border);background:var(--ink2);color:var(--muted);
+  font-size:13px;font-weight:500;
+  transition:background var(--ease-fast),border-color var(--ease-fast),color var(--ease-fast);
+}
+.theme-toggle-btn svg{flex-shrink:0;}
+.theme-toggle-btn:hover{background:var(--hover);color:var(--text);}
+.theme-toggle-btn.selected{background:rgb(var(--indigo));border-color:rgb(var(--indigo));color:var(--accent-contrast);}
 
 /* ---- Profile banner ---- */
 .profile-banner-wrap{position:relative;overflow:hidden;aspect-ratio:3.2/1;max-height:200px;border-radius:var(--radius-lg);}

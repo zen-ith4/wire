@@ -12,7 +12,7 @@
    .bg/.bg-blob/.bg-grid stay in index.html for backward compatibility
    but render nothing on their own — this element does the job. */
 /* transparent on purpose: #ambient-underlay (below) already ends in
-   its own solid #050508 fallback layer. .bg used to also paint
+   its own solid var(--void) fallback layer. .bg used to also paint
    var(--void) as a flat fill — harmless on its own, but .bg sits
    later in the DOM than #ambient-underlay with the *same* z-index:0,
    so stacking order put this flat fill on top and hid every glow
@@ -27,7 +27,7 @@
   background:
     radial-gradient(ellipse 110% 65% at 50% 0%, rgba(var(--indigo), var(--ambient-strength)) 0%, rgba(var(--indigo), calc(var(--ambient-strength) * 0.45)) 45%, transparent 85%),
     radial-gradient(ellipse 110% 65% at 50% 100%, rgba(var(--indigo-2), var(--ambient-strength)) 0%, rgba(var(--indigo-2), calc(var(--ambient-strength) * 0.45)) 45%, transparent 85%),
-    #050508;
+    var(--void);
 }
 @media (max-width:720px){
   #ambient-underlay{filter:blur(24px);}

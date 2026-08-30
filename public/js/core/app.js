@@ -15,7 +15,8 @@ import { refreshUnreadBadge } from '../chat/dm.js';
 import { startAutoEnhance } from '../ui/ui-enhance.js';
 import { initDragDrop } from '../files/dragdrop.js';
 import {
-  initAccent
+  initAccent,
+  initTheme
 } from '../settings/theme.js';
 import { initSidebarResize } from '../ui/sidebar-resize.js';
 
@@ -263,6 +264,7 @@ async function bootstrap() {
 
   // Apply local theme immediately so the UI
   // doesn't start completely unstyled.
+  initTheme();
   initAccent();
 
   // Restore saved sidebar width + wire up the drag handle, same idea:

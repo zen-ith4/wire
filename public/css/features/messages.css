@@ -85,7 +85,7 @@ input.conv-search-input{
 
 input.conv-search-input:focus{
   border-color:var(--accent-border);
-  background:#14141A;
+  background:var(--ink2);
   box-shadow:0 0 0 3px var(--accent-bg);
 }
 
@@ -451,9 +451,15 @@ input.conv-search-input:focus{
 /* ---------- Message bubble ---------- */
 
 .chat-bubble{
-  background:var(--ink2);
+  /* Resolved per-message from the sender's own stored accent color
+     (see js/chat/message-accent.js) — --message-accent/-contrast are
+     set as an inline custom property on each .chat-msg element
+     independently, never read from the viewer's global --accent*
+     vars. The var(...) fallback only covers the instant before JS
+     has painted the element. */
+  background:var(--message-accent, var(--ink2));
   border:1px solid var(--border);
-  color:var(--text);
+  color:var(--message-accent-contrast, var(--text));
   border-radius:var(--radius-lg) var(--radius-lg) var(--radius-lg) 3px;
   padding:6px 12px;
   font-size:13.5px;
@@ -515,8 +521,11 @@ input.conv-search-input:focus{
 }
 
 .chat-msg.own .chat-bubble{
-  background:#18181F;
-  color:var(--text);
+  /* Fill/text color come from .chat-bubble's --message-accent /
+     --message-accent-contrast above — for an own message that
+     resolves to the viewer's own accent (since they're the sender),
+     so no separate background/color override is needed here. This
+     rule only handles the "own" bubble's shape and alignment. */
   border-radius:var(--radius-lg) var(--radius-lg) 3px var(--radius-lg);
   align-self: flex-end;
 }
@@ -779,8 +788,10 @@ input.conv-search-input:focus{
 }
 
 .chat-msg.own .chat-bubble {
-  background:#18181F;
-  color:var(--text);
+  /* Same fix/reasoning as the other .chat-msg.own .chat-bubble rule
+     above (this file defines the selector twice for different
+     layout contexts) — fill/text color already come from
+     .chat-bubble's --message-accent / --message-accent-contrast. */
   border-radius:var(--radius-lg) var(--radius-lg) 3px var(--radius-lg);
   margin-left:auto;
 }
@@ -930,7 +941,11 @@ input.conv-search-input:focus{
 
 .composer-wrapper{
   margin:0 20px 20px;
-  background:#14141A;
+  /* Themed instead of a hardcoded dark fill: this used to stay
+     black in light mode while the typed text followed the global
+     (now dark-in-light-mode) --text color, so anything you typed
+     was invisible — dark text on a black box. */
+  background:var(--ink2);
   border:1px solid var(--border);
   border-radius:var(--radius-lg);
   display:flex;
@@ -965,6 +980,7 @@ input.conv-search-input:focus{
   font-weight:440;
   line-height:1.5;
   background:transparent !important;
+  color:var(--text);
   border:none;
   outline:none;
 }

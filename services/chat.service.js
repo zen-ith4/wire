@@ -9,6 +9,7 @@ const CHAT_SELECT = `
     m.id,
     m.user_id,
     u.username,
+    u.accent_color,
     m.content,
     m.created_at AS timestamp,
     m.attachment_name,

@@ -73,8 +73,8 @@ body.sidebar-resizing *{user-select:none !important;}
 .nav-badge{margin-left:auto;background:rgba(var(--indigo),.16);color:var(--text);border:1px solid rgba(var(--indigo),.3);font-size:10.5px;font-weight:600;border-radius:99px;min-width:17px;height:17px;display:flex;align-items:center;justify-content:center;padding:0 5px;}
 
 .sidebar-footer{margin-top:auto;padding:10px;}
-.sidebar-footer .nav-link{color:#6E6E78;}
-.sidebar-footer .nav-link:hover{color:#C97A7A;background:#1A1416;}
+.sidebar-footer .nav-link{color:var(--muted);}
+.sidebar-footer .nav-link:hover{color:rgb(var(--red));background:rgba(var(--red),.14);}
 
 /* ---------- My profile (sidebar footer) ----------
    Deliberately plain, not liquid-glass — that treatment belongs only

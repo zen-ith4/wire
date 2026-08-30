@@ -20,6 +20,7 @@ import { createTypingEmitter, createTypingIndicator, wireTypingInput } from './t
 import { getSocket } from '../core/socket.js';
 import { isUserOnline, onPresenceChange } from './presence.js';
 import { createComposer } from './composer.js';
+import { setMessageAccent } from './message-accent.js';
 
 // State
 let dmActivePeer = null;
@@ -455,6 +456,9 @@ function buildDmMessageEl(msg, currentUser) {
   const div = document.createElement('div');
   div.className = 'chat-msg' + (own ? ' own' : '');
   div.dataset.msgId = msg.id;
+  // Every bubble uses the current viewer's own accent color,
+  // regardless of who sent the message (see message-accent.js).
+  setMessageAccent(div);
   div.innerHTML = `
     ${avatarHtml(msg.sender_id, msg.sender_username, 'chat-avatar')}
     <div class="chat-msg-content">

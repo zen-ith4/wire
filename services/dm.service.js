@@ -5,6 +5,7 @@ const { getDb } = require('../config/database');
 // همیشه created_at را با AS timestamp می‌خوانیم.
 const DM_SELECT = `
   SELECT dm.id, dm.sender_id, dm.recipient_id, su.username AS sender_username,
+         su.accent_color,
          dm.content, dm.created_at AS timestamp, dm.read_at,
          dm.attachment_name, dm.attachment_size, dm.attachment_mime,
          dm.reply_to_id,

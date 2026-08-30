@@ -2,7 +2,7 @@
 .emoji-picker{
   position:fixed;z-index:250;width:320px;height:380px;
   display:flex;flex-direction:column;
-  background:rgba(17,17,22,.95);
+  background:rgba(var(--ink2-rgb),.95);
   backdrop-filter:blur(16px);
   border:1px solid var(--border);
   border-radius:var(--radius-lg);
@@ -39,7 +39,7 @@ input.emoji-picker-search:focus{border-color:var(--accent-border);}
 .emoji-picker-skin-menu{
   position:absolute;top:44px;right:10px;z-index:5;
   display:none;gap:6px;padding:8px;
-  background:rgba(17,17,22,.98);backdrop-filter:blur(16px);
+  background:rgba(var(--ink2-rgb),.98);backdrop-filter:blur(16px);
   border:1px solid var(--border);border-radius:var(--radius);
   box-shadow:0 8px 24px -6px rgba(0,0,0,.5);
 }

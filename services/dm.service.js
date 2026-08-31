@@ -64,6 +64,65 @@ function getConversations(userId) {
   `).all(userId, userId, userId);
 }
 
+// Everything the conversation-list endpoint needs (peer id, username,
+// last message preview, unread count) in three fixed queries instead
+// of one query per conversation — getConversationsHandler previously
+// called getConversations() once and then, per peer, findUserById() +
+// getLastMessage() + getUnreadCount() (1 + 3N queries for N
+// conversations). Same data, same shape, just batched:
+//   1. one query for the peer list + username (a single JOIN instead
+//      of N findUserById() calls)
+//   2. one windowed query for every peer's single most recent
+//      message at once
+//   3. one grouped query for every peer's unread count at once
+// The three result sets are then joined in memory by peer_id.
+function getConversationsSummary(userId) {
+  const peers = getDb().prepare(`
+    SELECT
+      CASE WHEN dm.sender_id = ? THEN dm.recipient_id ELSE dm.sender_id END AS peer_id,
+      u.username
+    FROM direct_messages dm
+    LEFT JOIN users u
+      ON u.id = CASE WHEN dm.sender_id = ? THEN dm.recipient_id ELSE dm.sender_id END
+    WHERE dm.sender_id = ? OR dm.recipient_id = ?
+    GROUP BY peer_id
+  `).all(userId, userId, userId, userId);
+
+  const lastMessageRows = getDb().prepare(`
+    SELECT peer_id, content, attachment_name, timestamp FROM (
+      SELECT
+        CASE WHEN sender_id = ? THEN recipient_id ELSE sender_id END AS peer_id,
+        content,
+        attachment_name,
+        created_at AS timestamp,
+        ROW_NUMBER() OVER (
+          PARTITION BY CASE WHEN sender_id = ? THEN recipient_id ELSE sender_id END
+          ORDER BY created_at DESC
+        ) AS rn
+      FROM direct_messages
+      WHERE sender_id = ? OR recipient_id = ?
+    )
+    WHERE rn = 1
+  `).all(userId, userId, userId, userId);
+
+  const unreadRows = getDb().prepare(`
+    SELECT sender_id AS peer_id, COUNT(*) AS c
+    FROM direct_messages
+    WHERE recipient_id = ? AND read_at IS NULL
+    GROUP BY sender_id
+  `).all(userId);
+
+  const lastMessageByPeer = new Map(lastMessageRows.map(r => [r.peer_id, r]));
+  const unreadByPeer = new Map(unreadRows.map(r => [r.peer_id, r.c]));
+
+  return peers.map(({ peer_id, username }) => ({
+    peer_id,
+    username,
+    lastMessage: lastMessageByPeer.get(peer_id) || null,
+    unreadCount: unreadByPeer.get(peer_id) || 0,
+  }));
+}
+
 function getLastMessage(userId, peerId) {
   return getDb().prepare(`
     SELECT content, attachment_name, sender_id, created_at AS timestamp
@@ -154,6 +213,7 @@ function deleteDmMessage(id) {
 
 module.exports = {
   getConversations,
+  getConversationsSummary,
   getLastMessage,
   getUnreadCount,
   getTotalUnread,

@@ -5,6 +5,7 @@ import {
   emptyState,
   loadingState,
   escapeHtml,
+  linkifyHtml,
   escapeAttr,
   formatDate,
   insertAtCursor
@@ -490,7 +491,7 @@ function buildDmMessageEl(msg, currentUser) {
         ${canDelete ? `<button type="button" class="chat-msg-delete" title="Delete message" onclick="window.deleteDmMessage(${msg.id})">${ICONS.trash}</button>` : ''}
       </div>
       ${buildReplyQuoteHtml(msg, 'dm')}
-      ${msg.content ? `<div class="chat-bubble">${escapeHtml(msg.content)}</div>` : ''}
+      ${msg.content ? `<div class="chat-bubble">${linkifyHtml(msg.content)}</div>` : ''}
       ${msg.has_attachment ? renderAttachment(msg, 'dm') : ''}
       ${renderReactionsRow(msg, 'dm')}
     </div>

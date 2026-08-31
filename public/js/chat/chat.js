@@ -5,6 +5,7 @@ import {
   emptyState,
   loadingState,
   escapeHtml,
+  linkifyHtml,
   formatDate,
   insertAtCursor
 } from '../core/utils.js';
@@ -231,7 +232,7 @@ function buildChatMessageEl(msg) {
         ${canDelete ? `<button type="button" class="chat-msg-delete" title="Delete message" onclick="window.deleteChatMessage(${msg.id})">${ICONS.trash}</button>` : ''}
       </div>
       ${buildReplyQuoteHtml(msg, 'chat')}
-      ${msg.content ? `<div class="chat-bubble">${escapeHtml(msg.content)}</div>` : ''}
+      ${msg.content ? `<div class="chat-bubble">${linkifyHtml(msg.content)}</div>` : ''}
       ${msg.has_attachment ? renderAttachment(msg, 'chat') : ''}
       ${renderReactionsRow(msg, 'chat')}
     </div>

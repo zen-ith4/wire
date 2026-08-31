@@ -1,6 +1,9 @@
-const { execSync } = require('child_process');
+const { exec } = require('child_process');
+const { promisify } = require('util');
 
 const constants = require('../config/constants');
+
+const execAsync = promisify(exec);
 
 const {
   getMappedPeer,
@@ -13,9 +16,17 @@ const {
   findUserByUsername,
 } = require('../services/user.service');
 
-function getPeers(req, res) {
+// Was execSync() — a synchronous call that blocks Node's single
+// event loop for however long `wg show ... dump` takes (up to the
+// 3s timeout). This app's chat is served on that same event loop
+// via socket.io, so every admin loading this page stalled message
+// delivery/typing/presence for every connected user for the
+// duration of the call. Swapping to the async exec() equivalent
+// (same shell command, same output parsing, same error handling)
+// removes that stall without changing behavior.
+async function getPeers(req, res) {
   try {
-    const wgDump = execSync(
+    const { stdout: wgDump } = await execAsync(
       `wg show ${constants.WG_INTERFACE} dump`,
       {
         encoding: 'utf8',

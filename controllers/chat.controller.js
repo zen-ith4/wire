@@ -330,7 +330,17 @@ function getAttachment(req, res) {
   if (req.query.download) {
     res.setHeader('Content-Length', fileSize);
 
-    return fs.createReadStream(filePath).pipe(res);
+    const downloadStream = fs.createReadStream(filePath);
+    // If the client disconnects before the file finishes sending
+    // (closed tab, cancelled download), piping into `res` alone
+    // doesn't stop the source read — without this, the server keeps
+    // reading the rest of the file off disk and holding its file
+    // descriptor open until the read completes, for a client that's
+    // no longer there to receive any of it.
+    req.on('close', () => {
+      if (!downloadStream.destroyed) downloadStream.destroy();
+    });
+    return downloadStream.pipe(res);
   }
 
   // Browser requested a specific byte range
@@ -340,7 +350,12 @@ function getAttachment(req, res) {
     res.setHeader('Content-Length', fileSize);
     res.setHeader('Accept-Ranges', 'bytes');
 
-    return fs.createReadStream(filePath).pipe(res);
+    const fullStream = fs.createReadStream(filePath);
+    // Same reasoning as the download branch above.
+    req.on('close', () => {
+      if (!fullStream.destroyed) fullStream.destroy();
+    });
+    return fullStream.pipe(res);
   }
 
   const match = range.match(/bytes=(\d*)-(\d*)/);
@@ -416,6 +431,17 @@ function getAttachment(req, res) {
     } else {
       res.destroy();
     }
+  });
+
+  // This range endpoint is what video/audio scrubbing hits — every
+  // seek cancels the browser's previous in-flight range request and
+  // starts a new one. Without this, each cancelled request's read
+  // stream keeps reading its (now unwanted) byte range off disk to
+  // completion instead of stopping the moment the client moves on,
+  // so scrubbing repeatedly through a large file could have several
+  // abandoned reads running at once.
+  req.on('close', () => {
+    if (!stream.destroyed) stream.destroy();
   });
 
   stream.pipe(res);

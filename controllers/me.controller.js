@@ -252,8 +252,16 @@ function getAvatar(req, res) {
     'no-cache'
   );
 
-  fs.createReadStream(filePath)
-    .pipe(res);
+  const avatarStream = fs.createReadStream(filePath);
+  // Same reasoning as chat.controller.js/dm.controller.js's
+  // getAttachment: without this, a client that navigates away
+  // mid-load leaves the server still reading the file for no one.
+  // Avatars are small, so the impact here is minor, but the fix is
+  // free and keeps this endpoint consistent with the others.
+  req.on('close', () => {
+    if (!avatarStream.destroyed) avatarStream.destroy();
+  });
+  avatarStream.pipe(res);
 }
 
 
@@ -374,8 +382,11 @@ function getBanner(req, res) {
     'no-cache'
   );
 
-  fs.createReadStream(filePath)
-    .pipe(res);
+  const bannerStream = fs.createReadStream(filePath);
+  req.on('close', () => {
+    if (!bannerStream.destroyed) bannerStream.destroy();
+  });
+  bannerStream.pipe(res);
 }
 
 

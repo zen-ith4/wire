@@ -4,6 +4,130 @@ export function escapeHtml(text) {
   return div.innerHTML;
 }
 
+// ============================================================
+// URL auto-linking
+//
+// Turns bare http(s)/www URLs inside plain message text into safe,
+// clickable <a> tags — used by chat.js/dm.js in place of a plain
+// escapeHtml() call when rendering a message's .chat-bubble content,
+// so it's the same single rendering pipeline, just URL-aware.
+//
+// Security model: only text that both (a) matches URL_REGEX (which
+// can only ever start with a literal "http://", "https://", or
+// "www.", and can never contain whitespace, <, >, ", or ' — see the
+// character class below) and (b) parses via the URL constructor to
+// a http:/https: protocol ever becomes an href. Everything else —
+// including the non-URL portions of the message, and any candidate
+// match that fails either check — goes through the exact same
+// escapeHtml() used everywhere else in this codebase. There is no
+// separate/parallel sanitization path here, just this URL-detection
+// layer sitting in front of the existing one.
+// ============================================================
+
+// http(s)://… or www.… — deliberately excludes whitespace and the
+// characters that matter for HTML-attribute safety (<, >, ", ')
+// directly in the match itself, so a malicious/malformed URL can
+// never contain the characters that would let it break out of the
+// href="..." attribute it's about to be placed in below.
+const URL_REGEX = /\b(?:https?:\/\/|www\.)[^\s<>"']+/gi;
+
+const TRAILING_PUNCT_CHARS = new Set(['.', ',', '!', '?', ':', ';', "'", '"', ')', ']', '}']);
+const BRACKET_PAIRS = { ')': '(', ']': '[', '}': '{' };
+
+// Sentence punctuation (and unbalanced closing brackets) immediately
+// after a URL almost never belong to the URL itself — e.g. "check
+// this https://example.com." shouldn't include the trailing period
+// in the link. Balanced brackets (…/wiki/Foo_(bar)) are the
+// exception: a closing bracket is only trimmed if the match doesn't
+// already contain a matching, still-open opening bracket.
+function trimTrailingPunctuation(url) {
+  let trimmed = url;
+  let suffix = '';
+
+  while (trimmed.length > 0) {
+    const char = trimmed[trimmed.length - 1];
+    if (!TRAILING_PUNCT_CHARS.has(char)) break;
+
+    const opening = BRACKET_PAIRS[char];
+    if (opening) {
+      const opens = trimmed.split(opening).length - 1;
+      const closes = trimmed.split(char).length - 1;
+      // As many or more opens than closes inside the match means
+      // this closing bracket is balancing one of them — keep it.
+      if (opens >= closes) break;
+    }
+
+    suffix = char + suffix;
+    trimmed = trimmed.slice(0, -1);
+  }
+
+  return { url: trimmed, suffix };
+}
+
+// Resolves a trimmed match to a safe, absolute href, or null if it
+// isn't one. Explicit protocol allowlist (only ever http:/https:)
+// on top of what URL_REGEX already guarantees, so nothing — not
+// javascript:, data:, vbscript:, or anything else — can ever reach
+// an href through this function even if the regex above were ever
+// loosened later.
+function resolveLinkHref(rawUrl) {
+  const hasScheme = /^https?:\/\//i.test(rawUrl);
+  const candidate = hasScheme ? rawUrl : `https://${rawUrl}`;
+
+  let parsed;
+  try {
+    parsed = new URL(candidate);
+  } catch {
+    return null;
+  }
+
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return null;
+  }
+
+  return parsed.href;
+}
+
+export function linkifyHtml(text) {
+  if (!text) return '';
+
+  let result = '';
+  let lastIndex = 0;
+  let match;
+
+  URL_REGEX.lastIndex = 0;
+  while ((match = URL_REGEX.exec(text)) !== null) {
+    const rawMatch = match[0];
+    const matchStart = match.index;
+
+    // Plain text before this match — same escaping as always.
+    result += escapeHtml(text.slice(lastIndex, matchStart));
+
+    const { url: trimmedUrl, suffix } = trimTrailingPunctuation(rawMatch);
+    const href = trimmedUrl ? resolveLinkHref(trimmedUrl) : null;
+
+    if (href) {
+      // Display text is the original (trimmed) match exactly as the
+      // user typed it — only the href itself gets normalized/
+      // scheme-completed. escapeHtml() on both keeps this safe even
+      // though URL_REGEX already excludes the characters that would
+      // matter for breaking out of the href attribute.
+      result += `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" class="chat-link">${escapeHtml(trimmedUrl)}</a>`;
+      result += escapeHtml(suffix);
+    } else {
+      // Matched the shape of a URL but didn't resolve to a safe
+      // http(s) link (e.g. malformed) — fall back to plain escaped
+      // text, identical to how it'd render without this function.
+      result += escapeHtml(rawMatch);
+    }
+
+    lastIndex = matchStart + rawMatch.length;
+  }
+
+  result += escapeHtml(text.slice(lastIndex));
+  return result;
+}
+
 export function escapeAttr(s) {
   return String(s)
     .replace(/\\/g, '\\\\')

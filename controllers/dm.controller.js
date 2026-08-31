@@ -3,10 +3,8 @@ const fs = require('fs');
 const constants = require('../config/constants');
 const { CHAT_MIME_MAP } = require('../config/multer');
 const {
-  getConversations,
-  getLastMessage,
+  getConversationsSummary,
   getTotalUnread,
-  getUnreadCount,
   markRead,
   getRecentDmMessages,
   getDmMessagesBefore,
@@ -59,21 +57,20 @@ function normalizeDmReplyToId(value, userId, peerId) {
 }
 
 function getConversationsHandler(req, res) {
-  const peers = getConversations(req.user.id);
+  // getConversationsSummary() batches what used to be 1 + 3 queries
+  // per conversation (peer lookup, last message, unread count) into
+  // 3 fixed queries total — see the comment on it in dm.service.js.
+  const conversations = getConversationsSummary(req.user.id);
 
-  const result = peers.map(({ peer_id }) => {
-    const peer = findUserById(peer_id);
-    const lastMsg = getLastMessage(req.user.id, peer_id);
-    const unread = getUnreadCount(req.user.id, peer_id);
-
+  const result = conversations.map(({ peer_id, username, lastMessage, unreadCount }) => {
     return {
       peer_id,
-      username: peer ? peer.username : 'Deleted user',
-      last_message: lastMsg
-        ? (lastMsg.content || (lastMsg.attachment_name ? '📎 Attachment' : ''))
+      username: username || 'Deleted user',
+      last_message: lastMessage
+        ? (lastMessage.content || (lastMessage.attachment_name ? '📎 Attachment' : ''))
         : '',
-      last_timestamp: lastMsg ? lastMsg.timestamp : null,
-      unread_count: unread,
+      last_timestamp: lastMessage ? lastMessage.timestamp : null,
+      unread_count: unreadCount,
     };
   }).sort((a, b) => (b.last_timestamp || '').localeCompare(a.last_timestamp || ''));
 
@@ -269,9 +266,14 @@ function getAttachment(req, res) {
       fileSize
     );
 
-    return fs
-      .createReadStream(filePath)
-      .pipe(res);
+    const downloadStream = fs.createReadStream(filePath);
+    // See the identical comment in chat.controller.js's getAttachment
+    // — without this, a client disconnecting mid-download leaves the
+    // server still reading the rest of the file off disk for no one.
+    req.on('close', () => {
+      if (!downloadStream.destroyed) downloadStream.destroy();
+    });
+    return downloadStream.pipe(res);
   }
 
   // --------------------------------------------------
@@ -292,9 +294,11 @@ function getAttachment(req, res) {
       'bytes'
     );
 
-    return fs
-      .createReadStream(filePath)
-      .pipe(res);
+    const fullStream = fs.createReadStream(filePath);
+    req.on('close', () => {
+      if (!fullStream.destroyed) fullStream.destroy();
+    });
+    return fullStream.pipe(res);
   }
 
   // --------------------------------------------------
@@ -400,6 +404,15 @@ function getAttachment(req, res) {
     } else {
       res.destroy();
     }
+  });
+
+  // Same reasoning as chat.controller.js's getAttachment — this is
+  // the range endpoint video/audio scrubbing hits, and each seek
+  // cancels the previous in-flight range request from the browser's
+  // side. Destroying the stream when the request closes stops the
+  // server from continuing to read an abandoned byte range off disk.
+  req.on('close', () => {
+    if (!stream.destroyed) stream.destroy();
   });
 
   stream.pipe(res);

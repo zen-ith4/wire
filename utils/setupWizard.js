@@ -187,6 +187,25 @@ class SetupWizard {
 }
 
 module.exports = async function runSetupWizard() {
+    // The normal case on every restart after the very first run:
+    // setup is already done and there's nothing for the wizard to
+    // do. Checking this *before* constructing SetupWizard matters —
+    // its constructor unconditionally opens a readline.Interface on
+    // process.stdin (terminal:true), which puts stdin into raw
+    // listening mode and keeps the event loop alive for as long as
+    // it stays open. run() itself already handled the
+    // already-completed case correctly by returning immediately,
+    // but that left the readline interface it had just opened
+    // sitting there unclosed for the rest of the server's lifetime
+    // — a real resource, alive with nothing left to do, on every
+    // single restart. Skipping construction entirely when it isn't
+    // needed is a strict improvement over closing it right after
+    // opening it: same end state (no wizard resources held), zero
+    // wasted readline setup on the hot path (every normal restart).
+    if (process.env.SETUP_COMPLETED === 'true') {
+        return;
+    }
+
     const wizard = new SetupWizard();
     await wizard.run();
 };

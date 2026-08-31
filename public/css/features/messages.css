@@ -520,6 +520,23 @@ input.conv-search-input:focus{
   width: fit-content;
 }
 
+/* Auto-linked URLs inside a message bubble (see linkifyHtml() in
+   js/core/utils.js). Scoped under .chat-bubble so it only affects
+   message content, not any other link elsewhere in the UI. */
+.chat-bubble .chat-link{
+  color:#3b82f6;
+  text-decoration:underline;
+  text-decoration-color:transparent;
+  word-break:break-word;
+  transition:color .12s ease, text-decoration-color .12s ease;
+}
+
+.chat-bubble .chat-link:hover,
+.chat-bubble .chat-link:focus-visible{
+  color:#2563eb;
+  text-decoration-color:currentColor;
+}
+
 .chat-msg.own .chat-bubble{
   /* Fill/text color come from .chat-bubble's --message-accent /
      --message-accent-contrast above — for an own message that

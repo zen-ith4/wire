@@ -1,5 +1,9 @@
+const fs = require('fs');
+const path = require('path');
+
 const { getDb } = require('../config/database');
 const { hashPassword } = require('../utils/password');
+const constants = require('../config/constants');
 
 function normalizeUsername(username) {
   return username.trim().toLowerCase();
@@ -203,14 +207,98 @@ function updatePassword(userId, newPassword) {
 }
 
 
+// Best-effort disk cleanup helper — mirrors the fire-and-forget
+// fs.unlink(path, err => {...}) pattern already used elsewhere in
+// this codebase (e.g. me.controller.js's old-avatar/banner cleanup)
+// for exactly the same reason: a missing/already-gone file, or a
+// permissions hiccup, shouldn't fail the request that triggered it.
+function unlinkQuietly(filePath) {
+  fs.unlink(filePath, (err) => {
+    if (err && err.code !== 'ENOENT') {
+      console.error('Failed to remove file during user deletion:', filePath, err.message);
+    }
+  });
+}
+
+// Deleting a user cascades (ON DELETE CASCADE, see database/schema)
+// to remove their row from `messages`/`direct_messages`/etc., but a
+// DB cascade only ever removes *rows* — it has no idea their
+// avatar_path/banner_path/attachment_path columns pointed at real
+// files on disk in AVATAR_DIR/BANNER_DIR/CHAT_UPLOAD_DIR/
+// DM_UPLOAD_DIR. Without collecting and removing those first, every
+// deleted user permanently orphans their avatar, banner, and every
+// attachment they ever posted to Chat or a DM — the DB record of
+// them is gone, but the files themselves sit on disk forever with
+// nothing left to reference or clean them up.
+//
+// The paths have to be read out *before* the DELETE below runs —
+// once it does, the cascade removes the very rows that told us
+// where those files were.
+function collectUserOwnedFiles(userId) {
+  const db = getDb();
+
+  const user = db
+    .prepare('SELECT avatar_path, banner_path FROM users WHERE id = ?')
+    .get(userId);
+
+  const chatAttachments = db
+    .prepare(`
+      SELECT attachment_path FROM messages
+      WHERE user_id = ? AND attachment_path IS NOT NULL
+    `)
+    .all(userId);
+
+  const dmAttachments = db
+    .prepare(`
+      SELECT attachment_path FROM direct_messages
+      WHERE sender_id = ? AND attachment_path IS NOT NULL
+    `)
+    .all(userId);
+
+  const files = [];
+
+  if (user && user.avatar_path) {
+    files.push(path.join(constants.AVATAR_DIR, user.avatar_path));
+  }
+
+  if (user && user.banner_path) {
+    files.push(path.join(constants.BANNER_DIR, user.banner_path));
+  }
+
+  for (const row of chatAttachments) {
+    files.push(path.join(constants.CHAT_UPLOAD_DIR, row.attachment_path));
+  }
+
+  for (const row of dmAttachments) {
+    files.push(path.join(constants.DM_UPLOAD_DIR, row.attachment_path));
+  }
+
+  return files;
+}
+
+
 function deleteUser(userId) {
 
-  return getDb()
+  // Read out every file this user owns before the cascade delete
+  // below removes the rows that record where they are.
+  const filesToRemove = collectUserOwnedFiles(userId);
+
+  const result = getDb()
     .prepare(`
       DELETE FROM users
       WHERE id = ?
     `)
     .run(userId);
+
+  // Only clean up files once the row (and its cascade) actually
+  // went through — if the DELETE affected nothing (e.g. a
+  // already-deleted/nonexistent id slipped through), there's nothing
+  // to remove and no cascade to have orphaned anything.
+  if (result.changes > 0) {
+    filesToRemove.forEach(unlinkQuietly);
+  }
+
+  return result;
 }
 
 

@@ -1,0 +1,1322 @@
+/* ================================================================
+   MESSAGES — reproduces the reference's .messages-layout structure
+   almost verbatim. FileHub's actual class names (.dm-conv, .dm-*)
+   are kept as the functional hooks (click delegation, dataset
+   attributes JS already depends on); the reference's own class
+   names (.conv-*, .chat-*) are used for the parts that are purely
+   presentational, since nothing in dm.js queries those by name.
+   ================================================================ */
+
+.dm-layout{
+  display:flex;
+  width:100%;
+  flex:1;
+  min-height:0;
+}
+
+.dm-sidebar {
+  width:var(--conv-panel-width);
+  min-width:var(--conv-panel-width);
+  height:100%;
+  border-right:1px solid var(--border);
+  display:flex;
+  flex-direction:column;
+  min-height:0;
+  /* Flat translucent glass — no local gradient patch. The single
+     global ambient layer (base.css/#ambient-underlay) shows through
+     instead, so this panel doesn't look like its own separately-lit
+     "bubble" next to .dm-thread. */
+  /* Translucent enough for the ambient glow (base.css) to read
+     through, instead of the near-opaque fill this used to be — that
+     opacity was blocking almost all of the glow on chat/DM pages. */
+  background:rgba(var(--ink-rgb), .62);
+  backdrop-filter:blur(12px);
+  -webkit-backdrop-filter:blur(12px);
+}
+
+.conv-header{
+  padding:16px 16px 12px;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  border-bottom:1px solid var(--border);
+  flex-shrink:0;
+}
+
+.conv-header-row{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+}
+
+.conv-header-label{
+  font-size:13px;
+  font-weight:550;
+  color:var(--text);
+  letter-spacing:-0.01em;
+}
+
+.conv-search-wrap{
+  position:relative;
+}
+
+input.conv-search-input{
+  width:100%;
+  padding:8px 12px 8px 34px;
+  border-radius:var(--radius);
+  border:1px solid var(--border);
+  background:var(--ink2);
+  color:var(--text);
+  font-size:13px;
+  font-family:inherit;
+  font-weight:440;
+  letter-spacing:-0.01em;
+  outline:none;
+  transition:
+    border-color var(--ease-fast),
+    background var(--ease-fast),
+    box-shadow var(--ease-fast);
+}
+
+.conv-search-input::placeholder{
+  color:var(--muted2);
+}
+
+input.conv-search-input:focus{
+  border-color:var(--accent-border);
+  background:var(--ink2);
+  box-shadow:0 0 0 3px var(--accent-bg);
+}
+
+.conv-search-icon{
+  position:absolute;
+  left:11px;
+  top:50%;
+  transform:translateY(-50%);
+  width:15px;
+  height:15px;
+  pointer-events:none;
+  color:var(--muted2);
+  display:flex;
+}
+
+.dm-conv-list,
+.conv-list{
+  flex:1;
+  overflow-y:auto;
+  padding:4px 8px;
+  display:flex;
+  flex-direction:column;
+  gap:1px;
+}
+
+.dm-conv{
+  display:flex;
+  align-items:center;
+  gap:11px;
+  padding:10px 10px;
+  border-radius:var(--radius);
+  cursor:pointer;
+  transition:background var(--ease-fast);
+  position:relative;
+  min-height:56px;
+  background:none;
+  border:none;
+}
+
+.dm-conv:hover{
+  background:var(--hover);
+}
+
+.dm-conv.active{
+  background:var(--accent-bg);
+}
+
+.conv-info{
+  flex:1;
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+}
+
+.dm-conv-name,
+.conv-name{
+  font-size:13.5px;
+  font-weight:500;
+  color:var(--text);
+  letter-spacing:-0.01em;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+
+.dm-conv-preview,
+.conv-preview{
+  font-size:12px;
+  color:var(--muted);
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  font-weight:430;
+  letter-spacing:-0.005em;
+}
+
+.conv-meta{
+  display:flex;
+  flex-direction:column;
+  align-items:flex-end;
+  gap:4px;
+  flex-shrink:0;
+}
+
+.conv-time{
+  font-size:11px;
+  color:var(--muted2);
+  font-weight:430;
+  white-space:nowrap;
+}
+
+.dm-unread-badge,
+.conv-badge{
+  min-width:18px;
+  height:18px;
+  border-radius:9px;
+  background:var(--accent-bg);
+  color:var(--muted);
+  font-size:10.5px;
+  font-weight:550;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:0 6px;
+  letter-spacing:0;
+  line-height:1;
+  transition:background var(--ease-smooth);
+}
+
+/* ---------- Chat ---------- */
+
+.dm-thread,
+.chat-panel {
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  min-width:0;
+  min-height:0;
+  height:100%;
+  position:relative; /* anchors the floating .chat-top-bar (below) so it
+                         overlaps .chat-messages instead of sitting in
+                         normal flow above it */
+  /* Same reasoning as .dm-sidebar above — flat glass, no local
+     gradient of its own, and translucent enough to actually let the
+     ambient glow through (this panel covers almost the whole
+     viewport on chat/DM pages, so its opacity dominates whether the
+     glow reads as visible at all). */
+  background:rgba(var(--void-rgb), .55);
+  backdrop-filter:blur(12px);
+  -webkit-backdrop-filter:blur(12px);
+}
+
+/* Plain in-flow bar. Still used as-is by the Files breadcrumb view
+   (files.js, reuses .dm-thread + .chat-top-bar for its folder-path
+   header — unrelated to chat) and by the "New message" picker screen
+   (.dm-thread-header, dm.js/openNewDmPicker). Neither of those has a
+   .chat-messages stream under it, so this base rule stays a normal
+   non-floating row; only the DM peer header (dm.js) opts into the
+   floating glass treatment below via the extra .chat-header-glass
+   class — group chat keeps this plain in-flow bar too, since its
+   header has no other-user profile to give the treatment to. */
+.dm-thread-header,
+.chat-top-bar{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  padding:12px 20px;
+  border-bottom:1px solid var(--border);
+  flex-shrink:0;
+  background:transparent;
+}
+
+/* ---------- Liquid-glass floating header (open DM / chat only) ----------
+   Applied via the extra .chat-header-glass class (see dm.js)
+   so the plain .chat-top-bar rule above is left alone for its other,
+   non-chat reuse (Files breadcrumb bar). This turns the bar into ONE
+   floating glass surface anchored to .dm-thread/.chat-panel via
+   position:absolute, sitting OVER .chat-messages rather than above it
+   in normal flow. Because .chat-messages is no longer pushed down by
+   an in-flow header, the message stream starts at the very top of the
+   scroll container and visibly scrolls in behind/underneath this
+   glass as the thread scrolls — the glass's own rounded edge + blur
+   is what reads as the boundary, not a hard divider line. */
+.chat-top-bar.chat-header-glass{
+  position:absolute;
+  top:14px;
+  left:16px;
+  right:16px;
+  z-index:30;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:6px 14px 6px 6px;
+  border-radius:20px;
+  border-bottom:none;
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.06) 0%, rgba(255,255,255,.012) 60%),
+    rgba(var(--ink2-rgb), .40);
+  border:1px solid rgba(0, 0, 0, 0.08);
+  box-shadow:
+    inset 0 1px 0 rgba(0, 0, 0, 0.05),
+    0 6px 18px rgba(0,0,0,.18);
+  backdrop-filter:blur(20px) saturate(1.4);
+  -webkit-backdrop-filter:blur(20px) saturate(1.4);
+  transition:background var(--ease-fast),border-color var(--ease-fast);
+}
+
+/* The other person's avatar + name + status, grouped as ONE unit
+   inside the glass bar above (not a separate glass surface of its
+   own — see sidebar.css/.sidebar-profile for the deliberately-plain
+   "my profile" entry, which never gets this treatment). */
+.dm-peer-profile{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  min-width:0;
+  flex:1;
+  cursor:pointer;
+}
+.dm-peer-profile:hover .chat-top-name{
+  color:var(--text);
+  opacity:.82;
+}
+.dm-peer-meta{
+  display:flex;
+  flex-direction:column;
+  gap:1px;
+  min-width:0;
+}
+
+.chat-top-name{
+  font-size:13.5px;
+  font-weight:500;
+  color:var(--text);
+  letter-spacing:-0.01em;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+
+.chat-top-status{
+  font-size:11.5px;
+  color:var(--muted2);
+  font-weight:430;
+  display:flex;
+  align-items:center;
+  gap:4px;
+}
+
+.chat-top-status::before{
+  content:'';
+  display:inline-block;
+  width:7px;
+  height:7px;
+  border-radius:50%;
+  background:var(--muted2);
+}
+
+.chat-top-status.online::before{
+  background:rgb(var(--green));
+}
+
+.dm-back-btn{
+  display:none;
+  flex-shrink:0;
+}
+
+.chat-messages{
+  flex:1;
+  overflow-y:auto;
+  padding:20px 24px;
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  margin-bottom:0;
+  max-height:none;
+}
+
+/* Only when the floating glass header (above) is present: top padding
+   clears it at rest (14px offset + ~46px glass height + 16px
+   breathing room ≈ 76px). The stream still starts at the very top of
+   the scroll container (see .dm-thread/.chat-panel position:relative
+   above), so once scrolled, earlier messages travel up behind/
+   underneath the glass instead of stopping short of it. Scoped to
+   this sibling combinator, not the base rule, so the group chat's
+   plain in-flow header (chat.js, no .chat-header-glass) doesn't get
+   pushed down by phantom space it doesn't need. */
+.chat-top-bar.chat-header-glass + .chat-messages{
+  padding-top:76px;
+}
+
+.chat-msg{
+  display:flex;
+  gap:10px;
+  max-width:75%;
+  align-items:flex-start;
+}
+
+.chat-msg.own{
+  align-self:flex-end;
+  flex-direction:row-reverse;
+  align-items:flex-start;
+}
+
+/* Holds meta/text/attachment for a message, stacked vertically below
+   one another (sender+time, then text, then any media player) - this
+   is what keeps the video/audio player under the message content
+   instead of beside the avatar. min-width:0 lets it shrink below its
+   children's intrinsic width so wide attachments (e.g. the 480px
+   video player) don't force the row to overflow horizontally. */
+
+.chat-msg-content{
+  display:flex;
+  flex-direction:column;
+  min-width:0;
+  flex:1 1 auto;
+}
+
+.chat-avatar{
+  width:30px;
+  height:30px;
+  border-radius:50%;
+  flex-shrink:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:11px;
+  font-weight:600;
+  background:var(--ink2);
+  border:1px solid var(--border);
+  color:var(--muted);
+  position:relative;
+}
+
+.conv-avatar{
+  width:38px;
+  height:38px;
+  border-radius:50%;
+  flex-shrink:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:14px;
+  font-weight:550;
+  background:var(--ink2);
+  border:1px solid var(--border);
+  color:var(--muted);
+  position:relative;
+}
+
+.chat-top-avatar{
+  width:32px;
+  height:32px;
+  font-size:12px;
+  border-radius:50%;
+  flex-shrink:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:var(--ink2);
+  border:1px solid var(--border);
+  color:var(--muted);
+  position:relative;
+}
+
+.presence-dot{
+  position:absolute;
+  right:-1px;
+  bottom:-1px;
+  width:9px;
+  height:9px;
+  border-radius:50%;
+  background:var(--muted2);
+  border:2px solid rgba(13,13,17,.85);
+  transition:background .15s;
+}
+
+.presence-dot.online{
+  background:rgb(var(--green));
+}
+
+/* ---------- Message bubble ---------- */
+
+.chat-bubble{
+  /* Resolved per-message from the sender's own stored accent color
+     (see js/chat/message-accent.js) — --message-accent/-contrast are
+     set as an inline custom property on each .chat-msg element
+     independently, never read from the viewer's global --accent*
+     vars. The var(...) fallback only covers the instant before JS
+     has painted the element. */
+  background:var(--message-accent, var(--ink2));
+  border:1px solid var(--border);
+  color:var(--message-accent-contrast, var(--text));
+  border-radius:var(--radius-lg) var(--radius-lg) var(--radius-lg) 3px;
+  padding:6px 12px;
+  font-size:13.5px;
+  line-height:1.45;
+  letter-spacing:-0.01em;
+  font-weight:440;
+  /* Preserve real newlines (Shift+Enter) exactly as the user typed
+     them, while still letting long runs of text wrap normally. */
+  white-space:pre-wrap;
+  /* overflow-wrap (standard) instead of the legacy word-break:break-word
+     alias: only breaks a word when it genuinely can't fit, without
+     forcing a break at every opportunity. */
+  overflow-wrap:break-word;
+  word-break:normal;
+  /*
+   * NOTE: deliberately NOT using width:fit-content here.
+   * .chat-bubble is a flex item of `.chat-msg.own` (flex-direction:
+   * row-reverse). Combining width:fit-content with a wrapping
+   * property (word-break/overflow-wrap) on a flex item inside a
+   * *reversed* flex container hits a real, reproducible Chromium
+   * layout bug: the browser's fit-content/intrinsic-size pass
+   * collapses toward min-content, so short messages like "hi there"
+   * or "salam khobi" would render one word per line even though the
+   * bubble had plenty of room. `flex:0 0 auto` below already gives
+   * this item its natural (shrink-to-fit) width without invoking
+   * that broken code path — confirmed via isolated repro before/after.
+   *
+   * ALSO deliberately not capping max-width here with a percentage.
+   * .chat-bubble's containing block (.chat-msg-content) is itself
+   * shrink-to-fit (auto width, no stretch) all the way up to
+   * `.chat-msg`, which is ALSO shrink-to-fit (own messages use
+   * align-self:flex-end, not stretch). A percentage max-width here
+   * would resolve against that indeterminate/circular chain, and
+   * Chromium mis-resolves it badly for short text (reproducibly
+   * clamps to ~50-100px regardless of available space — same
+   * underlying bug family as above). `.chat-msg{max-width:75%}` a few
+   * rules above already caps the *whole row* against `.chat-messages`
+   * — a proper definite-width ancestor — so it alone is what actually
+   * limits how wide a message gets; this element doesn't need its own
+   * (broken) copy of that constraint.
+   */
+  /*
+   * max-width:100% (not a smaller percentage like the old 70%):
+   * resolves against this element's own immediate parent
+   * (.chat-msg-content) without walking further up an indeterminate
+   * shrink-to-fit chain — see the width:fit-content note above for
+   * why a smaller percentage caused Chromium to mis-resolve this
+   * badly (reproducibly clamped short messages to ~50-100px). 100%
+   * still does real work: it's what makes very long unbroken text
+   * (e.g. a URL with no spaces) actually wrap/shrink to fit instead
+   * of overflowing past the message column, while `.chat-msg{max-width:75%}`
+   * (relative to `.chat-messages`, a proper definite-width ancestor)
+   * is what caps how wide the row gets in the first place.
+   */
+  max-width:100%;
+  flex:0 0 auto;
+  align-self: flex-start;
+  width: fit-content;
+}
+
+.chat-msg.own .chat-bubble{
+  /* Fill/text color come from .chat-bubble's --message-accent /
+     --message-accent-contrast above — for an own message that
+     resolves to the viewer's own accent (since they're the sender),
+     so no separate background/color override is needed here. This
+     rule only handles the "own" bubble's shape and alignment. */
+  border-radius:var(--radius-lg) var(--radius-lg) 3px var(--radius-lg);
+  align-self: flex-end;
+}
+
+/* line-height:1 here (rather than inheriting body's 1.5) is what
+   actually closes the gap above the bubble: at 12px/10.5px this
+   row's text glyphs are much shorter than a 1.5 line box, so the
+   leftover leading was rendering as visible dead space before the
+   bubble, on every message, everywhere this row appears. */
+
+.chat-meta{
+  display:flex;
+  gap:8px;
+  align-items:baseline;
+  margin-bottom:2px;
+  line-height:1;
+}
+
+.chat-sender{
+  font-weight:600;
+  font-size:12px;
+  color:var(--text);
+}
+
+.chat-time{
+  font-size:10.5px;
+  color:var(--muted2);
+}
+
+.chat-msg-delete{
+  width:20px;
+  height:20px;
+  border-radius:6px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  color:var(--muted2);
+  cursor:pointer;
+  background:transparent;
+  border:none;
+  opacity:0;
+  flex-shrink:0;
+  transition:
+    opacity .15s,
+    color .15s,
+    background .15s;
+}
+
+.chat-msg-delete svg{
+  width:12px;
+  height:12px;
+  flex-shrink:0;
+}
+
+.chat-msg:hover .chat-msg-delete{
+  opacity:1;
+}
+
+.chat-msg-delete:hover{
+  background:rgba(var(--red),.15);
+  color:#D6A3A3;
+}
+
+/* ---------- Reply ---------- */
+
+.chat-msg-reply{
+  width:20px;
+  height:20px;
+  border-radius:6px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  color:var(--muted2);
+  cursor:pointer;
+  background:transparent;
+  border:none;
+  opacity:0;
+  flex-shrink:0;
+  transition:
+    opacity .15s,
+    color .15s,
+    background .15s;
+}
+
+.chat-msg-reply svg{
+  width:13px;
+  height:13px;
+  flex-shrink:0;
+}
+
+.chat-msg:hover .chat-msg-reply{
+  opacity:1;
+}
+
+.chat-msg-reply:hover{
+  background:var(--hover);
+  color:var(--text);
+}
+
+/* Quoted original message rendered inside a reply's own bubble,
+   right above its content/attachment. Kept as a sibling of
+   .chat-bubble (not nested inside it) so it lines up the same way
+   whether the message is text, an attachment, or both — same
+   shrink-to-fit reasoning as .chat-bubble itself (see the long note
+   above it): no width:fit-content trap, no percentage max-width. */
+.reply-quote{
+  display:flex;
+  gap:8px;
+  align-items:stretch;
+  max-width:100%;
+  margin-bottom:3px;
+  padding:4px 10px 4px 0;
+  border-radius:var(--radius);
+  cursor:pointer;
+  background:var(--ink2);
+  transition:background var(--ease-fast);
+  flex:0 0 auto;
+}
+
+.reply-quote:hover{
+  background:var(--hover);
+}
+
+.reply-quote-deleted{
+  cursor:default;
+  font-style:italic;
+}
+
+.reply-quote-deleted:hover{
+  background:var(--ink2);
+}
+
+.reply-quote-bar{
+  width:2.5px;
+  border-radius:2px;
+  background:rgb(var(--indigo));
+  flex-shrink:0;
+}
+
+.reply-quote-deleted .reply-quote-bar{
+  background:var(--muted2);
+}
+
+.reply-quote-body{
+  min-width:0;
+  padding:3px 0;
+  display:flex;
+  flex-direction:column;
+  gap:1px;
+}
+
+.reply-quote-name{
+  font-size:11.5px;
+  font-weight:600;
+  color:rgb(var(--indigo-2));
+  letter-spacing:-0.01em;
+}
+
+.reply-quote-text{
+  font-size:12px;
+  color:var(--muted);
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  max-width:320px;
+}
+
+.chat-msg.own .reply-quote{
+  margin-left:auto;
+}
+
+/* Briefly pulses the original message when its reply-quote is
+   clicked (see js/chat/reply.js/scrollToRepliedMessage). Applied to
+   .chat-msg itself so it frames the whole row (avatar + bubble),
+   not just the bubble. */
+.chat-msg.reply-highlight .chat-bubble,
+.chat-msg.reply-highlight .chat-attachment,
+.chat-msg.reply-highlight .chat-attachment-image{
+  animation:replyHighlightPulse 1.6s ease;
+}
+
+@keyframes replyHighlightPulse{
+  0%{box-shadow:0 0 0 2px var(--accent-ring);}
+  70%{box-shadow:0 0 0 2px var(--accent-ring);}
+  100%{box-shadow:0 0 0 0 transparent;}
+}
+
+/* ---------- Reply preview bar (composer, above the input) ---------- */
+
+.reply-preview-bar{
+  display:none;
+  align-items:center;
+  gap:10px;
+  padding:0 16px;
+  max-height:0;
+  overflow:hidden;
+  border-bottom:1px solid transparent;
+  transition:
+    max-height .15s ease,
+    padding .15s ease,
+    border-color .15s ease;
+}
+
+.reply-preview-bar.active{
+  display:flex;
+  max-height:60px;
+  padding:10px 16px;
+  border-bottom-color:var(--border);
+}
+
+.reply-preview-icon{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  color:rgb(var(--indigo-2));
+  flex-shrink:0;
+}
+
+.reply-preview-body{
+  min-width:0;
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  gap:1px;
+}
+
+.reply-preview-name{
+  font-size:12px;
+  font-weight:600;
+  color:rgb(var(--indigo-2));
+  letter-spacing:-0.01em;
+}
+
+.reply-preview-text{
+  font-size:12.5px;
+  color:var(--muted);
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+
+.reply-preview-close{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  width:24px;
+  height:24px;
+  border-radius:6px;
+  background:transparent;
+  border:none;
+  color:var(--muted2);
+  cursor:pointer;
+  flex-shrink:0;
+  transition:background .15s, color .15s;
+}
+
+.reply-preview-close:hover{
+  background:rgba(var(--red),.15);
+  color:#D6A3A3;
+}
+
+.chat-msg.own .chat-bubble {
+  /* Same fix/reasoning as the other .chat-msg.own .chat-bubble rule
+     above (this file defines the selector twice for different
+     layout contexts) — fill/text color already come from
+     .chat-bubble's --message-accent / --message-accent-contrast. */
+  border-radius:var(--radius-lg) var(--radius-lg) 3px var(--radius-lg);
+  margin-left:auto;
+}
+
+/* ---------- Reactions ---------- */
+
+/*
+   Important:
+   The reactions row stays after the message content, but it no longer
+   stretches to the full width of .chat-msg-content. This prevents the
+   reaction controls from affecting the text bubble's layout.
+*/
+
+.reactions-row{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:4px;
+  margin-top:3px;
+  min-height:24px;
+
+  /* keep reactions below everything else */
+  order:99;
+
+  /* IMPORTANT: don't stretch across the whole message content */
+  align-self:flex-start;
+  width:fit-content;
+  max-width:100%;
+}
+
+.reaction-pill{
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  height:24px;
+  padding:0 8px;
+  border-radius:99px;
+  background:var(--ink2);
+  border:1px solid var(--border);
+  cursor:pointer;
+  transition:
+    background var(--ease-fast),
+    border-color var(--ease-fast);
+}
+
+.reaction-pill:hover{
+  background:var(--hover);
+  border-color:var(--accent-border);
+}
+
+.reaction-pill.own{
+  background:var(--accent-bg);
+  border-color:var(--accent-border);
+}
+
+.reaction-pill.own:hover{
+  background:var(--accent-hover-bg);
+}
+
+.reaction-emoji{
+  font-size:13px;
+  line-height:1;
+}
+
+.reaction-count{
+  font-size:12px;
+  font-weight:600;
+  color:var(--muted);
+  line-height:1;
+}
+
+.reaction-pill.own .reaction-count{
+  color:var(--text);
+}
+
+.reaction-add-btn{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  width:24px;
+  height:24px;
+  border-radius:50%;
+  background:transparent;
+  border:1px solid transparent;
+  color:var(--muted2);
+  cursor:pointer;
+  opacity:0;
+  flex-shrink:0;
+  transition:
+    opacity .15s,
+    background .15s,
+    color .15s,
+    border-color .15s;
+}
+
+.reaction-add-btn svg{
+  width:14px;
+  height:14px;
+}
+
+.chat-msg:hover .reaction-add-btn{
+  opacity:1;
+}
+
+.reaction-add-btn:hover{
+  background:var(--hover);
+  border-color:var(--border);
+  color:var(--text);
+}
+
+/* Own messages: reactions align to the right */
+
+.chat-msg.own .reactions-row{
+  justify-content:flex-end;
+  align-self:flex-end;
+}
+
+.chat-date-divider{
+  text-align:center;
+  font-size:11px;
+  color:var(--muted2);
+  padding:6px 0;
+  font-weight:440;
+  letter-spacing:.01em;
+}
+
+/* ---------- Typing ---------- */
+
+.typing-indicator{
+  font-size:12px;
+  font-style:italic;
+  color:var(--muted2);
+  padding:0 20px;
+  height:0;
+  overflow:hidden;
+  transition:
+    height .15s ease,
+    padding .15s ease;
+}
+
+.typing-indicator.active{
+  height:20px;
+  padding-top:2px;
+}
+
+/* ---------- Composer wrapper (holds staging + input area as one surface) ---------- */
+
+.composer-wrapper{
+  margin:0 20px 20px;
+  /* Themed instead of a hardcoded dark fill: this used to stay
+     black in light mode while the typed text followed the global
+     (now dark-in-light-mode) --text color, so anything you typed
+     was invisible — dark text on a black box. */
+  background:var(--ink2);
+  border:1px solid var(--border);
+  border-radius:var(--radius-lg);
+  display:flex;
+  flex-direction:column;
+  flex-shrink:0;
+  transition:border-color var(--ease-fast);
+}
+
+.composer-wrapper:focus-within{
+  border-color:var(--accent-border);
+}
+
+/* ---------- Chat input ---------- */
+
+.chat-input-area{
+  padding:10px 16px;
+  border-top:none;
+  display:flex;
+  gap:10px;
+  align-items:flex-end;
+  flex-shrink:0;
+  background:transparent;
+}
+
+.chat-input-area input[type=text],
+.chat-input-area textarea{
+  flex:1;
+  min-width:0;
+  padding:10px 0;
+  border-radius:0;
+  font-size:13.5px;
+  font-weight:440;
+  line-height:1.5;
+  background:transparent !important;
+  color:var(--text);
+  border:none;
+  outline:none;
+}
+
+.chat-input-area textarea{
+  /* Auto-grow is handled in JS (composer.js) by setting an explicit
+     height up to a max, so the resize handle would be redundant and
+     the textarea starts at a single input-like line. */
+  resize:none;
+  max-height:140px;
+  min-height:41px;
+  font-family:inherit;
+  white-space:pre-wrap;
+}
+
+.chat-input-area input[type=text]:focus,
+.chat-input-area textarea:focus{
+  background:transparent !important;
+}
+
+.chat-input-area > .btn{
+  flex-shrink:0;
+}
+
+.chat-input-area .btn-icon{
+  width:40px;
+  height:40px;
+  border-radius:var(--radius);
+}
+
+.chat-input-area .btn-send{
+  flex-shrink:0;
+}
+
+/* ---------- Attachment staging (files picked/dropped/pasted but not yet sent) ---------- */
+
+.attach-staging{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  padding:0 16px;
+  max-height:0;
+  overflow:hidden;
+  transition:
+    max-height .15s ease,
+    padding .15s ease;
+}
+
+.attach-staging.active{
+  max-height:220px;
+  padding:16px 16px 0;
+  overflow-y:auto;
+}
+
+.attach-chip{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  background:var(--ink2);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  padding:6px 8px 6px 10px;
+  max-width:220px;
+  position:relative;
+  overflow:hidden;
+}
+
+.attach-chip.error{
+  border-color:rgba(var(--red),.4);
+  background:rgba(var(--red),.08);
+}
+
+.attach-chip-icon{
+  display:flex;
+  align-items:center;
+  flex-shrink:0;
+}
+
+.attach-chip-info{
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  gap:1px;
+}
+
+.attach-chip-name{
+  font-size:12.5px;
+  font-weight:500;
+  color:var(--text);
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  max-width:140px;
+}
+
+.attach-chip-meta{
+  font-size:11px;
+  color:var(--muted2);
+}
+
+.attach-chip.error .attach-chip-meta{
+  color:#D6A3A3;
+}
+
+.attach-chip-remove{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  flex-shrink:0;
+  width:22px;
+  height:22px;
+  border-radius:6px;
+  background:transparent;
+  border:none;
+  color:var(--muted2);
+  cursor:pointer;
+  transition:background .15s, color .15s;
+}
+
+.attach-chip-remove:hover{
+  background:rgba(var(--red),.15);
+  color:#D6A3A3;
+}
+
+.attach-chip.uploading{
+  padding-bottom:9px;
+}
+
+.attach-chip-progress{
+  position:absolute;
+  left:0;
+  right:0;
+  bottom:0;
+  height:3px;
+  background:var(--border);
+  overflow:hidden;
+}
+
+.attach-chip-progress-fill{
+  height:100%;
+  width:0%;
+  background:rgb(var(--indigo));
+  transition:width .12s ease;
+}
+
+/* ---------- Empty state ---------- */
+
+.chat-empty-state{
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:16px;
+  padding:60px 40px;
+}
+
+.chat-empty-icon{
+  width:56px;
+  height:56px;
+  border-radius:50%;
+  border:1.5px solid var(--border);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  color:var(--muted2);
+  margin-bottom:4px;
+}
+
+.chat-empty-icon svg{
+  width:22px;
+  height:22px;
+  stroke-width:1.5;
+}
+
+.chat-empty-title{
+  font-size:15px;
+  font-weight:500;
+  color:var(--text);
+  letter-spacing:-0.01em;
+}
+
+.chat-empty-subtitle{
+  font-size:13px;
+  color:var(--muted2);
+  text-align:center;
+  max-width:280px;
+  line-height:1.5;
+  font-weight:430;
+}
+
+/* ---------- Attachments ---------- */
+
+.chat-attachment{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  background:var(--ink2);
+  border:1px solid var(--border-soft);
+  border-radius:var(--radius-lg);
+  padding:9px 12px;
+  cursor:pointer;
+  transition:background var(--ease-fast);
+  margin-top:4px;
+  max-width:280px;
+}
+
+.chat-attachment:hover{
+  background:var(--hover);
+}
+
+.chat-attachment-info{
+  flex:1;
+  min-width:0;
+}
+
+.chat-attachment-name{
+  font-size:12.5px;
+  font-weight:550;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  color:var(--text);
+}
+
+.chat-attachment-size{
+  font-size:11px;
+  color:var(--muted2);
+}
+
+.chat-attachment-image{
+  margin-top:4px;
+  border-radius:var(--radius-lg);
+  overflow:hidden;
+  max-width:240px;
+  min-height:60px;
+}
+
+.chat-attachment-image img{
+  max-width:100%;
+  max-height:260px;
+  display:block;
+  cursor:pointer;
+  border-radius:var(--radius-lg);
+}
+
+.chat-attachment-image-wrap{
+  position:relative;
+  display:inline-block;
+  margin-top:4px;
+
+  /*
+   * .chat-msg-content is a column flexbox with the default
+   * align-items:stretch, so - despite this being display:inline-block -
+   * as a flex item it gets blockified and stretched to the FULL width
+   * of the message column (same trap .chat-bubble and .reactions-row
+   * avoid elsewhere in this file via width:fit-content/align-self).
+   *
+   * Without this, the wrap silently becomes as wide as the whole
+   * message column while the actual <img> inside it stays pinned to
+   * the wrap's left edge (normal block flow). The download button is
+   * `position:absolute; right:8px` relative to THIS wrap though, so it
+   * anchors to the wrap's (invisible, oversized) right edge instead of
+   * the visible image's right edge - i.e. it drifts away from the
+   * image any time the wrap ends up wider than the image, which is
+   * exactly what happens once alignment pushes the message (and this
+   * stretched wrap) toward the right side of the column.
+   *
+   * Keeping the wrap shrink-to-fit means its edges always match the
+   * image's actual rendered edges, so the button - and the row-level
+   * alignment below - move the image and button together as one unit.
+   */
+  align-self:flex-start;
+  width:fit-content;
+  max-width:100%;
+}
+
+.chat-attachment-image-wrap .chat-attachment-image{
+  margin-top:0;
+}
+
+.chat-attachment-image-dl{
+  position:absolute;
+  top:8px;
+  right:8px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  width:28px;
+  height:28px;
+  border-radius:var(--radius);
+  background:rgba(0,0,0,.55);
+  border:1px solid var(--border);
+  color:#fff;
+  cursor:pointer;
+  opacity:.9;
+  transition:
+    opacity .15s,
+    background .15s;
+}
+
+.chat-attachment-image-dl:hover{
+  opacity:1;
+  background:rgba(0,0,0,.75);
+}
+
+.chat-attachment-image-dl svg{
+  width:14px;
+  height:14px;
+  flex-shrink:0;
+}
+
+/* ---------- Own message alignment ---------- */
+
+.chat-msg.own .chat-meta{
+  justify-content:flex-end;
+}
+
+.chat-msg.own .chat-attachment{
+  margin-left:auto;
+}
+
+/* Image attachments use a separate wrapper (image + its floating
+   download button) so the button can be absolutely positioned
+   relative to the image instead of the message bubble. That wrapper
+   needs the same "push to the right on own messages" treatment as
+   .chat-attachment above, or it's left stranded on the left edge of
+   .chat-msg-content while the rest of the (row-reversed) own message
+   visually sits on the right - the button doesn't "detach" from the
+   image, the whole wrap (image + button together) just never moves. */
+
+.chat-msg.own .chat-attachment-image-wrap{
+  margin-left:auto;
+}
+
+.load-more-row{
+  text-align:center;
+  padding:6px 0 14px;
+}

@@ -9,7 +9,7 @@ import {
   formatDate,
   insertAtCursor
 } from '../core/utils.js';
-import { renderAttachment, loadChatImage, mountAttachmentMedia } from '../media/attachments.js';
+import { renderAttachment, loadChatImage, mountAttachmentMedia, cleanupImageUrls } from '../media/attachments.js';
 import { avatarHtml } from '../ui/avatar.js';
 import { getCurrentUser } from '../core/auth.js';
 import { showConfirm } from '../ui/confirm.js';
@@ -110,6 +110,14 @@ export function clearAllDmTyping() {
 // ---------- Render ----------
 export async function renderDm(openPeerId) {
   const main = document.getElementById('content-area');
+  // Revoke any blob URLs (loaded image attachments) owned by
+  // whichever conversation thread is currently rendered — the
+  // innerHTML replacement below detaches #dm-messages along with
+  // everything the user had open, but detaching an element never
+  // revokes the blob URLs it references, so without this every
+  // visit to Messages would leak the previously-open thread's
+  // loaded images.
+  cleanupImageUrls(document.getElementById('dm-messages'), 'dm');
   main.innerHTML = `
     <div class="dm-layout">
       <div class="dm-sidebar">
@@ -290,6 +298,14 @@ window.openDmConversation = async function(peerId, username) {
 
   document.querySelector('.dm-layout')?.classList.add('showing-thread');
 
+  // Revoke blob URLs from whichever conversation was open before
+  // this one — same leak/fix as renderDm() above, but for switching
+  // between two conversations without leaving the Messages view
+  // (the thread's innerHTML gets replaced below, which is the
+  // common case: this runs every time the user picks a different
+  // conversation from the sidebar).
+  cleanupImageUrls(document.getElementById('dm-messages'), 'dm');
+
   // فعال/غیرفعال کردن آیتم‌ها در sidebar
   const list = document.getElementById('dm-conv-list');
   if (list) {
@@ -364,6 +380,11 @@ async function loadRecentDm() {
     const messages = await api(`/api/dm/messages/${dmActivePeer.id}/recent?limit=50`);
     renderedDmIds.clear();
     dmMsgById.clear();
+    // Same reasoning as renderDm()/openDmConversation() — this
+    // innerHTML clear discards the loading-state markup here, but
+    // is also reached any time this function re-runs for a thread
+    // that already has rendered (and loaded) messages in it.
+    cleanupImageUrls(container, 'dm');
     container.innerHTML = '';
 
     if (messages.length === 0) {
@@ -509,6 +530,10 @@ export function removeDmMessage(id) {
   if (!container) return;
   const el = container.querySelector(`.chat-msg[data-msg-id="${id}"]`);
   if (!el) return;
+  // Revoke this message's own loaded-image blob URL (if any) before
+  // dropping the element — same leak as the spots above, just for a
+  // single deleted message instead of a whole thread.
+  cleanupImageUrls(el, 'dm');
   el.remove();
   if (!container.querySelector('.chat-msg')) {
     container.innerHTML = emptyState(ICONS.mail, 'No messages yet', dmActivePeer ? `Say hello to ${escapeHtml(dmActivePeer.username)} 👋` : '');

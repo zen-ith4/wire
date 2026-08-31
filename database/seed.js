@@ -44,7 +44,7 @@ function createDefaultAdmin(db) {
     hash
   );
 
-  console.log('✅ Default admin account created');
+  console.log('Default admin account created');
 
   return info.lastInsertRowid;
 }

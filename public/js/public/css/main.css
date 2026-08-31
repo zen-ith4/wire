@@ -1,0 +1,46 @@
+/* ================================================================
+   FileHub — main stylesheet entry point
+   Import order matters: core tokens/reset/base first, then layout,
+   then components, then feature-specific styles, then pages,
+   and finally responsive overrides + utilities last so they win
+   the cascade where intended.
+   ================================================================ */
+
+/* Core */
+@import url("core/tokens.css");
+@import url("core/reset.css");
+@import url("core/base.css");
+
+/* Layout */
+@import url("layout/app.css");
+@import url("layout/sidebar.css");
+@import url("layout/topbar.css");
+@import url("layout/content.css");
+
+/* Components */
+@import url("components/buttons.css");
+@import url("components/forms.css");
+@import url("components/cards.css");
+@import url("components/modal.css");
+@import url("components/badges.css");
+@import url("components/toast.css");
+@import url("components/common.css");
+
+/* Features */
+@import url("features/files.css");
+@import url("features/messages.css");
+@import url("features/image-viewer.css");
+@import url("features/settings.css");
+@import url("features/profile.css");
+@import url("features/emoji-picker.css");
+@import url("features/upload.css");
+@import url("features/sharing.css");
+@import url("features/audio-player.css");
+@import url("features/video-player.css");
+
+/* Pages */
+@import url("pages/login.css");
+
+/* Responsive overrides + utilities (must load last) */
+@import url("responsive.css");
+@import url("utilities.css");

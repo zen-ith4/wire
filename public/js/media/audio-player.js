@@ -371,20 +371,36 @@ export function renderAudio(msg, scope, containerEl) {
   // SEEK (click / drag on the waveform bar)
   // ====================================================
 
+  // renderAudio() runs once per audio message per render, and this
+  // view rebuilds its whole message list via innerHTML on every
+  // navigation (see chat.js/dm.js). Registering the drag-tracking
+  // mousemove/mouseup listeners on `window` unconditionally here —
+  // as opposed to only while a drag on *this* player's waveform is
+  // actually in progress — added one permanent pair of window
+  // listeners per audio message ever rendered, none of which were
+  // ever removed even after the player's own DOM was torn down.
+  // Scoping them to the lifetime of a single drag (added on
+  // mousedown, removed on the matching mouseup) keeps at most one
+  // pair alive at a time, for whichever player is actively being
+  // scrubbed.
   let scrubbing = false;
+
+  function onWindowMouseMove(e) {
+    if (!scrubbing) return;
+    seekToClientX(e.clientX);
+  }
+
+  function onWindowMouseUp() {
+    scrubbing = false;
+    window.removeEventListener('mousemove', onWindowMouseMove);
+    window.removeEventListener('mouseup', onWindowMouseUp);
+  }
 
   waveform.addEventListener('mousedown', (e) => {
     scrubbing = true;
     seekToClientX(e.clientX);
-  });
-
-  window.addEventListener('mousemove', (e) => {
-    if (!scrubbing) return;
-    seekToClientX(e.clientX);
-  });
-
-  window.addEventListener('mouseup', () => {
-    scrubbing = false;
+    window.addEventListener('mousemove', onWindowMouseMove);
+    window.addEventListener('mouseup', onWindowMouseUp);
   });
 
   waveform.addEventListener('click', (e) => {

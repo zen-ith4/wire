@@ -8,7 +8,7 @@ import {
   formatDate,
   insertAtCursor
 } from '../core/utils.js';
-import { renderAttachment, loadChatImage, mountAttachmentMedia } from '../media/attachments.js';
+import { renderAttachment, loadChatImage, mountAttachmentMedia, cleanupImageUrls } from '../media/attachments.js';
 import { avatarHtml } from '../ui/avatar.js';
 import { getCurrentUser } from '../core/auth.js';
 import { showConfirm } from '../ui/confirm.js';
@@ -69,6 +69,13 @@ export function clearAllChatTyping() {
 export async function renderChat() {
   const main = document.getElementById('content-area');
   const generation = ++chatRenderGeneration;
+  // Revoke any blob URLs (loaded image attachments) owned by the
+  // message list we're about to throw away — innerHTML replacement
+  // below detaches those elements from the document, but detaching
+  // an element never revokes the blob URLs it happens to reference,
+  // so without this every render (i.e. every visit to this view)
+  // would leak the previous batch of loaded images' memory.
+  cleanupImageUrls(document.getElementById('chat-messages'), 'chat');
   main.innerHTML = `
     <div class="chat-panel">
       <div class="chat-top-bar">
@@ -124,6 +131,12 @@ async function loadRecentChat(generation) {
 
     renderedChatIds.clear();
     chatMsgById.clear();
+    // Same reasoning as renderChat() above — this innerHTML clear
+    // discards the loading-state markup, but on a background
+    // refresh it can also discard a previously-rendered batch of
+    // messages (and their loaded-image blob URLs) that never got a
+    // matching revoke.
+    cleanupImageUrls(container, 'chat');
     container.innerHTML = '';
     if (messages.length === 0) {
       container.innerHTML = emptyState(ICONS.chat, 'No messages yet', 'Say hello 👋');
@@ -257,6 +270,10 @@ export function removeChatMessage(id) {
   if (!container) return;
   const el = container.querySelector(`.chat-msg[data-msg-id="${id}"]`);
   if (!el) return;
+  // Revoke this message's own loaded-image blob URL (if any) before
+  // dropping the element — same leak as the two spots above, just
+  // for a single deleted message instead of a whole batch.
+  cleanupImageUrls(el, 'chat');
   el.remove();
   if (!container.querySelector('.chat-msg')) {
     container.innerHTML = emptyState(ICONS.chat, 'No messages yet', 'Say hello 👋');

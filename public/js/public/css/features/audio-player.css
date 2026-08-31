@@ -1,0 +1,576 @@
+/* ================================================================
+ * AUDIO PLAYER — compact inline audio player for chat / DM
+ * ================================================================ */
+
+.audio-player {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  width: 360px;
+  min-width: 360px;
+  max-width: 360px;
+
+  box-sizing: border-box;
+
+  background: var(--ink2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+
+  padding: 8px 10px;
+  margin-top: 6px;
+
+  overflow: hidden;
+
+  transition:
+    background var(--ease-fast),
+    border-color var(--ease-fast);
+}
+
+/* ================================================================
+ * Header
+ * ================================================================ */
+
+.audio-player-header {
+  display: flex;
+  align-items: center;
+
+  width: 100%;
+  min-width: 0;
+  height: 18px;
+
+  gap: 6px;
+}
+
+.audio-player-title {
+  flex: 1 1 auto;
+  width: 0;
+  min-width: 0;
+
+  font-size: 13px;
+  font-weight: 550;
+
+  color: var(--text);
+
+  letter-spacing: -0.01em;
+
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.audio-player-current-time,
+.audio-player-duration {
+  flex: 0 0 auto;
+
+  font-size: 11px;
+
+  color: var(--muted2);
+
+  font-weight: 430;
+
+  font-variant-numeric: tabular-nums;
+
+  white-space: nowrap;
+}
+
+.audio-player-artist {
+  display: none;
+}
+
+/* ================================================================
+ * Controls
+ * ================================================================ */
+
+.audio-player-controls {
+  display: flex;
+  align-items: center;
+
+  width: 100%;
+  min-width: 0;
+
+  height: 36px;
+
+  gap: 7px;
+}
+
+/* ================================================================
+ * Play / Pause
+ * ================================================================ */
+
+.audio-player-play {
+  width: 36px;
+  height: 36px;
+
+  padding: 0;
+
+  flex: 0 0 36px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius);
+
+  background: var(--accent-bg);
+
+  color: rgb(var(--indigo));
+
+  cursor: pointer;
+
+  transition:
+    background var(--ease-fast),
+    border-color var(--ease-fast),
+    color var(--ease-fast);
+}
+
+.audio-player-play:hover {
+  background: var(--accent-hover-bg);
+  border-color: rgb(var(--indigo));
+}
+
+.audio-player-play:active {
+  transform: scale(0.95);
+}
+
+.audio-player-play svg {
+  width: 16px;
+  height: 16px;
+
+  stroke-width: 2.5;
+}
+
+/* ================================================================
+ * Waveform
+ * ================================================================ */
+
+.audio-player-waveform {
+  position: relative;
+
+  flex: 1 1 auto;
+
+  width: 0;
+  min-width: 0;
+
+  height: 15px;
+
+  overflow: hidden;
+
+  border-radius: var(--radius);
+
+  cursor: pointer;
+
+  background: var(--border-soft);
+}
+
+.audio-player-canvas {
+  display: none;
+
+  position: absolute;
+  inset: 0;
+
+  width: 100%;
+  height: 100%;
+}
+
+/* ================================================================
+ * Progress
+ * ================================================================ */
+
+.audio-player-progress-fill {
+  position: absolute;
+
+  inset: 0 auto 0 0;
+
+  width: 0%;
+  height: 100%;
+
+  background: rgb(var(--indigo));
+
+  border-radius: var(--radius);
+
+  pointer-events: none;
+
+  transition: width 0.1s linear;
+}
+
+/* ================================================================
+ * Volume
+ * ================================================================ */
+
+.audio-player-volume-control {
+  display: flex;
+  align-items: center;
+
+  width: 18px;
+  min-width: 18px;
+  max-width: 18px;
+
+  height: 24px;
+
+  flex: 0 0 18px;
+
+  overflow: hidden;
+
+  transition:
+    width 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    min-width 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    max-width 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.audio-player-volume-control:hover {
+  width: 79px;
+  min-width: 79px;
+  max-width: 79px;
+}
+
+/* ================================================================
+ * Volume Button
+ * ================================================================ */
+
+.audio-player-volume {
+  position: relative;
+
+  z-index: 3;
+
+  width: 18px;
+  height: 18px;
+
+  padding: 0;
+  margin: 0;
+
+  flex: 0 0 18px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border: 0;
+
+  background: transparent;
+
+  color: var(--muted2);
+
+  cursor: pointer;
+
+  opacity: 0.7;
+
+  transition:
+    color 160ms ease,
+    opacity 160ms ease;
+}
+
+.audio-player-volume:hover {
+  color: var(--text);
+  opacity: 1;
+}
+
+.audio-player-volume svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* ================================================================
+ * Slider Wrapper
+ *
+ * Closed:
+ *   width = 0
+ *   no space is reserved
+ *
+ * Hover:
+ *   smoothly expands to 55px
+ * ================================================================ */
+
+.audio-player-volume-slider-wrap {
+  width: 0;
+  min-width: 0;
+  max-width: 0;
+
+  height: 12px;
+
+  margin-left: 0;
+
+  flex: 0 0 0;
+
+  display: flex;
+  align-items: center;
+
+  overflow: hidden;
+
+  opacity: 0;
+
+  transform: translateX(-8px);
+
+  pointer-events: none;
+
+  transition:
+    width 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    min-width 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    max-width 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    flex-basis 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    margin-left 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 160ms ease,
+    transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ================================================================
+ * Slider Wrapper — Open
+ * ================================================================ */
+
+.audio-player-volume-control:hover
+.audio-player-volume-slider-wrap {
+  width: 55px;
+  min-width: 55px;
+  max-width: 55px;
+
+  flex-basis: 55px;
+
+  margin-left: 6px;
+
+  opacity: 1;
+
+  transform: translateX(0);
+
+  pointer-events: auto;
+}
+
+/* ================================================================
+ * Volume Slider
+ * ================================================================ */
+
+.audio-player-volume-slider {
+  width: 55px;
+  height: 4px;
+
+  flex: 0 0 55px;
+
+  min-width: 55px;
+
+  padding: 0;
+  margin: 0;
+
+  -webkit-appearance: none;
+  appearance: none;
+
+  outline: none;
+
+  opacity: 1;
+
+  pointer-events: auto;
+
+  /*
+   * JS updates this background according to volume.
+   * The WebKit track below is transparent so this
+   * gradient remains visible.
+   */
+  background:
+    linear-gradient(
+      to right,
+      rgb(var(--indigo)) 0%,
+      rgb(var(--indigo)) 100%,
+      var(--border-soft) 100%,
+      var(--border-soft) 100%
+    );
+
+  border-radius: 999px;
+
+  cursor: pointer;
+}
+
+/* ================================================================
+ * WebKit — Chrome / Edge / Safari
+ * ================================================================ */
+
+.audio-player-volume-slider::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 4px;
+
+  background: transparent;
+
+  border: none;
+
+  border-radius: 999px;
+}
+
+.audio-player-volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+
+  width: 10px;
+  height: 10px;
+
+  margin-top: -3px;
+
+  border: 0;
+
+  border-radius: 50%;
+
+  background: rgb(var(--indigo));
+
+  cursor: pointer;
+
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+/* ================================================================
+ * Firefox
+ * ================================================================ */
+
+.audio-player-volume-slider::-moz-range-track {
+  width: 100%;
+  height: 4px;
+
+  background: var(--border-soft);
+
+  border: none;
+
+  border-radius: 999px;
+}
+
+.audio-player-volume-slider::-moz-range-progress {
+  height: 4px;
+
+  background: rgb(var(--indigo));
+
+  border: none;
+
+  border-radius: 999px;
+}
+
+.audio-player-volume-slider::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+
+  border: 0;
+
+  border-radius: 50%;
+
+  background: rgb(var(--indigo));
+
+  cursor: pointer;
+
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+/* ================================================================
+ * Download Button
+ * ================================================================ */
+
+.audio-player-download {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 18px;
+  height: 18px;
+
+  flex: 0 0 18px;
+
+  color: var(--muted2);
+
+  text-decoration: none;
+
+  cursor: pointer;
+
+  opacity: 0.7;
+
+  margin: 0;
+  padding: 2px;
+
+  border: 0;
+
+  background: transparent;
+
+  transition:
+    color var(--ease-fast),
+    opacity var(--ease-fast);
+}
+
+.audio-player-download:hover {
+  color: var(--text);
+  opacity: 1;
+}
+
+.audio-player-download svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* ================================================================
+ * Error
+ * ================================================================ */
+
+.audio-player-error {
+  display: none;
+
+  align-items: center;
+
+  gap: 4px;
+
+  font-size: 11.5px;
+
+  color: var(--red);
+
+  font-weight: 430;
+}
+
+.audio-player-error svg {
+  width: 12px;
+  height: 12px;
+
+  flex-shrink: 0;
+}
+
+/* ================================================================
+ * Loading
+ * ================================================================ */
+
+.audio-player.loading {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+/* ================================================================
+ * Own Message
+ * ================================================================ */
+
+.chat-msg.own .audio-player {
+  background: var(--ink2);
+  align-self: flex-end;
+}
+
+/* ================================================================
+ * Responsive
+ * ================================================================ */
+
+@media (max-width: 640px) {
+
+  .audio-player {
+    width: 100%;
+    min-width: 0;
+    max-width: 360px;
+  }
+
+  .audio-player-play {
+    width: 32px;
+    height: 32px;
+
+    flex-basis: 32px;
+  }
+
+  .audio-player-play svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .audio-player-controls {
+    height: 32px;
+  }
+
+  .audio-player-waveform {
+    height: 15px;
+  }
+}

@@ -1,5 +1,5 @@
 {
-  "name": "filehub",
+  "name": "wire",
   "version": "1.0.0",
   "description": "Private Drive with Chat, DM, and WireGuard",
   "main": "server.js",

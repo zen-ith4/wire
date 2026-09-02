@@ -15,6 +15,7 @@ const CHAT_SELECT = `
     m.attachment_name,
     m.attachment_size,
     m.attachment_mime,
+    m.is_voice_message,
     m.reply_to_id,
     rm.id AS reply_id,
     rm.user_id AS reply_user_id,
@@ -22,7 +23,8 @@ const CHAT_SELECT = `
     rm.content AS reply_content,
     rm.created_at AS reply_timestamp,
     rm.attachment_name AS reply_attachment_name,
-    rm.attachment_mime AS reply_attachment_mime
+    rm.attachment_mime AS reply_attachment_mime,
+    rm.is_voice_message AS reply_is_voice_message
   FROM messages m
   JOIN users u
     ON u.id = m.user_id
@@ -50,6 +52,7 @@ function shapeReplyTo(row) {
     reply_timestamp,
     reply_attachment_name,
     reply_attachment_mime,
+    reply_is_voice_message,
     ...rest
   } = row;
 
@@ -63,6 +66,7 @@ function shapeReplyTo(row) {
         has_attachment: Boolean(reply_attachment_name),
         attachment_name: reply_attachment_name,
         attachment_mime: reply_attachment_mime,
+        is_voice_message: Boolean(reply_is_voice_message),
       }
     : null;
 
@@ -192,7 +196,8 @@ function insertChatMessageWithAttachment(
   originalName,
   size,
   mime,
-  replyToId = null
+  replyToId = null,
+  isVoiceMessage = false
 ) {
 
   return getDb()
@@ -206,9 +211,10 @@ function insertChatMessageWithAttachment(
         attachment_name,
         attachment_size,
         attachment_mime,
-        reply_to_id
+        reply_to_id,
+        is_voice_message
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
     .run(
       userId,
@@ -218,7 +224,8 @@ function insertChatMessageWithAttachment(
       originalName,
       size,
       mime,
-      replyToId
+      replyToId,
+      isVoiceMessage ? 1 : 0
     );
 
 }

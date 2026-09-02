@@ -4,7 +4,7 @@
 // NOTE ON PROVENANCE: this app has no network egress available in
 // its build/deploy pipeline to fetch the real @emoji-mart/data
 // package at build time, so this is a hand-curated dataset authored
-// directly for FileHub, shaped identically to Emoji Mart's own data
+// directly for Wire, shaped identically to Emoji Mart's own data
 // format (id / name / keywords / skins) so the picker engine in
 // emoji-picker.js works exactly the way it would against the real
 // package. It covers ~450 emoji across all standard categories

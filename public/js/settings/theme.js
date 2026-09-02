@@ -15,9 +15,9 @@ export const AMBIENT_LEVELS = [0.06, 0.18, 0.34, 0.5, 0.7];
 
 export const DEFAULT_AMBIENT_LEVEL = 3;
 
-const ACCENT_STORAGE_KEY = 'filehub-accent';
-const AMBIENT_STORAGE_KEY = 'filehub-ambient-level';
-const THEME_STORAGE_KEY = 'filehub-theme';
+const ACCENT_STORAGE_KEY = 'wire-accent';
+const AMBIENT_STORAGE_KEY = 'wire-ambient-level';
+const THEME_STORAGE_KEY = 'wire-theme';
 
 function safeGetStorage(key) {
   try {

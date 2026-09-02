@@ -16,11 +16,20 @@ const VALID_COLUMNS = {
     attachment_name: "attachment_name TEXT",
     attachment_size: "attachment_size INTEGER",
     attachment_mime: "attachment_mime TEXT",
-    reply_to_id: "reply_to_id INTEGER"
+    reply_to_id: "reply_to_id INTEGER",
+    // Distinguishes a recorded voice message from a normal uploaded
+    // audio attachment. Both share the same attachment_* columns
+    // (same upload/storage/streaming pipeline) — this flag is only
+    // consulted by the frontend to decide which player component to
+    // mount (dedicated voice-message player vs. the generic audio
+    // attachment player). Not inferable from attachment_mime alone,
+    // since a user-uploaded file can legitimately be audio/webm too.
+    is_voice_message: "is_voice_message INTEGER NOT NULL DEFAULT 0"
   },
 
   direct_messages: {
-    reply_to_id: "reply_to_id INTEGER"
+    reply_to_id: "reply_to_id INTEGER",
+    is_voice_message: "is_voice_message INTEGER NOT NULL DEFAULT 0"
   }
 };
 

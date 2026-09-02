@@ -1,10 +1,10 @@
 // ============================================================
 // Sidebar resize (drag handle between .sidebar and .main)
 // Mirrors the storage/apply pattern used in settings/theme.js
-// (safeGetStorage/safeSetStorage + a "filehub-*" localStorage key).
+// (safeGetStorage/safeSetStorage + a "wire-*" localStorage key).
 // ============================================================
 
-const STORAGE_KEY = 'filehub-sidebar-width';
+const STORAGE_KEY = 'wire-sidebar-width';
 
 // Matches --sidebar-width's default in tokens.css.
 const DEFAULT_WIDTH = 224;

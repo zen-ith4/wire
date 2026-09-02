@@ -19,6 +19,7 @@ import { ICONS } from '../icons.js';
 import { escapeHtml, formatBytes, showToast } from '../core/utils.js';
 import { xhrUpload } from '../files/upload.js';
 import { api } from '../core/api.js';
+import { createVoiceRecorder, isVoiceRecordingSupported } from '../media/voice-recorder.js';
 
 const MAX_TEXTAREA_HEIGHT = 140; // px — grows up to ~6 lines, then scrolls
 
@@ -45,6 +46,12 @@ function iconForFile(file) {
  * @param {(message: object) => void} config.onMessage - called with each server response to render it
  * @param {{notifyTyping():void, stop():void}} config.typingEmitter
  * @param {() => boolean} [config.canSend] - e.g. DMs require an open conversation
+ * @param {string} [config.inputAreaId] - the row (textarea + buttons) to hide while recording
+ * @param {string} [config.micButtonId] - the mic button that starts recording
+ * @param {string} [config.recordingBarId] - container shown in place of inputAreaId while recording
+ * @param {string} [config.recordingTimeId] - element that displays the live recording timer
+ * @param {string} [config.recordingCancelId] - button that discards the in-progress recording
+ * @param {string} [config.recordingStopId] - button that finalizes and sends the recording
  */
 export function createComposer(config) {
   const {
@@ -59,6 +66,12 @@ export function createComposer(config) {
     onMessage,
     typingEmitter,
     canSend = () => true,
+    inputAreaId,
+    micButtonId,
+    recordingBarId,
+    recordingTimeId,
+    recordingCancelId,
+    recordingStopId,
   } = config;
 
   // Each entry: { key, file, status: 'pending'|'uploading'|'error', progress, error }
@@ -144,7 +157,8 @@ export function createComposer(config) {
     if (reply.content) return escapeHtml(reply.content);
     if (reply.hasAttachment) {
       const mime = reply.attachmentMime || '';
-      const kind = mime.startsWith('image/') ? 'Photo'
+      const kind = reply.isVoiceMessage ? 'Voice message'
+        : mime.startsWith('image/') ? 'Photo'
         : mime.startsWith('video/') ? 'Video'
         : mime.startsWith('audio/') ? 'Audio'
         : (reply.attachmentName || 'Attachment');
@@ -336,10 +350,171 @@ export function createComposer(config) {
     });
   }
 
+  // ---------- Voice message recording ----------
+  //
+  // Not staged like a file attachment (there's nothing to caption or
+  // reorder before sending — a voice message is finalized and sent
+  // in one motion, same as tapping a mic button in any chat app).
+  // The composer's normal input row is swapped for a small recording
+  // bar (Cancel / timer / Stop) for the duration of the recording.
+
+  // The one createVoiceRecorder() instance currently open, or null
+  // when idle. Exactly one of cancelRecording()/finishRecording()/
+  // destroy() retires it — see createVoiceRecorder's own resource
+  // safety notes for why that's enough to guarantee the mic is
+  // released.
+  let activeRecorder = null;
+
+  function getRecordingEls() {
+    return {
+      inputArea: inputAreaId ? document.getElementById(inputAreaId) : null,
+      bar: recordingBarId ? document.getElementById(recordingBarId) : null,
+      micBtn: micButtonId ? document.getElementById(micButtonId) : null,
+      timeEl: recordingTimeId ? document.getElementById(recordingTimeId) : null,
+    };
+  }
+
+  function formatRecordingTime(elapsedMs) {
+    const totalSeconds = Math.floor(elapsedMs / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${String(seconds).padStart(2, '0')}`;
+  }
+
+  function setRecordingUiActive(active) {
+    const { inputArea, bar, micBtn, timeEl } = getRecordingEls();
+    if (inputArea) inputArea.style.display = active ? 'none' : '';
+    if (bar) bar.classList.toggle('active', active);
+    if (micBtn) micBtn.classList.toggle('recording', active);
+    if (!active && timeEl) timeEl.textContent = '0:00';
+  }
+
+  async function startRecording() {
+    if (activeRecorder) return; // already recording — mic button is a no-op mid-recording
+
+    if (!isVoiceRecordingSupported()) {
+      showToast('Voice recording is not supported in this browser', 'error');
+      return;
+    }
+
+    const recorder = createVoiceRecorder({
+      onTick: (elapsedMs) => {
+        const { timeEl } = getRecordingEls();
+        if (timeEl) timeEl.textContent = formatRecordingTime(elapsedMs);
+      },
+      onMaxDuration: () => {
+        showToast('Reached the maximum voice message length', 'info');
+        finishRecording();
+      },
+    });
+
+    try {
+      await recorder.start();
+    } catch (e) {
+      // getUserMedia/MediaRecorder failed — recorder.start() already
+      // released anything it partially opened before rejecting, so
+      // there's nothing further to clean up here.
+      const message =
+        e && e.name === 'NotAllowedError'
+          ? 'Microphone permission was denied'
+          : (e && e.message) || 'Could not start recording';
+      showToast(message, 'error');
+      return;
+    }
+
+    activeRecorder = recorder;
+    setRecordingUiActive(true);
+  }
+
+  /** Discards the in-progress recording without sending anything. */
+  function cancelRecording() {
+    if (!activeRecorder) return;
+    const recorder = activeRecorder;
+    activeRecorder = null;
+    setRecordingUiActive(false);
+    recorder.cancel();
+  }
+
+  /** Stops, finalizes, and uploads the in-progress recording as a message. */
+  async function finishRecording() {
+    if (!activeRecorder) return;
+    const recorder = activeRecorder;
+    activeRecorder = null;
+    setRecordingUiActive(false);
+
+    let result;
+    try {
+      result = await recorder.stop();
+    } catch (e) {
+      showToast((e && e.message) || 'Recording failed', 'error');
+      return;
+    }
+
+    if (!result) return; // nothing captured (e.g. an instant tap-and-release) — treat like a cancel
+
+    const { blob, ext } = result;
+    const file = new File([blob], `voice-message-${Date.now()}.${ext}`, {
+      type: blob.type || 'audio/webm',
+    });
+
+    if (!canSend()) return;
+
+    const replyToId = currentReply ? currentReply.id : null;
+    clearReply();
+
+    try {
+      const form = new FormData();
+      form.append('file', file, file.name);
+      form.append('is_voice_message', '1');
+      if (replyToId) form.append('reply_to_id', replyToId);
+      if (buildFormExtra) buildFormExtra(form);
+      // No progress callback needed here — voice messages are small
+      // and short-lived enough that a progress bar would just flash.
+      const message = await xhrUpload(uploadUrl, form, () => {});
+      onMessage(message);
+    } catch (e) {
+      showToast((e && e.message) || 'Failed to send voice message', 'error');
+    }
+  }
+
+  function wireVoiceRecording() {
+    const { micBtn } = getRecordingEls();
+    const cancelBtn = recordingCancelId ? document.getElementById(recordingCancelId) : null;
+    const stopBtn = recordingStopId ? document.getElementById(recordingStopId) : null;
+    if (micBtn) micBtn.addEventListener('click', startRecording);
+    if (cancelBtn) cancelBtn.addEventListener('click', cancelRecording);
+    if (stopBtn) stopBtn.addEventListener('click', finishRecording);
+  }
+
+  /**
+   * Releases any in-progress recording's mic/timer resources.
+   * Callers (chat.js/dm.js) must call this before discarding a
+   * composer instance — e.g. navigating away mid-recording — since
+   * nothing else would otherwise stop that mic stream once the
+   * composer's own DOM is torn down by the next render.
+   */
+  function destroy() {
+    if (activeRecorder) {
+      const recorder = activeRecorder;
+      activeRecorder = null;
+      recorder.cancel();
+    }
+    window.removeEventListener('pagehide', destroy);
+  }
+
   wireTextarea();
   wireFileInput();
+  wireVoiceRecording();
   renderStaging();
   renderReplyPreview();
 
-  return { addFiles, removeFile, clearStaged, send, setReplyTo, clearReply };
+  // Best-effort safety net: if this composer instance is ever
+  // garbage-collected while still recording (e.g. a caller forgets
+  // to call destroy()), 'pagehide' still fires as the tab is closed/
+  // navigated away from entirely, so the mic gets released even in
+  // that edge case. destroy() itself is idempotent, so this never
+  // double-releases anything when the normal cleanup path already ran.
+  window.addEventListener('pagehide', destroy);
+
+  return { addFiles, removeFile, clearStaged, send, setReplyTo, clearReply, destroy };
 }

@@ -48,8 +48,8 @@ export function renderLogin() {
   wrap.style.display = 'flex';
   wrap.innerHTML = `
     <div class="card login-card">
-      <div class="login-mark">F</div>
-      <h1>Sign in to FileHub</h1>
+      <div class="login-mark"><img src="/img/logo.jpg" alt="Wire" /></div>
+      <h1>Sign in to Wire</h1>
       <p class="hint">Your private drive over WireGuard</p>
       <form id="login-form">
         <input type="text" id="login-username" placeholder="Username" required>

@@ -108,6 +108,11 @@ export function clearAllDmTyping() {
   dmTypingIndicator.clearAll();
 }
 
+/** Same reasoning as chat.js's destroyChatComposer() — see there. */
+export function destroyDmComposer() {
+  if (dmComposer) dmComposer.destroy();
+}
+
 // ---------- Render ----------
 export async function renderDm(openPeerId) {
   const main = document.getElementById('content-area');
@@ -332,15 +337,29 @@ window.openDmConversation = async function(peerId, username) {
     <div class="composer-wrapper">
       <div class="reply-preview-bar" id="dm-reply-preview"></div>
       <div class="attach-staging" id="dm-attach-staging"></div>
-      <div class="chat-input-area">
+      <div class="composer-recording-bar" id="dm-recording-bar">
+        <button type="button" class="composer-recording-cancel" id="dm-recording-cancel" aria-label="Cancel recording">Cancel</button>
+        <div class="composer-recording-indicator">
+          <span class="composer-recording-dot" aria-hidden="true"></span>
+          <span id="dm-recording-time">0:00</span>
+        </div>
+        <button type="button" class="composer-recording-stop" id="dm-recording-stop" aria-label="Stop recording">${ICONS.stop}</button>
+      </div>
+      <div class="chat-input-area" id="dm-input-area">
         <input type="file" id="dm-file-input" class="hidden" multiple>
         <button class="btn btn-ghost btn-icon" title="Attach" onclick="document.getElementById('dm-file-input').click()">${ICONS.paperclip}</button>
         <button class="btn btn-ghost btn-icon emoji-trigger" title="Emoji" onclick="window.openDmEmojiPicker(this)">${ICONS.emoji}</button>
         <textarea id="dm-input" rows="1" placeholder="Message ${escapeHtml(username)}…"></textarea>
+        <button class="composer-mic-btn" id="dm-mic-btn" aria-label="Record a voice message">${ICONS.mic}</button>
         <button onclick="window.sendDm()" class="btn-send" title="Send message (Enter) — Shift+Enter for a new line">${ICONS.send}</button>
       </div>
     </div>
   `;
+
+  // Same reasoning as chat.js's renderChat() — release any
+  // in-progress recording before this render's innerHTML replace
+  // throws away the DOM the previous composer instance was wired to.
+  if (dmComposer) dmComposer.destroy();
 
   dmComposer = createComposer({
     inputId: 'dm-input',
@@ -354,6 +373,12 @@ window.openDmConversation = async function(peerId, username) {
     onMessage: (message) => addDmMessage(message),
     typingEmitter: dmTypingEmitter,
     canSend: () => !!dmActivePeer,
+    inputAreaId: 'dm-input-area',
+    micButtonId: 'dm-mic-btn',
+    recordingBarId: 'dm-recording-bar',
+    recordingTimeId: 'dm-recording-time',
+    recordingCancelId: 'dm-recording-cancel',
+    recordingStopId: 'dm-recording-stop',
   });
   wirePasteImage('dm-input', (file) => dmComposer.addFiles([file]));
   wireTypingInput('dm-input', dmTypingEmitter);

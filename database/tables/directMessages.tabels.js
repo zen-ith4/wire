@@ -17,6 +17,9 @@ CREATE TABLE IF NOT EXISTS direct_messages (
   attachment_size INTEGER,
   attachment_mime TEXT,
 
+  -- Same reasoning as messages.is_voice_message (see that table).
+  is_voice_message INTEGER NOT NULL DEFAULT 0,
+
   -- Same reasoning as messages.reply_to_id (see that table): no
   -- FOREIGN KEY cascade/null-on-delete, so a reply can still show a
   -- graceful "Original message deleted" fallback after the original

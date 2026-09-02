@@ -1,8 +1,8 @@
 import { getCurrentUser } from './auth.js';
 
 import { renderFiles } from '../files/files.js';
-import { renderChat } from '../chat/chat.js';
-import { renderDm } from '../chat/dm.js';
+import { renderChat, destroyChatComposer } from '../chat/chat.js';
+import { renderDm, destroyDmComposer } from '../chat/dm.js';
 import { renderSettings } from '../settings/settings.js';
 
 import {
@@ -74,6 +74,14 @@ export function navigate(view, params) {
   }
 
   const route = routes[view] || routes.files;
+
+  // Release any in-progress voice recording before switching views —
+  // see destroyChatComposer()/destroyDmComposer() for why this can't
+  // just be left to the next renderChat()/renderDm() call. Cheap
+  // no-ops when nothing is currently recording (or that view was
+  // never mounted in the first place).
+  destroyChatComposer();
+  destroyDmComposer();
 
   document.querySelectorAll('.nav-link').forEach((link) => {
     link.classList.toggle(

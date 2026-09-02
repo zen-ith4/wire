@@ -56,6 +56,19 @@ function normalizeDmReplyToId(value, userId, peerId) {
   return belongsToConversation ? id : null;
 }
 
+// Same reasoning as chat.controller.js's isVoiceMessageFlag(): only
+// honor the client's "this is a voice message" flag when the
+// resolved attachment mime is actually audio, so a client can't tag
+// an arbitrary upload to have it render in the compact voice UI.
+function isVoiceMessageFlag(rawValue, mime) {
+  const truthy =
+    rawValue === '1' ||
+    rawValue === 'true' ||
+    rawValue === true;
+
+  return truthy && typeof mime === 'string' && mime.startsWith('audio/');
+}
+
 function getConversationsHandler(req, res) {
   // getConversationsSummary() batches what used to be 1 + 3 queries
   // per conversation (peer lookup, last message, unread count) into
@@ -67,7 +80,7 @@ function getConversationsHandler(req, res) {
       peer_id,
       username: username || 'Deleted user',
       last_message: lastMessage
-        ? (lastMessage.content || (lastMessage.attachment_name ? '📎 Attachment' : ''))
+        ? (lastMessage.content || (lastMessage.attachment_name ? (lastMessage.is_voice_message ? '🎤 Voice message' : '📎 Attachment') : ''))
         : '',
       last_timestamp: lastMessage ? lastMessage.timestamp : null,
       unread_count: unreadCount,
@@ -137,6 +150,7 @@ function sendMessage(req, res) {
 
   const fullMsg = findDmMessageWithUser(info.lastInsertRowid);
   fullMsg.has_attachment = !!fullMsg.attachment_name;
+  fullMsg.is_voice_message = Boolean(fullMsg.is_voice_message);
 
   emitNewDirectMessage(fullMsg);
   res.json(fullMsg);
@@ -173,6 +187,7 @@ function sendMessageWithAttachment(req, res) {
   const mime = CHAT_MIME_MAP[ext] || req.file.mimetype || 'application/octet-stream';
   const caption = (req.body.content || '').trim().slice(0, 2000);
   const replyToId = normalizeDmReplyToId(req.body?.reply_to_id, req.user.id, Number(recipient_id));
+  const isVoiceMessage = isVoiceMessageFlag(req.body?.is_voice_message, mime);
   const timestamp = new Date().toISOString();
 
   const info = insertDmMessageWithAttachment(
@@ -184,11 +199,13 @@ function sendMessageWithAttachment(req, res) {
     originalName,
     req.file.size,
     mime,
-    replyToId
+    replyToId,
+    isVoiceMessage
   );
 
   const fullMsg = findDmMessageWithUser(info.lastInsertRowid);
   fullMsg.has_attachment = !!fullMsg.attachment_name;
+  fullMsg.is_voice_message = Boolean(fullMsg.is_voice_message);
 
   emitNewDirectMessage(fullMsg);
   res.json(fullMsg);

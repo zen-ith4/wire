@@ -8,12 +8,14 @@ const DM_SELECT = `
          su.accent_color,
          dm.content, dm.created_at AS timestamp, dm.read_at,
          dm.attachment_name, dm.attachment_size, dm.attachment_mime,
+         dm.is_voice_message,
          dm.reply_to_id,
          rdm.id AS reply_id, rdm.sender_id AS reply_user_id,
          rsu.username AS reply_username, rdm.content AS reply_content,
          rdm.created_at AS reply_timestamp,
          rdm.attachment_name AS reply_attachment_name,
-         rdm.attachment_mime AS reply_attachment_mime
+         rdm.attachment_mime AS reply_attachment_mime,
+         rdm.is_voice_message AS reply_is_voice_message
   FROM direct_messages dm
   JOIN users su ON su.id = dm.sender_id
   LEFT JOIN direct_messages rdm ON rdm.id = dm.reply_to_id
@@ -89,11 +91,12 @@ function getConversationsSummary(userId) {
   `).all(userId, userId, userId, userId);
 
   const lastMessageRows = getDb().prepare(`
-    SELECT peer_id, content, attachment_name, timestamp FROM (
+    SELECT peer_id, content, attachment_name, is_voice_message, timestamp FROM (
       SELECT
         CASE WHEN sender_id = ? THEN recipient_id ELSE sender_id END AS peer_id,
         content,
         attachment_name,
+        is_voice_message,
         created_at AS timestamp,
         ROW_NUMBER() OVER (
           PARTITION BY CASE WHEN sender_id = ? THEN recipient_id ELSE sender_id END
@@ -190,12 +193,12 @@ function insertDmMessage(senderId, recipientId, content, timestamp, replyToId = 
   `).run(senderId, recipientId, content, timestamp, replyToId);
 }
 
-function insertDmMessageWithAttachment(senderId, recipientId, content, timestamp, filename, originalName, size, mime, replyToId = null) {
+function insertDmMessageWithAttachment(senderId, recipientId, content, timestamp, filename, originalName, size, mime, replyToId = null, isVoiceMessage = false) {
   return getDb().prepare(`
     INSERT INTO direct_messages (sender_id, recipient_id, content, created_at,
-                                 attachment_path, attachment_name, attachment_size, attachment_mime, reply_to_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(senderId, recipientId, content, timestamp, filename, originalName, size, mime, replyToId);
+                                 attachment_path, attachment_name, attachment_size, attachment_mime, reply_to_id, is_voice_message)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(senderId, recipientId, content, timestamp, filename, originalName, size, mime, replyToId, isVoiceMessage ? 1 : 0);
 }
 
 function findDmMessageById(id) {

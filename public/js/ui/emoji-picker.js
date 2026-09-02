@@ -19,8 +19,8 @@
 
 import { CATEGORIES, EMOJI, SKIN_TONE_MODIFIERS } from '../vendor/emoji-data.js';
 
-const RECENTS_KEY = 'filehub-emoji-recents';
-const SKIN_KEY = 'filehub-emoji-skin';
+const RECENTS_KEY = 'wire-emoji-recents';
+const SKIN_KEY = 'wire-emoji-skin';
 const MAX_RECENTS = 24;
 
 const SKIN_SWATCH_COLORS = ['#9A9AA3', '#FFE0BD', '#F1C27D', '#E0AC69', '#C68642', '#8D5524'];

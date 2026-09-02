@@ -13,7 +13,7 @@
 
   /* Reference's accent system, fixed to its default "Neutral" preset
      (the reference lets the demo user pick from 6 accent swatches —
-     that's a standalone demo feature, not something FileHub already
+     that's a standalone demo feature, not something Wire already
      has, so it isn't wired up here; the visual result at the default
      preset is reproduced exactly). Kept as an RGB triplet under the
      old --indigo/--cyan variable names so every existing

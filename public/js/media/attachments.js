@@ -9,6 +9,7 @@ import {
 
 import { isAudio, renderAudio } from './audio-player.js';
 import { isVideo, renderVideo } from './video-player.js';
+import { isVoiceMessage, renderVoiceMessage } from './voice-message.js';
 
 // Track pending loads: key = `${prefix}-${id}`, value = { promise, controller }
 const pendingLoads = new Map();
@@ -17,6 +18,11 @@ const pendingLoads = new Map();
 // Shared by renderAttachment() (to know what placeholder to emit)
 // and mountAttachmentMedia() (to know which player to initialize).
 function attachmentMediaKind(msg) {
+  // Voice messages are audio attachments too (same has_attachment/
+  // attachment_mime shape) — checked first so they route to the
+  // dedicated voice-message player instead of the generic one.
+  if (isVoiceMessage(msg)) return 'voice';
+
   const isAudioAttachment =
     isAudio(msg.attachment_mime) ||
     isAudio(msg.attachment_name);
@@ -52,7 +58,9 @@ function attachmentMediaKind(msg) {
 export function mountAttachmentMedia(msg, messageEl, scope) {
   if (!messageEl || !msg.has_attachment) return;
   const kind = attachmentMediaKind(msg);
-  if (kind === 'audio') {
+  if (kind === 'voice') {
+    renderVoiceMessage(msg, scope, messageEl);
+  } else if (kind === 'audio') {
     renderAudio(msg, scope, messageEl);
   } else if (kind === 'video') {
     renderVideo(msg, scope, messageEl);

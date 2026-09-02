@@ -18,6 +18,7 @@ const MESSAGES_CONTAINER_ID = {
 
 function attachmentLabel(msg) {
   const mime = msg.attachment_mime || '';
+  if (msg.is_voice_message) return 'Voice message';
   if (mime.startsWith('image/')) return 'Photo';
   if (mime.startsWith('video/')) return 'Video';
   if (mime.startsWith('audio/')) return 'Audio';
@@ -80,6 +81,7 @@ export function buildReplyPreview(msg) {
     hasAttachment: !!msg.has_attachment,
     attachmentName: msg.attachment_name || null,
     attachmentMime: msg.attachment_mime || null,
+    isVoiceMessage: !!msg.is_voice_message,
   };
 }
 

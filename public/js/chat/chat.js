@@ -67,6 +67,21 @@ export function clearAllChatTyping() {
   chatTypingIndicator.clearAll();
 }
 
+/**
+ * Releases any in-progress voice recording's mic/timer resources.
+ * Called by the router before navigating away from the Chat view to
+ * anything else (Files, Settings, ...) — renderChat() itself already
+ * handles the case of navigating back to Chat (or refreshing DM →
+ * Chat → DM), since it destroys the previous composer at the top of
+ * its own render. This covers the remaining case: leaving Chat for a
+ * view that never calls renderChat() again, which would otherwise
+ * leave that composer (and its open mic stream, if one was active)
+ * unreachable but still alive.
+ */
+export function destroyChatComposer() {
+  if (chatComposer) chatComposer.destroy();
+}
+
 export async function renderChat() {
   const main = document.getElementById('content-area');
   const generation = ++chatRenderGeneration;
@@ -91,11 +106,20 @@ export async function renderChat() {
       <div class="composer-wrapper">
         <div class="reply-preview-bar" id="chat-reply-preview"></div>
         <div class="attach-staging" id="chat-attach-staging"></div>
-        <div class="chat-input-area">
+        <div class="composer-recording-bar" id="chat-recording-bar">
+          <button type="button" class="composer-recording-cancel" id="chat-recording-cancel" aria-label="Cancel recording">Cancel</button>
+          <div class="composer-recording-indicator">
+            <span class="composer-recording-dot" aria-hidden="true"></span>
+            <span id="chat-recording-time">0:00</span>
+          </div>
+          <button type="button" class="composer-recording-stop" id="chat-recording-stop" aria-label="Stop recording">${ICONS.stop}</button>
+        </div>
+        <div class="chat-input-area" id="chat-input-area">
           <input type="file" id="chat-file-input" class="hidden" multiple>
           <button class="btn btn-ghost btn-icon" title="Attach a file" onclick="document.getElementById('chat-file-input').click()">${ICONS.paperclip}</button>
           <button class="btn btn-ghost btn-icon emoji-trigger" title="Emoji" onclick="window.openChatEmojiPicker(this)">${ICONS.emoji}</button>
           <textarea id="chat-input" rows="1" placeholder="Type a message…"></textarea>
+          <button class="composer-mic-btn" id="chat-mic-btn" aria-label="Record a voice message">${ICONS.mic}</button>
           <button onclick="window.sendChat()" class="btn-send" title="Send message (Enter) — Shift+Enter for a new line">${ICONS.send}</button>
         </div>
       </div>
@@ -107,6 +131,12 @@ export async function renderChat() {
   chatMsgById.clear();
   chatTypingIndicator.clearAll();
 
+  // Release any mic/timer resources an in-progress recording on the
+  // previous composer instance was holding — this render is about to
+  // throw away its DOM (including the mic/recording-bar buttons it
+  // was wired to), and nothing else would stop that stream otherwise.
+  if (chatComposer) chatComposer.destroy();
+
   chatComposer = createComposer({
     inputId: 'chat-input',
     fileInputId: 'chat-file-input',
@@ -117,6 +147,12 @@ export async function renderChat() {
     buildTextBody: (content) => ({ content }),
     onMessage: (message) => addChatMessage(message),
     typingEmitter: chatTypingEmitter,
+    inputAreaId: 'chat-input-area',
+    micButtonId: 'chat-mic-btn',
+    recordingBarId: 'chat-recording-bar',
+    recordingTimeId: 'chat-recording-time',
+    recordingCancelId: 'chat-recording-cancel',
+    recordingStopId: 'chat-recording-stop',
   });
   wirePasteImage('chat-input', (file) => chatComposer.addFiles([file]));
   wireTypingInput('chat-input', chatTypingEmitter);

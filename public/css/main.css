@@ -1,5 +1,5 @@
 /* ================================================================
-   FileHub — main stylesheet entry point
+   Wire — main stylesheet entry point
    Import order matters: core tokens/reset/base first, then layout,
    then components, then feature-specific styles, then pages,
    and finally responsive overrides + utilities last so they win
@@ -37,6 +37,7 @@
 @import url("features/sharing.css");
 @import url("features/audio-player.css");
 @import url("features/video-player.css");
+@import url("features/voice-message.css");
 
 /* Pages */
 @import url("pages/login.css");

@@ -14,6 +14,12 @@ CREATE TABLE IF NOT EXISTS messages (
   attachment_size INTEGER,
   attachment_mime TEXT,
 
+  -- Marks an audio attachment as a recorded voice message (vs. a
+  -- normal uploaded audio file) so the frontend knows which player
+  -- component to render. See migrations.js for the upgrade path on
+  -- existing databases.
+  is_voice_message INTEGER NOT NULL DEFAULT 0,
+
   -- Message this one is replying to (if any). Deliberately NOT a
   -- FOREIGN KEY with ON DELETE CASCADE/SET NULL: when the original
   -- message is deleted we want this id to keep pointing at it, so the

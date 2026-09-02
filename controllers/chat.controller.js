@@ -44,7 +44,27 @@ function addAttachmentFlag(message) {
   message.has_attachment =
     !!message.attachment_name;
 
+  // SQLite gives back 0/1 here — coerce to a real boolean, same as
+  // withAttachmentFlag() (used by the list endpoints) does.
+  message.is_voice_message =
+    Boolean(message.is_voice_message);
+
   return message;
+}
+
+// A truthy `is_voice_message` form field only actually marks the
+// message as a voice message when the resolved attachment mime type
+// is audio — never trust the client-supplied flag on its own (a
+// client could otherwise tag an arbitrary upload as a "voice
+// message" and have it render in the compact voice UI instead of the
+// generic attachment view).
+function isVoiceMessageFlag(rawValue, mime) {
+  const truthy =
+    rawValue === '1' ||
+    rawValue === 'true' ||
+    rawValue === true;
+
+  return truthy && typeof mime === 'string' && mime.startsWith('audio/');
 }
 
 
@@ -246,6 +266,10 @@ function sendMessageWithAttachment(req,res) {
     normalizeReplyToId(req.body?.reply_to_id);
 
 
+  const isVoiceMessage =
+    isVoiceMessageFlag(req.body?.is_voice_message, mime);
+
+
   const timestamp =
     new Date().toISOString();
 
@@ -259,7 +283,8 @@ function sendMessageWithAttachment(req,res) {
       originalName,
       req.file.size,
       mime,
-      replyToId
+      replyToId,
+      isVoiceMessage
     );
 
 

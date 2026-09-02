@@ -82,7 +82,7 @@ const CHAT_MIME_MAP = {
 // DIRECTORIES
 // ======================================================
 
-const TMP_UPLOAD_DIR = path.join(os.tmpdir(), 'filehub-uploads');
+const TMP_UPLOAD_DIR = path.join(os.tmpdir(), 'wire-uploads');
 
 [
   constants.AVATAR_DIR,

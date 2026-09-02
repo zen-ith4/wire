@@ -12,6 +12,10 @@ function withAttachmentFlag(rows) {
   return rows.map(row => ({
     ...row,
     has_attachment: Boolean(row.attachment_name),
+    // SQLite gives back 0/1 for this column — coerce to a real
+    // boolean so the frontend's `msg.is_voice_message` checks don't
+    // have to care about that.
+    is_voice_message: Boolean(row.is_voice_message),
   }));
 }
 

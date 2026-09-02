@@ -1,6 +1,6 @@
 /* ================================================================
    MESSAGES — reproduces the reference's .messages-layout structure
-   almost verbatim. FileHub's actual class names (.dm-conv, .dm-*)
+   almost verbatim. Wire's actual class names (.dm-conv, .dm-*)
    are kept as the functional hooks (click delegation, dataset
    attributes JS already depends on); the reference's own class
    names (.conv-*, .chat-*) are used for the parts that are purely

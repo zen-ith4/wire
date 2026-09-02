@@ -38,7 +38,7 @@ window.addMyShareFolder = async function() {
 };
 
 window.deleteMyShareFolder = async function(id, name) {
-  if (!await showConfirm(`Delete "${name}"? This removes it from FileHub for everyone.`, { title: 'Delete folder' })) return;
+  if (!await showConfirm(`Delete "${name}"? This removes it from Wire for everyone.`, { title: 'Delete folder' })) return;
 
   try {
     await api(`/api/share/folders/${id}`, { method: 'DELETE' });

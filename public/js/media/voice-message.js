@@ -14,6 +14,7 @@
 
 import { ICONS } from '../icons.js';
 import { escapeAttr } from '../core/utils.js';
+import { fetchBlob } from '../core/api.js';
 
 // ======================================================
 // DETECTION
@@ -287,7 +288,6 @@ export function renderVoiceMessage(msg, scope, containerEl) {
       <audio
         id="vaudio-${messageId}"
         preload="metadata"
-        src="${escapeAttr(attachmentUrl)}"
       ></audio>
     </div>
   `;
@@ -319,6 +319,52 @@ export function renderVoiceMessage(msg, scope, containerEl) {
   const iconVolumeMute = playerEl.querySelector('.icon-volume-mute');
   const volumeSlider = playerEl.querySelector('.voice-message-volume-slider');
   const errorEl = playerEl.querySelector('.voice-message-error');
+
+  // ====================================================
+  // MEDIA LOADING / AUTH FALLBACK
+  //
+  // <audio src> can send the token in the query string, but some
+  // browser/network paths are stricter about authenticated media
+  // requests than normal fetch/XHR.  If the direct media request fails,
+  // retry through fetchBlob(), which sends the exact same JWT in the
+  // Authorization header used by the rest of the app, then hand the
+  // authenticated Blob to <audio> via an object URL.
+  //
+  // This keeps normal playback range-streamed and lightweight when the
+  // direct request works, while giving sender + receiver the same
+  // authenticated fallback path when it does not.
+  // ====================================================
+
+  let fallbackAttempted = false;
+  let blobObjectUrl = null;
+
+  async function loadAuthenticatedFallback() {
+    if (fallbackAttempted) return false;
+    fallbackAttempted = true;
+
+    try {
+      const baseUrl =
+        scope === 'dm'
+          ? `/api/dm/attachments/${encodeURIComponent(msg.id)}`
+          : `/api/chat/attachments/${encodeURIComponent(msg.id)}`;
+
+      const blob = await fetchBlob(baseUrl);
+
+      if (!document.body.contains(playerEl)) return false;
+
+      if (blobObjectUrl) {
+        URL.revokeObjectURL(blobObjectUrl);
+      }
+
+      blobObjectUrl = URL.createObjectURL(blob);
+      audio.src = blobObjectUrl;
+      audio.load();
+      return true;
+    } catch (error) {
+      console.error('Authenticated voice fallback failed:', error);
+      return false;
+    }
+  }
 
   // ====================================================
   // HELPERS
@@ -455,6 +501,11 @@ export function renderVoiceMessage(msg, scope, containerEl) {
   // ====================================================
 
   setLoading(true);
+
+  // Start with the normal streaming URL. If the browser cannot load it,
+  // the error handler below retries through an authenticated fetch.
+  audio.src = attachmentUrl;
+  audio.load();
 
   const savedState = voicePlaybackState.get(messageId);
 
@@ -643,14 +694,29 @@ export function renderVoiceMessage(msg, scope, containerEl) {
   // ERRORS
   // ====================================================
 
-  audio.addEventListener('error', () => {
+  audio.addEventListener('error', async () => {
     setLoading(false);
+
     const error = audio.error;
     console.error('Voice message error:', {
       code: error?.code,
       message: error?.message,
       src: audio.currentSrc,
     });
+
+    // First failure may simply be the browser refusing the media
+    // element's token-authenticated request. Retry with fetch(), which
+    // can send Authorization: Bearer <token> explicitly.
+    if (!blobObjectUrl) {
+      setLoading(true);
+      const recovered = await loadAuthenticatedFallback();
+      if (recovered) {
+        errorEl.style.display = 'none';
+        return;
+      }
+      setLoading(false);
+    }
+
     errorEl.style.display = 'flex';
   });
 }

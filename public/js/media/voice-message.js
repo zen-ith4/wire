@@ -54,6 +54,7 @@ function saveVoiceState(messageId, audio, playing, rate) {
     playing,
     rate,
     muted: audio.muted,
+    volume: audio.volume,
   });
 }
 
@@ -82,6 +83,23 @@ function setActivePlayer(audio) {
   }
   activeAudioEl = audio;
 }
+
+// ======================================================
+// SINGLE OPEN VOLUME PANEL
+//
+// Same "at most one at a time" idea as the active player above, for
+// a different reason: opening the volume panel attaches a document-
+// level click listener (to close it when you click elsewhere), and
+// there's no per-render "this player was torn down" hook to guarantee
+// that listener always gets removed (e.g. the person opens the panel
+// then navigates away without closing it first). Tracking only ONE
+// open panel's close function at a time — and force-closing it
+// whenever a different panel opens — bounds the worst case to at
+// most one stray listener/closure system-wide, rather than one per
+// voice message ever opened.
+// ======================================================
+
+let closeOpenVolumePanel = null;
 
 // ======================================================
 // TOKEN / URL — identical scheme to audio-player.js's getAudioUrl()
@@ -240,14 +258,29 @@ export function renderVoiceMessage(msg, scope, containerEl) {
         aria-label="Change playback speed"
       >1x</button>
 
-      <button
-        type="button"
-        class="voice-message-volume"
-        aria-label="Mute voice message"
-      >
-        <span class="icon-volume">${ICONS.volume}</span>
-        <span class="icon-volume-mute" style="display:none">${ICONS.volumeMute}</span>
-      </button>
+      <div class="voice-message-volume-control">
+        <button
+          type="button"
+          class="voice-message-volume"
+          aria-label="Show volume control"
+          aria-expanded="false"
+        >
+          <span class="icon-volume">${ICONS.volume}</span>
+          <span class="icon-volume-mute" style="display:none">${ICONS.volumeMute}</span>
+        </button>
+
+        <div class="voice-message-volume-slider-wrap">
+          <input
+            type="range"
+            class="voice-message-volume-slider"
+            min="0"
+            max="1"
+            step="0.01"
+            value="1"
+            aria-label="Volume"
+          >
+        </div>
+      </div>
 
       <div class="voice-message-error" aria-live="polite">${ICONS.alert} Failed to load voice message</div>
 
@@ -280,9 +313,11 @@ export function renderVoiceMessage(msg, scope, containerEl) {
   const fillEl = playerEl.querySelector('.voice-wave-fill');
   const timeEl = playerEl.querySelector('.voice-message-time');
   const speedBtn = playerEl.querySelector('.voice-message-speed');
+  const volumeControlEl = playerEl.querySelector('.voice-message-volume-control');
   const volumeBtn = playerEl.querySelector('.voice-message-volume');
   const iconVolume = playerEl.querySelector('.icon-volume');
   const iconVolumeMute = playerEl.querySelector('.icon-volume-mute');
+  const volumeSlider = playerEl.querySelector('.voice-message-volume-slider');
   const errorEl = playerEl.querySelector('.voice-message-error');
 
   // ====================================================
@@ -317,12 +352,15 @@ export function renderVoiceMessage(msg, scope, containerEl) {
   };
 
   const updateVolumeIcon = () => {
-    iconVolume.style.display = audio.muted ? 'none' : 'block';
-    iconVolumeMute.style.display = audio.muted ? 'block' : 'none';
-    volumeBtn.setAttribute(
-      'aria-label',
-      audio.muted ? 'Unmute voice message' : 'Mute voice message'
-    );
+    const isMuted = audio.muted || audio.volume === 0;
+    iconVolume.style.display = isMuted ? 'none' : 'block';
+    iconVolumeMute.style.display = isMuted ? 'block' : 'none';
+  };
+
+  const updateVolumeSliderFill = () => {
+    const pct = Math.round(Number(volumeSlider.value) * 100);
+    volumeSlider.style.background =
+      `linear-gradient(to right, var(--message-accent, rgb(var(--indigo))) 0%, var(--message-accent, rgb(var(--indigo))) ${pct}%, var(--border-soft) ${pct}%, var(--border-soft) 100%)`;
   };
 
   const seekToRatio = (ratio) => {
@@ -339,6 +377,10 @@ export function renderVoiceMessage(msg, scope, containerEl) {
     if (rect.width <= 0) return;
     seekToRatio((clientX - rect.left) / rect.width);
   };
+
+  // Initial slider fill (100%, matching the default value="1" in the
+  // template) — before any saved state or user interaction happens.
+  updateVolumeSliderFill();
 
   // ====================================================
   // PLAY / PAUSE
@@ -425,6 +467,9 @@ export function renderVoiceMessage(msg, scope, containerEl) {
       audio.playbackRate = savedState.rate || 1;
       speedBtn.textContent = formatSpeed(audio.playbackRate);
       audio.muted = !!savedState.muted;
+      audio.volume = typeof savedState.volume === 'number' ? savedState.volume : 1;
+      volumeSlider.value = audio.muted ? 0 : audio.volume;
+      updateVolumeSliderFill();
       updateVolumeIcon();
 
       if (savedState.playing) {
@@ -521,15 +566,77 @@ export function renderVoiceMessage(msg, scope, containerEl) {
   });
 
   // ====================================================
-  // VOLUME (compact mute/unmute toggle — no slider, to keep the
-  // player as compact as the rest of the row; the generic audio
-  // attachment player is the one with a full volume slider)
+  // VOLUME
+  //
+  // Clicking the icon no longer mutes instantly — it opens a compact
+  // slider (matching the generic audio-player.css's expanding volume
+  // control), which is what actually controls volume/mute. The time
+  // label collapses out of the way while the slider is open (via the
+  // .volume-open class below) to give it room without the player
+  // overflowing or wrapping onto a second line — see voice-message.css.
   // ====================================================
 
+  function openVolumePanel() {
+    if (closeOpenVolumePanel && closeOpenVolumePanel !== closeThisPanel) {
+      closeOpenVolumePanel();
+    }
+
+    playerEl.classList.add('volume-open');
+    volumeControlEl.classList.add('open');
+    volumeBtn.setAttribute('aria-expanded', 'true');
+
+    // Only attached while open, and only one instance system-wide —
+    // see the closeOpenVolumePanel module comment above.
+    document.addEventListener('mousedown', onOutsideClick, true);
+    document.addEventListener('touchstart', onOutsideClick, true);
+
+    closeOpenVolumePanel = closeThisPanel;
+  }
+
+  function closeThisPanel() {
+    playerEl.classList.remove('volume-open');
+    volumeControlEl.classList.remove('open');
+    volumeBtn.setAttribute('aria-expanded', 'false');
+
+    document.removeEventListener('mousedown', onOutsideClick, true);
+    document.removeEventListener('touchstart', onOutsideClick, true);
+
+    if (closeOpenVolumePanel === closeThisPanel) {
+      closeOpenVolumePanel = null;
+    }
+  }
+
+  function onOutsideClick(e) {
+    if (!volumeControlEl.contains(e.target)) {
+      closeThisPanel();
+    }
+  }
+
   volumeBtn.addEventListener('click', () => {
-    audio.muted = !audio.muted;
+    if (volumeControlEl.classList.contains('open')) {
+      closeThisPanel();
+    } else {
+      openVolumePanel();
+    }
+  });
+
+  volumeBtn.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && volumeControlEl.classList.contains('open')) {
+      closeThisPanel();
+    }
+  });
+
+  volumeSlider.addEventListener('input', () => {
+    const volume = Number(volumeSlider.value);
+    audio.volume = volume;
+    audio.muted = volume === 0;
+    updateVolumeSliderFill();
     updateVolumeIcon();
     saveVoiceState(messageId, audio, intendedPlaying, audio.playbackRate);
+  });
+
+  volumeSlider.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeThisPanel();
   });
 
   // ====================================================

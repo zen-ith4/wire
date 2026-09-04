@@ -67,6 +67,31 @@ export function mountAttachmentMedia(msg, messageEl, scope) {
   }
 }
 
+/**
+ * A small icon-only download button for an image attachment, meant
+ * to sit in the message's meta row next to Reply/Delete instead of
+ * floating on top of the image itself — on small images the old
+ * overlaid button covered too much of the picture. Returns '' for
+ * non-image (or missing) attachments; other attachment types already
+ * have their own inline download affordance in renderAttachment().
+ */
+export function imageDownloadButtonHtml(msg, scope) {
+  const isImage =
+    msg.has_attachment &&
+    msg.attachment_mime &&
+    msg.attachment_mime.startsWith('image/');
+
+  if (!isImage) return '';
+
+  return `
+    <button
+      type="button"
+      class="chat-msg-download"
+      title="Download ${escapeAttr(msg.attachment_name)}"
+      onclick="window.downloadAttachment(${msg.id}, '${escapeAttr(msg.attachment_name)}', '${scope}')"
+    >${ICONS.download}</button>`;
+}
+
 export function renderAttachment(msg, scope) {
   const isImage =
     msg.attachment_mime &&
@@ -114,15 +139,6 @@ export function renderAttachment(msg, scope) {
           <div class="spin"></div>
         </div>
       </div>
-
-      <button
-        type="button"
-        class="chat-attachment-image-dl"
-        title="Download ${escapeAttr(msg.attachment_name)}"
-        onclick="event.stopPropagation(); window.downloadAttachment(${msg.id}, '${escapeAttr(msg.attachment_name)}', '${scope}')"
-      >
-        ${ICONS.download}
-      </button>
     </div>`;
   }
 

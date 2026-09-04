@@ -18,6 +18,7 @@ export const DEFAULT_AMBIENT_LEVEL = 3;
 const ACCENT_STORAGE_KEY = 'wire-accent';
 const AMBIENT_STORAGE_KEY = 'wire-ambient-level';
 const THEME_STORAGE_KEY = 'wire-theme';
+const BUBBLE_ACCENT_STORAGE_KEY = 'wire-bubble-accent';
 
 function safeGetStorage(key) {
   try {
@@ -471,4 +472,42 @@ export function initTheme() {
   );
 
   return theme;
+}
+
+
+// ============================================================
+// "Use accent color for chat bubbles" toggle
+//
+// ON (default): message bubbles keep painting with the viewer's
+// accent color exactly as before (see js/chat/message-accent.js).
+// OFF: message-accent.js skips painting --message-accent/-contrast
+// entirely, so .chat-bubble falls back to its plain default colors
+// (var(--ink2)/var(--text) — see features/messages.css) for the
+// active theme. Nothing outside chat bubbles reads this flag; every
+// other accent-colored element is untouched either way.
+// ============================================================
+
+export function getUseAccentForBubbles() {
+  const saved = safeGetStorage(BUBBLE_ACCENT_STORAGE_KEY);
+
+  // No stored value yet -> default ON, so existing behavior is
+  // unchanged for everyone until they explicitly turn it off.
+  return saved === null ? true : saved !== 'off';
+}
+
+
+export function applyUseAccentForBubbles(
+  enabled,
+  { persist = true } = {}
+) {
+  const value = enabled !== false;
+
+  if (persist) {
+    safeSetStorage(
+      BUBBLE_ACCENT_STORAGE_KEY,
+      value ? 'on' : 'off'
+    );
+  }
+
+  return value;
 }

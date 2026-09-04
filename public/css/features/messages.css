@@ -642,6 +642,46 @@ input.conv-search-input:focus{
   color:var(--text);
 }
 
+/* ---------- Image attachment download ----------
+   Sits in the meta row next to Reply/Delete (rather than floating
+   on top of the image itself, which used to cover a big chunk of
+   small images) — same reveal-on-hover icon-button treatment as
+   .chat-msg-reply above. */
+
+.chat-msg-download{
+  width:20px;
+  height:20px;
+  border-radius:6px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  color:var(--muted2);
+  cursor:pointer;
+  background:transparent;
+  border:none;
+  opacity:0;
+  flex-shrink:0;
+  transition:
+    opacity .15s,
+    color .15s,
+    background .15s;
+}
+
+.chat-msg-download svg{
+  width:13px;
+  height:13px;
+  flex-shrink:0;
+}
+
+.chat-msg:hover .chat-msg-download{
+  opacity:1;
+}
+
+.chat-msg-download:hover{
+  background:var(--hover);
+  color:var(--text);
+}
+
 /* Quoted original message rendered inside a reply's own bubble,
    right above its content/attachment. Kept as a sibling of
    .chat-bubble (not nested inside it) so it lines up the same way
@@ -1255,20 +1295,9 @@ input.conv-search-input:focus{
    * as a flex item it gets blockified and stretched to the FULL width
    * of the message column (same trap .chat-bubble and .reactions-row
    * avoid elsewhere in this file via width:fit-content/align-self).
-   *
-   * Without this, the wrap silently becomes as wide as the whole
-   * message column while the actual <img> inside it stays pinned to
-   * the wrap's left edge (normal block flow). The download button is
-   * `position:absolute; right:8px` relative to THIS wrap though, so it
-   * anchors to the wrap's (invisible, oversized) right edge instead of
-   * the visible image's right edge - i.e. it drifts away from the
-   * image any time the wrap ends up wider than the image, which is
-   * exactly what happens once alignment pushes the message (and this
-   * stretched wrap) toward the right side of the column.
-   *
-   * Keeping the wrap shrink-to-fit means its edges always match the
-   * image's actual rendered edges, so the button - and the row-level
-   * alignment below - move the image and button together as one unit.
+   * Kept shrink-to-fit here too so this wrap's edges always match the
+   * image's actual rendered edges, in case anything else ever anchors
+   * to them.
    */
   align-self:flex-start;
   width:fit-content;
@@ -1277,37 +1306,6 @@ input.conv-search-input:focus{
 
 .chat-attachment-image-wrap .chat-attachment-image{
   margin-top:0;
-}
-
-.chat-attachment-image-dl{
-  position:absolute;
-  top:8px;
-  right:8px;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  width:28px;
-  height:28px;
-  border-radius:var(--radius);
-  background:rgba(0,0,0,.55);
-  border:1px solid var(--border);
-  color:#fff;
-  cursor:pointer;
-  opacity:.9;
-  transition:
-    opacity .15s,
-    background .15s;
-}
-
-.chat-attachment-image-dl:hover{
-  opacity:1;
-  background:rgba(0,0,0,.75);
-}
-
-.chat-attachment-image-dl svg{
-  width:14px;
-  height:14px;
-  flex-shrink:0;
 }
 
 /* ---------- Own message alignment ---------- */
@@ -1320,14 +1318,10 @@ input.conv-search-input:focus{
   margin-left:auto;
 }
 
-/* Image attachments use a separate wrapper (image + its floating
-   download button) so the button can be absolutely positioned
-   relative to the image instead of the message bubble. That wrapper
-   needs the same "push to the right on own messages" treatment as
-   .chat-attachment above, or it's left stranded on the left edge of
-   .chat-msg-content while the rest of the (row-reversed) own message
-   visually sits on the right - the button doesn't "detach" from the
-   image, the whole wrap (image + button together) just never moves. */
+/* The image attachment wrap needs the same "push to the right on own
+   messages" treatment as .chat-attachment above, or it's left
+   stranded on the left edge of .chat-msg-content while the rest of
+   the (row-reversed) own message visually sits on the right. */
 
 .chat-msg.own .chat-attachment-image-wrap{
   margin-left:auto;

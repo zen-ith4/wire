@@ -9,7 +9,7 @@ import {
   formatDate,
   insertAtCursor
 } from '../core/utils.js';
-import { renderAttachment, loadChatImage, mountAttachmentMedia, cleanupImageUrls } from '../media/attachments.js';
+import { renderAttachment, loadChatImage, mountAttachmentMedia, cleanupImageUrls, imageDownloadButtonHtml } from '../media/attachments.js';
 import { avatarHtml } from '../ui/avatar.js';
 import { getCurrentUser } from '../core/auth.js';
 import { showConfirm } from '../ui/confirm.js';
@@ -265,6 +265,7 @@ function buildChatMessageEl(msg) {
         <span class="chat-sender">${escapeHtml(msg.username)}</span>
         <span class="chat-time">${formatDate(msg.timestamp)}</span>
         <button type="button" class="chat-msg-reply" title="Reply" onclick="window.replyToChatMessage(${msg.id})">${ICONS.reply}</button>
+        ${imageDownloadButtonHtml(msg, 'chat')}
         ${canDelete ? `<button type="button" class="chat-msg-delete" title="Delete message" onclick="window.deleteChatMessage(${msg.id})">${ICONS.trash}</button>` : ''}
       </div>
       ${buildReplyQuoteHtml(msg, 'chat')}

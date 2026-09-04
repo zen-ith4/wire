@@ -184,7 +184,17 @@ function sendMessageWithAttachment(req, res) {
 
   const originalName = path.basename(req.file.originalname);
   const ext = path.extname(originalName).toLowerCase();
-  const mime = CHAT_MIME_MAP[ext] || req.file.mimetype || 'application/octet-stream';
+  const clientMime = req.file.mimetype || '';
+  // Same reasoning as chat.controller.js's sendMessageWithAttachment:
+  // .webm is a real video container too, so a recorded voice message
+  // (browser-reported audio/webm) needs the client's own mimetype to
+  // win over the extension table — but only when the mimetype is
+  // actually audio/*, so isVoiceMessageFlag() below still can't be
+  // fooled into marking a non-audio file as a voice message.
+  const mime =
+    req.body?.is_voice_message && clientMime.startsWith('audio/')
+      ? clientMime
+      : (CHAT_MIME_MAP[ext] || clientMime || 'application/octet-stream');
   const caption = (req.body.content || '').trim().slice(0, 2000);
   const replyToId = normalizeDmReplyToId(req.body?.reply_to_id, req.user.id, Number(recipient_id));
   const isVoiceMessage = isVoiceMessageFlag(req.body?.is_voice_message, mime);

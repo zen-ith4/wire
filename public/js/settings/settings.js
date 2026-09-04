@@ -40,7 +40,9 @@ import {
   applyAmbientLevel,
   getCurrentAmbientLevel,
   getCurrentTheme,
-  applyTheme
+  applyTheme,
+  getUseAccentForBubbles,
+  applyUseAccentForBubbles
 } from './theme.js';
 
 
@@ -156,6 +158,14 @@ export async function renderSettings() {
 
     const currentTheme =
       getCurrentTheme();
+
+
+    // ========================================================
+    // Use accent color for chat bubbles
+    // ========================================================
+
+    const useAccentForBubbles =
+      getUseAccentForBubbles();
 
 
     // ========================================================
@@ -318,6 +328,37 @@ export async function renderSettings() {
               ${ambientLevelsHtml}
 
             </div>
+
+          </div>
+
+
+          <!-- Use accent color for chat bubbles -->
+
+          <div class="settings-row">
+
+            <div>
+              <div class="settings-row-label">
+                Use accent color for chat bubbles
+              </div>
+
+              <div class="settings-row-sublabel">
+                When off, message bubbles use the app's normal colors
+              </div>
+            </div>
+
+            <button
+              type="button"
+              class="switch${
+                useAccentForBubbles
+                  ? ' on'
+                  : ''
+              }"
+              id="bubble-accent-toggle"
+              role="switch"
+              aria-checked="${useAccentForBubbles}"
+              aria-label="Use accent color for chat bubbles">
+              <span class="switch-thumb"></span>
+            </button>
 
           </div>
 
@@ -881,6 +922,29 @@ export async function renderSettings() {
         });
 
       button.classList.add('selected');
+    });
+
+
+    // ==========================================================
+    // Use accent color for chat bubbles
+    // ==========================================================
+
+    const bubbleAccentToggle =
+      document.getElementById('bubble-accent-toggle');
+
+    bubbleAccentToggle?.addEventListener('click', () => {
+
+      const next =
+        !bubbleAccentToggle.classList.contains('on');
+
+      applyUseAccentForBubbles(next);
+
+      bubbleAccentToggle.classList.toggle('on', next);
+      bubbleAccentToggle.setAttribute('aria-checked', String(next));
+
+      // Live-repaint every currently-rendered message (group chat +
+      // any open DM thread) so this applies instantly, no reload.
+      repaintAllMessageAccents();
     });
 
 

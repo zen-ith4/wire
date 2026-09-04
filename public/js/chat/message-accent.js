@@ -16,7 +16,7 @@
 // ============================================================
 
 import { getCurrentUser } from '../core/auth.js';
-import { ACCENT_PRESETS, rgbStringFromHex, contrastTextFor } from '../settings/theme.js';
+import { ACCENT_PRESETS, rgbStringFromHex, contrastTextFor, getUseAccentForBubbles } from '../settings/theme.js';
 
 // Sensible fallback if the viewer somehow has no accent_color set yet
 // (e.g. very first render before /api/me has resolved).
@@ -32,6 +32,16 @@ function currentViewerAccentHex() {
 }
 
 function paint(el, hex) {
+  // "Use accent color for chat bubbles" OFF -> deliberately leave
+  // --message-accent/-contrast unset, so .chat-bubble's own
+  // var(--message-accent, var(--ink2)) fallback takes over and the
+  // bubble renders with the app's normal default colors instead.
+  if (!getUseAccentForBubbles()) {
+    el.style.removeProperty('--message-accent');
+    el.style.removeProperty('--message-accent-contrast');
+    return;
+  }
+
   const rgb = rgbStringFromHex(hex);
   el.style.setProperty('--message-accent', `rgb(${rgb})`);
   el.style.setProperty('--message-accent-contrast', contrastTextFor(rgb));

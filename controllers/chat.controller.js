@@ -248,12 +248,32 @@ function sendMessageWithAttachment(req,res) {
       .toLowerCase();
 
 
+  const clientMime =
+    req.file.mimetype || '';
+
+
+  // .webm is deliberately ambiguous in CHAT_MIME_MAP (it's a real
+  // video container too — see config/multer.js's VIDEO_MIME_MAP), so
+  // extension-based lookup alone can't tell a recorded voice message
+  // (browser-reported audio/webm) apart from an actual uploaded video
+  // file that happens to use the .webm extension. When the client
+  // claims this is a voice message AND the browser's own mimetype
+  // agrees it's audio, trust that over the extension table. This is
+  // still not blind trust of the client: isVoiceMessageFlag() below
+  // re-derives isVoiceMessage from this same resolved `mime`, so a
+  // spoofed flag on a non-audio file (e.g. is_voice_message=1 on an
+  // .exe) still can't mark that file as a voice message — the mime
+  // has to actually be audio/* either way.
   const mime =
-    CHAT_MIME_MAP[ext]
-    ||
-    req.file.mimetype
-    ||
-    'application/octet-stream';
+    req.body?.is_voice_message && clientMime.startsWith('audio/')
+      ? clientMime
+      : (
+          CHAT_MIME_MAP[ext]
+          ||
+          clientMime
+          ||
+          'application/octet-stream'
+        );
 
 
   const caption =

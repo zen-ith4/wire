@@ -92,7 +92,7 @@ function updateBio(req, res) {
 
 
 // PUT /me/password
-function changePassword(req, res) {
+async function changePassword(req, res) {
   const {
     current_password,
     new_password
@@ -118,13 +118,13 @@ function changePassword(req, res) {
     });
   }
 
-  if (!comparePassword(current_password, user.password_hash)) {
+  if (!(await comparePassword(current_password, user.password_hash))) {
     return res.status(401).json({
       error: 'Current password is incorrect'
     });
   }
 
-  updateUserPassword(
+  await updateUserPassword(
     req.user.id,
     new_password
   );

@@ -1,4 +1,16 @@
 /* ---------- File table ---------- */
+/* Wrapper the table (and the same-shaped peer/user admin tables,
+   which reuse this class — see wireguard.js/admin.js) renders
+   inside of. On a narrow phone, 4 columns of real content (name,
+   size, date, actions) don't fit without either crushing every
+   column unreadably thin or overflowing the page — this scopes any
+   overflow to a horizontal scroll on the table itself instead,
+   which is the actual right fix rather than a blanket
+   overflow:hidden that would just clip the extra columns. */
+.table-scroll{width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;}
+@media (max-width:700px){
+  .table-scroll .file-table{min-width:520px;}
+}
 .file-table{width:100%;border-collapse:collapse;}
 .file-table th{
   text-align:left;font-size:11px;letter-spacing:.05em;text-transform:uppercase;

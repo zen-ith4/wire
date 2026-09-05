@@ -1,5 +1,8 @@
 .sidebar {
-  width:var(--sidebar-width);min-width:var(--sidebar-width);height:100vh;
+  width:var(--sidebar-width);min-width:var(--sidebar-width);
+  height:100vh;
+  height:100dvh;
+  height:calc(var(--vh, 1vh) * 100);
   /* Translucent glass instead of a locally-painted gradient patch —
      the one global #ambient-underlay layer (base.css) now provides
      all the decorative color; this panel just needs to let it show

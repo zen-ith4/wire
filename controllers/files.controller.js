@@ -1,4 +1,5 @@
 const fs = require('fs');
+const fsp = require('fs/promises');
 const path = require('path');
 
 const { findFolderById } = require('../services/file.service');
@@ -32,7 +33,63 @@ function getFolderAndAccess(userId, folderId) {
   return { folder, access };
 }
 
-function listFiles(req, res) {
+// listFiles used to be built entirely on the *Sync fs APIs
+// (readdirSync + one statSync per entry). Each of those blocks
+// Node's single event loop thread for the syscall's duration, and
+// the statSync loop in particular scales with the number of entries
+// in the folder — a big "Drive"-style folder with thousands of
+// files could stall every other in-flight request (chat, other
+// downloads, everything) for as long as it takes to stat all of
+// them, one at a time.
+//
+// This does the same two syscalls (readdir, stat) but through
+// fs/promises, so each individual call yields to the event loop
+// instead of blocking it. Per-entry stats are resolved with bounded
+// concurrency (STAT_CONCURRENCY at a time) rather than either fully
+// serial (slow) or fully parallel (a folder with 10,000 files would
+// otherwise fire 10,000 simultaneous stat() syscalls / open file
+// descriptors at once). The response shape, sorting, dotfile
+// filtering, and error behavior are unchanged from the sync version.
+const STAT_CONCURRENCY = 32;
+
+async function statEntriesLimited(dirents, dirPath) {
+  const results = new Array(dirents.length);
+  let cursor = 0;
+
+  async function worker() {
+    while (cursor < dirents.length) {
+      const i = cursor++;
+      const dirent = dirents[i];
+      const full = path.join(dirPath, dirent.name);
+      const stat = await fsp.stat(full);
+      results[i] = {
+        name: dirent.name,
+        type: dirent.isDirectory() ? 'dir' : 'file',
+        size: stat.size,
+        modified: stat.mtime.toISOString(),
+      };
+    }
+  }
+
+  const workers = Array.from(
+    { length: Math.min(STAT_CONCURRENCY, dirents.length) },
+    worker
+  );
+  await Promise.all(workers);
+
+  return results;
+}
+
+async function pathExists(p) {
+  try {
+    await fsp.access(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function listFiles(req, res) {
   const folderId = validateFolderId(req.params.folderId);
   if (!folderId) return res.status(400).json({ error: 'Invalid folder id' });
 
@@ -41,27 +98,35 @@ function listFiles(req, res) {
 
   const subpath = req.query.subpath || '';
   const target = safeSubPath(result.folder.path, subpath);
-  if (!target || !fs.existsSync(target)) {
-    return res.status(404).json({ error: 'Path not found' });
-  }
-  if (!fs.statSync(target).isDirectory()) {
-    return res.status(400).json({ error: 'Not a directory' });
-  }
 
-  const entries = fs.readdirSync(target, { withFileTypes: true })
-    .filter(x => !x.name.startsWith('.'))
-    .map(x => {
-      const full = path.join(target, x.name);
-      const stat = fs.statSync(full);
-      return {
-        name: x.name,
-        type: x.isDirectory() ? 'dir' : 'file',
-        size: stat.size,
-        modified: stat.mtime.toISOString(),
-      };
+  try {
+    if (!target) {
+      return res.status(404).json({ error: 'Path not found' });
+    }
+
+    const targetStat = await fsp.stat(target).catch((err) => {
+      if (err.code === 'ENOENT') return null;
+      throw err;
     });
 
-  res.json({ subpath, entries, can_write: !!result.access.can_write });
+    if (!targetStat) {
+      return res.status(404).json({ error: 'Path not found' });
+    }
+    if (!targetStat.isDirectory()) {
+      return res.status(400).json({ error: 'Not a directory' });
+    }
+
+    const dirents = (await fsp.readdir(target, { withFileTypes: true }))
+      .filter(x => !x.name.startsWith('.'));
+
+    const entries = await statEntriesLimited(dirents, target);
+
+    res.json({ subpath, entries, can_write: !!result.access.can_write });
+
+  } catch (err) {
+    console.error('listFiles failed:', err.message);
+    res.status(500).json({ error: 'Failed to list folder contents' });
+  }
 }
 
 function uploadFile(req, res) {

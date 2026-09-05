@@ -6,6 +6,14 @@
   width: 100%;
   max-width: 480px; /* سایز مناسب برای داخل چت */
   aspect-ratio: 16 / 9;
+  /* Capped so a tall portrait video (aspect-ratio is overridden per-
+     video from its real metadata in video-player.js) can never grow
+     past a sane share of the screen height on a short phone — see
+     the loadedmetadata handler in that file. Falls back to 100dvh
+     the same way .app does (layout/app.css) for browsers that
+     handle keyboard/chrome resize by resizing the layout viewport. */
+  max-height: 70vh;
+  max-height: 70dvh;
   background: var(--ink);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-lg);
@@ -21,7 +29,13 @@
   background: #000;
 }
 
-/* ---------- Control bar ---------- */
+/* ---------- Control bar ----------
+   Hidden until hover on pointer devices that actually have hover
+   (mouse/trackpad); touch devices have no persistent hover state at
+   all, so `(hover:none)` below shows them by default instead, and
+   video-player.js toggles a .controls-hidden class on tap to let a
+   viewer clear them off a paused/playing video, same as any native
+   mobile player. */
 .video-player-controls {
   position: absolute;
   left: 0; right: 0; bottom: 0;
@@ -40,6 +54,18 @@
   opacity: 1;
 }
 
+@media (hover:none){
+  .video-player-controls{
+    opacity:1;
+    padding:10px 12px;
+    gap:10px;
+  }
+  .video-player.controls-hidden .video-player-controls{
+    opacity:0;
+    pointer-events:none;
+  }
+}
+
 .video-ctrl-btn {
   flex: 0 0 auto;
   display: inline-flex;
@@ -56,6 +82,12 @@
   background: var(--hover);
 }
 .video-ctrl-btn svg { width: 16px; height: 16px; }
+
+@media (hover:none){
+  /* Slightly larger tap targets on touch — the control bar itself
+     already grew a bit above to make room. */
+  .video-ctrl-btn{width:34px;height:34px;}
+}
 
 .video-time {
   font-size: 12px;
@@ -96,6 +128,15 @@
 }
 .video-seekbar:hover::-moz-range-thumb { transform: scale(1.2); }
 
+@media (hover:none){
+  /* A slightly taller hit area on the seekbar itself is what
+     actually matters for touch (a 4px-tall track is hard to grab
+     precisely with a fingertip); the thumb grows to match. */
+  .video-seekbar{height:6px;}
+  .video-seekbar::-webkit-slider-thumb{width:15px;height:15px;margin-top:-5.5px;}
+  .video-seekbar::-moz-range-thumb{width:15px;height:15px;}
+}
+
 /* ---------- Volume ---------- */
 .video-volume-wrap { position: relative; display: flex; align-items: center; }
 .video-volume-slider {
@@ -124,4 +165,39 @@
   width: 12px; height: 12px; border-radius: 50%; 
   background: rgb(var(--indigo)); border: none; cursor: pointer; 
   box-shadow: 0 1px 3px rgba(0,0,0,0.3); 
+}
+
+/* Touch has no hover, so :hover-to-reveal (above) never fires.
+   video-player.js toggles this class on tapping the volume/mute
+   button instead — same click-to-open idea as the voice-message
+   player's volume control (voice-message.css), reused here for
+   consistency between the two players. */
+@media (hover:none){
+  .video-volume-slider{height:6px;}
+  .video-volume-wrap.open .video-volume-slider{width:56px;opacity:1;margin-left:6px;}
+  .video-volume-slider::-webkit-slider-thumb{width:15px;height:15px;margin-top:-5.5px;}
+  .video-volume-slider::-moz-range-thumb{width:15px;height:15px;}
+}
+
+/* ---------- Fullscreen ----------
+   Fills the real device screen edge-to-edge instead of keeping the
+   in-chat card's rounded corners/border/max-width. Standard syntax
+   plus the WebKit-prefixed pseudo (older Safari); current iOS Safari
+   doesn't support the Fullscreen API on a plain <div> at all — for
+   that case video-player.js falls back to the video element's own
+   native webkitEnterFullscreen(), which uses the OS's built-in
+   fullscreen video chrome instead of this class, so no CSS is
+   needed for that path. */
+.video-player:fullscreen{
+  max-width:none;max-height:none;width:100%;height:100%;
+  border-radius:0;border:none;
+  display:flex;align-items:center;justify-content:center;
+}
+.video-player:-webkit-full-screen{
+  max-width:none;max-height:none;width:100%;height:100%;
+  border-radius:0;border:none;
+}
+.video-player:fullscreen video,
+.video-player:-webkit-full-screen video{
+  width:100%;height:100%;
 }

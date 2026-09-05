@@ -24,10 +24,12 @@ export async function renderWireguard() {
         <input type="text" id="wg-username" placeholder="Friendly name">
         <button class="btn btn-primary btn-sm" onclick="window.mapWireguardPeer()">Map name</button>
       </div>
-      <table class="file-table">
-        <thead><tr><th>Name</th><th>VPN IP</th><th>Status</th><th class="col-right">Last handshake</th></tr></thead>
-        <tbody>${rows || `<tr><td colspan="4">${emptyState(ICONS.shield, 'No peers detected', 'Make sure wg interface is reachable.')}</td></tr>`}</tbody>
-      </table>
+      <div class="table-scroll">
+        <table class="file-table">
+          <thead><tr><th>Name</th><th>VPN IP</th><th>Status</th><th class="col-right">Last handshake</th></tr></thead>
+          <tbody>${rows || `<tr><td colspan="4">${emptyState(ICONS.shield, 'No peers detected', 'Make sure wg interface is reachable.')}</td></tr>`}</tbody>
+        </table>
+      </div>
     </div>`;
   } catch (e) {
     main.innerHTML = `<div class="card">${emptyState(ICONS.empty, 'Failed to load', escapeHtml(e.message))}</div>`;

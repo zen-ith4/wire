@@ -109,6 +109,10 @@ input.conv-search-input:focus{
   display:flex;
   flex-direction:column;
   gap:1px;
+  /* independent scroll region — see .content in layout/content.css
+     for why `contain` matters here */
+  overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch;
 }
 
 .dm-conv{
@@ -343,6 +347,11 @@ input.conv-search-input:focus{
   gap:4px;
   margin-bottom:0;
   max-height:none;
+  /* The scrollable area for the whole page (see core/reset.css) —
+     `contain` stops a fast flick past the top/bottom edge from
+     chaining into scrolling the document behind it. */
+  overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch;
 }
 
 /* Only when the floating glass header (above) is present: top padding
@@ -1090,6 +1099,7 @@ input.conv-search-input:focus{
   max-height:220px;
   padding:16px 16px 0;
   overflow-y:auto;
+  overscroll-behavior:contain;
 }
 
 .attach-chip{

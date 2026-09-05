@@ -43,11 +43,123 @@
 
 /* ---- App shell / sidebar / topbar / cards (layout + components) ---- */
 @media (max-width:900px){
-  .sidebar{position:fixed;left:0;top:0;transform:translateX(-100%);transition:transform .2s ease;z-index:50;}
+  .sidebar{
+    position:fixed;left:0;top:0;transform:translateX(-100%);transition:transform .2s ease;z-index:50;
+    /* Fixed overlay now covers the full device edge-to-edge, so it
+       needs to clear the notch/status bar and (in landscape, when
+       the notch sits on the left) the side inset itself. */
+    padding-top:env(safe-area-inset-top);
+    padding-left:env(safe-area-inset-left);
+    box-shadow:0 0 40px rgba(0,0,0,.35);
+  }
   .sidebar.open{transform:translateX(0);}
   .sidebar-resize-handle{display:none;}
   .content{padding:20px 16px 50px;}
-  .topbar{padding:0 16px;}
+  .topbar{
+    padding:0 16px;
+    padding-top:env(safe-area-inset-top);
+    height:calc(var(--topbar-height) + env(safe-area-inset-top));
+    padding-left:calc(16px + env(safe-area-inset-left));
+    padding-right:calc(16px + env(safe-area-inset-right));
+  }
   button.mobile-menu-btn { display: flex; }
   .card{padding:16px;}
+
+  /* ---- Touch target + hover-reveal fixes ----
+     Hover-only reveal (opacity:0 until :hover) leaves these
+     controls effectively unreachable on touch, since touch has no
+     persistent hover state — always show them below the desktop
+     breakpoint instead of gating on hover. Buttons are also bumped
+     a little for comfortable tap targets without changing the
+     desktop-only compact look. */
+  .chat-msg-delete,
+  .chat-msg-reply,
+  .chat-msg-download,
+  .reaction-add-btn{
+    opacity:1;
+    width:26px;height:26px;
+  }
+  .icon-btn{width:34px;height:34px;}
+  .btn-icon{width:42px;height:42px;}
+  .chat-input-area .btn-icon{width:42px;height:42px;}
+  .composer-mic-btn{width:40px;height:40px;}
+
+  /* iOS Safari zooms the whole page in on focus for any text input
+     under 16px — with the page-level scroll already locked (see
+     core/reset.css) that zoom has nowhere sensible to go and just
+     reads as broken layout/overflow until the user manually zooms
+     back out. Bumping to 16px here (mobile only — desktop keeps its
+     smaller size, same selectors/specificity so no !important is
+     needed since this file loads last) removes the trigger. */
+  .chat-input-area input[type=text],
+  .chat-input-area textarea,
+  input.conv-search-input,
+  input.emoji-picker-search{
+    font-size:16px;
+  }
+}
+
+/* Touch-capable devices regardless of viewport width (covers
+   tablets, which can be wider than the 900px breakpoint above but
+   still have no real hover state). */
+@media (hover:none){
+  .chat-msg-delete,
+  .chat-msg-reply,
+  .chat-msg-download,
+  .reaction-add-btn{
+    opacity:1;
+  }
+}
+
+/* ---- Composer / keyboard ----
+   Bottom margin includes the safe-area inset (home-indicator strip
+   on notched phones) so the send button never sits flush against
+   it or, worse, partly behind it. */
+@media (max-width:900px){
+  .composer-wrapper{
+    margin:0 12px calc(12px + env(safe-area-inset-bottom));
+  }
+  .chat-messages{padding:14px 12px;gap:3px;}
+  .chat-top-bar.chat-header-glass + .chat-messages{padding-top:70px;}
+  .chat-top-bar.chat-header-glass{left:12px;right:12px;}
+  .chat-msg{max-width:88%;}
+  .dm-thread-header,.chat-top-bar{padding:10px 14px;}
+}
+
+/* ---- Short / landscape phones ----
+   Landscape width on a lot of phones is well past the 900px
+   sidebar-collapse breakpoint above, so it's handled on height
+   instead: short viewports get the same overlay sidebar + tighter
+   vertical rhythm regardless of width. */
+@media (max-height:480px) and (orientation:landscape){
+  .sidebar{
+    position:fixed;left:0;top:0;transform:translateX(-100%);transition:transform .2s ease;z-index:50;
+    padding-top:env(safe-area-inset-top);
+    padding-left:env(safe-area-inset-left);
+  }
+  .sidebar.open{transform:translateX(0);}
+  .sidebar-resize-handle{display:none;}
+  button.mobile-menu-btn{display:flex;}
+  .topbar{height:40px;min-height:40px;padding:0 14px;padding-top:env(safe-area-inset-top);}
+  .chat-empty-state{padding:24px 20px;gap:10px;}
+  .composer-wrapper{margin:0 10px calc(8px + env(safe-area-inset-bottom));}
+}
+
+/* ---- File / peer / user tables (features/files.css) ----
+   No wrapper wide enough to need its own file — see
+   features/files.css for the .table-scroll rule these tables are
+   now rendered inside of. */
+@media (max-width:480px){
+  .file-table th:nth-child(3),
+  .file-table td:nth-child(3){display:none;} /* "Modified" column: least essential, drop first */
+}
+
+/* A hardcoded inline min-width (wireguard/admin toolbars) is the
+   one place in the app that isn't controllable from a stylesheet
+   without matching or beating that inline specificity — narrow
+   enough and clearly justified to be the one !important in this
+   file, only at the width where it would otherwise force the
+   toolbar itself past the viewport. */
+@media (max-width:420px){
+  .toolbar input[type="text"]{min-width:0 !important;flex:1 1 140px;}
 }

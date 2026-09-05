@@ -2,7 +2,32 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <!-- Real mobile viewport height (accounts for the browser chrome/
+       address bar and the on-screen keyboard) exposed as --vh, used
+       by .app/.main (layout/app.css) as calc(var(--vh,1vh) * 100).
+       100dvh already covers most modern browsers on its own; this is
+       the JS fallback/refinement for the ones that resize the layout
+       viewport instead (older Android WebViews, some in-app browsers)
+       so the composer never ends up hidden behind the keyboard or a
+       phantom scrollbar appears from a stale 100vh. Kept inline (runs
+       before first paint) rather than in app.js so there's no flash
+       of the wrong height while the module script loads. -->
+  <script>
+    (function () {
+      function setVh() {
+        var vv = window.visualViewport;
+        var h = (vv && vv.height) || window.innerHeight;
+        document.documentElement.style.setProperty('--vh', (h * 0.01) + 'px');
+      }
+      setVh();
+      window.addEventListener('resize', setVh);
+      window.addEventListener('orientationchange', setVh);
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', setVh);
+      }
+    })();
+  </script>
   <title>Wire — Private Drive</title>
 
   <!-- Typography: Inter (referenced first in style.css's font stack; falls

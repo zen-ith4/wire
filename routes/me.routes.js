@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 
 const { authenticate } = require('../middleware/authenticate');
+const { asyncHandler } = require('../middleware/asyncHandler');
 const {
   avatarUpload,
   bannerUpload
@@ -35,7 +36,7 @@ router.put(
 router.put(
   '/password',
   authenticate,
-  changePassword
+  asyncHandler(changePassword)
 );
 
 router.post(

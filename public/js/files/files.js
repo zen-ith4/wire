@@ -282,15 +282,17 @@ function renderFileCard(folders, data) {
 
     mainThreadContent = `
       ${progressBarHtml('file-upload-progress')}
-      <table class="file-table">
-        <thead><tr>
-          <th onclick="toggleSort('name')">Name</th>
-          <th class="col-right" onclick="toggleSort('size')">Size</th>
-          <th class="col-right" onclick="toggleSort('modified')">Modified</th>
-          <th></th>
-        </tr></thead>
-        <tbody>${rowsHtml}</tbody>
-      </table>
+      <div class="table-scroll">
+        <table class="file-table">
+          <thead><tr>
+            <th onclick="toggleSort('name')">Name</th>
+            <th class="col-right" onclick="toggleSort('size')">Size</th>
+            <th class="col-right" onclick="toggleSort('modified')">Modified</th>
+            <th></th>
+          </tr></thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>
+      </div>
     `;
   }
 

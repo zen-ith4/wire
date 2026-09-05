@@ -2,7 +2,7 @@ const { authenticateUser } = require('../services/auth.service');
 const { clearLoginAttempts } = require('../middleware/rateLimiter');
 
 
-function login(req, res) {
+async function login(req, res) {
 
   const username =
     req.body?.username?.trim();
@@ -18,7 +18,7 @@ function login(req, res) {
   }
 
 
-  const result = authenticateUser(
+  const result = await authenticateUser(
     username,
     password
   );

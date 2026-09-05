@@ -187,6 +187,11 @@ export function renderVideo(msg, scope, containerEl) {
     return `${minutes}:${String(secs).padStart(2, '0')}`;
   };
 
+  // No real hover on touch — matches the CSS `(hover:none)` feature
+  // query so JS and CSS agree on what "touch" means here (a coarse
+  // pointer with no hover), rather than sniffing user agent strings.
+  const isTouch = window.matchMedia('(hover:none)').matches;
+
   const updateSeekFill = () => {
     const max = Number(seekbar.max);
     const value = Number(seekbar.value);
@@ -233,6 +238,17 @@ export function renderVideo(msg, scope, containerEl) {
     seekbar.value = 0;
     durationEl.textContent = formatTime(duration);
     updateSeekFill();
+
+    // Portrait vs. landscape: the CSS default (16/9) is just a
+    // reasonable placeholder before metadata loads. Once we know
+    // the real dimensions, match the container to them instead —
+    // object-fit:contain would otherwise letterbox a portrait video
+    // into a wide 16:9 box, wasting most of the bubble on empty
+    // black bars. max-height in video-player.css still caps how
+    // tall that can get on a short phone screen.
+    if (video.videoWidth > 0 && video.videoHeight > 0) {
+      playerEl.style.aspectRatio = `${video.videoWidth} / ${video.videoHeight}`;
+    }
   });
 
   video.addEventListener('timeupdate', () => {
@@ -259,6 +275,8 @@ export function renderVideo(msg, scope, containerEl) {
     updateVolumeFill();
   });
 
+  const volumeWrap = playerEl.querySelector('.video-volume-wrap');
+
   muteBtn.addEventListener('click', () => {
     video.muted = !video.muted;
     if (!video.muted && video.volume === 0) {
@@ -266,6 +284,10 @@ export function renderVideo(msg, scope, containerEl) {
     }
     volumeSlider.value = video.muted ? 0 : video.volume;
     updateVolumeFill();
+    // Hover can't reveal the slider on touch (see video-player.css
+    // `@media (hover:none)`), so tapping mute also toggles it open —
+    // same pattern as the voice-message volume control.
+    if (isTouch) volumeWrap.classList.toggle('open');
   });
 
   // ====================================================
@@ -285,16 +307,33 @@ export function renderVideo(msg, scope, containerEl) {
   // ====================================================
 
   fullscreenBtn.addEventListener('click', async () => {
+    await toggleFullscreen();
+  });
+
+  async function toggleFullscreen() {
     try {
-      if (!document.fullscreenElement) {
-        await playerEl.requestFullscreen();
-      } else {
+      const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement;
+      if (!isFullscreen) {
+        if (playerEl.requestFullscreen) {
+          await playerEl.requestFullscreen();
+        } else if (playerEl.webkitRequestFullscreen) {
+          playerEl.webkitRequestFullscreen();
+        } else if (video.webkitEnterFullscreen) {
+          // iOS Safari has no Fullscreen API for a plain <div> —
+          // only <video> supports its own native fullscreen chrome
+          // via this non-standard method, so that's the real
+          // fullscreen path on iPhone/iPad rather than a no-op.
+          video.webkitEnterFullscreen();
+        }
+      } else if (document.exitFullscreen) {
         await document.exitFullscreen();
+      } else if (document.webkitExitFullscreen) {
+        document.webkitExitFullscreen();
       }
     } catch (error) {
       console.warn('Fullscreen failed:', error);
     }
-  });
+  }
 
   // ====================================================
   // VIDEO CLICK
@@ -338,17 +377,42 @@ export function renderVideo(msg, scope, containerEl) {
     // F key -> Toggle Fullscreen
     else if (e.key === 'f' || e.key === 'F') {
       e.preventDefault();
-      try {
-        if (!document.fullscreenElement) {
-          await playerEl.requestFullscreen();
-        } else {
-          await document.exitFullscreen();
-        }
-      } catch (error) {
-        console.warn('Fullscreen failed:', error);
-      }
+      await toggleFullscreen();
     }
   });
+
+  // ====================================================
+  // TAP-TO-TOGGLE CONTROLS (touch only)
+  // ====================================================
+  // Controls are visible by default on touch (CSS `(hover:none)`,
+  // since there's no hover to reveal them) — this lets a viewer tap
+  // the video itself to hide/show them, same as any native mobile
+  // player, and auto-hides them a couple seconds into playback so
+  // they don't sit over the picture the whole time.
+  if (isTouch) {
+    let hideTimer = null;
+    const scheduleAutoHide = () => {
+      clearTimeout(hideTimer);
+      hideTimer = setTimeout(() => {
+        if (!video.paused) playerEl.classList.add('controls-hidden');
+      }, 2500);
+    };
+
+    video.addEventListener('click', (e) => {
+      // dblclick above already handles play/pause; a single tap on
+      // the video (not the control bar itself) just toggles chrome
+      // visibility, matching native mobile players.
+      if (e.target.closest('.video-player-controls')) return;
+      playerEl.classList.toggle('controls-hidden');
+      if (!playerEl.classList.contains('controls-hidden')) scheduleAutoHide();
+    });
+
+    video.addEventListener('play', scheduleAutoHide);
+    video.addEventListener('pause', () => {
+      clearTimeout(hideTimer);
+      playerEl.classList.remove('controls-hidden');
+    });
+  }
 
   // Initialize volume fill on render
   updateVolumeFill();

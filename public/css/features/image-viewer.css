@@ -51,6 +51,13 @@
   flex:1;min-height:0;
   display:flex;align-items:center;justify-content:center;
   padding:0 24px 24px;
+  /* Multi-touch (pinch) is handled manually in js/image-viewer.js —
+     without this, the browser's own page-zoom gesture recognizer
+     competes with ours for the same two fingers, and the resulting
+     scale/pan fights or double-applies. Scoped to just this stage
+     (not the whole page — see core/reset.css) so pinch-zoom
+     accessibility elsewhere in the app is untouched. */
+  touch-action:none;
 }
 .image-viewer-stage img{
   max-width:100%;max-height:100%;

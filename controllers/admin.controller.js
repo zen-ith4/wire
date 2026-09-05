@@ -30,7 +30,7 @@ function listUsersHandler(req, res) {
   res.json(listUsers());
 }
 
-function createUser(req, res) {
+async function createUser(req, res) {
 
   const { username, password, is_admin } = req.body || {};
 
@@ -54,7 +54,7 @@ function createUser(req, res) {
 
   try {
 
-    const info = createUserService(
+    const info = await createUserService(
       username.trim(),
       password,
       !!is_admin

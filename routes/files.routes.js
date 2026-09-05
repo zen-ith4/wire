@@ -3,6 +3,8 @@ const router = express.Router();
 
 const { authenticate } = require('../middleware/authenticate');
 const { fileUpload } = require('../config/multer');
+const { uploadLimiter } = require('../middleware/rateLimiter');
+const { asyncHandler } = require('../middleware/asyncHandler');
 
 const {
   getFolders,
@@ -25,7 +27,7 @@ router.get(
 router.get(
   '/list/:folderId',
   authenticate,
-  listFiles
+  asyncHandler(listFiles)
 );
 
 
@@ -49,6 +51,7 @@ router.get(
 router.post(
   '/upload/:folderId',
   authenticate,
+  uploadLimiter,
   fileUpload.single('file'),
   uploadFile
 );

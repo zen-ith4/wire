@@ -14,7 +14,6 @@
 
 import { ICONS } from '../icons.js';
 import { escapeAttr } from '../core/utils.js';
-import { fetchBlob } from '../core/api.js';
 
 // ======================================================
 // DETECTION
@@ -283,11 +282,12 @@ export function renderVoiceMessage(msg, scope, containerEl) {
         </div>
       </div>
 
-      <div class="voice-message-error" aria-live="polite">${ICONS.alert} Failed to load voice message</div>
+      <div class="voice-message-error" aria-live="polite">${ICONS.alert} <span class="voice-message-error-text">Failed to load voice message</span></div>
 
       <audio
         id="vaudio-${messageId}"
         preload="metadata"
+        src="${escapeAttr(attachmentUrl)}"
       ></audio>
     </div>
   `;
@@ -319,52 +319,7 @@ export function renderVoiceMessage(msg, scope, containerEl) {
   const iconVolumeMute = playerEl.querySelector('.icon-volume-mute');
   const volumeSlider = playerEl.querySelector('.voice-message-volume-slider');
   const errorEl = playerEl.querySelector('.voice-message-error');
-
-  // ====================================================
-  // MEDIA LOADING / AUTH FALLBACK
-  //
-  // <audio src> can send the token in the query string, but some
-  // browser/network paths are stricter about authenticated media
-  // requests than normal fetch/XHR.  If the direct media request fails,
-  // retry through fetchBlob(), which sends the exact same JWT in the
-  // Authorization header used by the rest of the app, then hand the
-  // authenticated Blob to <audio> via an object URL.
-  //
-  // This keeps normal playback range-streamed and lightweight when the
-  // direct request works, while giving sender + receiver the same
-  // authenticated fallback path when it does not.
-  // ====================================================
-
-  let fallbackAttempted = false;
-  let blobObjectUrl = null;
-
-  async function loadAuthenticatedFallback() {
-    if (fallbackAttempted) return false;
-    fallbackAttempted = true;
-
-    try {
-      const baseUrl =
-        scope === 'dm'
-          ? `/api/dm/attachments/${encodeURIComponent(msg.id)}`
-          : `/api/chat/attachments/${encodeURIComponent(msg.id)}`;
-
-      const blob = await fetchBlob(baseUrl);
-
-      if (!document.body.contains(playerEl)) return false;
-
-      if (blobObjectUrl) {
-        URL.revokeObjectURL(blobObjectUrl);
-      }
-
-      blobObjectUrl = URL.createObjectURL(blob);
-      audio.src = blobObjectUrl;
-      audio.load();
-      return true;
-    } catch (error) {
-      console.error('Authenticated voice fallback failed:', error);
-      return false;
-    }
-  }
+  const errorTextEl = playerEl.querySelector('.voice-message-error-text');
 
   // ====================================================
   // HELPERS
@@ -373,6 +328,59 @@ export function renderVoiceMessage(msg, scope, containerEl) {
   const setLoading = (isLoading) => {
     playerEl.classList.toggle('loading', isLoading);
   };
+
+  // ====================================================
+  // EXPLICIT PLAYBACK STATE
+  //
+  // "the audio element exists" is not the same thing as "audio is
+  // playable" — track a real state machine (idle/loading/playing/
+  // paused/ended/error) as a data attribute, both for CSS hooks and
+  // so nothing downstream has to infer state from a mix of
+  // audio.paused/audio.error/loading-class checks.
+  // ====================================================
+
+  function setPlayerState(state) {
+    playerEl.dataset.state = state;
+    setLoading(state === 'loading');
+    // A later successful load (e.g. after a manual retry / reconnect)
+    // should clear a previously-shown error rather than leave it
+    // stuck on screen forever.
+    if (state !== 'error') errorEl.style.display = 'none';
+  }
+
+  setPlayerState('idle');
+
+  // ====================================================
+  // SMOOTH PROGRESS (requestAnimationFrame)
+  //
+  // `timeupdate` only fires a handful of times per second (and can be
+  // throttled further by the browser), which — combined with any CSS
+  // transition on the fill bar — is what produced the old "jumps
+  // once a second" look. While actually playing, drive the fill/time
+  // label from a rAF loop instead, reading audio.currentTime directly
+  // every frame; `timeupdate` is kept only as the source of truth for
+  // state-saving and as a fallback for the (rare) ticks where a frame
+  // is skipped, not as the primary progress driver.
+  // ====================================================
+
+  let rafId = null;
+
+  function startProgressLoop() {
+    if (rafId !== null) return;
+    const tick = () => {
+      updateProgress();
+      updateTimeLabel();
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+  }
+
+  function stopProgressLoop() {
+    if (rafId !== null) {
+      cancelAnimationFrame(rafId);
+      rafId = null;
+    }
+  }
 
   const updateProgress = () => {
     const duration = audio.duration;
@@ -466,6 +474,8 @@ export function renderVoiceMessage(msg, scope, containerEl) {
     iconPlay.style.display = 'none';
     iconPause.style.display = 'block';
     playBtn.setAttribute('aria-label', 'Pause voice message');
+    setPlayerState('playing');
+    startProgressLoop();
     saveVoiceState(messageId, audio, intendedPlaying, audio.playbackRate);
   });
 
@@ -473,6 +483,14 @@ export function renderVoiceMessage(msg, scope, containerEl) {
     iconPlay.style.display = 'block';
     iconPause.style.display = 'none';
     playBtn.setAttribute('aria-label', 'Play voice message');
+    stopProgressLoop();
+    // 'pause' also fires on 'ended', which sets its own state right
+    // after — don't stomp that with 'paused' here.
+    if (!audio.ended) setPlayerState('paused');
+    // Final sync so the fill/time land exactly on the paused position
+    // rather than wherever the last rAF frame happened to be.
+    updateProgress();
+    updateTimeLabel();
     saveVoiceState(messageId, audio, intendedPlaying, audio.playbackRate);
   });
 
@@ -500,17 +518,15 @@ export function renderVoiceMessage(msg, scope, containerEl) {
   // LOADING / METADATA
   // ====================================================
 
-  setLoading(true);
-
-  // Start with the normal streaming URL. If the browser cannot load it,
-  // the error handler below retries through an authenticated fetch.
-  audio.src = attachmentUrl;
-  audio.load();
+  setPlayerState('loading');
 
   const savedState = voicePlaybackState.get(messageId);
 
   audio.addEventListener('loadedmetadata', () => {
-    setLoading(false);
+    // Metadata resolved and the file is confirmed playable — back to
+    // idle (not yet played) unless the resume-from-saved-state logic
+    // below immediately starts it again.
+    setPlayerState('idle');
 
     if (savedState) {
       const duration = audio.duration;
@@ -539,7 +555,13 @@ export function renderVoiceMessage(msg, scope, containerEl) {
     updateTimeLabel();
   });
 
-  audio.addEventListener('canplay', () => setLoading(false));
+  // Fallback only: on a fresh load with no saved state, if `canplay`
+  // somehow fires before `loadedmetadata` finished handling loading
+  // state (rare, but not spec-guaranteed ordering across browsers),
+  // make sure we're not stuck showing the loading spinner forever.
+  audio.addEventListener('canplay', () => {
+    if (playerEl.dataset.state === 'loading') setPlayerState('idle');
+  });
 
   // ====================================================
   // PROGRESS
@@ -553,6 +575,8 @@ export function renderVoiceMessage(msg, scope, containerEl) {
 
   audio.addEventListener('ended', () => {
     intendedPlaying = false;
+    stopProgressLoop();
+    setPlayerState('ended');
     // A message that finished naturally shouldn't "resume" mid-way
     // through the next time this player is rebuilt.
     voicePlaybackState.delete(messageId);
@@ -694,29 +718,95 @@ export function renderVoiceMessage(msg, scope, containerEl) {
   // ERRORS
   // ====================================================
 
-  audio.addEventListener('error', async () => {
-    setLoading(false);
+  // MediaError.code is the ONE signal the <audio> element itself
+  // gives us, and it's ambiguous by design: MEDIA_ERR_SRC_NOT_SUPPORTED
+  // (4) fires both for "this browser can't decode this codec" AND for
+  // "the network request never returned a valid media body at all"
+  // (e.g. the server sent back a 401/403/404/500 JSON error instead
+  // of audio — HTMLMediaElement has no separate error code for that).
+  // Those are different bugs with different fixes, so on error we do
+  // one extra plain fetch() of the same URL purely to read its real
+  // HTTP status/Content-Type and tell the two apart — never to
+  // re-render or replace the audio element itself.
+  function stripToken(url) {
+    return url.split('?')[0];
+  }
 
-    const error = audio.error;
-    console.error('Voice message error:', {
-      code: error?.code,
-      message: error?.message,
-      src: audio.currentSrc,
-    });
+  async function diagnoseAndShowError(mediaError) {
+    const code = mediaError?.code;
+    const diagnostics = {
+      messageId,
+      mediaErrorCode: code,
+      mediaErrorName:
+        {
+          1: 'MEDIA_ERR_ABORTED',
+          2: 'MEDIA_ERR_NETWORK',
+          3: 'MEDIA_ERR_DECODE',
+          4: 'MEDIA_ERR_SRC_NOT_SUPPORTED',
+        }[code] || 'unknown',
+      url: stripToken(attachmentUrl),
+      hadAuthToken: !!getMediaToken(),
+    };
 
-    // First failure may simply be the browser refusing the media
-    // element's token-authenticated request. Retry with fetch(), which
-    // can send Authorization: Bearer <token> explicitly.
-    if (!blobObjectUrl) {
-      setLoading(true);
-      const recovered = await loadAuthenticatedFallback();
-      if (recovered) {
-        errorEl.style.display = 'none';
-        return;
+    let userMessage = 'Failed to load voice message';
+
+    try {
+      // A tiny ranged request — just enough to see real status/headers
+      // without re-downloading the file.
+      const resp = await fetch(attachmentUrl, {
+        headers: { Range: 'bytes=0-1' },
+      });
+
+      diagnostics.httpStatus = resp.status;
+      diagnostics.contentType = resp.headers.get('content-type');
+
+      if (resp.status === 401) {
+        userMessage = 'Your session has expired — refresh the page and sign in again';
+      } else if (resp.status === 403) {
+        userMessage = "You don't have permission to view this voice message";
+      } else if (resp.status === 404) {
+        userMessage = 'This voice message is no longer available';
+      } else if (resp.status >= 500) {
+        userMessage = 'The server had a problem loading this voice message';
+      } else if (
+        resp.ok &&
+        diagnostics.contentType &&
+        !diagnostics.contentType.startsWith('audio/')
+      ) {
+        // Got a real 2xx, but not actually audio — a strong sign the
+        // stored attachment_mime/path is wrong server-side, not a
+        // browser codec problem.
+        userMessage = 'This voice message could not be loaded (unexpected file type)';
+      } else if (code === 4) {
+        // Got a normal audio response back, so this really is a
+        // codec/container the current browser can't decode — the
+        // sender's browser recorded it in a format this one doesn't
+        // support playing back.
+        userMessage = "This voice message's audio format isn't supported in this browser";
+      } else if (code === 2) {
+        userMessage = 'Network error while loading this voice message';
       }
-      setLoading(false);
+    } catch (fetchErr) {
+      diagnostics.diagnosticFetchError = fetchErr?.message;
+      if (code === 4) {
+        userMessage = "This voice message's audio format isn't supported in this browser";
+      } else if (code === 2) {
+        userMessage = 'Network error while loading this voice message';
+      }
     }
 
+    // Never log the token itself — stripToken() above already removed
+    // it from the URL, and nothing else here touches localStorage's
+    // raw value.
+    console.error('Voice message playback failed:', diagnostics);
+
+    errorTextEl.textContent = userMessage;
     errorEl.style.display = 'flex';
+  }
+
+  audio.addEventListener('error', () => {
+    stopProgressLoop();
+    setPlayerState('error');
+    diagnoseAndShowError(audio.error);
   });
 }

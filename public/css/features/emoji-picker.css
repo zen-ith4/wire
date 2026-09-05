@@ -63,7 +63,7 @@ input.emoji-picker-search:focus{border-color:var(--accent-border);}
 }
 .emoji-picker-tab:hover{background:var(--hover);opacity:1;}
 
-.emoji-picker-body{flex:1;overflow-y:auto;padding:8px;}
+.emoji-picker-body{flex:1;overflow-y:auto;padding:8px;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;}
 .emoji-picker-section{margin-bottom:10px;}
 .emoji-picker-section-title{
   font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;

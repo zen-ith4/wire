@@ -2,7 +2,7 @@ const { getDb } = require('../config/database');
 const { comparePassword } = require('../utils/password');
 const { signToken } = require('../utils/jwt');
 
-function authenticateUser(username, password) {
+async function authenticateUser(username, password) {
 
   const db = getDb();
 
@@ -30,7 +30,7 @@ function authenticateUser(username, password) {
   }
 
 
-  if (!comparePassword(password, user.password_hash)) {
+  if (!(await comparePassword(password, user.password_hash))) {
     return null;
   }
 

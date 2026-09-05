@@ -1,6 +1,15 @@
 const ipaddr = require('ipaddr.js');
 const constants = require('../config/constants');
 
+// ALLOWED_SUBNET is a static config value — it never changes at
+// runtime, so there's no reason to re-parse the CIDR string on
+// every single request (this ran on literally every request that
+// reached the app, including every static asset). Parse it once at
+// module load instead; the actual per-request cost is now just the
+// address parse + match, which is what should scale with traffic.
+const [allowedRange, allowedBits] =
+  ipaddr.parseCIDR(constants.ALLOWED_SUBNET);
+
 function ipRestrict(req, res, next) {
 
   try {
@@ -9,18 +18,15 @@ function ipRestrict(req, res, next) {
 
     const addr = ipaddr.parse(ip);
 
-    const [range, bits] =
-      ipaddr.parseCIDR(constants.ALLOWED_SUBNET);
 
-
-    if (addr.kind() !== range.kind()) {
+    if (addr.kind() !== allowedRange.kind()) {
       return res.status(403).json({
         error: 'IP family mismatch'
       });
     }
 
 
-    if (addr.match([range, bits])) {
+    if (addr.match([allowedRange, allowedBits])) {
       return next();
     }
 

@@ -7,6 +7,8 @@ const {
   adminOnly,
 } = require('../middleware/authenticate');
 
+const { asyncHandler } = require('../middleware/asyncHandler');
+
 const {
   listUsers,
   createUser,
@@ -35,7 +37,7 @@ router.get(
 
 router.post(
   '/users',
-  createUser
+  asyncHandler(createUser)
 );
 
 router.delete(

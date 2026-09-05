@@ -151,7 +151,7 @@ class SetupWizard {
         let db;
         try {
             // Hash password and save to DB
-            const hashedPassword = hashPassword(password);
+            const hashedPassword = await hashPassword(password);
             password = null;
 
             const Database = require('better-sqlite3');

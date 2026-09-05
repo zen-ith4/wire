@@ -4,6 +4,7 @@ const router = express.Router();
 const { authenticate } = require('../middleware/authenticate');
 const { mediaAuth } = require('../middleware/mediaAuth');
 const { dmUpload } = require('../config/multer');
+const { chatWriteLimiter, uploadLimiter } = require('../middleware/rateLimiter');
 
 const {
   getConversations,
@@ -69,6 +70,7 @@ router.get(
 router.post(
   '/messages',
   authenticate,
+  chatWriteLimiter,
   sendMessage
 );
 
@@ -78,6 +80,7 @@ router.post(
 router.post(
   '/upload',
   authenticate,
+  uploadLimiter,
   dmUpload.single('file'),
   sendMessageWithAttachment
 );

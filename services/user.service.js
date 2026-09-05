@@ -54,11 +54,11 @@ function findUserWithPassword(id) {
 
 
 // ساخت کاربر معمولی (یا ادمین، اگر isAdmin=true باشد)
-function createUser(username, password, isAdmin = false) {
+async function createUser(username, password, isAdmin = false) {
 
   username = normalizeUsername(username);
 
-  const hash = hashPassword(password);
+  const hash = await hashPassword(password);
 
   return getDb()
     .prepare(`
@@ -80,11 +80,11 @@ function createUser(username, password, isAdmin = false) {
 
 // ساخت ادمین
 // فقط از admin controller استفاده شود
-function createAdmin(username, password) {
+async function createAdmin(username, password) {
 
   username = normalizeUsername(username);
 
-  const hash = hashPassword(password);
+  const hash = await hashPassword(password);
 
   return getDb()
     .prepare(`
@@ -190,9 +190,9 @@ function getStorageUsage(userId) {
 }
 
 
-function updatePassword(userId, newPassword) {
+async function updatePassword(userId, newPassword) {
 
-  const hash = hashPassword(newPassword);
+  const hash = await hashPassword(newPassword);
 
   return getDb()
     .prepare(`

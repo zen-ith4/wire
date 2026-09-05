@@ -36,10 +36,12 @@ export async function renderAdminUsers() {
         <button class="btn btn-primary btn-sm" onclick="window.addUser()">+ Add user</button>
       </div>
       <div id="admin-user-error" class="field-error"></div>
-      <table class="file-table">
-        <thead><tr><th>Username</th><th>Role</th><th></th></tr></thead>
-        <tbody>${rows || `<tr><td colspan="3">${emptyState(ICONS.users, 'No users yet')}</td></tr>`}</tbody>
-      </table>
+      <div class="table-scroll">
+  <table class="file-table">
+          <thead><tr><th>Username</th><th>Role</th><th></th></tr></thead>
+          <tbody>${rows || `<tr><td colspan="3">${emptyState(ICONS.users, 'No users yet')}</td></tr>`}</tbody>
+        </table>
+      </div>
     </div>`;
   } catch (e) {
     main.innerHTML = `<div class="card">${emptyState(ICONS.empty, 'Failed to load', escapeHtml(e.message))}</div>`;
@@ -112,10 +114,12 @@ export async function renderAdminFolders() {
         <button class="btn btn-primary btn-sm" onclick="window.addFolder()">+ Add folder</button>
       </div>
       <div id="admin-folder-error" class="field-error"></div>
-      <table class="file-table">
-        <thead><tr><th>Display name</th><th>Path</th><th></th></tr></thead>
-        <tbody>${rows || `<tr><td colspan="3">${emptyState(ICONS.folders, 'No shared folders yet')}</td></tr>`}</tbody>
-      </table>
+      <div class="table-scroll">
+  <table class="file-table">
+          <thead><tr><th>Display name</th><th>Path</th><th></th></tr></thead>
+          <tbody>${rows || `<tr><td colspan="3">${emptyState(ICONS.folders, 'No shared folders yet')}</td></tr>`}</tbody>
+        </table>
+      </div>
     </div>`;
   } catch (e) {
     main.innerHTML = `<div class="card">${emptyState(ICONS.empty, 'Failed to load', escapeHtml(e.message))}</div>`;
@@ -197,10 +201,12 @@ export async function renderAdminPermissions() {
         <button class="btn btn-primary btn-sm" onclick="window.addPermission()">+ Grant</button>
       </div>
       <div id="admin-permission-error" class="field-error"></div>
-      <table class="file-table">
-        <thead><tr><th>User</th><th>Folder</th><th>Access</th><th></th></tr></thead>
-        <tbody>${rows || `<tr><td colspan="4">${emptyState(ICONS.key, 'No permissions granted yet')}</td></tr>`}</tbody>
-      </table>
+      <div class="table-scroll">
+  <table class="file-table">
+          <thead><tr><th>User</th><th>Folder</th><th>Access</th><th></th></tr></thead>
+          <tbody>${rows || `<tr><td colspan="4">${emptyState(ICONS.key, 'No permissions granted yet')}</td></tr>`}</tbody>
+        </table>
+      </div>
     </div>`;
   } catch (e) {
     main.innerHTML = `<div class="card">${emptyState(ICONS.empty, 'Failed to load', escapeHtml(e.message))}</div>`;

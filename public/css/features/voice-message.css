@@ -158,7 +158,14 @@
 
   color: var(--message-accent, rgb(var(--indigo)));
 
-  transition: width 0.1s linear;
+  /* No width transition: progress is now driven by a per-frame
+     requestAnimationFrame loop (see voice-message.js) rather than the
+     sparse `timeupdate` event, so the fill is already updated ~60x/sec
+     while playing. A CSS transition on top of that just adds lag
+     between the real audio position and what's drawn — it's what
+     produced the old "jumps once a second" look when combined with
+     timeupdate's low update rate. Seeking (click/drag/keyboard) still
+     looks instant since there's no transition delay to wait out. */
 }
 
 .voice-wave-bar {

@@ -474,9 +474,30 @@ export function renderVoiceMessage(msg, scope, containerEl) {
     iconPlay.style.display = 'none';
     iconPause.style.display = 'block';
     playBtn.setAttribute('aria-label', 'Pause voice message');
+    saveVoiceState(messageId, audio, intendedPlaying, audio.playbackRate);
+  });
+
+  // `play` fires the instant .play() is called — before any audio
+  // data has necessarily arrived. `playing` only fires once playback
+  // is actually, audibly advancing (initial buffering done, or
+  // recovered from a stall) — that's the real "progress can now move"
+  // signal, not `play`. Driving the rAF loop off `play` alone is what
+  // made a slow/buffering connection look frozen: icon flips to pause
+  // immediately, nothing visibly moves for a few seconds, no
+  // indication why.
+  audio.addEventListener('playing', () => {
     setPlayerState('playing');
     startProgressLoop();
-    saveVoiceState(messageId, audio, intendedPlaying, audio.playbackRate);
+  });
+
+  // Fires whenever playback stalls for lack of buffered data — both
+  // the initial press-play buffering gap AND any mid-playback rebuffer
+  // on a slow connection. Shown as the same loading state as initial
+  // load, so there's a visible reason for the pause instead of a
+  // silently frozen progress bar.
+  audio.addEventListener('waiting', () => {
+    if (intendedPlaying) setPlayerState('loading');
+    stopProgressLoop();
   });
 
   audio.addEventListener('pause', () => {

@@ -488,6 +488,7 @@ export function renderVoiceMessage(msg, scope, containerEl) {
   audio.addEventListener('playing', () => {
     setPlayerState('playing');
     startProgressLoop();
+    networkRetryCount = 0;
   });
 
   // Fires whenever playback stalls for lack of buffered data — both
@@ -861,8 +862,46 @@ export function renderVoiceMessage(msg, scope, containerEl) {
     errorEl.style.display = 'flex';
   }
 
+  // ====================================================
+  // TRANSIENT NETWORK ERROR RETRY
+  //
+  // MEDIA_ERR_NETWORK (code 2) means the connection genuinely dropped
+  // mid-stream, not that the server rejected the request (that's
+  // handled separately above via HTTP status). Over a flaky link
+  // (VPN/Wi-Fi hiccup) this is often a one-off blip, so give it a
+  // couple of quick automatic retries — reloading the same <audio>
+  // src and re-seeking to where playback was — before giving up and
+  // showing the permanent error UI to the user.
+  // ====================================================
+
+  const MAX_NETWORK_RETRIES = 2;
+  let networkRetryCount = 0;
+  let networkRetryTimer = null;
+
   audio.addEventListener('error', () => {
     stopProgressLoop();
+
+    if (audio.error?.code === 2 && networkRetryCount < MAX_NETWORK_RETRIES) {
+      networkRetryCount += 1;
+      const resumeAt = audio.currentTime || 0;
+      const wasPlaying = intendedPlaying;
+
+      setPlayerState('loading');
+
+      networkRetryTimer = setTimeout(() => {
+        audio.load();
+        audio.addEventListener(
+          'loadedmetadata',
+          () => {
+            audio.currentTime = resumeAt;
+            if (wasPlaying) play();
+          },
+          { once: true }
+        );
+      }, 800 * networkRetryCount);
+      return;
+    }
+
     setPlayerState('error');
     diagnoseAndShowError(audio.error);
   });

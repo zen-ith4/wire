@@ -239,6 +239,36 @@ export function renderAudio(msg, scope, containerEl) {
     playerEl.classList.toggle('loading', isLoading);
   };
 
+  // ====================================================
+  // SMOOTH PROGRESS (requestAnimationFrame)
+  //
+  // `timeupdate` only fires a handful of times per second, which made
+  // the fill bar visibly jump instead of glide. While actually
+  // playing, drive the fill/time label from a rAF loop instead,
+  // reading audio.currentTime directly every frame — same approach
+  // as voice-message.js. `timeupdate` is kept as a fallback/state-save
+  // tick, not as the primary progress driver.
+  // ====================================================
+
+  let rafId = null;
+
+  function startProgressLoop() {
+    if (rafId !== null) return;
+    const tick = () => {
+      updateProgressFill();
+      currentTimeEl.textContent = formatTime(audio.currentTime);
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+  }
+
+  function stopProgressLoop() {
+    if (rafId !== null) {
+      cancelAnimationFrame(rafId);
+      rafId = null;
+    }
+  }
+
   const seekToClientX = (clientX) => {
     const duration = audio.duration;
     if (!Number.isFinite(duration) || duration <= 0) return;
@@ -289,9 +319,27 @@ export function renderAudio(msg, scope, containerEl) {
     saveAudioState(messageId, audio, intendedPlaying);
   });
 
+  // `play` fires before any data has necessarily arrived; `playing`
+  // fires once playback is actually advancing — that's the real
+  // "progress can now move" signal (see voice-message.js for the
+  // same reasoning).
+  audio.addEventListener('playing', () => {
+    setLoading(false);
+    startProgressLoop();
+  });
+
+  audio.addEventListener('waiting', () => {
+    stopProgressLoop();
+  });
+
   audio.addEventListener('pause', () => {
     iconPlay.style.display = 'block';
     iconPause.style.display = 'none';
+    stopProgressLoop();
+    // Final sync so the fill/time land exactly on the paused position
+    // rather than wherever the last rAF frame happened to be.
+    updateProgressFill();
+    currentTimeEl.textContent = formatTime(audio.currentTime);
     saveAudioState(messageId, audio, intendedPlaying);
   });
 
@@ -362,6 +410,7 @@ export function renderAudio(msg, scope, containerEl) {
     iconPlay.style.display = 'block';
     iconPause.style.display = 'none';
     intendedPlaying = false;
+    stopProgressLoop();
     // A track that finished naturally shouldn't "resume" mid-playback
     // from near its end the next time this player is rebuilt.
     audioPlaybackState.delete(messageId);

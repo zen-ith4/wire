@@ -543,7 +543,42 @@ export function renderVoiceMessage(msg, scope, containerEl) {
 
   const savedState = voicePlaybackState.get(messageId);
 
+  // Voice messages are recorded client-side via MediaRecorder (see
+  // voice-recorder.js), which writes audio/webm (or ogg) without a
+  // duration in the container header — recording length isn't known
+  // up front, only once it stops. Because of that, `audio.duration`
+  // reports Infinity right after 'loadedmetadata' and every
+  // Number.isFinite(duration) check below (updateProgress,
+  // updateTimeLabel, seeking) silently no-ops. Chromium only resolves
+  // the real duration once it has demuxed all the way to the true end
+  // of the file — which normally happens only the first time playback
+  // runs all the way through — which is exactly why the bar looked
+  // frozen on the first play but moved correctly the second time.
+  //
+  // Forcing a seek past the end (a well-known, harmless workaround)
+  // makes Chromium resolve the real duration immediately instead of
+  // waiting for an actual full playthrough. It happens silently while
+  // the player is still in its 'loading' state, so nothing is visibly
+  // affected — audio.paused stays true, nothing plays or is audible.
+  function resolveRealDuration(done) {
+    if (Number.isFinite(audio.duration)) {
+      done();
+      return;
+    }
+    const restoreTime = audio.currentTime || 0;
+    audio.addEventListener(
+      'timeupdate',
+      function onDurationFixed() {
+        audio.currentTime = restoreTime;
+        done();
+      },
+      { once: true }
+    );
+    audio.currentTime = 1e101;
+  }
+
   audio.addEventListener('loadedmetadata', () => {
+    resolveRealDuration(() => {
     // Metadata resolved and the file is confirmed playable — back to
     // idle (not yet played) unless the resume-from-saved-state logic
     // below immediately starts it again.
@@ -574,6 +609,7 @@ export function renderVoiceMessage(msg, scope, containerEl) {
 
     updateProgress();
     updateTimeLabel();
+    });
   });
 
   // Fallback only: on a fresh load with no saved state, if `canplay`

@@ -883,7 +883,14 @@ export function renderVoiceMessage(msg, scope, containerEl) {
 
     if (audio.error?.code === 2 && networkRetryCount < MAX_NETWORK_RETRIES) {
       networkRetryCount += 1;
-      const resumeAt = audio.currentTime || 0;
+      // `audio.currentTime || 0` doesn't catch every bad value here —
+      // Infinity is truthy, and a stream whose duration isn't known
+      // yet (e.g. mid-buffering right as the connection drops) can
+      // transiently report it. Setting `audio.currentTime` to
+      // anything non-finite below throws, so guard explicitly rather
+      // than relying on the falsy check.
+      const rawCurrentTime = audio.currentTime;
+      const resumeAt = Number.isFinite(rawCurrentTime) ? rawCurrentTime : 0;
       const wasPlaying = intendedPlaying;
 
       setPlayerState('loading');
@@ -893,7 +900,14 @@ export function renderVoiceMessage(msg, scope, containerEl) {
         audio.addEventListener(
           'loadedmetadata',
           () => {
-            audio.currentTime = resumeAt;
+            // Re-check at seek time too: `resumeAt` was captured
+            // before the reload, but the freshly reloaded audio's
+            // own duration could itself come back as Infinity for a
+            // still-streaming resource, which makes seeking to a
+            // value at or beyond it throw the same way.
+            if (Number.isFinite(resumeAt) && Number.isFinite(audio.duration)) {
+              audio.currentTime = resumeAt;
+            }
             if (wasPlaying) play();
           },
           { once: true }

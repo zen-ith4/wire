@@ -2,6 +2,7 @@ const path = require('path');
 const fs = require('fs');
 const constants = require('../config/constants');
 const { CHAT_MIME_MAP } = require('../config/multer');
+const { readImageDimensions } = require('../utils/imageDimensions');
 const {
   getConversationsSummary,
   getTotalUnread,
@@ -198,6 +199,9 @@ function sendMessageWithAttachment(req, res) {
   const caption = (req.body.content || '').trim().slice(0, 2000);
   const replyToId = normalizeDmReplyToId(req.body?.reply_to_id, req.user.id, Number(recipient_id));
   const isVoiceMessage = isVoiceMessageFlag(req.body?.is_voice_message, mime);
+  // Same reasoning as chat.controller.js's sendMessageWithAttachment:
+  // reserve layout space for image attachments up front.
+  const dims = mime.startsWith('image/') ? readImageDimensions(req.file.path, mime) : null;
   const timestamp = new Date().toISOString();
 
   const info = insertDmMessageWithAttachment(
@@ -210,7 +214,9 @@ function sendMessageWithAttachment(req, res) {
     req.file.size,
     mime,
     replyToId,
-    isVoiceMessage
+    isVoiceMessage,
+    dims?.width ?? null,
+    dims?.height ?? null
   );
 
   const fullMsg = findDmMessageWithUser(info.lastInsertRowid);

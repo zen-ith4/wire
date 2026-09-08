@@ -16,6 +16,15 @@ const VALID_COLUMNS = {
     attachment_name: "attachment_name TEXT",
     attachment_size: "attachment_size INTEGER",
     attachment_mime: "attachment_mime TEXT",
+    // Pixel dimensions of an image attachment, read once at upload
+    // time (see utils/imageDimensions.js). Lets the frontend reserve
+    // the exact layout space for the image before it has actually
+    // been fetched, instead of a generic placeholder box that
+    // resizes (and shifts the rest of the message list) once the
+    // real image loads. Null for non-image attachments, or if the
+    // format couldn't be parsed.
+    attachment_width: "attachment_width INTEGER",
+    attachment_height: "attachment_height INTEGER",
     reply_to_id: "reply_to_id INTEGER",
     // Distinguishes a recorded voice message from a normal uploaded
     // audio attachment. Both share the same attachment_* columns
@@ -29,7 +38,10 @@ const VALID_COLUMNS = {
 
   direct_messages: {
     reply_to_id: "reply_to_id INTEGER",
-    is_voice_message: "is_voice_message INTEGER NOT NULL DEFAULT 0"
+    is_voice_message: "is_voice_message INTEGER NOT NULL DEFAULT 0",
+    // Same reasoning as messages.attachment_width/height above.
+    attachment_width: "attachment_width INTEGER",
+    attachment_height: "attachment_height INTEGER"
   }
 };
 

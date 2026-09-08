@@ -3,6 +3,7 @@ const fs = require('fs');
 
 const constants = require('../config/constants');
 const { CHAT_MIME_MAP } = require('../config/multer');
+const { readImageDimensions } = require('../utils/imageDimensions');
 
 const {
   getRecentMessages,
@@ -290,6 +291,16 @@ function sendMessageWithAttachment(req,res) {
     isVoiceMessageFlag(req.body?.is_voice_message, mime);
 
 
+  // Read pixel dimensions up front (image attachments only) so the
+  // frontend can reserve the right amount of layout space for the
+  // placeholder before it ever fetches the actual image bytes — see
+  // utils/imageDimensions.js.
+  const dims =
+    mime.startsWith('image/')
+      ? readImageDimensions(req.file.path, mime)
+      : null;
+
+
   const timestamp =
     new Date().toISOString();
 
@@ -304,7 +315,9 @@ function sendMessageWithAttachment(req,res) {
       req.file.size,
       mime,
       replyToId,
-      isVoiceMessage
+      isVoiceMessage,
+      dims?.width ?? null,
+      dims?.height ?? null
     );
 
 

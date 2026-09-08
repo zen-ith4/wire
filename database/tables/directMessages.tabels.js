@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS direct_messages (
   attachment_name TEXT,
   attachment_size INTEGER,
   attachment_mime TEXT,
+  attachment_width INTEGER,
+  attachment_height INTEGER,
 
   -- Same reasoning as messages.is_voice_message (see that table).
   is_voice_message INTEGER NOT NULL DEFAULT 0,

@@ -10,7 +10,7 @@ import {
   formatDate,
   insertAtCursor
 } from '../core/utils.js';
-import { renderAttachment, loadChatImage, mountAttachmentMedia, cleanupImageUrls, imageDownloadButtonHtml } from '../media/attachments.js';
+import { renderAttachment, loadChatImage, mountAttachmentMedia, cleanupImageUrls, revokeAttachmentImage, imageDownloadButtonHtml } from '../media/attachments.js';
 import { avatarHtml } from '../ui/avatar.js';
 import { getCurrentUser } from '../core/auth.js';
 import { showConfirm } from '../ui/confirm.js';
@@ -23,14 +23,39 @@ import { isUserOnline, onPresenceChange } from './presence.js';
 import { createComposer } from './composer.js';
 import { setMessageAccent } from './message-accent.js';
 
-// State
+// ---------- Per-conversation message cache ----------
+//
+// Keyed by peer id. Each entry holds everything needed to redraw a
+// conversation's message list *instantly* the next time the user
+// switches back to it — no network round trip required. Messages
+// are rebuilt as DOM elements from this cached data on every switch
+// (cheap: a few dozen/hundred nodes), rather than trying to keep
+// several threads' DOM subtrees alive simultaneously, which would
+// substantially complicate image-blob lifecycle management for very
+// little additional benefit. Already-loaded images specifically
+// still avoid being re-fetched across a switch — see
+// media/attachments.js's own persistent image-blob cache.
+//
+// entry shape:
+//   {
+//     username,
+//     messages: [],        // ordered oldest -> newest; the source of truth
+//     ids: Set(),          // mirrors messages, for O(1) dedupe checks
+//     byId: Map(),         // id -> message, for reply-button lookups
+//     oldest: string|null, // cursor for the next "before" page
+//     hasMore: boolean,
+//     initialized: boolean, // recent messages fetched at least once
+//     loadingOlder: boolean,
+//     scrollTop: number,   // saved on switch-away / periodically while scrolling
+//     atBottom: boolean,   // was the user at (near) the bottom last we checked
+//   }
+const dmCache = new Map();
+
 let dmActivePeer = null;
-let dmOldest = null;
-let dmHasMore = true;
-const renderedDmIds = new Set();
-// Same purpose as chat.js's chatMsgById — lets the Reply button look
-// up the message it's attached to from just an id.
-const dmMsgById = new Map();
+// The cache entry for whichever conversation is currently open — all
+// per-conversation reads/writes below go through this, rather than
+// duplicating the same state in separate module-level variables.
+let dmEntry = null;
 let dmComposer = null;
 
 // Cache for conversation data (used for delegated clicks)
@@ -38,7 +63,56 @@ let dmConvMap = new Map();
 
 // Helper
 function canLoadMoreDm() {
-  return dmActivePeer && dmOldest && dmHasMore;
+  return !!(dmActivePeer && dmEntry && dmEntry.oldest && dmEntry.hasMore && !dmEntry.loadingOlder);
+}
+
+function getOrCreateDmCacheEntry(peerId, username) {
+  let entry = dmCache.get(peerId);
+  if (!entry) {
+    entry = {
+      username,
+      messages: [],
+      ids: new Set(),
+      byId: new Map(),
+      oldest: null,
+      hasMore: true,
+      initialized: false,
+      loadingOlder: false,
+      scrollTop: 0,
+      atBottom: true,
+    };
+    dmCache.set(peerId, entry);
+  } else if (username) {
+    // Keep the display name fresh — e.g. resolved from a placeholder
+    // "User 42" the first time this peer was opened, to the real
+    // username once the conversation list has loaded.
+    entry.username = username;
+  }
+  return entry;
+}
+
+// How close to the bottom still counts as "at the bottom" for the
+// purposes of auto-scrolling on a new message — a small tolerance so
+// a few pixels of rounding/scrollbar slop don't wrongly register as
+// "the user scrolled up to read history".
+const DM_NEAR_BOTTOM_PX = 80;
+
+function isNearBottom(container) {
+  return container.scrollHeight - container.scrollTop - container.clientHeight <= DM_NEAR_BOTTOM_PX;
+}
+
+// Persists the currently-open conversation's scroll position (and
+// whether it was pinned to the bottom) into its cache entry. Must be
+// called right before that conversation's DOM is torn down —
+// openDmConversation() does this when switching to a different peer,
+// and closeDmThreadMobile() does it when backing out of the thread
+// entirely.
+function saveDmScrollState() {
+  if (!dmEntry) return;
+  const container = document.getElementById('dm-messages');
+  if (!container) return;
+  dmEntry.scrollTop = container.scrollTop;
+  dmEntry.atBottom = isNearBottom(container);
 }
 
 // Exposes the currently-open conversation peer to socket.js, which
@@ -116,13 +190,22 @@ export function destroyDmComposer() {
 // ---------- Render ----------
 export async function renderDm(openPeerId) {
   const main = document.getElementById('content-area');
-  // Revoke any blob URLs (loaded image attachments) owned by
-  // whichever conversation thread is currently rendered — the
-  // innerHTML replacement below detaches #dm-messages along with
-  // everything the user had open, but detaching an element never
-  // revokes the blob URLs it references, so without this every
-  // visit to Messages would leak the previously-open thread's
-  // loaded images.
+
+  // Save wherever the user was scrolled to in case they're coming
+  // right back (e.g. Messages → Files → Messages) — dmCache itself
+  // (the actual message data) is module-level and untouched by this
+  // navigation, only the DOM below gets rebuilt.
+  saveDmScrollState();
+  dmActivePeer = null;
+  dmEntry = null;
+
+  // Cancel any in-flight image fetches for whichever conversation
+  // thread is currently rendered — the innerHTML replacement below
+  // detaches #dm-messages along with everything the user had open.
+  // Already-loaded images are NOT revoked: they stay in the
+  // persistent cache (media/attachments.js) so reopening the same
+  // conversation, even after leaving Messages entirely, still skips
+  // re-fetching them.
   cleanupImageUrls(document.getElementById('dm-messages'), 'dm');
   main.innerHTML = `
     <div class="dm-layout">
@@ -290,26 +373,38 @@ window.startDmFromPicker = function() {
 
 // ---------- Open / close conversation ----------
 window.openDmConversation = async function(peerId, username) {
+  // Re-clicking the conversation that's already open shouldn't tear
+  // down and rebuild anything — same UX as Discord/etc, and avoids
+  // an unnecessary reset of scroll position and in-flight composer
+  // state (staged attachments, reply-to, draft text) for no reason.
+  // Guarded on #dm-messages actually being on screen too: the thread
+  // pane can show something else for this same peer id (e.g. the
+  // "New message" picker was reopened and the same user picked
+  // again), in which case it still needs a real rebuild.
+  if (dmActivePeer && dmActivePeer.id === peerId && document.getElementById('dm-messages')) return;
+
   // Stop any in-flight "I'm typing" announcement to whichever peer
   // was previously open — must happen before dmActivePeer changes,
   // since the emitter's payload is derived from it.
   dmTypingEmitter.stop();
   dmTypingIndicator.clearAll();
 
+  // Save the outgoing conversation's scroll position/state into its
+  // cache entry *before* we touch dmActivePeer/dmEntry or throw away
+  // its DOM below — this is what lets returning to it later restore
+  // exactly where the user left off.
+  saveDmScrollState();
+
   dmActivePeer = { id: peerId, username };
-  dmOldest = null;
-  dmHasMore = true;
-  renderedDmIds.clear();
-  dmMsgById.clear();
+  dmEntry = getOrCreateDmCacheEntry(peerId, username);
 
   document.querySelector('.dm-layout')?.classList.add('showing-thread');
 
-  // Revoke blob URLs from whichever conversation was open before
-  // this one — same leak/fix as renderDm() above, but for switching
-  // between two conversations without leaving the Messages view
-  // (the thread's innerHTML gets replaced below, which is the
-  // common case: this runs every time the user picks a different
-  // conversation from the sidebar).
+  // Cancel any in-flight image fetches from whichever conversation
+  // was open before this one (the thread's innerHTML gets replaced
+  // below) — already-loaded images are NOT revoked here, they stay
+  // in the persistent cache (see media/attachments.js) so switching
+  // back to this same conversation later can reuse them instantly.
   cleanupImageUrls(document.getElementById('dm-messages'), 'dm');
 
   // فعال/غیرفعال کردن آیتم‌ها در sidebar
@@ -382,7 +477,28 @@ window.openDmConversation = async function(peerId, username) {
   });
   wirePasteImage('dm-input', (file) => dmComposer.addFiles([file]));
   wireTypingInput('dm-input', dmTypingEmitter);
-  await loadRecentDm();
+
+  const container = document.getElementById('dm-messages');
+  container.addEventListener('scroll', () => {
+    // Keep the cache entry's scroll bookkeeping fresh continuously
+    // (not just at switch-away time) so anything that reads it in
+    // between — e.g. a live message arriving while the user is mid-
+    // scroll — sees an up-to-date "was near the bottom" reading.
+    if (dmEntry) dmEntry.atBottom = isNearBottom(container);
+  }, { passive: true });
+
+  if (dmEntry.initialized) {
+    // Already have this conversation cached from earlier in the
+    // session: paint instantly from local data, no network request,
+    // then reconcile with the server in the background in case
+    // anything arrived while this thread wasn't open (the socket
+    // only pushes new messages to whichever conversation is
+    // currently active — see socket.js's handleDirectMessage).
+    renderDmMessagesFromCache();
+    void syncDmMessagesSince();
+  } else {
+    await loadRecentDm();
+  }
 
   // تازه‌سازی sidebar (مثلاً unread)
   void loadDmConversations();
@@ -390,95 +506,202 @@ window.openDmConversation = async function(peerId, username) {
 };
 
 window.closeDmThreadMobile = function() {
+  saveDmScrollState();
   document.querySelector('.dm-layout')?.classList.remove('showing-thread');
   dmTypingEmitter.stop();
   dmTypingIndicator.clearAll();
   dmActivePeer = null;
+  dmEntry = null;
   // حذف active از همه
   document.querySelectorAll('.dm-conv').forEach(el => el.classList.remove('active'));
 };
 
+// Rebuilds the message list DOM from the currently-active cache
+// entry's data, then restores exactly where the user left off (or
+// pins to the bottom for a conversation that's never been scrolled
+// away from). This is the "instant" path — no network request.
+function renderDmMessagesFromCache() {
+  const container = document.getElementById('dm-messages');
+  if (!container || !dmEntry) return;
+
+  if (dmEntry.messages.length === 0) {
+    container.innerHTML = emptyState(ICONS.mail, 'No messages yet', `Say hello to ${escapeHtml(dmActivePeer.username)} 👋`);
+    return;
+  }
+
+  const currentUser = getCurrentUser();
+  const frag = document.createDocumentFragment();
+  if (dmEntry.hasMore) {
+    frag.appendChild(buildLoadMoreEl(loadOlderDm));
+  }
+  for (const msg of dmEntry.messages) {
+    frag.appendChild(buildDmMessageEl(msg, currentUser));
+  }
+
+  container.innerHTML = '';
+  container.appendChild(frag);
+
+  // Restore the saved scroll position synchronously. Image loads
+  // that resolve afterwards are already accounted for: they render
+  // into placeholders that were sized up front from the attachment's
+  // real (or fallback) aspect ratio, so they don't change the
+  // container's scrollHeight once they arrive — see
+  // media/attachments.js.
+  container.scrollTop = dmEntry.atBottom ? container.scrollHeight : dmEntry.scrollTop;
+}
+
+// Fetches anything that arrived in this conversation since the last
+// cached message, and appends it — used when switching back into an
+// already-cached conversation, to reconcile the local snapshot with
+// the server without redownloading the whole thing.
+async function syncDmMessagesSince() {
+  if (!dmActivePeer || !dmEntry || dmEntry.messages.length === 0) return;
+  const peerId = dmActivePeer.id;
+  const since = dmEntry.messages[dmEntry.messages.length - 1].timestamp;
+  try {
+    const messages = await api(`/api/dm/messages/${peerId}/since?since=${encodeURIComponent(since)}&limit=100`);
+    // The user may have switched to a different conversation (or
+    // this one may have been closed) while this request was in
+    // flight — only apply the result if it's still relevant.
+    if (!dmActivePeer || dmActivePeer.id !== peerId) return;
+    if (messages.length === 0) return;
+
+    const container = document.getElementById('dm-messages');
+    const wasAtBottom = container ? isNearBottom(container) : dmEntry.atBottom;
+    const currentUser = getCurrentUser();
+    const frag = document.createDocumentFragment();
+    for (const msg of messages) {
+      if (dmEntry.ids.has(msg.id)) continue;
+      dmEntry.ids.add(msg.id);
+      dmEntry.byId.set(msg.id, msg);
+      dmEntry.messages.push(msg);
+      if (container) frag.appendChild(buildDmMessageEl(msg, currentUser));
+    }
+    if (container && frag.childNodes.length > 0) {
+      container.appendChild(frag);
+      // Only auto-scroll if the user was already at the bottom —
+      // catching up on messages sent elsewhere shouldn't yank the
+      // view away from history the user is actively reading.
+      if (wasAtBottom) {
+        container.scrollTop = container.scrollHeight;
+        dmEntry.atBottom = true;
+      }
+    }
+  } catch {
+    // Best-effort background sync — a failure here just means the
+    // cached view might be very slightly behind until the next
+    // real-time message or reopen; not worth surfacing as an error.
+  }
+}
+
 // ---------- Load messages ----------
+// Only ever called the first time a conversation is opened in this
+// session (see openDmConversation) — subsequent visits are served
+// from dmEntry via renderDmMessagesFromCache()/syncDmMessagesSince()
+// instead of hitting this endpoint again.
 async function loadRecentDm() {
-  if (!dmActivePeer) return;
+  if (!dmActivePeer || !dmEntry) return;
+  const entry = dmEntry;
   const container = document.getElementById('dm-messages');
   try {
     const messages = await api(`/api/dm/messages/${dmActivePeer.id}/recent?limit=50`);
-    renderedDmIds.clear();
-    dmMsgById.clear();
-    // Same reasoning as renderDm()/openDmConversation() — this
-    // innerHTML clear discards the loading-state markup here, but
-    // is also reached any time this function re-runs for a thread
-    // that already has rendered (and loaded) messages in it.
+    // Stale response: the user switched to a different conversation
+    // (or back out of Messages entirely) before this resolved.
+    if (dmEntry !== entry) return;
+
     cleanupImageUrls(container, 'dm');
     container.innerHTML = '';
 
+    entry.initialized = true;
+
     if (messages.length === 0) {
       container.innerHTML = emptyState(ICONS.mail, 'No messages yet', `Say hello to ${escapeHtml(dmActivePeer.username)} 👋`);
-      dmHasMore = false;
+      entry.hasMore = false;
+      entry.atBottom = true;
       return;
     }
 
-    dmOldest = messages[0].timestamp;
-    dmHasMore = messages.length >= 50;
+    entry.oldest = messages[0].timestamp;
+    entry.hasMore = messages.length >= 50;
 
     const frag = document.createDocumentFragment();
-    if (dmHasMore) {
+    if (entry.hasMore) {
       frag.appendChild(buildLoadMoreEl(loadOlderDm));
     }
 
     const currentUser = getCurrentUser();
     for (const msg of messages) {
-      renderedDmIds.add(msg.id);
-      dmMsgById.set(msg.id, msg);
+      entry.ids.add(msg.id);
+      entry.byId.set(msg.id, msg);
+      entry.messages.push(msg);
       frag.appendChild(buildDmMessageEl(msg, currentUser));
     }
 
     container.appendChild(frag);
     container.scrollTop = container.scrollHeight;
+    entry.atBottom = true;
   } catch (e) {
+    if (dmEntry !== entry) return;
     container.innerHTML = emptyState(ICONS.empty, 'Failed to load', escapeHtml(e.message));
   }
 }
 
 async function loadOlderDm() {
   if (!canLoadMoreDm()) return;
+  const entry = dmEntry;
+  const peerId = dmActivePeer.id;
   const container = document.getElementById('dm-messages');
   const btnRow = document.getElementById('chat-load-more-row');
   if (btnRow) btnRow.querySelector('.load-more-btn').textContent = 'Loading…';
+  entry.loadingOlder = true;
 
   try {
-    const messages = await api(`/api/dm/messages/${dmActivePeer.id}/before?before=${encodeURIComponent(dmOldest)}&limit=50`);
+    const messages = await api(`/api/dm/messages/${peerId}/before?before=${encodeURIComponent(entry.oldest)}&limit=50`);
+    entry.loadingOlder = false;
+    // Stale response: switched away from this conversation while
+    // the request was in flight.
+    if (dmEntry !== entry) return;
     if (btnRow) btnRow.remove();
 
     if (messages.length === 0) {
-      dmHasMore = false;
+      entry.hasMore = false;
       return;
     }
 
-    dmOldest = messages[0].timestamp;
-    dmHasMore = messages.length >= 50;
+    entry.oldest = messages[0].timestamp;
+    entry.hasMore = messages.length >= 50;
 
+    // Scroll-position preservation: capture the pre-insert height so
+    // we can compensate by exactly how much the container grew,
+    // keeping whatever the user was already looking at pinned in
+    // place instead of jumping.
     const oldTop = container.scrollTop;
     const prevHeight = container.scrollHeight;
 
     const frag = document.createDocumentFragment();
-    if (dmHasMore) {
+    if (entry.hasMore) {
       frag.appendChild(buildLoadMoreEl(loadOlderDm));
     }
 
     const currentUser = getCurrentUser();
+    const newMessages = [];
     for (const msg of messages) {
-      if (!renderedDmIds.has(msg.id)) {
-        renderedDmIds.add(msg.id);
-        dmMsgById.set(msg.id, msg);
+      if (!entry.ids.has(msg.id)) {
+        entry.ids.add(msg.id);
+        entry.byId.set(msg.id, msg);
+        newMessages.push(msg);
         frag.appendChild(buildDmMessageEl(msg, currentUser));
       }
     }
+    // Older messages are prepended to the ordered array too, so the
+    // cache stays consistent with what's on screen.
+    entry.messages.unshift(...newMessages);
 
     container.insertBefore(frag, container.firstChild);
     container.scrollTop = oldTop + (container.scrollHeight - prevHeight);
   } catch (e) {
+    entry.loadingOlder = false;
+    if (dmEntry !== entry) return;
     if (btnRow) btnRow.querySelector('.load-more-btn').textContent = 'Load older messages';
     showToast(e.message, 'error');
   }
@@ -531,35 +754,72 @@ function buildDmMessageEl(msg, currentUser) {
   return div;
 }
 
+// Called from socket.js for every incoming DM, regardless of which
+// conversation (if any) is currently open — unlike the old
+// isRelevant-gated call, this always updates that peer's cache entry
+// (when one exists) so a conversation the user isn't currently
+// looking at doesn't "lose" a message and need a full refetch the
+// next time it's opened. DOM updates still only happen for the
+// conversation that's actually on screen right now.
 export function addDmMessage(msg) {
-  if (renderedDmIds.has(msg.id)) return;
-  renderedDmIds.add(msg.id);
-  dmMsgById.set(msg.id, msg);
+  const currentUser = getCurrentUser();
+  if (!currentUser) return;
+  const peerId = msg.sender_id === currentUser.id ? msg.recipient_id : msg.sender_id;
+
+  const entry = dmCache.get(peerId);
+  const alreadyKnown = !!(entry && entry.ids.has(msg.id));
+  if (entry && !alreadyKnown) {
+    entry.ids.add(msg.id);
+    entry.byId.set(msg.id, msg);
+    entry.messages.push(msg);
+  }
+
+  const isActiveConversation = dmActivePeer && dmActivePeer.id === peerId;
+  if (!isActiveConversation) return;
+
   const container = document.getElementById('dm-messages');
   if (!container) return;
+  if (container.querySelector(`.chat-msg[data-msg-id="${msg.id}"]`)) return;
 
-  const currentUser = getCurrentUser();
   const el = buildDmMessageEl(msg, currentUser);
   const emptyEl = container.querySelector('.empty-state');
   if (emptyEl) container.innerHTML = '';
   container.appendChild(el);
-  container.scrollTop = container.scrollHeight;
+
+  // Only auto-scroll if the user was already at (or near) the
+  // bottom, or this is their own outgoing message — someone reading
+  // older history shouldn't be yanked down by an arrival elsewhere.
+  const isOwnMessage = msg.sender_id === currentUser.id;
+  const wasAtBottom = dmEntry ? dmEntry.atBottom : true;
+  if (wasAtBottom || isOwnMessage) {
+    container.scrollTop = container.scrollHeight;
+    if (dmEntry) dmEntry.atBottom = true;
+  }
 }
 
 // Idempotent: safe to call whether or not the message is currently
-// rendered (e.g. the thread might not be open, or it may have
-// already been removed by an earlier call — the delete button and
-// the 'dm-message-deleted' socket event both call this).
+// rendered, or even whether its conversation is currently open at
+// all (e.g. the delete happened while some other thread — or none —
+// was on screen). Searches every cached conversation rather than
+// just the active one, since a deletion can arrive for any of them.
 export function removeDmMessage(id) {
-  renderedDmIds.delete(id);
-  dmMsgById.delete(id);
+  for (const entry of dmCache.values()) {
+    if (entry.ids.delete(id)) {
+      entry.byId.delete(id);
+      const idx = entry.messages.findIndex(m => m.id === id);
+      if (idx !== -1) entry.messages.splice(idx, 1);
+    }
+  }
+
+  // Gone for good — unlike ordinary navigation, actually free the
+  // cached image (if any) instead of keeping it around for a
+  // "switch back" that will never need it again.
+  revokeAttachmentImage(id, 'dm');
+
   const container = document.getElementById('dm-messages');
   if (!container) return;
   const el = container.querySelector(`.chat-msg[data-msg-id="${id}"]`);
   if (!el) return;
-  // Revoke this message's own loaded-image blob URL (if any) before
-  // dropping the element — same leak as the spots above, just for a
-  // single deleted message instead of a whole thread.
   cleanupImageUrls(el, 'dm');
   el.remove();
   if (!container.querySelector('.chat-msg')) {
@@ -577,7 +837,7 @@ window.openDmEmojiPicker = function(triggerEl) {
 };
 
 window.replyToDmMessage = function(id) {
-  const msg = dmMsgById.get(id);
+  const msg = dmEntry?.byId.get(id);
   if (!msg || !dmComposer) return;
   dmComposer.setReplyTo(buildReplyPreview(msg));
 };

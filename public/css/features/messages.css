@@ -1282,16 +1282,49 @@ input.conv-search-input:focus{
   margin-top:4px;
   border-radius:var(--radius-lg);
   overflow:hidden;
-  max-width:240px;
-  min-height:60px;
+  /* Width basis so the `aspect-ratio` set inline per-message (real
+     dimensions when known, a stable fallback otherwise — see
+     imageAspectRatio() in attachments.js) actually reserves a
+     concrete height, computed *before* the image itself has loaded.
+     This is what prevents the rest of the message list from
+     jumping around as images finish loading. */
+  width:220px;
+  max-width:100%;
+  max-height:320px;
 }
 
 .chat-attachment-image img{
-  max-width:100%;
-  max-height:260px;
+  width:100%;
+  height:100%;
+  object-fit:cover;
   display:block;
   cursor:pointer;
   border-radius:var(--radius-lg);
+  /* Fade in once loaded (see loadChatImage) instead of popping in
+     the instant the network request resolves. */
+  opacity:0;
+  transition:opacity .18s ease;
+}
+
+.chat-attachment-image img.loaded{
+  opacity:1;
+}
+
+/* Lightweight skeleton for the not-yet-loaded state — fills the
+   reserved box exactly (unlike the generic .loading-state, which
+   carries page-level padding meant for full-panel loading) and
+   avoids a spinning icon, which reads as more "unstable" inside a
+   small thumbnail than a plain muted fill. */
+.chat-attachment-image .loading-state{
+  width:100%;
+  height:100%;
+  padding:0;
+  background:var(--border-soft);
+}
+
+.chat-attachment-image .loading-state .spin{
+  width:13px;
+  height:13px;
 }
 
 .chat-attachment-image-wrap{

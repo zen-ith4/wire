@@ -1,4 +1,4 @@
-import { getCurrentUser } from './auth.js';
+import { getCurrentUser, getToken } from './auth.js';
 
 import { addChatMessage, removeChatMessage, showChatTyping, hideChatTyping, clearAllChatTyping } from '../chat/chat.js';
 
@@ -20,28 +20,67 @@ import { refreshAvatarEverywhere, refreshBannerEverywhere } from '../ui/avatar.j
 let socket = null;
 
 export function initSocket(token) {
+  // Socket.IO is a singleton in this app. Never create a second Manager/
+  // connection if initialization is requested again during app startup or
+  // after a view/router lifecycle event.
   if (socket) {
     return socket;
   }
 
+  // The auth module is the source of truth. The argument is kept for
+  // backwards compatibility with the existing initSocket(token) call, but
+  // reconnections must read the current token so a refreshed/replaced token
+  // is never stuck behind a stale closure value.
+  const initialToken = getToken() || token;
+
+  if (!initialToken) {
+    console.warn('Socket not initialized: no authentication token.');
+    return null;
+  }
+
   socket = io({
-    auth: {
-      token,
+    // Do not connect until every handler below has been registered. This
+    // removes a small startup race where autoConnect could fail before our
+    // diagnostics/cleanup handlers were attached.
+    autoConnect: false,
+
+    // Socket.IO calls this for every new connection attempt, including
+    // reconnects. Always provide the newest token from auth.js/localStorage.
+    auth: (cb) => {
+      const currentToken = getToken() || localStorage.getItem('token');
+      cb({ token: currentToken || null });
     },
+
+    // WebSocket is preferred, while polling remains a fallback for networks
+    // that temporarily cannot establish a WebSocket transport.
     transports: ['websocket', 'polling'],
+
+    // A dead/unreachable upstream should fail quickly enough for the
+    // reconnect loop to recover instead of leaving the UI waiting forever.
+    timeout: 10000,
+
+    // Back off between reconnect attempts so a temporary Caddy/upstream
+    // failure cannot create a tight reconnect storm.
+    reconnection: true,
+    reconnectionAttempts: Infinity,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 10000,
+    randomizationFactor: 0.5,
   });
 
   socket.on('connect', () => {
-    console.log('Socket connected');
+    console.log(`Socket connected (${socket.id}) via ${socket.io.engine.transport.name}`);
   });
 
-  socket.on('disconnect', (reason) => {
-    console.log('Socket disconnected:', reason);
+  socket.on('disconnect', (reason, details) => {
+    console.warn('Socket disconnected:', reason, details || '');
+
     // Without this, a typing indicator could stay stuck on screen
     // for the whole reconnect gap if the 'stop-typing' event that
     // would have cleared it never made it through.
     clearAllChatTyping();
     clearAllDmTyping();
+
     // We no longer have live presence data while disconnected —
     // showing stale "online" dots would be misleading. A fresh
     // 'presence:snapshot' arrives automatically once reconnected.
@@ -49,7 +88,30 @@ export function initSocket(token) {
   });
 
   socket.on('connect_error', (err) => {
-    console.warn('Socket connection failed:', err.message);
+    // Never log the JWT. Socket.IO errors can include request/transport
+    // details, so keep diagnostics useful without exposing credentials.
+    console.warn('Socket connection failed:', err.message, {
+      description: err.description,
+      context: err.context,
+      active: socket.active,
+      transport: socket.io?.engine?.transport?.name || null,
+    });
+  });
+
+  socket.io.on('reconnect_attempt', (attempt) => {
+    console.log(`Socket reconnect attempt #${attempt}`);
+  });
+
+  socket.io.on('reconnect', (attempt) => {
+    console.log(`Socket reconnected after ${attempt} attempt(s)`);
+  });
+
+  socket.io.on('reconnect_error', (err) => {
+    console.warn('Socket reconnect failed:', err.message);
+  });
+
+  socket.io.on('reconnect_failed', () => {
+    console.error('Socket reconnect failed permanently.');
   });
 
   socket.on('new-chat-message', handleChatMessage);
@@ -86,6 +148,9 @@ export function initSocket(token) {
 
   socket.on('profile:banner-updated', handleProfileBannerUpdated);
 
+  // All handlers are now attached, so start the first connection.
+  socket.connect();
+
   return socket;
 }
 
@@ -112,12 +177,16 @@ function handleChatMessage(message) {
 function handleDirectMessage(message) {
   const currentUser = getCurrentUser();
 
-  // Was `window.dmActivePeer`, which nothing ever set — dm.js only
-  // ever kept this as a private module variable, so real-time DM
-  // delivery to an already-open thread silently never worked. Fixed
-  // via the exported getter instead of a global.
+  // addDmMessage() now always updates that peer's conversation
+  // cache (if one exists from earlier this session) regardless of
+  // which thread is on screen, and only touches the DOM when the
+  // message's conversation happens to be the currently-open one —
+  // so it's called unconditionally rather than gated on an
+  // isRelevant check here. This is what lets a conversation that
+  // isn't currently open still stay caught up while the user is
+  // looking at a different thread, instead of needing a full
+  // refetch the next time it's reopened.
   const activePeer = getDmActivePeer();
-
   const isRelevant =
     activePeer &&
     (
@@ -125,12 +194,12 @@ function handleDirectMessage(message) {
       message.recipient_id === activePeer.id
     );
 
+  addDmMessage(message);
+
   if (
     document.getElementById('dm-messages') &&
     isRelevant
   ) {
-    addDmMessage(message);
-
     const input = document.getElementById('dm-input');
 
     if (input && message.sender_id === currentUser?.id) {

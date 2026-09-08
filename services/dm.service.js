@@ -8,6 +8,7 @@ const DM_SELECT = `
          su.accent_color,
          dm.content, dm.created_at AS timestamp, dm.read_at,
          dm.attachment_name, dm.attachment_size, dm.attachment_mime,
+         dm.attachment_width, dm.attachment_height,
          dm.is_voice_message,
          dm.reply_to_id,
          rdm.id AS reply_id, rdm.sender_id AS reply_user_id,
@@ -193,12 +194,13 @@ function insertDmMessage(senderId, recipientId, content, timestamp, replyToId = 
   `).run(senderId, recipientId, content, timestamp, replyToId);
 }
 
-function insertDmMessageWithAttachment(senderId, recipientId, content, timestamp, filename, originalName, size, mime, replyToId = null, isVoiceMessage = false) {
+function insertDmMessageWithAttachment(senderId, recipientId, content, timestamp, filename, originalName, size, mime, replyToId = null, isVoiceMessage = false, width = null, height = null) {
   return getDb().prepare(`
     INSERT INTO direct_messages (sender_id, recipient_id, content, created_at,
-                                 attachment_path, attachment_name, attachment_size, attachment_mime, reply_to_id, is_voice_message)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(senderId, recipientId, content, timestamp, filename, originalName, size, mime, replyToId, isVoiceMessage ? 1 : 0);
+                                 attachment_path, attachment_name, attachment_size, attachment_mime,
+                                 attachment_width, attachment_height, reply_to_id, is_voice_message)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(senderId, recipientId, content, timestamp, filename, originalName, size, mime, width, height, replyToId, isVoiceMessage ? 1 : 0);
 }
 
 function findDmMessageById(id) {

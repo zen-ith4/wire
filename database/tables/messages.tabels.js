@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS messages (
   attachment_name TEXT,
   attachment_size INTEGER,
   attachment_mime TEXT,
+  attachment_width INTEGER,
+  attachment_height INTEGER,
 
   -- Marks an audio attachment as a recorded voice message (vs. a
   -- normal uploaded audio file) so the frontend knows which player

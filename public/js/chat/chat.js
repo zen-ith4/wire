@@ -9,7 +9,7 @@ import {
   formatDate,
   insertAtCursor
 } from '../core/utils.js';
-import { renderAttachment, loadChatImage, mountAttachmentMedia, cleanupImageUrls, imageDownloadButtonHtml } from '../media/attachments.js';
+import { renderAttachment, loadChatImage, mountAttachmentMedia, cleanupImageUrls, revokeAttachmentImage, imageDownloadButtonHtml } from '../media/attachments.js';
 import { avatarHtml } from '../ui/avatar.js';
 import { getCurrentUser } from '../core/auth.js';
 import { showConfirm } from '../ui/confirm.js';
@@ -308,10 +308,13 @@ export function removeChatMessage(id) {
   if (!container) return;
   const el = container.querySelector(`.chat-msg[data-msg-id="${id}"]`);
   if (!el) return;
-  // Revoke this message's own loaded-image blob URL (if any) before
-  // dropping the element — same leak as the two spots above, just
-  // for a single deleted message instead of a whole batch.
+  // Cancel any in-flight fetch for this element, and free its cached
+  // image (if any) for good — unlike the navigation-teardown calls
+  // to cleanupImageUrls() elsewhere in this file, this message is
+  // actually gone, so there's no future "switch back" to keep it
+  // cached for.
   cleanupImageUrls(el, 'chat');
+  revokeAttachmentImage(id, 'chat');
   el.remove();
   if (!container.querySelector('.chat-msg')) {
     container.innerHTML = emptyState(ICONS.chat, 'No messages yet', 'Say hello 👋');

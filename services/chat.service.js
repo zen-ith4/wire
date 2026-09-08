@@ -15,6 +15,8 @@ const CHAT_SELECT = `
     m.attachment_name,
     m.attachment_size,
     m.attachment_mime,
+    m.attachment_width,
+    m.attachment_height,
     m.is_voice_message,
     m.reply_to_id,
     rm.id AS reply_id,
@@ -197,7 +199,9 @@ function insertChatMessageWithAttachment(
   size,
   mime,
   replyToId = null,
-  isVoiceMessage = false
+  isVoiceMessage = false,
+  width = null,
+  height = null
 ) {
 
   return getDb()
@@ -211,10 +215,12 @@ function insertChatMessageWithAttachment(
         attachment_name,
         attachment_size,
         attachment_mime,
+        attachment_width,
+        attachment_height,
         reply_to_id,
         is_voice_message
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
     .run(
       userId,
@@ -224,6 +230,8 @@ function insertChatMessageWithAttachment(
       originalName,
       size,
       mime,
+      width,
+      height,
       replyToId,
       isVoiceMessage ? 1 : 0
     );

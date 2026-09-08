@@ -12,21 +12,42 @@ function setupSocketIO(server) {
     cors: {
       origin: process.env.CLIENT_URL || false,
     },
+
+    // Keep a short amount of connection state so a transient network drop
+    // does not unnecessarily lose recoverable Socket.IO events. This is an
+    // in-memory optimization and does not replace normal REST/API loading.
+    connectionStateRecovery: {
+      maxDisconnectionDuration: 2 * 60 * 1000,
+      skipMiddlewares: false,
+    },
+
+    // Keep heartbeat failures bounded so dead upstream/client connections
+    // are detected promptly and presence can be corrected.
+    pingInterval: 25000,
+    pingTimeout: 20000,
   });
 
   // ===== Authentication =====
   io.use((socket, next) => {
     const token = socket.handshake.auth?.token;
 
-    if (!token) {
+    if (!token || typeof token !== 'string') {
       return next(new Error('Authentication required'));
     }
 
     try {
       const user = jwt.verify(token, JWT_SECRET);
+
+      if (!user || user.id == null) {
+        return next(new Error('Invalid token payload'));
+      }
+
       socket.user = user;
       next();
     } catch (err) {
+      // Do not log the token itself. The client receives only a generic
+      // authentication error, while the server keeps the useful reason.
+      console.warn(`Socket authentication failed (${err.name || 'JWT error'})`);
       next(new Error('Invalid or expired token'));
     }
   });

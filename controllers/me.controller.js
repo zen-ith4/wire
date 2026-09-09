@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const constants = require('../config/constants');
+const { getDb } = require('../config/database');
 
 const {
   findUserById,
@@ -424,6 +425,227 @@ function getUserProfile(req, res) {
   });
 }
 
+async function updatePublicKey(req, res) {
+
+  const publicKey =
+    req.body?.publicKey;
+
+
+  if (
+    typeof publicKey !== 'string' ||
+    !publicKey.trim()
+  ) {
+    return res.status(400).json({
+      error: 'Public key required'
+    });
+  }
+
+
+  const key = publicKey.trim();
+
+
+  // X25519 raw public key = 32 bytes = 43/44 chars in Base64
+  if (
+    key.length < 40 ||
+    key.length > 100
+  ) {
+    return res.status(400).json({
+      error: 'Invalid public key'
+    });
+  }
+
+
+  try {
+
+    const decoded = Buffer.from(key, 'base64');
+
+    if (decoded.length !== 32) {
+      return res.status(400).json({
+        error: 'Invalid X25519 public key'
+      });
+    }
+
+  } catch (e) {
+
+    return res.status(400).json({
+      error: 'Invalid public key'
+    });
+
+  }
+
+
+  const db = getDb();
+
+
+  const result = db.prepare(`
+    UPDATE users
+    SET public_key = ?,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(
+    key,
+    req.user.id
+  );
+
+
+  if (result.changes === 0) {
+    return res.status(404).json({
+      error: 'User not found'
+    });
+  }
+
+
+  return res.json({
+    success: true
+  });
+}
+
+function getIdentityKey(req, res) {
+    const db = getDb();
+
+    const identity = db.prepare(`
+        SELECT
+            public_key,
+            encrypted_private_key,
+            kdf,
+            kdf_params,
+            salt,
+            iv,
+            version
+        FROM identity_keys
+        WHERE user_id = ?
+    `).get(req.user.id);
+
+    if (!identity) {
+        return res.json({
+            exists: false
+        });
+    }
+
+    return res.json({
+        exists: true,
+        publicKey: identity.public_key,
+        encryptedPrivateKey: identity.encrypted_private_key,
+        kdf: identity.kdf,
+        kdfParams: JSON.parse(identity.kdf_params),
+        salt: identity.salt,
+        iv: identity.iv,
+        version: identity.version
+    });
+}
+
+function saveIdentityKey(req, res) {
+  const {
+    publicKey,
+    encryptedPrivateKey,
+    kdf,
+    kdfParams,
+    salt,
+    iv,
+    version = 1
+  } = req.body || {};
+
+  if (
+    typeof publicKey !== 'string' ||
+    typeof encryptedPrivateKey !== 'string' ||
+    typeof kdf !== 'string' ||
+    !kdfParams ||
+    typeof kdfParams !== 'object' ||
+    Array.isArray(kdfParams) ||
+    typeof salt !== 'string' ||
+    typeof iv !== 'string'
+  ) {
+    return res.status(400).json({
+      error: 'Invalid identity key data'
+    });
+  }
+
+  if (
+    !Number.isInteger(version) ||
+    version < 1
+  ) {
+    return res.status(400).json({
+      error: 'Invalid identity key version'
+    });
+  }
+
+  const publicKeyBuffer = Buffer.from(
+    publicKey,
+    'base64'
+  );
+
+  if (publicKeyBuffer.length !== 32) {
+    return res.status(400).json({
+      error: 'Invalid X25519 public key'
+    });
+  }
+
+  const db = getDb();
+
+  db.prepare(`
+    INSERT INTO identity_keys (
+      user_id,
+      public_key,
+      encrypted_private_key,
+      kdf,
+      kdf_params,
+      salt,
+      iv,
+      version
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(user_id) DO UPDATE SET
+      public_key = excluded.public_key,
+      encrypted_private_key = excluded.encrypted_private_key,
+      kdf = excluded.kdf,
+      kdf_params = excluded.kdf_params,
+      salt = excluded.salt,
+      iv = excluded.iv,
+      version = excluded.version,
+      updated_at = CURRENT_TIMESTAMP
+  `).run(
+    req.user.id,
+    publicKey.trim(),
+    encryptedPrivateKey.trim(),
+    kdf.trim(),
+    JSON.stringify(kdfParams),
+    salt.trim(),
+    iv.trim(),
+    version
+  );
+
+  return res.json({
+    success: true
+  });
+}
+
+function getUserIdentityPublicKey(req, res) {
+    const db = getDb();
+
+    const userId = Number(req.params.userId);
+
+    if (!Number.isInteger(userId) || userId <= 0) {
+        return res.status(400).json({
+            error: 'Invalid user ID'
+        });
+    }
+
+    const identity = db.prepare(`
+        SELECT public_key
+        FROM identity_keys
+        WHERE user_id = ?
+    `).get(userId);
+
+    if (!identity) {
+        return res.status(404).json({
+            error: 'Identity key not found'
+        });
+    }
+
+    return res.json({
+        publicKey: identity.public_key
+    });
+}
 
 module.exports = {
   getMe,
@@ -436,5 +658,9 @@ module.exports = {
   uploadBanner,
   removeBanner,
   getBanner,
-  getUserProfile
+  getUserProfile,
+  updatePublicKey,
+  getIdentityKey,
+  saveIdentityKey,
+  getUserIdentityPublicKey
 };

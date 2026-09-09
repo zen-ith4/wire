@@ -3,6 +3,12 @@ const router = express.Router();
 
 const { authenticate } = require('../middleware/authenticate');
 const { asyncHandler } = require('../middleware/asyncHandler');
+
+const {
+    getIdentityKey,
+    saveIdentityKey
+} = require('../controllers/me.controller');
+
 const {
   avatarUpload,
   bannerUpload
@@ -20,6 +26,7 @@ const {
   removeBanner,
   getBanner,
   getUserProfile,
+  getUserIdentityPublicKey,
 } = require('../controllers/me.controller');
 
 
@@ -77,6 +84,23 @@ router.get(
   getBanner
 );
 
+router.get(
+    '/identity-key',
+    authenticate,
+    getIdentityKey
+);
+
+router.put(
+    '/identity-key',
+    authenticate,
+    saveIdentityKey
+);
+
+router.get(
+    '/identity-key/:userId',
+    authenticate,
+    getUserIdentityPublicKey
+);
 
 // Generic single-segment pattern must stay last.
 router.get(
@@ -84,6 +108,5 @@ router.get(
   authenticate,
   getUserProfile
 );
-
 
 module.exports = router;

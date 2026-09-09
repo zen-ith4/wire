@@ -1,24 +1,40 @@
 import { initRouter, navigate } from './router.js';
+
 import { initSocket } from './socket.js';
+
 import {
   getToken,
+  getCurrentUser,
   setCurrentUser,
   renderLogin,
+  renderIdentityStep,
   logout
 } from './auth.js';
 
 import { showToast } from './utils.js';
+
 import { api } from './api.js';
+
 import { applyAvatar } from '../ui/avatar.js';
+
 import { ICONS } from '../icons.js';
+
 import { refreshUnreadBadge } from '../chat/dm.js';
+
 import { startAutoEnhance } from '../ui/ui-enhance.js';
+
 import { initDragDrop } from '../files/dragdrop.js';
+
 import {
   initAccent,
   initTheme
 } from '../settings/theme.js';
+
 import { initSidebarResize } from '../ui/sidebar-resize.js';
+
+import {
+  isIdentityUnlocked
+} from '../crypto/identity-service.js';
 
 import '../ui/profile-card.js';
 import '../media/image-viewer.js';
@@ -82,11 +98,16 @@ const ADMIN_NAV_ITEMS = [
 function buildNav(user) {
 
   const container =
-    document.getElementById('nav-links');
+    document.getElementById(
+      'nav-links'
+    );
+
 
   if (!container) return;
 
+
   container.innerHTML = '';
+
 
   const items =
     user.is_admin
@@ -96,16 +117,20 @@ function buildNav(user) {
         ]
       : NAV_ITEMS;
 
+
   items.forEach(item => {
 
     const el =
       document.createElement('div');
 
+
     el.className =
       'nav-link';
 
+
     el.dataset.view =
       item.view;
+
 
     el.innerHTML = `
       ${item.icon || ''}
@@ -123,6 +148,7 @@ function buildNav(user) {
       }
     `;
 
+
     el.addEventListener(
       'click',
       () => {
@@ -132,6 +158,7 @@ function buildNav(user) {
         window.closeMobileSidebar();
       }
     );
+
 
     container.appendChild(el);
   });
@@ -145,41 +172,55 @@ function fillProfile(user) {
       'profile-username'
     );
 
+
   const initialsEl =
     document.getElementById(
       'profile-initials'
     );
+
 
   const sectionEl =
     document.getElementById(
       'sidebar-profile-section'
     );
 
+
   if (nameEl) {
+
     nameEl.textContent =
       user.username;
   }
 
+
   if (initialsEl) {
+
     const initialsSpan =
-      initialsEl.querySelector('.avatar-initials');
+      initialsEl.querySelector(
+        '.avatar-initials'
+      );
+
 
     const initialsText =
       (user.username || '?')
         .charAt(0)
         .toUpperCase();
 
+
     if (initialsSpan) {
-      initialsSpan.textContent = initialsText;
+
+      initialsSpan.textContent =
+        initialsText;
+
     } else {
-      initialsEl.textContent = initialsText;
+
+      initialsEl.textContent =
+        initialsText;
     }
 
-    // Tag the sidebar avatar with the current user's id so it's
-    // included when refreshAvatarEverywhere() broadcasts an update
-    // after the user changes their profile photo — same mechanism
-    // avatarHtml() uses for every other avatar in the app.
-    initialsEl.dataset.avatarUser = user.id;
+
+    initialsEl.dataset.avatarUser =
+      user.id;
+
 
     applyAvatar(
       'profile-initials',
@@ -187,16 +228,19 @@ function fillProfile(user) {
     );
   }
 
+
   if (sectionEl) {
+
     sectionEl.title =
       `View ${user.username}'s profile`;
 
-    // My own PFP -> my own profile. Same read-only profile card
-    // every other avatar in the app opens (avatar.js's
-    // .clickable-avatar); profile-card.js already special-cases
-    // isSelf (hides the "Send Message" button) so this "just works".
+
     sectionEl.onclick = () => {
-      window.openProfileCard?.(user.id);
+
+      window.openProfileCard?.(
+        user.id
+      );
+
     };
   }
 }
@@ -209,26 +253,38 @@ function showApp(user) {
       'login-wrap'
     );
 
+
   const app =
     document.getElementById(
       'app'
     );
 
+
   if (loginWrap) {
+
     loginWrap.style.display =
       'none';
   }
 
+
   if (app) {
+
     app.style.display =
       'flex';
   }
 
+
   buildNav(user);
+
   fillProfile(user);
+
   refreshUnreadBadge();
 }
 
+
+/* =========================================================
+ * Global helpers
+ * ========================================================= */
 
 window.logout =
   logout;
@@ -240,6 +296,7 @@ window.openMobileSidebar =
     document
       .getElementById('sidebar')
       ?.classList.add('open');
+
 
     document
       .getElementById('sidebar-backdrop')
@@ -254,91 +311,175 @@ window.closeMobileSidebar =
       .getElementById('sidebar')
       ?.classList.remove('open');
 
+
     document
       .getElementById('sidebar-backdrop')
       ?.classList.remove('active');
   };
 
 
+/* =========================================================
+ * Application startup
+ * ========================================================= */
+
+async function startApplication(
+  user,
+  token
+) {
+
+  showApp(user);
+
+  initSocket(token);
+
+  initRouter();
+
+  startAutoEnhance();
+
+  initDragDrop();
+}
+
+
+/* =========================================================
+ * Bootstrap
+ * ========================================================= */
+
 async function bootstrap() {
 
-  // Apply local theme immediately so the UI
-  // doesn't start completely unstyled.
+  /*
+   * Apply local theme immediately.
+   */
+
   initTheme();
+
   initAccent();
 
-  // Restore saved sidebar width + wire up the drag handle, same idea:
-  // do it early so there's no flash of the default width.
+
+  /*
+   * Restore sidebar width and initialize
+   * the resize handle.
+   */
+
   initSidebarResize();
+
 
   const token =
     getToken();
 
-  if (!token) {
 
-    renderLogin();
+  /*
+   * No account session.
+   */
 
-    return;
-  }
+if (!token) {
+  renderLogin(async () => {
+    const user = getCurrentUser();
+    const currentToken = getToken();
+
+    if (!user || !currentToken) {
+      throw new Error(
+        'Authentication state is unavailable'
+      );
+    }
+
+    await startApplication(
+      user,
+      currentToken
+    );
+  });
+
+  return;
+}
 
 
   try {
 
-    // --------------------------------------------------------
-    // Get authenticated user
-    // --------------------------------------------------------
+    /* ------------------------------------------------------
+     * Get authenticated user
+     * ------------------------------------------------------ */
 
     const me =
       await api('/api/me');
 
 
-    // --------------------------------------------------------
-    // Restore current user state
-    // --------------------------------------------------------
+    /* ------------------------------------------------------
+     * Restore current user state
+     * ------------------------------------------------------ */
 
     setCurrentUser(me);
 
 
-    // --------------------------------------------------------
-    // IMPORTANT:
-    // Database accent takes priority over localStorage.
-    // This is what makes custom accent colors persistent
-    // across browsers/devices/sessions.
-    // --------------------------------------------------------
+    /* ------------------------------------------------------
+     * Database accent takes priority over localStorage.
+     * ------------------------------------------------------ */
 
     initAccent(
       me.accent_color || null
     );
 
 
-    // --------------------------------------------------------
-    // Start application
-    // --------------------------------------------------------
+    /* ------------------------------------------------------
+     * Identity gate
+     *
+     * The app must not start until the E2EE identity
+     * has been unlocked.
+     * ------------------------------------------------------ */
 
-    showApp(me);
+    if (!isIdentityUnlocked()) {
 
-    initSocket(token);
+      await renderIdentityStep(
+        async () => {
 
-    initRouter();
+          /*
+           * Identity has now been successfully
+           * created/restored in memory.
+           *
+           * Start the application directly.
+           */
 
-    startAutoEnhance();
+          await startApplication(
+            me,
+            token
+          );
 
-    initDragDrop();
+        }
+      );
+
+      return;
+    }
+
+
+    /* ------------------------------------------------------
+     * Identity already unlocked.
+     *
+     * This can happen when bootstrap is called again
+     * during the same page lifetime.
+     * ------------------------------------------------------ */
+
+    await startApplication(
+      me,
+      token
+    );
 
   } catch (err) {
 
-    // api() handles 401 itself.
+    /*
+     * api() handles 401 itself.
+     */
 
     if (
       err.message !== 'Session expired'
     ) {
 
-      console.error(err);
+      console.error(
+        err
+      );
+
 
       showToast(
         'Failed to start application',
         'error'
       );
+
 
       renderLogin();
     }
@@ -348,7 +489,10 @@ async function bootstrap() {
 
 bootstrap().catch(err => {
 
-  console.error(err);
+  console.error(
+    err
+  );
+
 
   showToast(
     'Failed to start application',
@@ -356,6 +500,10 @@ bootstrap().catch(err => {
   );
 });
 
+
+/* =========================================================
+ * Global error handling
+ * ========================================================= */
 
 window.addEventListener(
   'unhandledrejection',
@@ -365,6 +513,7 @@ window.addEventListener(
       'Unhandled promise rejection:',
       event.reason
     );
+
 
     showToast(
       'An unexpected error occurred',
@@ -382,6 +531,7 @@ window.addEventListener(
       'Unhandled error:',
       event.error || event.message
     );
+
 
     showToast(
       'An unexpected error occurred',

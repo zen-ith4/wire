@@ -142,54 +142,43 @@ async function decryptDmMessage(msg) {
     throw new Error('Invalid DM message');
   }
 
-  const content = msg.content;
-
-  if (!content) {
-    return {
-      ...msg,
-      content: ''
-    };
-  }
-
-  const payload = parseDmPayload(content);
-
-  // Legacy/plaintext message.
-  // Preserve the original message object exactly.
-  if (!payload) {
-    return msg;
-  }
-
-  // Once an encryption object exists, this MUST be treated
-  // as encrypted data. Never fall back to showing ciphertext.
-  if (
-    payload.encryption.version !== 1 ||
-    payload.encryption.algorithm !== 'AES-GCM'
-  ) {
-    throw new Error(
-      `Unsupported encryption format for DM ${msg.id}`
-    );
-  }
-
   const currentUser = getCurrentUser();
 
   if (!currentUser) {
     throw new Error('Current user is unavailable');
   }
 
+  const currentUserId = Number(currentUser.id);
+
+  if (
+    !Number.isInteger(currentUserId) ||
+    currentUserId <= 0
+  ) {
+    throw new Error(
+      `Invalid current user ID for DM ${msg.id}`
+    );
+  }
+
   const senderId = Number(msg.sender_id);
   const recipientId = Number(msg.recipient_id);
-  const currentUserId = Number(currentUser.id);
 
   if (
     !Number.isInteger(senderId) ||
     senderId <= 0 ||
     !Number.isInteger(recipientId) ||
-    recipientId <= 0 ||
-    !Number.isInteger(currentUserId) ||
-    currentUserId <= 0
+    recipientId <= 0
   ) {
     throw new Error(
       `Invalid DM IDs for message ${msg.id}`
+    );
+  }
+
+  if (
+    senderId !== currentUserId &&
+    recipientId !== currentUserId
+  ) {
+    throw new Error(
+      `DM ${msg.id} does not belong to current user`
     );
   }
 
@@ -207,30 +196,105 @@ async function decryptDmMessage(msg) {
     );
   }
 
-  const plaintext = await decryptIncomingMessage(
-    payload,
-    peerId
-  );
+  // ----------------------------------------------------------
+  // Decrypt main message content
+  // ----------------------------------------------------------
 
-  if (typeof plaintext !== 'string') {
-    throw new Error(
-      `Invalid plaintext returned for DM ${msg.id}`
-    );
+  let decryptedContent = msg.content;
+
+  if (msg.content) {
+    const payload = parseDmPayload(msg.content);
+
+    // Legacy/plaintext message
+    if (payload) {
+      if (
+        payload.encryption.version !== 1 ||
+        payload.encryption.algorithm !== 'AES-GCM'
+      ) {
+        throw new Error(
+          `Unsupported encryption format for DM ${msg.id}`
+        );
+      }
+
+      decryptedContent = await decryptIncomingMessage(
+        payload,
+        peerId
+      );
+
+      if (typeof decryptedContent !== 'string') {
+        throw new Error(
+          `Invalid plaintext returned for DM ${msg.id}`
+        );
+      }
+
+      // Defense in depth.
+      if (isEncryptedDmContent(decryptedContent)) {
+        throw new Error(
+          `Crypto layer returned encrypted data for DM ${msg.id}`
+        );
+      }
+    }
   }
 
-  // Defense in depth.
-  // Decrypted output must not itself be another encrypted payload.
-  if (isEncryptedDmContent(plaintext)) {
-    throw new Error(
-      `Crypto layer returned encrypted data for DM ${msg.id}`
-    );
+  // ----------------------------------------------------------
+  // Decrypt reply_to.content
+  // ----------------------------------------------------------
+
+  let decryptedReplyTo = msg.reply_to;
+
+  if (
+    msg.reply_to &&
+    typeof msg.reply_to === 'object'
+  ) {
+    decryptedReplyTo = {
+      ...msg.reply_to,
+    };
+
+    const replyContent = msg.reply_to.content;
+
+    if (typeof replyContent === 'string' && replyContent.length > 0) {
+      const replyPayload = parseDmPayload(replyContent);
+
+      // Only decrypt content that is actually an encrypted
+      // DM payload. Legacy/plaintext replies remain unchanged.
+      if (replyPayload) {
+        if (
+          replyPayload.encryption.version !== 1 ||
+          replyPayload.encryption.algorithm !== 'AES-GCM'
+        ) {
+          throw new Error(
+            `Unsupported encryption format for reply target of DM ${msg.id}`
+          );
+        }
+
+        const replyPlaintext =
+          await decryptIncomingMessage(
+            replyPayload,
+            peerId
+          );
+
+        if (typeof replyPlaintext !== 'string') {
+          throw new Error(
+            `Invalid plaintext returned for reply target of DM ${msg.id}`
+          );
+        }
+
+        // Defense in depth.
+        if (isEncryptedDmContent(replyPlaintext)) {
+          throw new Error(
+            `Crypto layer returned encrypted reply data for DM ${msg.id}`
+          );
+        }
+
+        decryptedReplyTo.content = replyPlaintext;
+      }
+    }
   }
 
-  // Preserve the original message structure.
-  // Only content changes.
   return {
     ...msg,
-    content: plaintext
+    content: decryptedContent,
+    reply_to: decryptedReplyTo,
   };
 }
 

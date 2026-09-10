@@ -1,21 +1,19 @@
 import {
     createEncryptedIdentity,
     restoreIdentityFromServer,
+    decryptIdentityPrivateKey,
+    encryptIdentityPrivateKey
 } from "./identity.js";
 
 
-const IDENTITY_ENDPOINT = "/api/me/identity-key";
+const IDENTITY_ENDPOINT =
+    "/api/me/identity-key";
 
 
 let currentIdentity = null;
 
 
-/* =========================================================
- * Internal helpers
- * ========================================================= */
-
 function requireToken(token) {
-
     if (
         typeof token !== "string" ||
         !token.trim()
@@ -28,32 +26,29 @@ function requireToken(token) {
 
 
 async function fetchIdentity(token) {
-
     requireToken(token);
 
-    const response = await fetch(
-        IDENTITY_ENDPOINT,
-        {
-            method: "GET",
+    const response =
+        await fetch(
+            IDENTITY_ENDPOINT,
+            {
+                method: "GET",
 
-            headers: {
-                "Authorization": `Bearer ${token}`
+                headers: {
+                    "Authorization":
+                        `Bearer ${token}`
+                }
             }
-        }
-    );
-
+        );
 
     if (!response.ok) {
-
         throw new Error(
             `Failed to fetch identity (${response.status})`
         );
     }
 
-
     const data =
         await response.json();
-
 
     if (
         !data ||
@@ -64,7 +59,6 @@ async function fetchIdentity(token) {
         );
     }
 
-
     return data;
 }
 
@@ -73,9 +67,7 @@ async function uploadIdentity(
     identity,
     token
 ) {
-
     requireToken(token);
-
 
     if (
         !identity ||
@@ -85,7 +77,6 @@ async function uploadIdentity(
             "Invalid identity"
         );
     }
-
 
     if (
         !identity.publicKey ||
@@ -101,7 +92,6 @@ async function uploadIdentity(
         );
     }
 
-
     const response =
         await fetch(
             IDENTITY_ENDPOINT,
@@ -109,8 +99,11 @@ async function uploadIdentity(
                 method: "PUT",
 
                 headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${token}`
+                    "Content-Type":
+                        "application/json",
+
+                    "Authorization":
+                        `Bearer ${token}`
                 },
 
                 body: JSON.stringify({
@@ -138,38 +131,31 @@ async function uploadIdentity(
             }
         );
 
-
     if (!response.ok) {
-
         let message =
             `Failed to save identity (${response.status})`;
 
-
         try {
-
             const data =
                 await response.json();
 
-
             if (data?.error) {
-                message = data.error;
+                message =
+                    data.error;
             }
-
         } catch {
             // Ignore invalid error responses.
         }
 
-
         throw new Error(message);
     }
-
 
     const data =
         await response.json();
 
-
-    if (data?.success !== true) {
-
+    if (
+        data?.success !== true
+    ) {
         throw new Error(
             "Server did not confirm identity save"
         );
@@ -177,62 +163,48 @@ async function uploadIdentity(
 }
 
 
-/* =========================================================
- * Create new identity
- * ========================================================= */
-
 export async function createIdentity(
-    passphrase,
+    password,
     token
 ) {
-
     requireToken(token);
 
-
     if (
-        typeof passphrase !== "string" ||
-        passphrase.length === 0
+        typeof password !== "string" ||
+        password.length === 0
     ) {
         throw new Error(
-            "Identity passphrase is required"
+            "Password is required"
         );
     }
 
-
     if (currentIdentity) {
-
         throw new Error(
             "Identity is already unlocked"
         );
     }
 
-
     console.log(
         "[IdentityService] Generating encrypted identity..."
     );
 
-
     const identity =
         await createEncryptedIdentity(
-            passphrase
+            password
         );
-
 
     console.log(
         "[IdentityService] Encrypted identity generated"
     );
-
 
     await uploadIdentity(
         identity,
         token
     );
 
-
     console.log(
         "[IdentityService] Identity uploaded"
     );
-
 
     if (
         !identity.keyPair ||
@@ -244,7 +216,6 @@ export async function createIdentity(
         );
     }
 
-
     currentIdentity = {
         privateKey:
             identity.keyPair.privateKey,
@@ -253,7 +224,6 @@ export async function createIdentity(
             identity.publicKey
     };
 
-
     return {
         publicKey:
             currentIdentity.publicKey
@@ -261,59 +231,45 @@ export async function createIdentity(
 }
 
 
-/* =========================================================
- * Restore existing identity
- * ========================================================= */
-
 export async function restoreIdentity(
-    passphrase,
+    password,
     token
 ) {
-
     requireToken(token);
 
-
     if (
-        typeof passphrase !== "string" ||
-        passphrase.length === 0
+        typeof password !== "string" ||
+        password.length === 0
     ) {
         throw new Error(
-            "Identity passphrase is required"
+            "Password is required"
         );
     }
 
-
     if (currentIdentity) {
-
         throw new Error(
             "Identity is already unlocked"
         );
     }
 
-
     const identity =
         await fetchIdentity(token);
 
-
     if (!identity.exists) {
-
         throw new Error(
             "Identity does not exist"
         );
     }
 
-
     console.log(
         "[IdentityService] Restoring encrypted identity..."
     );
 
-
     const restored =
         await restoreIdentityFromServer(
             identity,
-            passphrase
+            password
         );
-
 
     if (
         !restored ||
@@ -325,7 +281,6 @@ export async function restoreIdentity(
         );
     }
 
-
     currentIdentity = {
         privateKey:
             restored.privateKey,
@@ -334,11 +289,9 @@ export async function restoreIdentity(
             restored.publicKey
     };
 
-
     console.log(
         "[IdentityService] Identity restored"
     );
-
 
     return {
         publicKey:
@@ -347,48 +300,136 @@ export async function restoreIdentity(
 }
 
 
-/* =========================================================
- * Initialize identity
- * ========================================================= */
-
-export async function initializeIdentity(
-    passphrase,
+/*
+ * Re-encrypt the existing identity private key
+ * with a new account password.
+ *
+ * IMPORTANT:
+ * - Does NOT generate a new X25519 key pair.
+ * - Does NOT upload anything.
+ * - Public key remains unchanged.
+ * - Returns only encrypted-at-rest metadata.
+ */
+export async function reencryptIdentity(
+    currentPassword,
+    newPassword,
     token
 ) {
-
     requireToken(token);
 
+    if (
+        typeof currentPassword !== "string" ||
+        currentPassword.length === 0
+    ) {
+        throw new Error(
+            "Current password is required"
+        );
+    }
+
+    if (
+        typeof newPassword !== "string" ||
+        newPassword.length === 0
+    ) {
+        throw new Error(
+            "New password is required"
+        );
+    }
 
     const identity =
         await fetchIdentity(token);
 
+    if (!identity.exists) {
+        return null;
+    }
+
+    if (
+        identity.version !== 1
+    ) {
+        throw new Error(
+            "Unsupported identity version"
+        );
+    }
+
+    if (
+        identity.kdf !== "PBKDF2-SHA-256"
+    ) {
+        throw new Error(
+            "Unsupported identity KDF"
+        );
+    }
+
+    console.log(
+        "[IdentityService] Decrypting existing identity..."
+    );
+
+    const privateKey =
+        await decryptIdentityPrivateKey(
+            identity.encryptedPrivateKey,
+            currentPassword,
+            identity.salt,
+            identity.iv,
+            identity.kdfParams
+        );
+
+    console.log(
+        "[IdentityService] Re-encrypting identity with new password..."
+    );
+
+    const encrypted =
+        await encryptIdentityPrivateKey(
+            privateKey,
+            newPassword
+        );
+
+    return {
+        encryptedPrivateKey:
+            encrypted.encryptedPrivateKey,
+
+        kdf:
+            encrypted.kdf,
+
+        kdfParams:
+            encrypted.kdfParams,
+
+        salt:
+            encrypted.salt,
+
+        iv:
+            encrypted.iv,
+
+        version:
+            encrypted.version
+    };
+}
+
+
+export async function initializeIdentity(
+    password,
+    token
+) {
+    requireToken(token);
+
+    const identity =
+        await fetchIdentity(token);
 
     if (identity.exists) {
-
         return restoreIdentity(
-            passphrase,
+            password,
             token
         );
     }
 
-
     return createIdentity(
-        passphrase,
+        password,
         token
     );
 }
 
 
-/* =========================================================
- * Current identity
- * ========================================================= */
-
 export function getCurrentIdentity() {
-
     if (!currentIdentity) {
         return null;
     }
-
 
     return {
         privateKey:
@@ -400,21 +441,11 @@ export function getCurrentIdentity() {
 }
 
 
-/* =========================================================
- * Lock identity
- * ========================================================= */
-
 export function lockIdentity() {
-
     currentIdentity = null;
 }
 
 
-/* =========================================================
- * State
- * ========================================================= */
-
 export function isIdentityUnlocked() {
-
     return currentIdentity !== null;
 }

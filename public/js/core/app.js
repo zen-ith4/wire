@@ -7,7 +7,6 @@ import {
   getCurrentUser,
   setCurrentUser,
   renderLogin,
-  renderIdentityStep,
   logout
 } from './auth.js';
 
@@ -362,33 +361,53 @@ async function bootstrap() {
   initSidebarResize();
 
 
+  /*
+   * Check current authentication state.
+   */
+
   const token =
     getToken();
 
 
   /*
    * No account session.
+   *
+   * Login will authenticate the account and,
+   * inside auth.js, initialize the E2EE identity
+   * using the SAME account password.
    */
 
-if (!token) {
-  renderLogin(async () => {
-    const user = getCurrentUser();
-    const currentToken = getToken();
+  if (!token) {
 
-    if (!user || !currentToken) {
-      throw new Error(
-        'Authentication state is unavailable'
-      );
-    }
+    renderLogin(
+      async () => {
 
-    await startApplication(
-      user,
-      currentToken
+        const user =
+          getCurrentUser();
+
+        const currentToken =
+          getToken();
+
+
+        if (
+          !user ||
+          !currentToken
+        ) {
+          throw new Error(
+            'Authentication state is unavailable'
+          );
+        }
+
+
+        await startApplication(
+          user,
+          currentToken
+        );
+      }
     );
-  });
 
-  return;
-}
+    return;
+  }
 
 
   try {
@@ -418,29 +437,54 @@ if (!token) {
 
 
     /* ------------------------------------------------------
-     * Identity gate
+     * Identity state
      *
-     * The app must not start until the E2EE identity
-     * has been unlocked.
+     * The identity is intentionally kept only in memory.
+     *
+     * If the page was reloaded, the password is no longer
+     * available and the encrypted identity cannot be
+     * silently unlocked.
+     *
+     * Therefore the user must authenticate again through
+     * the login flow, which will use the same password to
+     * restore the E2EE identity.
      * ------------------------------------------------------ */
 
     if (!isIdentityUnlocked()) {
 
-      await renderIdentityStep(
+      /*
+       * We already have a valid token, but we cannot
+       * decrypt the private identity key without the
+       * user's password.
+       *
+       * Render the normal login form again so the
+       * password can be supplied to the identity layer.
+       */
+
+      renderLogin(
         async () => {
 
-          /*
-           * Identity has now been successfully
-           * created/restored in memory.
-           *
-           * Start the application directly.
-           */
+          const user =
+            getCurrentUser();
+
+          const currentToken =
+            getToken();
+
+
+          if (
+            !user ||
+            !currentToken
+          ) {
+            throw new Error(
+              'Authentication state is unavailable'
+            );
+          }
+
 
           await startApplication(
-            me,
-            token
+            user,
+            currentToken
           );
-
         }
       );
 
@@ -449,7 +493,7 @@ if (!token) {
 
 
     /* ------------------------------------------------------
-     * Identity already unlocked.
+     * Identity is already unlocked.
      *
      * This can happen when bootstrap is called again
      * during the same page lifetime.
@@ -481,7 +525,32 @@ if (!token) {
       );
 
 
-      renderLogin();
+      renderLogin(
+        async () => {
+
+          const user =
+            getCurrentUser();
+
+          const currentToken =
+            getToken();
+
+
+          if (
+            !user ||
+            !currentToken
+          ) {
+            throw new Error(
+              'Authentication state is unavailable'
+            );
+          }
+
+
+          await startApplication(
+            user,
+            currentToken
+          );
+        }
+      );
     }
   }
 }

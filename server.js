@@ -80,6 +80,10 @@ async function startServer() {
     // 5. API routes
     app.use('/api/auth', require('./routes/auth.routes'));
     app.use('/api/me', require('./routes/me.routes'));
+    app.use(
+      '/api/settings',
+      require('./routes/settings.routes')
+    );
     app.use('/api/files', require('./routes/files.routes'));
     app.use('/api/chat', require('./routes/chat.routes'));
     app.use('/api/dm', require('./routes/dm.routes'));

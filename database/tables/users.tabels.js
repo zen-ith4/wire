@@ -3,7 +3,11 @@ CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
 
     username TEXT NOT NULL UNIQUE,
+    email TEXT UNIQUE,
     password_hash TEXT NOT NULL,
+
+    email_verified INTEGER NOT NULL DEFAULT 0,
+    email_2fa_enabled INTEGER NOT NULL DEFAULT 0,
 
     is_admin INTEGER NOT NULL DEFAULT 0,
 
@@ -44,4 +48,46 @@ CREATE TABLE IF NOT EXISTS identity_keys (
 
 CREATE INDEX IF NOT EXISTS idx_identity_keys_user_id
 ON identity_keys(user_id);
-`
+
+CREATE TABLE IF NOT EXISTS email_verification_codes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    user_id INTEGER NOT NULL,
+
+    code_hash TEXT NOT NULL,
+
+    expires_at INTEGER NOT NULL,
+
+    attempts INTEGER NOT NULL DEFAULT 0,
+
+    created_at INTEGER NOT NULL,
+
+    FOREIGN KEY (user_id)
+        REFERENCES users(id)
+        ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_email_verification_codes_user_id
+ON email_verification_codes(user_id);
+
+CREATE TABLE IF NOT EXISTS email_2fa_codes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    user_id INTEGER NOT NULL,
+
+    code_hash TEXT NOT NULL,
+
+    expires_at INTEGER NOT NULL,
+
+    attempts INTEGER NOT NULL DEFAULT 0,
+
+    created_at INTEGER NOT NULL,
+
+    FOREIGN KEY (user_id)
+        REFERENCES users(id)
+        ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_email_2fa_codes_user_id
+ON email_2fa_codes(user_id);
+`;

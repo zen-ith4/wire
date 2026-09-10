@@ -1,5 +1,5 @@
 node_modules/
-electron-client/
+electron-client/*
 .env
 
 *.db

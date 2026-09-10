@@ -1,5 +1,3 @@
-// public/js/crypto/identity.js
-
 const KEY_ALGORITHM = {
     name: "X25519",
 };
@@ -17,29 +15,22 @@ const SALT_LENGTH = 16;
 const IDENTITY_VERSION = 1;
 
 
-/* =========================================================
- * Validation
- * ========================================================= */
-
 function ensureWebCrypto() {
     if (!globalThis.crypto?.subtle) {
         throw new Error("Web Crypto API is not available");
     }
 }
 
-function validatePassphrase(passphrase) {
+
+function validatePassword(password) {
     if (
-        typeof passphrase !== "string" ||
-        passphrase.length === 0
+        typeof password !== "string" ||
+        password.length === 0
     ) {
-        throw new Error("Passphrase is required");
+        throw new Error("Password is required");
     }
 }
 
-
-/* =========================================================
- * Base64 helpers
- * ========================================================= */
 
 function arrayBufferToBase64(buffer) {
     const bytes = new Uint8Array(buffer);
@@ -53,8 +44,12 @@ function arrayBufferToBase64(buffer) {
     return btoa(binary);
 }
 
+
 function base64ToArrayBuffer(base64) {
-    if (typeof base64 !== "string" || !base64) {
+    if (
+        typeof base64 !== "string" ||
+        !base64
+    ) {
         throw new Error("Invalid Base64 data");
     }
 
@@ -66,7 +61,8 @@ function base64ToArrayBuffer(base64) {
         throw new Error("Invalid Base64 data");
     }
 
-    const bytes = new Uint8Array(binary.length);
+    const bytes =
+        new Uint8Array(binary.length);
 
     for (let i = 0; i < binary.length; i++) {
         bytes[i] = binary.charCodeAt(i);
@@ -75,10 +71,6 @@ function base64ToArrayBuffer(base64) {
     return bytes.buffer;
 }
 
-
-/* =========================================================
- * Identity generation
- * ========================================================= */
 
 export async function generateIdentityKeyPair() {
     ensureWebCrypto();
@@ -91,10 +83,6 @@ export async function generateIdentityKeyPair() {
 }
 
 
-/* =========================================================
- * Public key
- * ========================================================= */
-
 export async function exportPublicKey(keyPair) {
     ensureWebCrypto();
 
@@ -102,30 +90,32 @@ export async function exportPublicKey(keyPair) {
         throw new Error("Invalid identity key pair");
     }
 
-    const raw = await crypto.subtle.exportKey(
-        "raw",
-        keyPair.publicKey
-    );
+    const raw =
+        await crypto.subtle.exportKey(
+            "raw",
+            keyPair.publicKey
+        );
 
-    const bytes = new Uint8Array(raw);
+    const bytes =
+        new Uint8Array(raw);
 
     if (bytes.length !== 32) {
-        throw new Error("Invalid X25519 public key");
+        throw new Error(
+            "Invalid X25519 public key"
+        );
     }
 
     return arrayBufferToBase64(raw);
 }
 
 
-/* =========================================================
- * Private key export
- * ========================================================= */
-
 export async function exportPrivateKey(keyPair) {
     ensureWebCrypto();
 
     if (!keyPair?.privateKey) {
-        throw new Error("Invalid identity key pair");
+        throw new Error(
+            "Invalid identity key pair"
+        );
     }
 
     return crypto.subtle.exportKey(
@@ -135,38 +125,32 @@ export async function exportPrivateKey(keyPair) {
 }
 
 
-/* =========================================================
- * Private key import
- * ========================================================= */
-
 export async function importPrivateKey(pkcs8) {
     ensureWebCrypto();
 
     if (!(pkcs8 instanceof ArrayBuffer)) {
-        throw new Error("Invalid PKCS#8 private key");
+        throw new Error(
+            "Invalid PKCS#8 private key"
+        );
     }
 
     return crypto.subtle.importKey(
         "pkcs8",
         pkcs8,
         PRIVATE_KEY_ALGORITHM,
-        true,
+        false,
         ["deriveBits"]
     );
 }
 
 
-/* =========================================================
- * Key derivation
- * ========================================================= */
-
 async function deriveEncryptionKey(
-    passphrase,
+    password,
     salt,
     iterations = KDF_ITERATIONS
 ) {
     ensureWebCrypto();
-    validatePassphrase(passphrase);
+    validatePassword(password);
 
     if (!(salt instanceof Uint8Array)) {
         throw new Error("Invalid salt");
@@ -176,15 +160,18 @@ async function deriveEncryptionKey(
         !Number.isInteger(iterations) ||
         iterations < 100000
     ) {
-        throw new Error("Invalid PBKDF2 iterations");
+        throw new Error(
+            "Invalid PBKDF2 iterations"
+        );
     }
 
-    const encoder = new TextEncoder();
+    const encoder =
+        new TextEncoder();
 
-    const passphraseKey =
+    const passwordKey =
         await crypto.subtle.importKey(
             "raw",
-            encoder.encode(passphrase),
+            encoder.encode(password),
             {
                 name: "PBKDF2"
             },
@@ -199,30 +186,31 @@ async function deriveEncryptionKey(
             iterations,
             hash: KDF_HASH
         },
-        passphraseKey,
+        passwordKey,
         {
             name: "AES-GCM",
             length: AES_KEY_LENGTH
         },
         false,
-        ["encrypt", "decrypt"]
+        [
+            "encrypt",
+            "decrypt"
+        ]
     );
 }
 
 
-/* =========================================================
- * Encrypt private key
- * ========================================================= */
-
 export async function encryptIdentityPrivateKey(
     privateKey,
-    passphrase
+    password
 ) {
     ensureWebCrypto();
-    validatePassphrase(passphrase);
+    validatePassword(password);
 
     if (!privateKey) {
-        throw new Error("Private key is required");
+        throw new Error(
+            "Private key is required"
+        );
     }
 
     const privateKeyBytes =
@@ -243,7 +231,7 @@ export async function encryptIdentityPrivateKey(
 
     const encryptionKey =
         await deriveEncryptionKey(
-            passphrase,
+            password,
             salt,
             KDF_ITERATIONS
         );
@@ -268,57 +256,68 @@ export async function encryptIdentityPrivateKey(
         iv:
             arrayBufferToBase64(iv),
 
-        kdf: KDF_NAME,
+        kdf:
+            KDF_NAME,
 
         kdfParams: {
-            iterations: KDF_ITERATIONS,
-            hash: KDF_HASH
+            iterations:
+                KDF_ITERATIONS,
+
+            hash:
+                KDF_HASH
         },
 
-        version: IDENTITY_VERSION
+        version:
+            IDENTITY_VERSION
     };
 }
 
 
-/* =========================================================
- * Decrypt private key
- * ========================================================= */
-
 export async function decryptIdentityPrivateKey(
     encryptedPrivateKey,
-    passphrase,
+    password,
     salt,
     iv,
     kdfParams
 ) {
     ensureWebCrypto();
-    validatePassphrase(passphrase);
+    validatePassword(password);
 
     if (
         typeof encryptedPrivateKey !== "string" ||
         typeof salt !== "string" ||
         typeof iv !== "string"
     ) {
-        throw new Error("Invalid encrypted identity data");
+        throw new Error(
+            "Invalid encrypted identity data"
+        );
     }
 
     const params =
-        kdfParams && typeof kdfParams === "object"
+        kdfParams &&
+        typeof kdfParams === "object"
             ? kdfParams
             : {};
 
     const iterations =
-        Number.isInteger(params.iterations)
-            ? params.iterations
-            : KDF_ITERATIONS;
+        params.iterations;
 
     const hash =
-        typeof params.hash === "string"
-            ? params.hash
-            : KDF_HASH;
+        params.hash;
 
-    if (hash !== "SHA-256") {
-        throw new Error("Unsupported KDF hash");
+    if (
+        !Number.isInteger(iterations) ||
+        iterations < 100000
+    ) {
+        throw new Error(
+            "Invalid PBKDF2 iterations"
+        );
+    }
+
+    if (hash !== KDF_HASH) {
+        throw new Error(
+            "Unsupported KDF hash"
+        );
     }
 
     const saltBytes =
@@ -336,17 +335,25 @@ export async function decryptIdentityPrivateKey(
             encryptedPrivateKey
         );
 
-    if (saltBytes.length !== SALT_LENGTH) {
-        throw new Error("Invalid salt length");
+    if (
+        saltBytes.length !== SALT_LENGTH
+    ) {
+        throw new Error(
+            "Invalid salt length"
+        );
     }
 
-    if (ivBytes.length !== AES_IV_LENGTH) {
-        throw new Error("Invalid IV length");
+    if (
+        ivBytes.length !== AES_IV_LENGTH
+    ) {
+        throw new Error(
+            "Invalid IV length"
+        );
     }
 
     const encryptionKey =
         await deriveEncryptionKey(
-            passphrase,
+            password,
             saltBytes,
             iterations
         );
@@ -369,29 +376,29 @@ export async function decryptIdentityPrivateKey(
         );
     }
 
-    return importPrivateKey(decrypted);
+    return importPrivateKey(
+        decrypted
+    );
 }
 
 
-/* =========================================================
- * Complete identity creation
- * ========================================================= */
-
 export async function createEncryptedIdentity(
-    passphrase
+    password
 ) {
-    validatePassphrase(passphrase);
+    validatePassword(password);
 
     const keyPair =
         await generateIdentityKeyPair();
 
     const publicKey =
-        await exportPublicKey(keyPair);
+        await exportPublicKey(
+            keyPair
+        );
 
     const encrypted =
         await encryptIdentityPrivateKey(
             keyPair.privateKey,
-            passphrase
+            password
         );
 
     return {
@@ -402,13 +409,9 @@ export async function createEncryptedIdentity(
 }
 
 
-/* =========================================================
- * Restore identity from server data
- * ========================================================= */
-
 export async function restoreIdentityFromServer(
     identity,
-    passphrase
+    password
 ) {
     if (
         !identity ||
@@ -419,10 +422,26 @@ export async function restoreIdentityFromServer(
         );
     }
 
+    if (
+        identity.version !== IDENTITY_VERSION
+    ) {
+        throw new Error(
+            "Unsupported identity version"
+        );
+    }
+
+    if (
+        identity.kdf !== KDF_NAME
+    ) {
+        throw new Error(
+            "Unsupported identity KDF"
+        );
+    }
+
     const privateKey =
         await decryptIdentityPrivateKey(
             identity.encryptedPrivateKey,
-            passphrase,
+            password,
             identity.salt,
             identity.iv,
             identity.kdfParams
@@ -430,14 +449,11 @@ export async function restoreIdentityFromServer(
 
     return {
         privateKey,
-        publicKey: identity.publicKey
+        publicKey:
+            identity.publicKey
     };
 }
 
-
-/* =========================================================
- * Export helpers
- * ========================================================= */
 
 export {
     arrayBufferToBase64,

@@ -23,7 +23,12 @@ function createIndexes(db) {
 
     CREATE INDEX IF NOT EXISTS idx_dm_reply_to
     ON direct_messages(reply_to_id);
+
+    CREATE INDEX IF NOT EXISTS idx_email_verification_codes_user_id
+    ON email_verification_codes(user_id);
   `);
 }
 
-module.exports = { createIndexes };
+module.exports = {
+  createIndexes
+};

@@ -12,6 +12,7 @@ const {
   updateAvatar: updateUserAvatar,
   updateBanner: updateUserBanner,
   updatePassword: updateUserPassword,
+  changePasswordWithIdentity,
   getStorageUsage,
 } = require('../services/user.service');
 
@@ -96,41 +97,197 @@ function updateBio(req, res) {
 async function changePassword(req, res) {
   const {
     current_password,
-    new_password
+    new_password,
+    identity
   } = req.body || {};
 
-  if (!current_password || !new_password) {
+
+  if (
+    !current_password ||
+    !new_password
+  ) {
     return res.status(400).json({
-      error: 'Current and new password required'
+      error:
+        'Current and new password required'
     });
   }
+
+
+  if (
+    typeof current_password !== 'string' ||
+    typeof new_password !== 'string'
+  ) {
+    return res.status(400).json({
+      error:
+        'Invalid password data'
+    });
+  }
+
 
   if (new_password.length < 6) {
     return res.status(400).json({
-      error: 'New password must be at least 6 characters'
+      error:
+        'New password must be at least 6 characters'
     });
   }
 
-  const user = findUserWithPassword(req.user.id);
+
+  const user =
+    findUserWithPassword(
+      req.user.id
+    );
+
 
   if (!user) {
     return res.status(404).json({
-      error: 'User not found'
+      error:
+        'User not found'
     });
   }
 
-  if (!(await comparePassword(current_password, user.password_hash))) {
+
+  const valid =
+    await comparePassword(
+      current_password,
+      user.password_hash
+    );
+
+
+  if (!valid) {
     return res.status(401).json({
-      error: 'Current password is incorrect'
+      error:
+        'Current password is incorrect'
     });
   }
 
-  await updateUserPassword(
+
+  /*
+   * If the user has an E2EE identity,
+   * the browser must provide its NEW
+   * encrypted-at-rest representation.
+   *
+   * The server does not decrypt it.
+   */
+  let validatedIdentity = null;
+
+
+  if (identity != null) {
+
+    if (
+      typeof identity !== 'object' ||
+      Array.isArray(identity)
+    ) {
+      return res.status(400).json({
+        error:
+          'Invalid identity data'
+      });
+    }
+
+
+    const {
+      encryptedPrivateKey,
+      kdf,
+      kdfParams,
+      salt,
+      iv,
+      version
+    } = identity;
+
+
+    if (
+      typeof encryptedPrivateKey !== 'string' ||
+      !encryptedPrivateKey.trim() ||
+
+      kdf !== 'PBKDF2-SHA-256' ||
+
+      !kdfParams ||
+      typeof kdfParams !== 'object' ||
+      Array.isArray(kdfParams) ||
+
+      !Number.isInteger(
+        kdfParams.iterations
+      ) ||
+
+      kdfParams.iterations < 100000 ||
+
+      kdfParams.hash !== 'SHA-256' ||
+
+      typeof salt !== 'string' ||
+      !salt.trim() ||
+
+      typeof iv !== 'string' ||
+      !iv.trim() ||
+
+      version !== 1
+    ) {
+      return res.status(400).json({
+        error:
+          'Invalid encrypted identity data'
+      });
+    }
+
+
+    /*
+     * Make sure an identity actually exists.
+     *
+     * Most importantly, we DO NOT accept a
+     * public key from the client here.
+     *
+     * The existing public key remains untouched.
+     */
+    const db =
+      getDb();
+
+    const existingIdentity =
+      db.prepare(`
+        SELECT
+          id
+        FROM identity_keys
+        WHERE user_id = ?
+      `).get(
+        req.user.id
+      );
+
+
+    if (!existingIdentity) {
+      return res.status(400).json({
+        error:
+          'Identity key does not exist'
+      });
+    }
+
+
+    validatedIdentity = {
+      encryptedPrivateKey:
+        encryptedPrivateKey.trim(),
+
+      kdf,
+
+      kdfParams,
+
+      salt:
+        salt.trim(),
+
+      iv:
+        iv.trim(),
+
+      version
+    };
+  }
+
+
+  /*
+   * Password hash + identity encryption
+   * are committed together.
+   */
+  await changePasswordWithIdentity(
     req.user.id,
-    new_password
+    new_password,
+    validatedIdentity
   );
 
-  res.json({
+
+  return res.json({
     success: true
   });
 }

@@ -5,6 +5,7 @@ const { getDb } = require('../config/database');
 const { hashPassword } = require('../utils/password');
 const constants = require('../config/constants');
 
+
 function normalizeUsername(username) {
   return username.trim().toLowerCase();
 }
@@ -207,6 +208,141 @@ async function updatePassword(userId, newPassword) {
 }
 
 
+/*
+ * Change the account password and re-encrypt the
+ * existing E2EE identity atomically.
+ *
+ * The browser decrypts the existing private key and
+ * re-encrypts it with the new password before calling
+ * this function.
+ *
+ * The server only receives:
+ *
+ *   encryptedPrivateKey
+ *   kdf
+ *   kdfParams
+ *   salt
+ *   iv
+ *   version
+ *
+ * The plaintext private key never reaches the server.
+ *
+ * IMPORTANT:
+ * The existing public key is deliberately NOT updated.
+ * Password changes must never create or replace an
+ * E2EE identity.
+ */
+async function changePasswordWithIdentity(
+  userId,
+  newPassword,
+  identity
+) {
+
+  const db = getDb();
+
+  const hash =
+    await hashPassword(
+      newPassword
+    );
+
+
+  const transaction =
+    db.transaction(() => {
+
+      /*
+       * Update the normal account password.
+       */
+      const passwordResult =
+        db.prepare(`
+          UPDATE users
+          SET password_hash = ?
+          WHERE id = ?
+        `).run(
+          hash,
+          userId
+        );
+
+
+      if (passwordResult.changes !== 1) {
+        throw new Error(
+          'Failed to update password'
+        );
+      }
+
+
+      /*
+       * If there is no identity payload,
+       * only change the account password.
+       *
+       * This keeps password changing possible
+       * for accounts that do not have an identity
+       * key yet.
+       */
+      if (!identity) {
+        return;
+      }
+
+
+      /*
+       * Update ONLY the encrypted identity data.
+       *
+       * public_key is intentionally absent here.
+       *
+       * Therefore:
+       *
+       *     old public key === new public key
+       *
+       * and the X25519 identity itself never changes.
+       */
+      const identityResult =
+        db.prepare(`
+          UPDATE identity_keys
+          SET
+            encrypted_private_key = ?,
+            kdf = ?,
+            kdf_params = ?,
+            salt = ?,
+            iv = ?,
+            version = ?,
+            updated_at = CURRENT_TIMESTAMP
+          WHERE user_id = ?
+        `).run(
+          identity.encryptedPrivateKey,
+          identity.kdf,
+          JSON.stringify(
+            identity.kdfParams
+          ),
+          identity.salt,
+          identity.iv,
+          identity.version,
+          userId
+        );
+
+
+      if (identityResult.changes !== 1) {
+        throw new Error(
+          'Failed to update identity encryption'
+        );
+      }
+    });
+
+
+  /*
+   * better-sqlite3 transactions are synchronous,
+   * so the callback itself is synchronous.
+   *
+   * The password hash was already generated
+   * before entering the transaction.
+   */
+  transaction();
+
+
+  return {
+    success: true
+  };
+}
+
+
 // Best-effort disk cleanup helper — mirrors the fire-and-forget
 // fs.unlink(path, err => {...}) pattern already used elsewhere in
 // this codebase (e.g. me.controller.js's old-avatar/banner cleanup)
@@ -215,13 +351,18 @@ async function updatePassword(userId, newPassword) {
 function unlinkQuietly(filePath) {
   fs.unlink(filePath, (err) => {
     if (err && err.code !== 'ENOENT') {
-      console.error('Failed to remove file during user deletion:', filePath, err.message);
+      console.error(
+        'Failed to remove file during user deletion:',
+        filePath,
+        err.message
+      );
     }
   });
 }
 
+
 // Deleting a user cascades (ON DELETE CASCADE, see database/schema)
-// to remove their row from `messages`/`direct_messages`/etc., but a
+// to remove their row in `messages`/`direct_messages`/etc., but a
 // DB cascade only ever removes *rows* — it has no idea their
 // avatar_path/banner_path/attachment_path columns pointed at real
 // files on disk in AVATAR_DIR/BANNER_DIR/CHAT_UPLOAD_DIR/
@@ -238,7 +379,9 @@ function collectUserOwnedFiles(userId) {
   const db = getDb();
 
   const user = db
-    .prepare('SELECT avatar_path, banner_path FROM users WHERE id = ?')
+    .prepare(
+      'SELECT avatar_path, banner_path FROM users WHERE id = ?'
+    )
     .get(userId);
 
   const chatAttachments = db
@@ -258,19 +401,39 @@ function collectUserOwnedFiles(userId) {
   const files = [];
 
   if (user && user.avatar_path) {
-    files.push(path.join(constants.AVATAR_DIR, user.avatar_path));
+    files.push(
+      path.join(
+        constants.AVATAR_DIR,
+        user.avatar_path
+      )
+    );
   }
 
   if (user && user.banner_path) {
-    files.push(path.join(constants.BANNER_DIR, user.banner_path));
+    files.push(
+      path.join(
+        constants.BANNER_DIR,
+        user.banner_path
+      )
+    );
   }
 
   for (const row of chatAttachments) {
-    files.push(path.join(constants.CHAT_UPLOAD_DIR, row.attachment_path));
+    files.push(
+      path.join(
+        constants.CHAT_UPLOAD_DIR,
+        row.attachment_path
+      )
+    );
   }
 
   for (const row of dmAttachments) {
-    files.push(path.join(constants.DM_UPLOAD_DIR, row.attachment_path));
+    files.push(
+      path.join(
+        constants.DM_UPLOAD_DIR,
+        row.attachment_path
+      )
+    );
   }
 
   return files;
@@ -281,21 +444,27 @@ function deleteUser(userId) {
 
   // Read out every file this user owns before the cascade delete
   // below removes the rows that record where they are.
-  const filesToRemove = collectUserOwnedFiles(userId);
+  const filesToRemove =
+    collectUserOwnedFiles(
+      userId
+    );
 
-  const result = getDb()
-    .prepare(`
-      DELETE FROM users
-      WHERE id = ?
-    `)
-    .run(userId);
+  const result =
+    getDb()
+      .prepare(`
+        DELETE FROM users
+        WHERE id = ?
+      `)
+      .run(userId);
 
   // Only clean up files once the row (and its cascade) actually
   // went through — if the DELETE affected nothing (e.g. a
   // already-deleted/nonexistent id slipped through), there's nothing
   // to remove and no cascade to have orphaned anything.
   if (result.changes > 0) {
-    filesToRemove.forEach(unlinkQuietly);
+    filesToRemove.forEach(
+      unlinkQuietly
+    );
   }
 
   return result;
@@ -345,6 +514,7 @@ module.exports = {
   updateAvatar,
   updateBanner,
   updatePassword,
+  changePasswordWithIdentity,
 
   getStorageUsage,
 

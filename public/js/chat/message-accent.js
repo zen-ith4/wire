@@ -62,7 +62,7 @@ export function setMessageAccent(el) {
 /**
  * Re-paints every currently-rendered message (group chat + any open
  * DM thread) with the viewer's current accent color. Call this right
- * after the viewer's own accent_color changes (Settings) so already
+ * after the viewer's owna accent_color changes (Settings) so already
  * on-screen messages update instantly instead of waiting for the next
  * render/reload.
  */

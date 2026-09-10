@@ -399,6 +399,17 @@ async function bootstrap() {
         }
 
 
+        /*
+         * The freshly authenticated user is now
+         * available in auth.js. Apply the server-side
+         * accent immediately so it takes priority over
+         * the login-time localStorage accent.
+         */
+        initAccent(
+          user.accent_color || null
+        );
+
+
         await startApplication(
           user,
           currentToken
@@ -481,6 +492,16 @@ async function bootstrap() {
           }
 
 
+          /*
+           * Login has restored the authenticated user.
+           * Re-apply the database accent before showing
+           * the application.
+           */
+          initAccent(
+            user.accent_color || null
+          );
+
+
           await startApplication(
             user,
             currentToken
@@ -543,6 +564,16 @@ async function bootstrap() {
               'Authentication state is unavailable'
             );
           }
+
+
+          /*
+           * Login has restored the authenticated user.
+           * Apply the server-side accent before the
+           * application UI is initialized.
+           */
+          initAccent(
+            user.accent_color || null
+          );
 
 
           await startApplication(

@@ -12,14 +12,26 @@
 // --message-accent-contrast custom properties (rather than reading
 // the global --accent-bg/--indigo vars directly in CSS) so that a
 // live accent change (see repaintAllMessageAccents()) can repaint
-// every currently-rendered bubble in one pass without a full re-render.
+// every currently-rendered bubble in one pass without a full
+// re-render.
 // ============================================================
 
 import { getCurrentUser } from '../core/auth.js';
-import { ACCENT_PRESETS, rgbStringFromHex, contrastTextFor, getUseAccentForBubbles } from '../settings/theme.js';
+import {
+  ACCENT_PRESETS,
+  rgbStringFromHex,
+  contrastTextFor,
+  getUseAccentForBubbles,
+  getCurrentAccentHex
+} from '../settings/theme.js';
 
-// Sensible fallback if the viewer somehow has no accent_color set yet
-// (e.g. very first render before /api/me has resolved).
+// Fallback chain:
+// 1. Current user's persisted DB accent_color
+// 2. Current local accent (wire-accent)
+// 3. Neutral preset
+//
+// This matches the same fallback behavior used by the rest of the
+// accent system in settings/theme.js.
 const FALLBACK_ACCENT_HEX = ACCENT_PRESETS[0].hex;
 
 function isValidHex(hex) {
@@ -28,7 +40,12 @@ function isValidHex(hex) {
 
 function currentViewerAccentHex() {
   const me = getCurrentUser();
-  return isValidHex(me?.accent_color) ? me.accent_color : FALLBACK_ACCENT_HEX;
+
+  if (isValidHex(me?.accent_color)) {
+    return me.accent_color;
+  }
+
+  return getCurrentAccentHex() || FALLBACK_ACCENT_HEX;
 }
 
 function paint(el, hex) {
@@ -62,7 +79,7 @@ export function setMessageAccent(el) {
 /**
  * Re-paints every currently-rendered message (group chat + any open
  * DM thread) with the viewer's current accent color. Call this right
- * after the viewer's owna accent_color changes (Settings) so already
+ * after the viewer's own accent_color changes (Settings) so already
  * on-screen messages update instantly instead of waiting for the next
  * render/reload.
  */

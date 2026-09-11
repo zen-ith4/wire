@@ -257,7 +257,8 @@ async function verifyEmail(req, res) {
         email,
         email_verified,
         is_admin,
-        is_active
+        is_active,
+        accent_color
       FROM users
       WHERE id = ?
     `).get(userId);
@@ -292,6 +293,7 @@ async function verifyEmail(req, res) {
     is_admin: Boolean(
       user.is_admin
     ),
+    accent_color: user.accent_color || null,
     token
   });
 }
@@ -469,7 +471,8 @@ async function verifyTwoFactor(req, res) {
         email_verified,
         email_2fa_enabled,
         is_admin,
-        is_active
+        is_active,
+        accent_color
       FROM users
       WHERE id = ?
       LIMIT 1
@@ -521,6 +524,7 @@ async function verifyTwoFactor(req, res) {
     is_admin: Boolean(
       user.is_admin
     ),
+    accent_color: user.accent_color || null,
     email_2fa_enabled: true,
     token
   });

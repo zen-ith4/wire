@@ -36,7 +36,8 @@ async function authenticateUser(username, password) {
       email_2fa_enabled,
       password_hash,
       is_admin,
-      is_active
+      is_active,
+      accent_color
     FROM users
     WHERE username = ?
   `).get(username);
@@ -80,6 +81,7 @@ async function authenticateUser(username, password) {
         email: user.email,
         email_verified: false,
         is_admin: Boolean(user.is_admin),
+        accent_color: user.accent_color || null,
         requiresEmailVerification: true,
         token: null
       };
@@ -103,6 +105,7 @@ async function authenticateUser(username, password) {
         email: user.email,
         email_verified: true,
         is_admin: Boolean(user.is_admin),
+        accent_color: user.accent_color || null,
 
         requiresTwoFactor: true,
         twoFactorMethod: 'email',
@@ -127,6 +130,7 @@ async function authenticateUser(username, password) {
       ? true
       : Boolean(user.email_verified),
     is_admin: Boolean(user.is_admin),
+    accent_color: user.accent_color || null,
 
     token: signToken({
       id: user.id,
@@ -315,7 +319,8 @@ async function registerUser(username, email, password) {
         email,
         email_verified,
         is_admin,
-        is_active
+        is_active,
+        accent_color
       FROM users
       WHERE id = ?
     `).get(userId);
@@ -333,6 +338,7 @@ async function registerUser(username, email, password) {
       email: user.email,
       email_verified: true,
       is_admin: Boolean(user.is_admin),
+      accent_color: user.accent_color || null,
       requiresEmailVerification: false,
 
       token: signToken({

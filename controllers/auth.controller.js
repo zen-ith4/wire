@@ -24,6 +24,10 @@ const {
   clearLoginAttempts
 } = require('../middleware/rateLimiter');
 
+const {
+  isEmailEnabled
+} = require('../services/email.service');
+
 
 /* =========================================================
  * Login
@@ -177,6 +181,13 @@ async function register(req, res) {
  * ========================================================= */
 
 async function verifyEmail(req, res) {
+  if (!isEmailEnabled()) {
+    return res.status(400).json({
+      error:
+        'Email feature disabled'
+    });
+  }
+
   const userId =
     req.body?.userId;
 
@@ -291,6 +302,13 @@ async function verifyEmail(req, res) {
  * ========================================================= */
 
 async function resendVerification(req, res) {
+  if (!isEmailEnabled()) {
+    return res.status(400).json({
+      error:
+        'Email feature disabled'
+    });
+  }
+
   const userId =
     req.body?.userId;
 
@@ -370,6 +388,13 @@ async function resendVerification(req, res) {
  * ========================================================= */
 
 async function verifyTwoFactor(req, res) {
+  if (!isEmailEnabled()) {
+    return res.status(400).json({
+      error:
+        'Email feature disabled'
+    });
+  }
+
   const userId =
     req.body?.userId;
 

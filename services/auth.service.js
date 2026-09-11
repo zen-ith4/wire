@@ -15,6 +15,10 @@ const {
   createAndSendTwoFactorCode
 } = require('./email2fa.service');
 
+const {
+  isEmailEnabled
+} = require('./email.service');
+
 
 async function authenticateUser(username, password) {
   const db = getDb();
@@ -56,58 +60,72 @@ async function authenticateUser(username, password) {
   }
 
   /*
-   * Password is correct, but the account is not
-   * allowed to receive a normal authentication token
-   * until the email has been verified.
+   * When the email subsystem is disabled, authentication must
+   * have no dependency on email state at all. A stale
+   * "email_verified = 0" or "email_2fa_enabled = 1" left over
+   * from when email was enabled must never block or challenge
+   * login — the user goes straight to a normal JWT below.
    */
-  if (user.email_verified === 0) {
-    return {
-      id: user.id,
-      username: user.username,
-      email: user.email,
-      email_verified: false,
-      is_admin: Boolean(user.is_admin),
-      requiresEmailVerification: true,
-      token: null
-    };
+  if (isEmailEnabled()) {
+
+    /*
+     * Password is correct, but the account is not
+     * allowed to receive a normal authentication token
+     * until the email has been verified.
+     */
+    if (user.email_verified === 0) {
+      return {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        email_verified: false,
+        is_admin: Boolean(user.is_admin),
+        requiresEmailVerification: true,
+        token: null
+      };
+    }
+
+    /*
+     * Email is verified.
+     *
+     * If Email 2FA is enabled, do NOT issue the
+     * normal JWT yet. Create a temporary 2FA challenge
+     * and require the email OTP first.
+     */
+    if (user.email_2fa_enabled === 1) {
+
+      const challenge =
+        await createAndSendTwoFactorCode(user);
+
+      return {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        email_verified: true,
+        is_admin: Boolean(user.is_admin),
+
+        requiresTwoFactor: true,
+        twoFactorMethod: 'email',
+        challengeId: challenge.challengeId,
+
+        token: null
+      };
+    }
   }
 
   /*
-   * Email is verified.
-   *
-   * If Email 2FA is enabled, do NOT issue the
-   * normal JWT yet. Create a temporary 2FA challenge
-   * and require the email OTP first.
-   */
-  if (user.email_2fa_enabled === 1) {
-
-    const challenge =
-      await createAndSendTwoFactorCode(user);
-
-    return {
-      id: user.id,
-      username: user.username,
-      email: user.email,
-      email_verified: true,
-      is_admin: Boolean(user.is_admin),
-
-      requiresTwoFactor: true,
-      twoFactorMethod: 'email',
-      challengeId: challenge.challengeId,
-
-      token: null
-    };
-  }
-
-  /*
-   * Verified account with Email 2FA disabled.
-   * Issue the normal authentication JWT.
+   * Either email is disabled (authentication never depends on
+   * email state), or email is enabled and the account is
+   * verified with Email 2FA disabled. Either way, issue the
+   * normal authentication JWT.
    */
   return {
     id: user.id,
     username: user.username,
     email: user.email,
-    email_verified: true,
+    email_verified: isEmailEnabled()
+      ? true
+      : Boolean(user.email_verified),
     is_admin: Boolean(user.is_admin),
 
     token: signToken({
@@ -203,6 +221,15 @@ async function registerUser(username, email, password) {
   const passwordHash =
     await hashPassword(password);
 
+  /*
+   * When email is disabled there is no verification mechanism
+   * available, so newly created users are considered verified
+   * immediately. The email address may still be stored as
+   * account metadata, but no email-dependent flow is triggered.
+   */
+  const emailEnabled = isEmailEnabled();
+  const initialEmailVerified = emailEnabled ? 0 : 1;
+
 
   let userId;
 
@@ -214,11 +241,12 @@ async function registerUser(username, email, password) {
         password_hash,
         email_verified
       )
-      VALUES (?, ?, ?, 0)
+      VALUES (?, ?, ?, ?)
     `).run(
       username,
       email,
-      passwordHash
+      passwordHash,
+      initialEmailVerified
     );
 
     userId =
@@ -291,6 +319,29 @@ async function registerUser(username, email, password) {
       FROM users
       WHERE id = ?
     `).get(userId);
+
+
+  if (!emailEnabled) {
+    /*
+     * No verification mechanism is available. The account is
+     * already fully usable, so issue the normal authentication
+     * JWT immediately instead of requiring a separate login.
+     */
+    return {
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      email_verified: true,
+      is_admin: Boolean(user.is_admin),
+      requiresEmailVerification: false,
+
+      token: signToken({
+        id: user.id,
+        username: user.username,
+        is_admin: Boolean(user.is_admin)
+      })
+    };
+  }
 
 
   await createAndSendVerificationCode(

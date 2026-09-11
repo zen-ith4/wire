@@ -113,6 +113,15 @@ export async function renderSettings() {
     const email2FAEnabled =
       Boolean(security.email_2fa_enabled);
 
+    /*
+     * The backend-provided feature state is authoritative.
+     * The entire Email 2FA section is omitted from the
+     * rendered DOM whenever email is disabled server-side —
+     * this is not just a disabled toggle.
+     */
+    const emailFeatureEnabled =
+      Boolean(security.email_enabled);
+
 
     // ========================================================
     // Accent presets
@@ -652,7 +661,14 @@ export async function renderSettings() {
 
 
           <!-- Email 2FA -->
-
+          <!--
+            The entire section is omitted from the DOM (not just
+            hidden/disabled) when the backend reports the email
+            feature as disabled.
+          -->
+          ${
+            emailFeatureEnabled
+              ? `
           <div
             class="settings-row"
             style="
@@ -822,6 +838,9 @@ export async function renderSettings() {
             </div>
 
           </div>
+          `
+              : ''
+          }
 
         </div>
 

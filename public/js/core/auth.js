@@ -352,9 +352,7 @@ export async function register(
   if (
     !data ||
     data.id == null ||
-    !data.username ||
-    !data.email ||
-    data.requiresEmailVerification !== true
+    !data.username
   ) {
     throw new Error(
       'Invalid registration response'
@@ -363,19 +361,56 @@ export async function register(
 
 
   /*
-   * Registration does not authenticate the user.
-   *
-   * Keep the password only in memory so that the
-   * E2EE identity can be initialized immediately
-   * after successful email verification.
+   * Email is enabled: registration does not authenticate the
+   * user yet. Keep the password only in memory so that the
+   * E2EE identity can be initialized immediately after
+   * successful email verification.
    */
-  pendingVerification = {
-    userId: data.id,
-    username: data.username,
-    email: data.email,
-    password
-  };
+  if (data.requiresEmailVerification === true) {
 
+    if (!data.email) {
+      throw new Error(
+        'Invalid registration response'
+      );
+    }
+
+    pendingVerification = {
+      userId: data.id,
+      username: data.username,
+      email: data.email,
+      password
+    };
+
+    return data;
+  }
+
+
+  /*
+   * Email is disabled: there is no verification step, so the
+   * server considers the account immediately usable and returns
+   * a normal authentication token right away.
+   */
+  if (!data.token) {
+    throw new Error(
+      'Invalid registration response'
+    );
+  }
+
+  setToken(data.token);
+
+  setCurrentUser({
+    id: data.id,
+    username: data.username,
+    email: data.email ?? null,
+    email_verified: true,
+    is_admin: Boolean(
+      data.is_admin
+    ),
+    email_2fa_enabled: Boolean(
+      data.email_2fa_enabled
+    ),
+    accent_color: data.accent_color ?? null
+  });
 
   return data;
 }
@@ -1318,26 +1353,61 @@ function renderAuthCard(
 
 
         /*
-         * Creates the account and sends the
-         * verification code.
+         * When email is enabled, this creates the account and
+         * sends the verification code (no JWT is returned yet).
          *
-         * No JWT is returned.
+         * When email is disabled, the server has no verification
+         * mechanism, so the account comes back already usable
+         * with a normal JWT.
          */
-        await register(
-          username,
-          email,
-          password
-        );
+        const registerData =
+          await register(
+            username,
+            email,
+            password
+          );
+
+
+        if (
+          registerData.requiresEmailVerification === true
+        ) {
+
+          /*
+           * Move directly to verification.
+           */
+          renderVerification(
+            pendingVerification,
+            onSuccess
+          );
+
+          return;
+        }
 
 
         /*
-         * Move directly to verification.
+         * Email is disabled: proceed straight to identity
+         * initialization, exactly like a normal login.
          */
-        renderVerification(
-          pendingVerification,
-          onSuccess
+        await initializeIdentity(
+          password,
+          async () => {
+
+            if (
+              typeof onSuccess === 'function'
+            ) {
+              await onSuccess();
+            }
+
+          }
         );
 
+        if (passwordInput) {
+          passwordInput.value = '';
+        }
+
+        if (confirmInput) {
+          confirmInput.value = '';
+        }
 
         return;
       }

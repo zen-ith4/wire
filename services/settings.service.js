@@ -4,6 +4,7 @@ const {
   createAndSendTwoFactorCode,
   verifyTwoFactorCode
 } = require('./email2fa.service');
+const { isEmailEnabled } = require('./email.service');
 
 async function getSecuritySettings(userId) {
   const user = getDb()
@@ -23,6 +24,7 @@ async function getSecuritySettings(userId) {
   }
 
   return {
+    email_enabled: isEmailEnabled(),
     email_verified: Boolean(user.email_verified),
     email_2fa_enabled: Boolean(user.email_2fa_enabled)
   };
@@ -30,6 +32,20 @@ async function getSecuritySettings(userId) {
 
 
 async function beginEnableEmail2FA(userId, currentPassword) {
+  /*
+   * Email 2FA cannot be enabled while the email subsystem is
+   * disabled — there is no delivery mechanism for the OTP, and
+   * the HMAC secret used to hash it is not guaranteed to be
+   * configured. Fail fast with a normal client error.
+   */
+  if (!isEmailEnabled()) {
+    const error = new Error(
+      'Email 2FA is unavailable because the email feature is disabled'
+    );
+    error.code = 'EMAIL_DISABLED';
+    throw error;
+  }
+
   if (!currentPassword) {
     const error = new Error('Current password is required');
     error.code = 'PASSWORD_REQUIRED';
@@ -100,6 +116,20 @@ async function confirmEnableEmail2FA(
   challengeId,
   code
 ) {
+  /*
+   * Reject stale challenges outright once email is disabled —
+   * including challenges created while email was previously
+   * enabled. This also avoids hashing the submitted code against
+   * a secret that is not guaranteed to be configured anymore.
+   */
+  if (!isEmailEnabled()) {
+    const error = new Error(
+      'Email 2FA is unavailable because the email feature is disabled'
+    );
+    error.code = 'EMAIL_DISABLED';
+    throw error;
+  }
+
   const result =
     await verifyTwoFactorCode(
       userId,

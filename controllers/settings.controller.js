@@ -64,6 +64,12 @@ async function enableEmail2FA(req, res) {
       });
     }
 
+    if (error.code === 'EMAIL_DISABLED') {
+      return res.status(409).json({
+        error: 'Email 2FA is unavailable because the email feature is disabled'
+      });
+    }
+
     throw error;
   }
 }
@@ -124,6 +130,12 @@ async function verifyEmail2FA(req, res) {
     if (error.code === 'INVALID_CHALLENGE') {
       return res.status(400).json({
         error: 'This verification session is no longer valid'
+      });
+    }
+
+    if (error.code === 'EMAIL_DISABLED') {
+      return res.status(409).json({
+        error: 'Email 2FA is unavailable because the email feature is disabled'
       });
     }
 

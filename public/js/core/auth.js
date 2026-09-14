@@ -57,14 +57,6 @@ export function logout() {
   pendingVerification = null;
 
   /*
-<<<<<<< HEAD
-   * An explicit logout also revokes "remember me on this
-   * device" — otherwise the next launch would silently sign
-   * the account back in, which isn't what logging out means.
-   */
-  if (window.wireDesktop?.isElectron) {
-    window.wireDesktop.clearCredentials().catch(() => {});
-=======
    * Explicit sign-out must also invalidate auto-unlock: clear the
    * OS-secured unlock key (Electron only) so the next launch goes
    * through the normal password flow, exactly like a fresh device.
@@ -239,7 +231,6 @@ export async function attemptAutoUnlock(
     await clearPersistedUnlockKey(user);
 
     return false;
->>>>>>> 19d39c7 (fixed: E2EE login coockie)
   }
 }
 
@@ -1390,20 +1381,6 @@ function renderAuthCard(
             : ''
         }
 
-        ${
-          !isRegister && window.wireDesktop?.isElectron
-            ? `
-              <label class="auth-remember-me">
-                <input
-                  type="checkbox"
-                  id="auth-remember-me"
-                >
-                Remember me on this device
-              </label>
-            `
-            : ''
-        }
-
         <button
           type="submit"
           class="btn btn-primary"
@@ -1733,39 +1710,6 @@ function renderAuthCard(
 
         }
       );
-
-
-      /*
-       * Desktop app only: apply the "remember me on this
-       * device" choice now that login + identity unlock
-       * both succeeded. Never done on the plain website.
-       */
-      if (window.wireDesktop?.isElectron) {
-
-        const rememberMeInput =
-          document.getElementById(
-            'auth-remember-me'
-          );
-
-        try {
-
-          if (rememberMeInput?.checked) {
-            await window.wireDesktop.saveCredentials(
-              username,
-              password
-            );
-          } else {
-            await window.wireDesktop.clearCredentials();
-          }
-
-        } catch (storageError) {
-
-          console.error(
-            'Failed to update remembered credentials:',
-            storageError
-          );
-        }
-      }
 
 
       /*

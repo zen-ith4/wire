@@ -7,7 +7,8 @@ import {
   getCurrentUser,
   setCurrentUser,
   renderLogin,
-  logout
+  logout,
+  initializeIdentity
 } from './auth.js';
 
 import { showToast } from './utils.js';
@@ -339,6 +340,77 @@ async function startApplication(
 
 
 /* =========================================================
+ * Desktop-only silent identity unlock
+ *
+ * Only runs inside the Electron app (window.wireDesktop), and only
+ * when the user previously opted in via "Remember me on this
+ * device" at login. The plain website always falls through to the
+ * normal password prompt, exactly as before.
+ * ========================================================= */
+
+async function tryAutoUnlockIdentity(user, token) {
+
+  if (!window.wireDesktop?.isElectron) {
+    return false;
+  }
+
+  let stored = null;
+
+  try {
+    stored = await window.wireDesktop.getCredentials();
+  } catch (err) {
+    console.error('Failed to read remembered credentials:', err);
+    return false;
+  }
+
+  if (
+    !stored ||
+    stored.username !== user.username
+  ) {
+    return false;
+  }
+
+  try {
+
+    await initializeIdentity(
+      stored.password,
+      async () => {
+
+        initAccent(
+          user.accent_color || null
+        );
+
+        await startApplication(
+          user,
+          token
+        );
+      }
+    );
+
+    return true;
+
+  } catch (err) {
+
+    /*
+     * Most likely the account password was changed
+     * elsewhere since credentials were remembered. Drop
+     * the stale blob and fall back to the normal login
+     * form instead of failing silently forever.
+     */
+    console.error('Silent identity unlock failed:', err);
+
+    try {
+      await window.wireDesktop.clearCredentials();
+    } catch {
+      // ignore
+    }
+
+    return false;
+  }
+}
+
+
+/* =========================================================
  * Bootstrap
  * ========================================================= */
 
@@ -468,6 +540,16 @@ async function bootstrap() {
        * decrypt the private identity key without the
        * user's password.
        *
+       * Desktop app: if the user opted in to "Remember me
+       * on this device", try silently supplying the stored
+       * password before ever showing a login form.
+       */
+
+      if (await tryAutoUnlockIdentity(me, token)) {
+        return;
+      }
+
+      /*
        * Render the normal login form again so the
        * password can be supplied to the identity layer.
        */

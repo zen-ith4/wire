@@ -7,8 +7,8 @@ button{font-family:inherit;}
 }
 .btn:hover{background:var(--accent-bg);border-color:var(--accent-border);color:var(--text);}
 .btn:active{background:var(--accent-hover-bg);}
-.btn-primary{background:rgb(var(--indigo));border-color:rgb(var(--indigo));color:#fff;}
-.btn-primary:hover{background:#87879C;border-color:#87879C;}
+.btn-primary{background:rgb(var(--indigo));border-color:rgb(var(--indigo));color:var(--accent-contrast);}
+.btn-primary:hover{background:#87879C;border-color:#87879C;color:#fff;}
 .btn-danger{background:rgba(var(--red),.12);border-color:rgba(var(--red),.3);color:#D6A3A3;}
 .btn-danger:hover{background:rgba(var(--red),.2);}
 .btn-ghost{background:transparent;border:1px solid transparent;}

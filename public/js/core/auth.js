@@ -52,6 +52,15 @@ export function logout() {
   setToken(null);
   currentUser = null;
   pendingVerification = null;
+
+  /*
+   * An explicit logout also revokes "remember me on this
+   * device" — otherwise the next launch would silently sign
+   * the account back in, which isn't what logging out means.
+   */
+  if (window.wireDesktop?.isElectron) {
+    window.wireDesktop.clearCredentials().catch(() => {});
+  }
 }
 
 
@@ -1185,6 +1194,20 @@ function renderAuthCard(
             : ''
         }
 
+        ${
+          !isRegister && window.wireDesktop?.isElectron
+            ? `
+              <label class="auth-remember-me">
+                <input
+                  type="checkbox"
+                  id="auth-remember-me"
+                >
+                Remember me on this device
+              </label>
+            `
+            : ''
+        }
+
         <button
           type="submit"
           class="btn btn-primary"
@@ -1514,6 +1537,39 @@ function renderAuthCard(
 
         }
       );
+
+
+      /*
+       * Desktop app only: apply the "remember me on this
+       * device" choice now that login + identity unlock
+       * both succeeded. Never done on the plain website.
+       */
+      if (window.wireDesktop?.isElectron) {
+
+        const rememberMeInput =
+          document.getElementById(
+            'auth-remember-me'
+          );
+
+        try {
+
+          if (rememberMeInput?.checked) {
+            await window.wireDesktop.saveCredentials(
+              username,
+              password
+            );
+          } else {
+            await window.wireDesktop.clearCredentials();
+          }
+
+        } catch (storageError) {
+
+          console.error(
+            'Failed to update remembered credentials:',
+            storageError
+          );
+        }
+      }
 
 
       /*

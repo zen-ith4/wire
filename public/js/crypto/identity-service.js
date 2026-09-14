@@ -2,7 +2,9 @@ import {
     createEncryptedIdentity,
     restoreIdentityFromServer,
     decryptIdentityPrivateKey,
-    encryptIdentityPrivateKey
+    encryptIdentityPrivateKey,
+    deriveIdentityUnlockKey,
+    decryptIdentityPrivateKeyWithDerivedKey
 } from "./identity.js";
 
 
@@ -224,9 +226,25 @@ export async function createIdentity(
             identity.publicKey
     };
 
+    /*
+     * Also hand back the derived unlock key (see identity.js) so
+     * callers on Electron can cache it for auto-unlock on the next
+     * launch. Browser callers can simply ignore this field - it is
+     * meaningless without the OS-level secure storage Electron
+     * provides.
+     */
+    const unlockKey =
+        await deriveIdentityUnlockKey(
+            password,
+            identity.salt,
+            identity.kdfParams
+        );
+
     return {
         publicKey:
-            currentIdentity.publicKey
+            currentIdentity.publicKey,
+
+        unlockKey
     };
 }
 
@@ -291,6 +309,102 @@ export async function restoreIdentity(
 
     console.log(
         "[IdentityService] Identity restored"
+    );
+
+    /*
+     * See createIdentity() above - same reasoning.
+     */
+    const unlockKey =
+        await deriveIdentityUnlockKey(
+            password,
+            identity.salt,
+            identity.kdfParams
+        );
+
+    return {
+        publicKey:
+            currentIdentity.publicKey,
+
+        unlockKey
+    };
+}
+
+
+/*
+ * Unlocks the identity using previously-cached unlock material
+ * (see deriveIdentityUnlockKey in identity.js) instead of a
+ * password. Used exclusively by the Electron auto-unlock path.
+ *
+ * This never accepts, derives from, or has access to a password -
+ * only the already-derived key bytes a prior successful
+ * createIdentity()/restoreIdentity() call produced.
+ */
+export async function restoreIdentityWithUnlockKey(
+    unlockKey,
+    token
+) {
+    requireToken(token);
+
+    if (
+        typeof unlockKey !== "string" ||
+        !unlockKey
+    ) {
+        throw new Error(
+            "Unlock key is required"
+        );
+    }
+
+    if (currentIdentity) {
+        throw new Error(
+            "Identity is already unlocked"
+        );
+    }
+
+    const identity =
+        await fetchIdentity(token);
+
+    if (!identity.exists) {
+        throw new Error(
+            "Identity does not exist"
+        );
+    }
+
+    if (
+        identity.version !== 1
+    ) {
+        throw new Error(
+            "Unsupported identity version"
+        );
+    }
+
+    if (
+        identity.kdf !== "PBKDF2-SHA-256"
+    ) {
+        throw new Error(
+            "Unsupported identity KDF"
+        );
+    }
+
+    console.log(
+        "[IdentityService] Auto-unlocking identity..."
+    );
+
+    const privateKey =
+        await decryptIdentityPrivateKeyWithDerivedKey(
+            identity.encryptedPrivateKey,
+            unlockKey,
+            identity.iv
+        );
+
+    currentIdentity = {
+        privateKey,
+
+        publicKey:
+            identity.publicKey
+    };
+
+    console.log(
+        "[IdentityService] Identity auto-unlocked"
     );
 
     return {

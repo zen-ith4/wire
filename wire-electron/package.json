@@ -1,0 +1,97 @@
+{
+  "name": "wire",
+  "version": "1.0.0",
+  "description": "Private Drive with Chat, DM, and WireGuard",
+  "main": "electron/main/index.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "dev:watch": "nodemon",
+    "server": "node server.js",
+    "server:dev": "nodemon server.js",
+    "electron": "electron .",
+    "electron:dev": "cross-env NODE_ENV=development electron .",
+    "build": "electron-builder",
+    "build:linux": "electron-builder --linux",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac",
+    "build:dir": "electron-builder --dir"
+  },
+  "dependencies": {
+    "@jaames/iro": "^5.5.2",
+    "bcrypt": "^6.0.0",
+    "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^13.0.3",
+    "dotenv": "^16.0.3",
+    "express": "^4.18.2",
+    "ipaddr.js": "^2.0.1",
+    "jsonwebtoken": "^9.0.0",
+    "mime-types": "^3.0.2",
+    "multer": "^1.4.5-lts.2",
+    "nodemailer": "^10.0.2",
+    "socket.io": "^4.5.4"
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3",
+    "electron": "^44.3.0",
+    "electron-builder": "^25.1.8",
+    "jsdom": "^30.0.1",
+    "nodemon": "^3.1.14"
+  },
+  "build": {
+    "appId": "com.wire.desktop",
+    "productName": "Wire",
+    "executableName": "wire",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "directories": {
+      "output": "release",
+      "buildResources": "electron/build"
+    },
+    "files": [
+      "electron/**/*",
+      "package.json",
+      "!electron/**/*.map"
+    ],
+    "asar": true,
+    "linux": {
+      "icon": "electron/build/icons",
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "Network"
+    },
+    "win": {
+      "icon": "electron/build/icons/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "mac": {
+      "icon": "electron/build/icons/icon.png",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.social-networking"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}

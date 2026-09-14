@@ -2,7 +2,8 @@ import { api } from './api.js';
 
 import {
   createIdentity,
-  restoreIdentity
+  restoreIdentity,
+  restoreIdentityWithUnlockKey
 } from '../crypto/identity-service.js';
 
 
@@ -49,17 +50,196 @@ export function setCurrentUser(user) {
 
 
 export function logout() {
+  const signedOutUser = currentUser;
+
   setToken(null);
   currentUser = null;
   pendingVerification = null;
 
   /*
+<<<<<<< HEAD
    * An explicit logout also revokes "remember me on this
    * device" — otherwise the next launch would silently sign
    * the account back in, which isn't what logging out means.
    */
   if (window.wireDesktop?.isElectron) {
     window.wireDesktop.clearCredentials().catch(() => {});
+=======
+   * Explicit sign-out must also invalidate auto-unlock: clear the
+   * OS-secured unlock key (Electron only) so the next launch goes
+   * through the normal password flow, exactly like a fresh device.
+   *
+   * Fire-and-forget: logout() has always been synchronous and
+   * existing callers (api.js on a real 401, the Settings sign-out
+   * button before window.location.reload()) call it without
+   * awaiting. The clear is a local IPC round-trip to the already-
+   * running main process, which completes independently of this
+   * renderer reloading.
+   */
+  clearPersistedUnlockKey(signedOutUser).catch(err => {
+    console.error(
+      '[Identity] Failed to clear unlock key on logout:',
+      err
+    );
+  });
+}
+
+
+/* =========================================================
+ * Auto-unlock (Electron only)
+ *
+ * The E2EE identity's derived unlock key (see identity.js /
+ * identity-service.js) can be cached in OS-level secure storage
+ * (Electron's safeStorage) so a valid, already-authenticated
+ * session can restore the identity on the next launch without a
+ * password prompt. None of this exists in the browser build -
+ * every function here is a no-op there.
+ * ========================================================= */
+
+function isElectron() {
+  return (
+    typeof window !== 'undefined' &&
+    Boolean(
+      window.electronAPI &&
+      window.electronAPI.isElectron
+    )
+  );
+}
+
+
+async function persistUnlockKey(
+  unlockKey,
+  user
+) {
+  if (
+    !isElectron() ||
+    !unlockKey ||
+    !user
+  ) {
+    return;
+  }
+
+  try {
+
+    await window.electronAPI.storeIdentityUnlockKey(
+      window.location.origin,
+      user.id,
+      unlockKey
+    );
+
+  } catch (err) {
+
+    // Non-fatal: auto-unlock simply won't be available next
+    // launch. The normal password flow is unaffected.
+    console.error(
+      '[Identity] Failed to persist unlock key:',
+      err
+    );
+  }
+}
+
+
+export async function clearPersistedUnlockKey(user) {
+  if (
+    !isElectron() ||
+    !user
+  ) {
+    return;
+  }
+
+  try {
+
+    await window.electronAPI.clearIdentityUnlockKey(
+      window.location.origin,
+      user.id
+    );
+
+  } catch (err) {
+
+    console.error(
+      '[Identity] Failed to clear unlock key:',
+      err
+    );
+  }
+}
+
+
+/*
+ * Attempts to unlock the E2EE identity using material cached from
+ * a previous successful login on this device - no password
+ * prompt. Returns true if the identity is now unlocked, false if
+ * auto-unlock isn't available/applicable (browser, first login on
+ * this device, or the cached material is missing/stale) - callers
+ * should fall back to the normal password unlock (renderUnlock)
+ * in that case.
+ */
+export async function attemptAutoUnlock(
+  user,
+  currentToken
+) {
+  if (
+    !isElectron() ||
+    !user ||
+    !currentToken
+  ) {
+    return false;
+  }
+
+  let cached;
+
+  try {
+
+    cached =
+      await window.electronAPI.getIdentityUnlockKey(
+        window.location.origin,
+        user.id
+      );
+
+  } catch (err) {
+
+    console.error(
+      '[Identity] Failed to read unlock key:',
+      err
+    );
+
+    return false;
+  }
+
+  const unlockKey =
+    cached && cached.unlockKey;
+
+  if (!unlockKey) {
+    return false;
+  }
+
+  try {
+
+    await restoreIdentityWithUnlockKey(
+      unlockKey,
+      currentToken
+    );
+
+    return true;
+
+  } catch (err) {
+
+    /*
+     * The cached material is missing, stale (e.g. the account
+     * password was changed elsewhere), or otherwise fails to
+     * decrypt. Treat this exactly like "not available": clear it
+     * so we don't keep retrying a dead key on every future
+     * launch, and let the caller fall back to the password
+     * prompt.
+     */
+    console.warn(
+      '[Identity] Auto-unlock failed, falling back to password:',
+      err
+    );
+
+    await clearPersistedUnlockKey(user);
+
+    return false;
+>>>>>>> 19d39c7 (fixed: E2EE login coockie)
   }
 }
 
@@ -112,13 +292,15 @@ export async function initializeIdentity(
   }
 
 
+  let result;
+
   if (!identity.exists) {
 
     console.log(
       '[Identity] Creating identity...'
     );
 
-    await createIdentity(
+    result = await createIdentity(
       password,
       token
     );
@@ -133,7 +315,7 @@ export async function initializeIdentity(
       '[Identity] Restoring identity...'
     );
 
-    await restoreIdentity(
+    result = await restoreIdentity(
       password,
       token
     );
@@ -142,6 +324,20 @@ export async function initializeIdentity(
       '[Identity] Identity restored successfully'
     );
   }
+
+
+  /*
+   * Cache the derived unlock key (Electron only) so the NEXT
+   * launch can restore this identity automatically, without a
+   * password prompt. This is never the password itself and never
+   * the raw private key - only the PBKDF2-derived AES key that
+   * already exists transiently in memory during every normal
+   * unlock (see identity.js).
+   */
+  await persistUnlockKey(
+    result?.unlockKey,
+    currentUser
+  );
 
 
   if (
@@ -1657,6 +1853,229 @@ export function renderLogin(
     'login',
     onSuccess
   );
+}
+
+
+/* =========================================================
+ * Unlock UI
+ *
+ * Used when a valid account session already exists (a
+ * verified token + /api/me succeeded) but the E2EE identity
+ * key is not currently unlocked in memory - e.g. right after
+ * a full app restart, since the password is intentionally
+ * never persisted anywhere.
+ *
+ * This is NOT a login form: it never touches
+ * /api/auth/login, never requests a username, and never
+ * issues or replaces the auth token. It only collects the
+ * password needed to unlock (or, on first run for this
+ * account, create) the local encrypted identity, via the
+ * exact same initializeIdentity() path renderAuthCard()
+ * already uses after a real login.
+ * ========================================================= */
+
+export function renderUnlock(
+  user,
+  onSuccess = null
+) {
+
+  const wrap =
+    document.getElementById(
+      'login-wrap'
+    );
+
+
+  if (!wrap) {
+
+    console.error(
+      'Login container not found'
+    );
+
+    return;
+  }
+
+
+  wrap.style.display = 'flex';
+
+
+  wrap.innerHTML = `
+    <div class="card login-card">
+
+      <div class="login-mark">
+        <img
+          src="/img/logo.jpg"
+          alt="Wire"
+        />
+      </div>
+
+      <h1>
+        Welcome back, ${escapeHtml(user?.username || '')}
+      </h1>
+
+      <p class="hint">
+        Enter your password to unlock your encrypted messages
+        on this device.
+      </p>
+
+      <form id="unlock-form">
+
+        <input
+          type="password"
+          id="unlock-password"
+          placeholder="Password"
+          autocomplete="current-password"
+          required
+        >
+
+        <button
+          type="submit"
+          class="btn btn-primary"
+        >
+          Unlock
+        </button>
+
+      </form>
+
+      <div
+        id="unlock-error"
+        class="field-error"
+      ></div>
+
+      <div class="auth-switch">
+        <button
+          type="button"
+          id="unlock-sign-out"
+          class="btn btn-ghost btn-sm"
+        >
+          Not you? Sign out
+        </button>
+      </div>
+
+    </div>
+  `;
+
+
+  const form =
+    document.getElementById(
+      'unlock-form'
+    );
+
+  const passwordInput =
+    document.getElementById(
+      'unlock-password'
+    );
+
+  const errorEl =
+    document.getElementById(
+      'unlock-error'
+    );
+
+  const signOutButton =
+    document.getElementById(
+      'unlock-sign-out'
+    );
+
+
+  if (form) {
+
+    form.onsubmit = async (event) => {
+
+      event.preventDefault();
+
+
+      const password =
+        passwordInput?.value || '';
+
+
+      if (!password) {
+
+        if (errorEl) {
+          errorEl.textContent =
+            'Enter your password';
+        }
+
+        return;
+      }
+
+
+      const button =
+        form.querySelector(
+          'button[type="submit"]'
+        );
+
+
+      if (button) {
+        button.disabled = true;
+      }
+
+      if (errorEl) {
+        errorEl.textContent = '';
+      }
+
+
+      try {
+
+        /*
+         * The account is already authenticated - a valid
+         * token exists and the server has already confirmed
+         * the current user via /api/me. This call only
+         * unlocks (or creates) the local E2EE identity; it
+         * does not call /api/auth/login and does not touch
+         * the account session at all.
+         */
+        await initializeIdentity(
+          password,
+          onSuccess
+        );
+
+      } catch (error) {
+
+        console.error(
+          'Identity unlock failed:',
+          error
+        );
+
+
+        if (errorEl) {
+          errorEl.textContent =
+            error?.message ||
+            'Incorrect password';
+        }
+
+
+        if (button) {
+          button.disabled = false;
+        }
+
+
+        if (passwordInput) {
+          passwordInput.value = '';
+          passwordInput.focus();
+        }
+      }
+    };
+  }
+
+
+  if (signOutButton) {
+
+    signOutButton.onclick = () => {
+
+      /*
+       * The person at the keyboard isn't the signed-in
+       * user (or doesn't remember the password) - a real
+       * logout is the correct, explicit way out of this
+       * screen. This clears the token, so the next launch
+       * goes through the normal login flow again.
+       */
+      logout();
+
+      renderLogin(onSuccess);
+    };
+  }
+
+
+  passwordInput?.focus();
 }
 
 

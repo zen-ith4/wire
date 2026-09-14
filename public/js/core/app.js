@@ -7,8 +7,14 @@ import {
   getCurrentUser,
   setCurrentUser,
   renderLogin,
+<<<<<<< HEAD
   logout,
   initializeIdentity
+=======
+  renderUnlock,
+  attemptAutoUnlock,
+  logout
+>>>>>>> 19d39c7 (fixed: E2EE login coockie)
 } from './auth.js';
 
 import { showToast } from './utils.js';
@@ -536,10 +542,12 @@ async function bootstrap() {
     if (!isIdentityUnlocked()) {
 
       /*
-       * We already have a valid token, but we cannot
-       * decrypt the private identity key without the
-       * user's password.
+       * We already have a valid token AND /api/me has
+       * already confirmed the account - the session itself
+       * is fine. We only need to unlock the local E2EE
+       * identity.
        *
+<<<<<<< HEAD
        * Desktop app: if the user opted in to "Remember me
        * on this device", try silently supplying the stored
        * password before ever showing a login form.
@@ -552,41 +560,64 @@ async function bootstrap() {
       /*
        * Render the normal login form again so the
        * password can be supplied to the identity layer.
+=======
+       * First try silently, using unlock material cached on
+       * this device from a previous login (Electron only -
+       * see auth.js). If that succeeds, the app opens
+       * directly with no prompt at all.
+>>>>>>> 19d39c7 (fixed: E2EE login coockie)
        */
 
-      renderLogin(
+      const autoUnlocked =
+        await attemptAutoUnlock(
+          me,
+          token
+        );
+
+
+      if (autoUnlocked) {
+
+        initAccent(
+          me.accent_color || null
+        );
+
+
+        await startApplication(
+          me,
+          token
+        );
+
+        return;
+      }
+
+
+      /*
+       * No cached unlock material (browser, first login on
+       * this device, explicit sign-out since, or the cached
+       * material failed an integrity/decryption check). Fall
+       * back to a password-only "unlock" step - not a login:
+       * it never calls /api/auth/login and never touches the
+       * token. Using the full login form here (as before this
+       * fix) made a perfectly valid session look logged-out
+       * on every restart.
+       */
+
+      renderUnlock(
+        me,
         async () => {
 
-          const user =
-            getCurrentUser();
-
-          const currentToken =
-            getToken();
-
-
-          if (
-            !user ||
-            !currentToken
-          ) {
-            throw new Error(
-              'Authentication state is unavailable'
-            );
-          }
-
-
           /*
-           * Login has restored the authenticated user.
-           * Re-apply the database accent before showing
-           * the application.
+           * Unlock has completed. The user/token were
+           * already valid before this step ran.
            */
           initAccent(
-            user.accent_color || null
+            me.accent_color || null
           );
 
 
           await startApplication(
-            user,
-            currentToken
+            me,
+            token
           );
         }
       );

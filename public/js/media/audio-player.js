@@ -1,5 +1,6 @@
 import { ICONS } from '../icons.js';
 import { escapeAttr, escapeHtml } from '../core/utils.js';
+import { getMediaSrcUrl } from './mediaToken.js';
 
 // ======================================================
 // PLAYBACK STATE PERSISTENCE (across tab/view switches)
@@ -49,31 +50,11 @@ export function isAudio(value) {
 }
 
 // ======================================================
-// TOKEN
-// ======================================================
-
-function getMediaToken() {
-  return localStorage.getItem('token') || '';
-}
-
-// ======================================================
 // MEDIA URL
 // ======================================================
-
-function getAudioUrl(msg, scope) {
-  const baseUrl =
-    scope === 'dm'
-      ? `/api/dm/attachments/${encodeURIComponent(msg.id)}`
-      : `/api/chat/attachments/${encodeURIComponent(msg.id)}`;
-
-  const token = getMediaToken();
-
-  if (!token) {
-    return baseUrl;
-  }
-
-  return `${baseUrl}?token=${encodeURIComponent(token)}`;
-}
+//
+// See media/mediaToken.js: playback URLs carry a short-lived,
+// attachment-scoped token rather than the raw session JWT.
 
 // ======================================================
 // AUDIO PLAYER
@@ -85,7 +66,7 @@ function getAudioUrl(msg, scope) {
 // attached to the document yet - everything here is scoped to
 // `containerEl`, never to the global document, so there is no
 // dependency on DOM insertion order/timing.
-export function renderAudio(msg, scope, containerEl) {
+export async function renderAudio(msg, scope, containerEl) {
   const messageId = String(msg.id);
 
   const container =
@@ -106,7 +87,18 @@ export function renderAudio(msg, scope, containerEl) {
     return;
   }
 
-  const attachmentUrl = getAudioUrl(msg, scope);
+  const attachmentUrl = await getMediaSrcUrl(scope, msg.id);
+
+  // The container may have been torn down (or a duplicate player
+  // already inserted by a concurrent render) while we awaited the
+  // token request above.
+  if (
+    !document.body.contains(container) ||
+    container.querySelector(`#${CSS.escape(playerId)}`)
+  ) {
+    return;
+  }
+
   const filename = msg.attachment_name || 'Audio';
 
   // ====================================================

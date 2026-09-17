@@ -13,7 +13,7 @@
  * never bundled, imported, or started here.
  */
 
-const { app, BrowserWindow, ipcMain, net, shell, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, net, shell, Menu, safeStorage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -268,6 +268,132 @@ function buildAppMenu() {
 
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
+
+// ---------------------------------------------------------------------------
+// E2EE "Remember me on this device" — cached unlock key
+//
+// Stores only the PBKDF2-derived AES unlock key (base64), never the
+// account password and never the raw private key (see the website's
+// identity.js). Encrypted at rest with Electron's safeStorage, which
+// defers to the OS's own secret storage (Keychain on macOS, DPAPI on
+// Windows, libsecret/kwallet on Linux). Scoped per (origin, userId)
+// so multiple accounts/servers on this install never collide.
+//
+// Every handler independently re-derives the calling page's real
+// origin from the WebContents that sent the IPC message (never trusts
+// a caller-supplied origin string alone), so a compromised or
+// malicious page can only ever read/write the cache entry for the
+// server it is actually currently loaded from.
+// ---------------------------------------------------------------------------
+
+const UNLOCK_KEYS_PATH = path.join(app.getPath('userData'), 'identity-unlock-keys.json');
+
+function unlockKeyStoreOrigin(event) {
+  try {
+    return new URL(event.sender.getURL()).origin;
+  } catch (e) {
+    return null;
+  }
+}
+
+function unlockKeyRecordId(origin, userId) {
+  return `${origin}::${userId}`;
+}
+
+function loadUnlockKeyStore() {
+  try {
+    const raw = fs.readFileSync(UNLOCK_KEYS_PATH, 'utf-8');
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function saveUnlockKeyStore(store) {
+  fs.mkdirSync(path.dirname(UNLOCK_KEYS_PATH), { recursive: true });
+  fs.writeFileSync(UNLOCK_KEYS_PATH, JSON.stringify(store), 'utf-8');
+}
+
+ipcMain.handle('identity:store-unlock-key', (event, claimedOrigin, userId, unlockKey) => {
+  const realOrigin = unlockKeyStoreOrigin(event);
+
+  if (!realOrigin || realOrigin !== claimedOrigin) {
+    return { success: false, error: 'Origin mismatch' };
+  }
+
+  if (typeof unlockKey !== 'string' || !unlockKey) {
+    return { success: false, error: 'Invalid unlock key' };
+  }
+
+  if (userId == null) {
+    return { success: false, error: 'Invalid user id' };
+  }
+
+  if (!safeStorage.isEncryptionAvailable()) {
+    return {
+      success: false,
+      error: 'OS-level secure storage is not available on this system.',
+    };
+  }
+
+  try {
+    const store = loadUnlockKeyStore();
+    const encrypted = safeStorage.encryptString(unlockKey);
+    store[unlockKeyRecordId(realOrigin, userId)] = encrypted.toString('base64');
+    saveUnlockKeyStore(store);
+    return { success: true };
+  } catch (err) {
+    console.error('Failed to persist identity unlock key:', err);
+    return { success: false, error: 'Failed to persist unlock key' };
+  }
+});
+
+ipcMain.handle('identity:get-unlock-key', (event, claimedOrigin, userId) => {
+  const realOrigin = unlockKeyStoreOrigin(event);
+
+  if (!realOrigin || realOrigin !== claimedOrigin) {
+    return null;
+  }
+
+  if (!safeStorage.isEncryptionAvailable()) {
+    return null;
+  }
+
+  const store = loadUnlockKeyStore();
+  const record = store[unlockKeyRecordId(realOrigin, userId)];
+
+  if (!record) {
+    return null;
+  }
+
+  try {
+    const unlockKey = safeStorage.decryptString(Buffer.from(record, 'base64'));
+    return { unlockKey };
+  } catch (err) {
+    console.error('Failed to decrypt identity unlock key:', err);
+    return null;
+  }
+});
+
+ipcMain.handle('identity:clear-unlock-key', (event, claimedOrigin, userId) => {
+  const realOrigin = unlockKeyStoreOrigin(event);
+
+  if (!realOrigin || realOrigin !== claimedOrigin) {
+    return false;
+  }
+
+  try {
+    const store = loadUnlockKeyStore();
+    delete store[unlockKeyRecordId(realOrigin, userId)];
+    saveUnlockKeyStore(store);
+    return true;
+  } catch (err) {
+    console.error('Failed to clear identity unlock key:', err);
+    return false;
+  }
+});
+
 
 // ---------------------------------------------------------------------------
 // IPC — only reachable from the local connect.html screen (see preload.js)

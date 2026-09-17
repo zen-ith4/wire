@@ -6,6 +6,12 @@ import {
   restoreIdentityWithUnlockKey
 } from '../crypto/identity-service.js';
 
+import {
+  idbStoreUnlockKey,
+  idbGetUnlockKey,
+  idbClearUnlockKey
+} from '../crypto/keys/unlock-key-store.js';
+
 
 let currentUser = null;
 let token = localStorage.getItem('token');
@@ -58,15 +64,14 @@ export function logout() {
 
   /*
    * Explicit sign-out must also invalidate auto-unlock: clear the
-   * OS-secured unlock key (Electron only) so the next launch goes
-   * through the normal password flow, exactly like a fresh device.
+   * cached unlock key (OS-secured via safeStorage in Electron,
+   * IndexedDB in the browser) so the next launch goes through the
+   * normal password flow, exactly like a fresh device.
    *
    * Fire-and-forget: logout() has always been synchronous and
    * existing callers (api.js on a real 401, the Settings sign-out
    * button before window.location.reload()) call it without
-   * awaiting. The clear is a local IPC round-trip to the already-
-   * running main process, which completes independently of this
-   * renderer reloading.
+   * awaiting.
    */
   clearPersistedUnlockKey(signedOutUser).catch(err => {
     console.error(
@@ -78,14 +83,24 @@ export function logout() {
 
 
 /* =========================================================
- * Auto-unlock (Electron only)
+ * Auto-unlock ("Remember me on this device")
  *
  * The E2EE identity's derived unlock key (see identity.js /
- * identity-service.js) can be cached in OS-level secure storage
- * (Electron's safeStorage) so a valid, already-authenticated
- * session can restore the identity on the next launch without a
- * password prompt. None of this exists in the browser build -
- * every function here is a no-op there.
+ * identity-service.js) can be cached locally so a valid,
+ * already-authenticated session can restore the identity on the
+ * next launch without a password prompt. This is never the
+ * password itself and never the raw private key - only the
+ * PBKDF2-derived AES key that already exists transiently in
+ * memory during every normal unlock.
+ *
+ * Two backends, chosen automatically:
+ *  - Electron: OS-level secure storage (safeStorage: Keychain /
+ *    DPAPI / libsecret) via the main process, over IPC.
+ *  - Browser: IndexedDB, scoped by the page's own origin (the
+ *    same isolation the browser already gives every other piece
+ *    of this site's local data).
+ * Both are opt-in: nothing is cached unless the user checks
+ * "Remember me on this device" at login/unlock time.
  * ========================================================= */
 
 function isElectron() {
@@ -104,7 +119,6 @@ async function persistUnlockKey(
   user
 ) {
   if (
-    !isElectron() ||
     !unlockKey ||
     !user
   ) {
@@ -113,11 +127,22 @@ async function persistUnlockKey(
 
   try {
 
-    await window.electronAPI.storeIdentityUnlockKey(
-      window.location.origin,
-      user.id,
-      unlockKey
-    );
+    if (isElectron()) {
+
+      await window.electronAPI.storeIdentityUnlockKey(
+        window.location.origin,
+        user.id,
+        unlockKey
+      );
+
+    } else {
+
+      await idbStoreUnlockKey(
+        window.location.origin,
+        user.id,
+        unlockKey
+      );
+    }
 
   } catch (err) {
 
@@ -132,19 +157,26 @@ async function persistUnlockKey(
 
 
 export async function clearPersistedUnlockKey(user) {
-  if (
-    !isElectron() ||
-    !user
-  ) {
+  if (!user) {
     return;
   }
 
   try {
 
-    await window.electronAPI.clearIdentityUnlockKey(
-      window.location.origin,
-      user.id
-    );
+    if (isElectron()) {
+
+      await window.electronAPI.clearIdentityUnlockKey(
+        window.location.origin,
+        user.id
+      );
+
+    } else {
+
+      await idbClearUnlockKey(
+        window.location.origin,
+        user.id
+      );
+    }
 
   } catch (err) {
 
@@ -160,17 +192,16 @@ export async function clearPersistedUnlockKey(user) {
  * Attempts to unlock the E2EE identity using material cached from
  * a previous successful login on this device - no password
  * prompt. Returns true if the identity is now unlocked, false if
- * auto-unlock isn't available/applicable (browser, first login on
- * this device, or the cached material is missing/stale) - callers
- * should fall back to the normal password unlock (renderUnlock)
- * in that case.
+ * auto-unlock isn't available/applicable (first login on this
+ * device, "remember me" was never opted into, or the cached
+ * material is missing/stale) - callers should fall back to the
+ * normal password unlock (renderUnlock) in that case.
  */
 export async function attemptAutoUnlock(
   user,
   currentToken
 ) {
   if (
-    !isElectron() ||
     !user ||
     !currentToken
   ) {
@@ -182,10 +213,15 @@ export async function attemptAutoUnlock(
   try {
 
     cached =
-      await window.electronAPI.getIdentityUnlockKey(
-        window.location.origin,
-        user.id
-      );
+      isElectron()
+        ? await window.electronAPI.getIdentityUnlockKey(
+            window.location.origin,
+            user.id
+          )
+        : await idbGetUnlockKey(
+            window.location.origin,
+            user.id
+          );
 
   } catch (err) {
 
@@ -241,7 +277,8 @@ export async function attemptAutoUnlock(
 
 export async function initializeIdentity(
   password,
-  onSuccess = null
+  onSuccess = null,
+  { rememberMe = undefined } = {}
 ) {
 
   if (!token) {
@@ -318,17 +355,24 @@ export async function initializeIdentity(
 
 
   /*
-   * Cache the derived unlock key (Electron only) so the NEXT
-   * launch can restore this identity automatically, without a
-   * password prompt. This is never the password itself and never
-   * the raw private key - only the PBKDF2-derived AES key that
-   * already exists transiently in memory during every normal
-   * unlock (see identity.js).
+   * "Remember me on this device": only touches the cached unlock
+   * key when the caller explicitly says so (i.e. the checkbox at
+   * login/unlock time). If rememberMe is left undefined (e.g. the
+   * registration-verification and 2FA flows below, which don't
+   * currently surface the checkbox), any previously-cached key for
+   * this account/device is left exactly as it was.
    */
-  await persistUnlockKey(
-    result?.unlockKey,
-    currentUser
-  );
+  if (rememberMe === true) {
+
+    await persistUnlockKey(
+      result?.unlockKey,
+      currentUser
+    );
+
+  } else if (rememberMe === false) {
+
+    await clearPersistedUnlockKey(currentUser);
+  }
 
 
   if (
@@ -1381,6 +1425,20 @@ function renderAuthCard(
             : ''
         }
 
+        ${
+          !isRegister
+            ? `
+              <label class="auth-remember-me">
+                <input
+                  type="checkbox"
+                  id="auth-remember-me"
+                >
+                Remember me on this device
+              </label>
+            `
+            : ''
+        }
+
         <button
           type="submit"
           class="btn btn-primary"
@@ -1698,6 +1756,11 @@ function renderAuthCard(
        * Identity initialization
        * ----------------------------------------------------- */
 
+      const rememberMeInput =
+        document.getElementById(
+          'auth-remember-me'
+        );
+
       await initializeIdentity(
         password,
         async () => {
@@ -1708,6 +1771,11 @@ function renderAuthCard(
             await onSuccess();
           }
 
+        },
+        {
+          rememberMe: Boolean(
+            rememberMeInput?.checked
+          )
         }
       );
 
@@ -1871,6 +1939,14 @@ export function renderUnlock(
           required
         >
 
+        <label class="auth-remember-me">
+          <input
+            type="checkbox"
+            id="unlock-remember-me"
+          >
+          Remember me on this device
+        </label>
+
         <button
           type="submit"
           class="btn btn-primary"
@@ -1967,9 +2043,19 @@ export function renderUnlock(
          * does not call /api/auth/login and does not touch
          * the account session at all.
          */
+        const rememberMeInput =
+          document.getElementById(
+            'unlock-remember-me'
+          );
+
         await initializeIdentity(
           password,
-          onSuccess
+          onSuccess,
+          {
+            rememberMe: Boolean(
+              rememberMeInput?.checked
+            )
+          }
         );
 
       } catch (error) {

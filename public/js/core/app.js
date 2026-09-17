@@ -7,9 +7,9 @@ import {
   getCurrentUser,
   setCurrentUser,
   renderLogin,
+  logout,
   renderUnlock,
-  attemptAutoUnlock,
-  logout
+  attemptAutoUnlock
 } from './auth.js';
 
 import { showToast } from './utils.js';
@@ -472,9 +472,10 @@ async function bootstrap() {
        * identity.
        *
        * First try silently, using unlock material cached on
-       * this device from a previous login (Electron only -
-       * see auth.js). If that succeeds, the app opens
-       * directly with no prompt at all.
+       * this device from a previous login where the user opted
+       * in via "Remember me on this device" (see auth.js - works
+       * in both the Electron app and the plain browser). If that
+       * succeeds, the app opens directly with no prompt at all.
        */
 
       const autoUnlocked =

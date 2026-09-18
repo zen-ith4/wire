@@ -4,6 +4,9 @@ const fs = require('fs');
 const constants = require('../config/constants');
 const { CHAT_MIME_MAP } = require('../config/multer');
 const { readImageDimensions } = require('../utils/imageDimensions');
+const { detectMimeFromBytes } = require('../utils/detectFileType');
+const { isInlineSafeMime } = require('../utils/inlineSafeMime');
+const { signMediaToken, MEDIA_TOKEN_TTL_SECONDS } = require('../utils/jwt');
 
 const {
   getRecentMessages,
@@ -227,7 +230,7 @@ function sendMessage(req,res) {
 
 
 
-function sendMessageWithAttachment(req,res) {
+async function sendMessageWithAttachment(req,res) {
 
   if(!req.file){
 
@@ -253,28 +256,59 @@ function sendMessageWithAttachment(req,res) {
     req.file.mimetype || '';
 
 
-  // .webm is deliberately ambiguous in CHAT_MIME_MAP (it's a real
-  // video container too — see config/multer.js's VIDEO_MIME_MAP), so
-  // extension-based lookup alone can't tell a recorded voice message
-  // (browser-reported audio/webm) apart from an actual uploaded video
-  // file that happens to use the .webm extension. When the client
-  // claims this is a voice message AND the browser's own mimetype
-  // agrees it's audio, trust that over the extension table. This is
-  // still not blind trust of the client: isVoiceMessageFlag() below
-  // re-derives isVoiceMessage from this same resolved `mime`, so a
-  // spoofed flag on a non-audio file (e.g. is_voice_message=1 on an
-  // .exe) still can't mark that file as a voice message — the mime
-  // has to actually be audio/* either way.
-  const mime =
-    req.body?.is_voice_message && clientMime.startsWith('audio/')
-      ? clientMime
-      : (
-          CHAT_MIME_MAP[ext]
-          ||
-          clientMime
-          ||
-          'application/octet-stream'
-        );
+  // SECURITY: the mime resolved here is what later decides, at serve
+  // time (getAttachment below), whether this file is ever allowed to
+  // be shown `inline` in a browser. Neither the client-supplied
+  // Content-Type (clientMime) nor the filename extension can be
+  // trusted for that decision — both are fully attacker-controlled,
+  // and trusting either one is exactly how a file uploaded as
+  // "photo.jpg" with Content-Type: text/html turned attachment
+  // *viewing* into stored XSS. The only thing we trust here is what
+  // detectMimeFromBytes() finds by sniffing the file's actual magic
+  // bytes on disk.
+  const sniffedMime = await detectMimeFromBytes(req.file.path);
+
+  const clientClaimsVoiceRecording =
+    !!req.body?.is_voice_message && clientMime.startsWith('audio/');
+
+  let mime;
+
+  if (
+    clientClaimsVoiceRecording &&
+    (sniffedMime === 'audio/webm' || sniffedMime === 'video/webm')
+  ) {
+    // .webm is a real video container too (see config/multer.js's
+    // VIDEO_MIME_MAP), and magic-byte sniffing alone can't always
+    // distinguish an audio-only recording from a video file that
+    // happens to use the same container — so this narrow case still
+    // leans on the client's own "this is a voice recording" claim.
+    // That's safe here specifically because it only ever relabels
+    // between two MIME types (audio/webm, video/webm) that are BOTH
+    // already on the inline-safe allowlist — it can never turn an
+    // unsafe file into one that gets served inline.
+    mime = 'audio/webm';
+  } else if (sniffedMime && isInlineSafeMime(sniffedMime)) {
+    // Trust the sniffed, allowlisted type.
+    mime = sniffedMime;
+  } else {
+    // Sniffing failed to recognize the format, or recognized it as
+    // something not on the inline-safe allowlist. A cosmetic,
+    // extension-based label is still useful for the UI (file icon,
+    // "type" shown to the user) for genuinely non-renderable formats
+    // (.zip, .docx, .txt, ...) — but it must NEVER be trusted if it
+    // happens to land on an inline-safe-looking value (e.g. the
+    // extension is ".jpg" but the sniff didn't confirm real JPEG
+    // bytes, which is exactly the original exploit: upload
+    // arbitrary content as "photo.jpg"). getAttachment() decides
+    // inline-vs-attachment purely from isInlineSafeMime(storedMime),
+    // so anything that would pass that check has to have been
+    // verified above — an extension-derived guess never gets to.
+    const extLabel = CHAT_MIME_MAP[ext];
+    mime =
+      extLabel && !isInlineSafeMime(extLabel)
+        ? extLabel
+        : 'application/octet-stream';
+  }
 
 
   const caption =
@@ -338,6 +372,36 @@ function sendMessageWithAttachment(req,res) {
 
 
 
+function getAttachmentMediaToken(req, res) {
+  const messageId = Number(req.params.messageId);
+
+  if (!Number.isInteger(messageId)) {
+    return res.status(400).json({
+      error: 'Invalid message id'
+    });
+  }
+
+  const msg = findChatMessageById(messageId);
+
+  if (!msg || !msg.attachment_path) {
+    return res.status(404).json({
+      error: 'Attachment not found'
+    });
+  }
+
+  const token = signMediaToken(req.user, {
+    type: 'chat',
+    id: messageId,
+  });
+
+  res.json({
+    token,
+    expiresIn: MEDIA_TOKEN_TTL_SECONDS,
+  });
+}
+
+
+
 function getAttachment(req, res) {
   const messageId = Number(req.params.messageId);
 
@@ -369,15 +433,35 @@ function getAttachment(req, res) {
   const stat = fs.statSync(filePath);
   const fileSize = stat.size;
 
-  const contentType =
+  // SECURITY: `inline` rendering is only ever allowed when the
+  // stored mime (resolved from the file's actual magic bytes at
+  // upload time — see sendMessageWithAttachment above) is on the
+  // server-side allowlist. This is what actually closes the stored-
+  // XSS hole: even if `?download=1` is absent, and regardless of
+  // whatever mime a client tried to claim, anything not on the
+  // allowlist is always sent as a forced attachment with a generic
+  // Content-Type — a browser will offer it for download rather than
+  // execute/render it.
+  const storedMime =
     msg.attachment_mime ||
     'application/octet-stream';
 
-  const disposition =
-    req.query.download
-      ? 'attachment'
-      : 'inline';
+  const safeToRenderInline = isInlineSafeMime(storedMime);
 
+  const disposition =
+    (safeToRenderInline && !req.query.download)
+      ? 'inline'
+      : 'attachment';
+
+  const contentType =
+    safeToRenderInline
+      ? storedMime
+      : 'application/octet-stream';
+
+  // Belt-and-suspenders: even for the allowlisted types above, never
+  // let the browser's own MIME-sniffing override the Content-Type we
+  // explicitly vetted.
+  res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Content-Type', contentType);
   res.setHeader(
     'Content-Disposition',
@@ -620,6 +704,8 @@ module.exports = {
   sendMessage,
 
   sendMessageWithAttachment,
+
+  getAttachmentMediaToken,
 
   getAttachment,
 

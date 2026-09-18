@@ -111,12 +111,32 @@ function attachmentMediaKind(msg) {
 export function mountAttachmentMedia(msg, messageEl, scope) {
   if (!messageEl || !msg.has_attachment) return;
   const kind = attachmentMediaKind(msg);
+
+  // renderVoiceMessage/renderAudio/renderVideo are async (they await
+  // a scoped media-token fetch before building the player - see
+  // media/mediaToken.js) but are intentionally not awaited here:
+  // mountAttachmentMedia() itself stays synchronous so callers don't
+  // have to change. Without a .catch() here though, any rejection
+  // past that first await (a failed token fetch, a network error)
+  // becomes an unhandled promise rejection - logged by the browser
+  // but never surfaced anywhere useful, and the attachment just
+  // silently never renders. Catch and log explicitly instead.
+  let renderPromise;
   if (kind === 'voice') {
-    renderVoiceMessage(msg, scope, messageEl);
+    renderPromise = renderVoiceMessage(msg, scope, messageEl);
   } else if (kind === 'audio') {
-    renderAudio(msg, scope, messageEl);
+    renderPromise = renderAudio(msg, scope, messageEl);
   } else if (kind === 'video') {
-    renderVideo(msg, scope, messageEl);
+    renderPromise = renderVideo(msg, scope, messageEl);
+  }
+
+  if (renderPromise && typeof renderPromise.catch === 'function') {
+    renderPromise.catch((err) => {
+      console.error(
+        `Failed to render ${kind} attachment for message ${msg.id}:`,
+        err
+      );
+    });
   }
 }
 

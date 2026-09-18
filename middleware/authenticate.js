@@ -29,6 +29,7 @@ function authenticate(req, res, next) {
           id,
           username,
           is_admin,
+          is_active,
           bio,
           avatar_path
         FROM users
@@ -37,9 +38,9 @@ function authenticate(req, res, next) {
       .get(payload.sub || payload.id);
 
 
-    if (!user) {
+    if (!user || user.is_active === 0) {
       return res.status(401).json({
-        error: 'User not found'
+        error: 'Unauthorized'
       });
     }
 

@@ -17,10 +17,6 @@ const { app, BrowserWindow, ipcMain, net, shell, Menu, safeStorage } = require('
 const path = require('path');
 const fs = require('fs');
 
-// The website is loaded from the selected Wire server.  Keep the desktop
-// client from showing an older cached CSS/JS bundle after a server deploy.
-const DESKTOP_CACHE_BUSTER = 'wireDesktopReload';
-
 // ---------------------------------------------------------------------------
 // Persisted config (just the server address — nothing else)
 // ---------------------------------------------------------------------------
@@ -225,10 +221,6 @@ function createMainWindow() {
       nodeIntegration: false,
       sandbox: true,
       webviewTag: false,
-      // The web client previews some media with autoplay.  User-initiated
-      // playback still works normally, while Electron matches the browser
-      // experience for muted/preview videos.
-      autoplayPolicy: 'no-user-gesture-required',
       preload: path.join(__dirname, 'preload.js'),
     },
   });
@@ -289,16 +281,7 @@ function showConnectScreen({ autoAttempt, errorMessage } = {}) {
 
 function loadRemoteServer(serverUrl) {
   currentServerOrigin = serverUrl;
-
-  // Clear the renderer cache before each connection so newly deployed theme
-  // CSS/JS is picked up immediately by the packaged client.
-  mainWindow.webContents.session.clearCache()
-    .catch((err) => console.warn('Failed to clear renderer cache:', err.message))
-    .finally(() => {
-      const url = new URL(serverUrl);
-      url.searchParams.set(DESKTOP_CACHE_BUSTER, String(Date.now()));
-      mainWindow.loadURL(url.toString());
-    });
+  mainWindow.loadURL(serverUrl);
 }
 
 function buildAppMenu() {

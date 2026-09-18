@@ -5,7 +5,6 @@ const { Writable } = require('stream');
 
 const { hashPassword } = require('./password');
 const constants = require('../config/constants');
-const tlsSetup = require('./tlsSetup');
 
 const {
     createAndSendVerificationCode,
@@ -71,12 +70,8 @@ class SetupWizard {
 
         const updates = {
             SETUP_COMPLETED: 'true',
-            HOST: config.expressHost,
-            PUBLIC_HOST: config.publicHost,
-            PORT: config.port,
-            HTTPS_MODE: config.httpsMode,
-            DOMAIN: config.domain || '',
-            TLS_CERT_FINGERPRINT: config.tlsFingerprint || ''
+            HOST: config.host,
+            PORT: config.port
         };
 
         for (const [key, value] of Object.entries(updates)) {
@@ -102,12 +97,8 @@ class SetupWizard {
 
         // Apply immediately to the running process
         process.env.SETUP_COMPLETED = 'true';
-        process.env.HOST = config.expressHost;
-        process.env.PUBLIC_HOST = config.publicHost;
+        process.env.HOST = config.host;
         process.env.PORT = config.port;
-        process.env.HTTPS_MODE = updates.HTTPS_MODE;
-        process.env.DOMAIN = updates.DOMAIN;
-        process.env.TLS_CERT_FINGERPRINT = updates.TLS_CERT_FINGERPRINT;
     }
 
     isValidIP(ip) {
@@ -201,99 +192,25 @@ class SetupWizard {
         console.log('======================================\n');
 
         // --------------------------------------------------------
-        // 1. How will people reach this server?
+        // 1. Ask for IP Address
         // --------------------------------------------------------
-        //
-        // Asked first because it decides everything downstream: what
-        // we even ask next (a domain vs. a WireGuard IP), whether we
-        // touch TLS at all, and - importantly - what address Express
-        // itself binds to. When Caddy is fronting the app (either
-        // mode below), Express must listen on 127.0.0.1 only, since
-        // that's what Caddy's reverse_proxy in the generated
-        // Caddyfile connects to; Caddy is the one holding the
-        // public-facing IP/domain and the TLS certificate. Express
-        // binding to the WireGuard IP directly was last setup's bug -
-        // Caddy couldn't reach it. Fixed by keeping that distinction
-        // explicit here as `host` (what the *outside world* uses) vs.
-        // `expressHost` (what Express itself binds to).
 
-        console.log('--- How will people reach this server? ---\n');
-        console.log(
-            '  1) I have a domain name and can get real SSL for it'
-        );
-        console.log(
-            '     (automatic HTTPS via Caddy + Let\'s Encrypt - no manual cert handling)'
-        );
-        console.log(
-            '  2) Just WireGuard - no domain'
-        );
-        console.log(
-            '     (private network only; a WireGuard IP like 10.10.0.7)\n'
-        );
+        let host = '';
 
-        let reachMode = '';
+        while (!this.isValidIP(host)) {
+            const defaultHost =
+                process.env.HOST || '10.10.0.7';
 
-        while (!['1', '2'].includes(reachMode)) {
-            reachMode = await this.ask(
-                'Choice [1/2]: '
+            host = await this.ask(
+                `WireGuard IP Address [${defaultHost}]: `
             );
-        }
 
-        console.log();
+            host = host || defaultHost;
 
-        let host = '';        // what the outside world types/connects to
-        let expressHost = ''; // what Express itself binds to
-        let domain = null;
-        let httpsMode = '';   // 'domain' | 'self-signed' | 'none' - stored in .env
-        let tlsFingerprint = null;
-
-        if (reachMode === '1') {
-
-            // ----------------------------------------------------
-            // 1a. Domain
-            // ----------------------------------------------------
-
-            while (!domain) {
-                domain = await this.ask(
-                    'Domain (e.g. chat.example.com): '
+            if (!this.isValidIP(host)) {
+                console.log(
+                    'Error: Invalid IPv4 address.\n'
                 );
-
-                domain = domain.trim().toLowerCase();
-
-                if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(domain)) {
-                    console.log(
-                        'Error: That doesn\'t look like a valid domain.\n'
-                    );
-
-                    domain = '';
-                }
-            }
-
-            host = domain;
-            expressHost = '127.0.0.1'; // Caddy fronts on 443, proxies here
-            httpsMode = 'domain';
-
-        } else {
-
-            // ----------------------------------------------------
-            // 1b. WireGuard IP
-            // ----------------------------------------------------
-
-            while (!this.isValidIP(host)) {
-                const defaultHost =
-                    process.env.HOST || '10.10.0.7';
-
-                host = await this.ask(
-                    `WireGuard IP Address [${defaultHost}]: `
-                );
-
-                host = host || defaultHost;
-
-                if (!this.isValidIP(host)) {
-                    console.log(
-                        'Error: Invalid IPv4 address.\n'
-                    );
-                }
             }
         }
 
@@ -333,114 +250,6 @@ class SetupWizard {
         }
 
         console.log();
-
-        // --------------------------------------------------------
-        // 2.5. HTTPS for WireGuard-only deployments
-        // --------------------------------------------------------
-        //
-        // Domain mode (1a above) always gets HTTPS via Caddy/Let's
-        // Encrypt - there's no reason to ever skip it. WireGuard-only
-        // deployments have no CA that will issue a cert for a private
-        // IP, so this is the one place a self-signed cert - or
-        // skipping HTTPS entirely - is actually a choice.
-        //
-        // Web Crypto (crypto.subtle - what E2EE and the voice
-        // features depend on) only works in a "secure context":
-        // https://, or http://localhost / http://127.0.0.1. A plain
-        // WireGuard IP like 10.10.0.7 over http:// does NOT qualify -
-        // crypto.subtle is simply undefined there, in every browser
-        // and in this project's own Electron client (no webSecurity
-        // bypass is configured).
-
-        if (reachMode === '2') {
-
-            console.log('--- HTTPS ---\n');
-            console.log(
-                'Enable HTTPS with a self-signed certificate for'
-            );
-            console.log(
-                `${host}? Needed for E2EE and voice to work for anyone`
-            );
-            console.log(
-                'other than localhost connections. (Recommended.)\n'
-            );
-
-            const enableHttps = await this.ask(
-                'Enable HTTPS? [Y/n]: '
-            );
-
-            if (enableHttps.trim().toLowerCase() !== 'n') {
-
-                console.log(
-                    `\nGenerating a self-signed certificate for ${host} ...`
-                );
-
-                const tlsResult =
-                    await tlsSetup.generateSelfSignedCert(host);
-
-                tlsSetup.writeCaddyfileForSelfSigned(
-                    host,
-                    port,
-                    tlsResult.certPath,
-                    tlsResult.keyPath
-                );
-
-                tlsFingerprint = tlsResult.fingerprint;
-                httpsMode = 'self-signed';
-                expressHost = '127.0.0.1'; // Caddy fronts on the WireGuard IP, proxies here
-
-                console.log(
-                    '\nCertificate generated. SHA-256 fingerprint:\n'
-                );
-
-                console.log(`  ${tlsFingerprint}\n`);
-
-                console.log(
-                    'Give this fingerprint to anyone connecting with the'
-                );
-
-                console.log(
-                    'Electron client - it lets them verify the server on'
-                );
-
-                console.log(
-                    'first connect without installing anything (see GUIDE.md).'
-                );
-
-                console.log(
-                    'Browser users just click through the one-time "not private"'
-                );
-
-                console.log(
-                    'warning - that alone is enough for crypto.subtle to work.\n'
-                );
-
-            } else {
-
-                httpsMode = 'none';
-                expressHost = host; // no Caddy - Express is reached directly
-
-                console.log(
-                    '\nSkipped. Remember: E2EE and voice will not work over'
-                );
-
-                console.log(
-                    'plain HTTP for anyone except localhost connections.\n'
-                );
-            }
-
-        } else {
-
-            console.log(
-                `Wrote Caddyfile for automatic HTTPS on ${domain}.`
-            );
-
-            console.log(
-                'Caddy will request and renew the certificate itself - nothing else to do.\n'
-            );
-
-            tlsSetup.writeCaddyfileForDomain(domain, port);
-        }
 
         // --------------------------------------------------------
         // 3. Ask for Admin Username
@@ -534,24 +343,7 @@ class SetupWizard {
         const emailEnabled = isEmailEnabled();
 
         console.log('\n--- Configuration Summary ---');
-        console.log(`Public address: ${host}:${httpsMode === 'none' ? port : 443}`);
-
-        console.log(
-            `HTTPS: ${
-                httpsMode === 'domain'
-                    ? `domain (${domain}, Let's Encrypt via Caddy)`
-                    : httpsMode === 'self-signed'
-                        ? 'self-signed (fingerprint above, via Caddy)'
-                        : 'none (plain HTTP)'
-            }`
-        );
-
-        if (httpsMode !== 'none') {
-            console.log(
-                `Express itself listens on: ${expressHost}:${port} (Caddy fronts it - see Caddyfile)`
-            );
-        }
-
+        console.log(`Address: ${host}:${port}`);
         console.log(`Admin Username: ${username}`);
         console.log(`Admin Email: ${email}`);
 
@@ -720,12 +512,8 @@ class SetupWizard {
             // IMPORTANT:
             // This happens only after successful verification.
             this.updateEnvFile({
-                expressHost,
-                publicHost: host,
-                port,
-                httpsMode,
-                domain,
-                tlsFingerprint
+                host,
+                port
             });
 
             console.log(

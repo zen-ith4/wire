@@ -5,6 +5,7 @@ const { authenticate } = require('../middleware/authenticate');
 const { mediaAuth } = require('../middleware/mediaAuth');
 const { dmUpload } = require('../config/multer');
 const { chatWriteLimiter, uploadLimiter } = require('../middleware/rateLimiter');
+const { asyncHandler } = require('../middleware/asyncHandler');
 
 const {
   getConversations,
@@ -14,6 +15,7 @@ const {
   getMessagesSince,
   sendMessage,
   sendMessageWithAttachment,
+  getAttachmentMediaToken,
   getAttachment,
   deleteMessage,
   toggleReaction,
@@ -82,7 +84,17 @@ router.post(
   authenticate,
   uploadLimiter,
   dmUpload.single('file'),
-  sendMessageWithAttachment
+  asyncHandler(sendMessageWithAttachment)
+);
+
+
+
+// Mint a short-lived, attachment-scoped token for <video>/<audio>
+// elements — see the identical route in chat.routes.js.
+router.get(
+  '/attachments/:messageId/media-token',
+  authenticate,
+  getAttachmentMediaToken
 );
 
 

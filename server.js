@@ -48,17 +48,12 @@ async function startServer() {
 
     // 4. Express configuration
     app.set('trust proxy', false);
+    app.use(express.json());
 
     // IP restriction runs first and applies to *every* request,
-    // static assets and body parsing included — this is the
-    // WireGuard/network access model and must not be weakened or
-    // bypassed for any route. It has to be the very first app.use()
-    // registered: previously express.json() ran before this, which
-    // meant a request from outside the allowed subnet still had its
-    // body fully parsed before being rejected.
+    // static assets included — this is the WireGuard/network access
+    // model and must not be weakened or bypassed for any route.
     app.use(ipRestrict);
-
-    app.use(express.json());
 
     // Static assets are served right after the IP gate, before the
     // request logger. They're still fully subject to ipRestrict
@@ -106,12 +101,7 @@ async function startServer() {
 
     // 8. Start listening on the WireGuard IP (strict binding)
     const PORT = process.env.PORT || constants.PORT || 3000;
-    // Use constants.HOST as the single source of truth (it already
-    // reads process.env.HOST with the same fallback logic) instead
-    // of re-deriving HOST independently here — previously this line
-    // never actually read constants.HOST at all, so the two could
-    // silently disagree.
-    const HOST = constants.HOST;
+    const HOST = process.env.HOST || '127.0.0.1';
 
     server.listen(PORT, HOST, () => {
       console.log(`

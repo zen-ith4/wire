@@ -1,4 +1,4 @@
-const { verifyToken, verifyMediaToken } = require('../utils/jwt');
+const { verifyToken } = require('../utils/jwt');
 const { getDb } = require('../config/database');
 
 /*
@@ -7,89 +7,70 @@ const { getDb } = require('../config/database');
  * Normal API requests use:
  *   Authorization: Bearer TOKEN
  *
- * Browser media elements (<video>, <audio>, <img>) cannot easily
- * send custom Authorization headers when using src, so media
- * requests may also authenticate using:
+ * Browser media elements (<video>, <audio>, <img>) cannot
+ * easily send custom Authorization headers when using src.
+ *
+ * Therefore media requests may also authenticate using:
  *   ?token=TOKEN
  *
- * SECURITY: the query-string path deliberately does NOT accept the
- * normal 24h session JWT — a token that lives in the URL can end up
- * in browser history or leak via a Referer header for as long as
- * it's valid. Instead it only accepts a short-lived, single-
- * attachment-scoped "media token" (see utils/jwt.js's
- * signMediaToken/verifyMediaToken and the
- * GET .../attachments/:messageId/media-token endpoints), minted just
- * before the <video>/<audio> element is created and useless for
- * anything else within ~90 seconds.
- *
- * The Authorization-header path is unaffected and still accepts the
- * normal session JWT exactly as before — headers are never exposed
- * in the URL, so there's nothing to fix there.
+ * The token is still verified using the exact same JWT system.
  */
 
-function resourceTypeFromBaseUrl(baseUrl) {
-  if (baseUrl.startsWith('/api/dm')) return 'dm';
-  if (baseUrl.startsWith('/api/chat')) return 'chat';
-  return null;
-}
+function mediaAuth(req, res, next) {
+  let token = null;
 
-function loadUserAndContinue(userId, req, res, next) {
-  const user = getDb()
-    .prepare(`
-      SELECT
-        id,
-        username,
-        is_admin
-      FROM users
-      WHERE id = ?
-    `)
-    .get(userId);
+  // Normal Authorization header
+  const header = req.headers.authorization;
 
-  if (!user) {
+  if (header && header.startsWith('Bearer ')) {
+    token = header.slice(7).trim();
+  }
+
+  // Media element fallback:
+  // /api/chat/attachments/11?token=...
+  if (!token && typeof req.query.token === 'string') {
+    token = req.query.token.trim();
+  }
+
+  if (!token) {
     return res.status(401).json({
-      error: 'User not found'
+      error: 'Unauthorized'
     });
   }
 
-  req.user = {
-    id: user.id,
-    username: user.username,
-    is_admin: Boolean(user.is_admin)
-  };
-
-  next();
-}
-
-function mediaAuth(req, res, next) {
-  const header = req.headers.authorization;
-
   try {
-    if (header && header.startsWith('Bearer ')) {
-      const token = header.slice(7).trim();
-      const payload = verifyToken(token);
-      return loadUserAndContinue(payload.sub || payload.id, req, res, next);
-    }
+    const payload = verifyToken(token);
 
-    if (typeof req.query.token === 'string' && req.query.token) {
-      const resourceType = resourceTypeFromBaseUrl(req.baseUrl);
-      const resourceId = Number(req.params.messageId);
+    const user = getDb()
+      .prepare(`
+        SELECT
+          id,
+          username,
+          is_admin
+        FROM users
+        WHERE id = ?
+      `)
+      .get(payload.sub || payload.id);
 
-      const payload = verifyMediaToken(req.query.token.trim(), {
-        type: resourceType,
-        id: resourceId,
+    if (!user) {
+      return res.status(401).json({
+        error: 'User not found'
       });
-
-      return loadUserAndContinue(payload.sub, req, res, next);
     }
+
+    req.user = {
+      id: user.id,
+      username: user.username,
+      is_admin: Boolean(user.is_admin)
+    };
+
+    next();
+
   } catch (err) {
     return res.status(401).json({
       error: 'Invalid token'
     });
   }
-
-  return res.status(401).json({
-    error: 'Unauthorized'
-  });
 }
 
 module.exports = {

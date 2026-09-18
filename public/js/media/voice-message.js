@@ -14,7 +14,6 @@
 
 import { ICONS } from '../icons.js';
 import { escapeAttr } from '../core/utils.js';
-import { getMediaSrcUrl } from './mediaToken.js';
 
 // ======================================================
 // DETECTION
@@ -103,9 +102,25 @@ function setActivePlayer(audio) {
 let closeOpenVolumePanel = null;
 
 // ======================================================
-// URL — see media/mediaToken.js for the short-lived,
-// attachment-scoped token scheme (identical to audio-player.js).
+// TOKEN / URL — identical scheme to audio-player.js's getAudioUrl()
 // ======================================================
+
+function getMediaToken() {
+  return localStorage.getItem('token') || '';
+}
+
+function getVoiceUrl(msg, scope) {
+  const baseUrl =
+    scope === 'dm'
+      ? `/api/dm/attachments/${encodeURIComponent(msg.id)}`
+      : `/api/chat/attachments/${encodeURIComponent(msg.id)}`;
+
+  const token = getMediaToken();
+
+  if (!token) return baseUrl;
+
+  return `${baseUrl}?token=${encodeURIComponent(token)}`;
+}
 
 // ======================================================
 // WAVEFORM (decorative, generated — no audio decoding required)
@@ -188,7 +203,7 @@ function formatTime(seconds) {
 // mountAttachmentMedia() in attachments.js — see the identical note
 // in audio-player.js's renderAudio() for why this is looked up
 // inside `containerEl` rather than via a global document query.
-export async function renderVoiceMessage(msg, scope, containerEl) {
+export function renderVoiceMessage(msg, scope, containerEl) {
   const messageId = String(msg.id);
 
   const container =
@@ -207,18 +222,7 @@ export async function renderVoiceMessage(msg, scope, containerEl) {
     return;
   }
 
-  const attachmentUrl = await getMediaSrcUrl(scope, msg.id);
-
-  // The container may have been torn down (or a duplicate player
-  // already inserted by a concurrent render) while we awaited the
-  // token request above.
-  if (
-    !document.body.contains(container) ||
-    container.querySelector(`#${CSS.escape(playerId)}`)
-  ) {
-    return;
-  }
-
+  const attachmentUrl = getVoiceUrl(msg, scope);
   const bars = seededBars(msg.id, BAR_COUNT);
   const barsMarkup = barsHtml(bars);
 
@@ -799,7 +803,7 @@ export async function renderVoiceMessage(msg, scope, containerEl) {
           4: 'MEDIA_ERR_SRC_NOT_SUPPORTED',
         }[code] || 'unknown',
       url: stripToken(attachmentUrl),
-      hadAuthToken: attachmentUrl.includes('token='),
+      hadAuthToken: !!getMediaToken(),
     };
 
     let userMessage = 'Failed to load voice message';

@@ -43,7 +43,7 @@ router.get(
 router.get(
   '/preview/:folderId',
   authenticate,
-  asyncHandler(previewFile)
+  previewFile
 );
 
 

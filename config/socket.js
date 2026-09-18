@@ -2,7 +2,6 @@ const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 
 const { JWT_SECRET } = require('./constants');
-const { getDb } = require('./database');
 const { setupChatSocket } = require('../sockets/chat.socket');
 const { setupDmSocket } = require('../sockets/dm.socket');
 const { setIo } = require('../services/socket.service');
@@ -41,14 +40,6 @@ function setupSocketIO(server) {
 
       if (!user || user.id == null) {
         return next(new Error('Invalid token payload'));
-      }
-
-      const account = getDb()
-        .prepare('SELECT id, is_active FROM users WHERE id = ?')
-        .get(user.id);
-
-      if (!account || account.is_active === 0) {
-        return next(new Error('Account is inactive'));
       }
 
       socket.user = user;

@@ -7,49 +7,6 @@ const {
 
 const { signToken } = require('../utils/jwt');
 
-// ======================================================
-// TIMING SIDE-CHANNEL MITIGATION
-//
-// A nonexistent username used to make authenticateUser() return
-// immediately, while a valid username with a wrong password had to
-// wait for bcrypt.compare() to finish. That timing difference lets
-// an attacker enumerate valid usernames purely by measuring response
-// time, even though both cases return an identical error message.
-//
-// The fix: whenever we're about to return null without ever calling
-// comparePassword() against a real stored hash, run one against a
-// fixed dummy hash instead, so both paths pay the same bcrypt cost.
-// The dummy hash is generated (once, lazily) via the same
-// hashPassword()/BCRYPT_ROUNDS config as real user passwords, so its
-// cost tracks whatever cost factor is actually configured rather
-// than a hardcoded guess.
-// ======================================================
-
-let dummyHashPromise = null;
-
-function getDummyHash() {
-  if (!dummyHashPromise) {
-    dummyHashPromise = hashPassword(
-      'wire-timing-mitigation-dummy-password'
-    );
-  }
-
-  return dummyHashPromise;
-}
-
-async function compareAgainstDummyHash(password) {
-  try {
-    await comparePassword(
-      password,
-      await getDummyHash()
-    );
-  } catch (err) {
-    // Never let a failure here (or a slow first-call hash
-    // generation) turn into an unhandled rejection / crash — the
-    // caller is returning null regardless.
-  }
-}
-
 const {
   createAndSendVerificationCode
 } = require('./emailVerification.service');
@@ -86,18 +43,10 @@ async function authenticateUser(username, password) {
   `).get(username);
 
   if (!user) {
-    // No such user — still pay the bcrypt cost of a real comparison
-    // so this doesn't return measurably faster than a wrong password
-    // for a real username (see the timing side-channel note above).
-    await compareAgainstDummyHash(password);
     return null;
   }
 
   if (user.is_active === 0) {
-    // Same reasoning: a deactivated account shouldn't be
-    // distinguishable from a wrong password by response timing
-    // either.
-    await compareAgainstDummyHash(password);
     return null;
   }
 

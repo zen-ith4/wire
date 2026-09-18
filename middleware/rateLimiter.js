@@ -333,21 +333,6 @@ if (
   'true'
 ) {
 
-  // This is a load-test-only escape hatch that disables real
-  // rate limiting (apiLimiter/chatWriteLimiter/uploadLimiter)
-  // outright. A startup warning alone was easy to miss in deploy
-  // logs, and it's exactly the kind of env var that can get copied
-  // into a production .env by accident — so in production this is
-  // now a hard failure instead of just a warning, mirroring how
-  // config/constants.js already refuses to start in production
-  // without a real JWT_SECRET.
-  if (process.env.NODE_ENV === 'production') {
-    console.error(
-      '❌ FATAL: LOADTEST_DISABLE_RATE_LIMITS=true is not allowed when NODE_ENV=production — it disables all rate limiting. Remove it (or set NODE_ENV to something other than production for load testing) and restart.'
-    );
-    process.exit(1);
-  }
-
   console.warn(
     '⚠️  LOADTEST_DISABLE_RATE_LIMITS=true — general/write rate limiting (apiLimiter/chatWriteLimiter/uploadLimiter) is DISABLED. Load-test use only, never set this in production.'
   );

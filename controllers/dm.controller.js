@@ -3,9 +3,6 @@ const fs = require('fs');
 const constants = require('../config/constants');
 const { CHAT_MIME_MAP } = require('../config/multer');
 const { readImageDimensions } = require('../utils/imageDimensions');
-const { detectMimeFromBytes } = require('../utils/detectFileType');
-const { isInlineSafeMime } = require('../utils/inlineSafeMime');
-const { signMediaToken, MEDIA_TOKEN_TTL_SECONDS } = require('../utils/jwt');
 const {
   getConversationsSummary,
   getTotalUnread,
@@ -160,7 +157,7 @@ function sendMessage(req, res) {
   res.json(fullMsg);
 }
 
-async function sendMessageWithAttachment(req, res) {
+function sendMessageWithAttachment(req, res) {
   const recipient_id = req.body.recipient_id;
   const cleanup = () => {
     if (req.file) fs.unlink(req.file.path, () => {});
@@ -189,44 +186,16 @@ async function sendMessageWithAttachment(req, res) {
   const originalName = path.basename(req.file.originalname);
   const ext = path.extname(originalName).toLowerCase();
   const clientMime = req.file.mimetype || '';
-  // SECURITY: same reasoning as chat.controller.js's
-  // sendMessageWithAttachment — this resolved mime is what later
-  // decides, at serve time (getAttachment below), whether the file
-  // can ever be shown `inline` in a browser. Neither the client's
-  // Content-Type nor the filename extension is trustworthy for that;
-  // only detectMimeFromBytes()'s magic-byte sniff of the actual file
-  // on disk is.
-  const sniffedMime = await detectMimeFromBytes(req.file.path);
-
-  const clientClaimsVoiceRecording =
-    !!req.body?.is_voice_message && clientMime.startsWith('audio/');
-
-  let mime;
-
-  if (
-    clientClaimsVoiceRecording &&
-    (sniffedMime === 'audio/webm' || sniffedMime === 'video/webm')
-  ) {
-    // See the identical case in chat.controller.js: this only ever
-    // relabels between two already-allowlisted types, so it can't
-    // turn an unsafe file into an inline-renderable one.
-    mime = 'audio/webm';
-  } else if (sniffedMime && isInlineSafeMime(sniffedMime)) {
-    mime = sniffedMime;
-  } else {
-    // See the identical, corrected fallback in chat.controller.js:
-    // an extension-derived label must never be trusted if it
-    // happens to be an inline-safe-looking mime (e.g. ".jpg" without
-    // sniff-verified JPEG bytes) — getAttachment() below trusts
-    // isInlineSafeMime(storedMime) directly, so only a verified
-    // sniff result (or the narrow voice-message case above) may ever
-    // produce an inline-safe value here.
-    const extLabel = CHAT_MIME_MAP[ext];
-    mime =
-      extLabel && !isInlineSafeMime(extLabel)
-        ? extLabel
-        : 'application/octet-stream';
-  }
+  // Same reasoning as chat.controller.js's sendMessageWithAttachment:
+  // .webm is a real video container too, so a recorded voice message
+  // (browser-reported audio/webm) needs the client's own mimetype to
+  // win over the extension table — but only when the mimetype is
+  // actually audio/*, so isVoiceMessageFlag() below still can't be
+  // fooled into marking a non-audio file as a voice message.
+  const mime =
+    req.body?.is_voice_message && clientMime.startsWith('audio/')
+      ? clientMime
+      : (CHAT_MIME_MAP[ext] || clientMime || 'application/octet-stream');
   const caption = (req.body.content || '').trim().slice(0, 2000);
   const replyToId = normalizeDmReplyToId(req.body?.reply_to_id, req.user.id, Number(recipient_id));
   const isVoiceMessage = isVoiceMessageFlag(req.body?.is_voice_message, mime);
@@ -256,45 +225,6 @@ async function sendMessageWithAttachment(req, res) {
 
   emitNewDirectMessage(fullMsg);
   res.json(fullMsg);
-}
-
-function getAttachmentMediaToken(req, res) {
-  const messageId = Number(req.params.messageId);
-
-  if (!Number.isInteger(messageId)) {
-    return res.status(400).json({
-      error: 'Invalid message id'
-    });
-  }
-
-  const msg = findDmMessageById(messageId);
-
-  if (!msg || !msg.attachment_path) {
-    return res.status(404).json({
-      error: 'Attachment not found'
-    });
-  }
-
-  // Same access check as getAttachment below — only sender or
-  // recipient may obtain a token for this attachment.
-  if (
-    msg.sender_id !== req.user.id &&
-    msg.recipient_id !== req.user.id
-  ) {
-    return res.status(403).json({
-      error: 'Access denied'
-    });
-  }
-
-  const token = signMediaToken(req.user, {
-    type: 'dm',
-    id: messageId,
-  });
-
-  res.json({
-    token,
-    expiresIn: MEDIA_TOKEN_TTL_SECONDS,
-  });
 }
 
 function getAttachment(req, res) {
@@ -338,28 +268,14 @@ function getAttachment(req, res) {
   const stat = fs.statSync(filePath);
   const fileSize = stat.size;
 
-  // SECURITY: see the identical block in chat.controller.js's
-  // getAttachment — `inline` is only ever allowed for a mime that's
-  // actually on the allowlist (resolved from magic bytes at upload
-  // time), regardless of the `?download` query param or whatever
-  // mime the client originally claimed.
-  const storedMime =
+  const contentType =
     msg.attachment_mime ||
     'application/octet-stream';
 
-  const safeToRenderInline = isInlineSafeMime(storedMime);
-
   const disposition =
-    (safeToRenderInline && !req.query.download)
-      ? 'inline'
-      : 'attachment';
-
-  const contentType =
-    safeToRenderInline
-      ? storedMime
-      : 'application/octet-stream';
-
-  res.setHeader('X-Content-Type-Options', 'nosniff');
+    req.query.download
+      ? 'attachment'
+      : 'inline';
 
   res.setHeader(
     'Content-Type',
@@ -618,7 +534,6 @@ module.exports = {
   getMessagesSince: getMessagesSinceHandler,
   sendMessage,
   sendMessageWithAttachment,
-  getAttachmentMediaToken,
   getAttachment,
   deleteMessage,
   toggleReaction: toggleReactionHandler,

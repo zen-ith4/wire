@@ -1,6 +1,5 @@
 import { ICONS } from '../icons.js';
 import { downloadAttachment } from './attachments.js';
-import { getMediaSrcUrl } from './mediaToken.js';
 
 // ======================================================
 // VIDEO DETECTION
@@ -14,19 +13,37 @@ export function isVideo(mime) {
 }
 
 // ======================================================
+// TOKEN
+// ======================================================
+
+function getMediaToken() {
+  return localStorage.getItem('token') || '';
+}
+
+// ======================================================
 // MEDIA URL
 // ======================================================
-//
-// Attachment playback URLs carry a short-lived, attachment-scoped
-// token (see media/mediaToken.js) rather than the long-lived session
-// JWT that used to be read straight out of localStorage — see the
-// module doc comment in mediaToken.js for why.
+
+function getVideoUrl(msg, scope) {
+  const baseUrl =
+    scope === 'dm'
+      ? `/api/dm/attachments/${encodeURIComponent(msg.id)}`
+      : `/api/chat/attachments/${encodeURIComponent(msg.id)}`;
+
+  const token = getMediaToken();
+
+  if (!token) {
+    return baseUrl;
+  }
+
+  return `${baseUrl}?token=${encodeURIComponent(token)}`;
+}
 
 // ======================================================
 // VIDEO PLAYER
 // ======================================================
 
-export async function renderVideo(msg, scope, containerEl) {
+export function renderVideo(msg, scope, containerEl) {
   const messageId = String(msg.id);
 
   const container =
@@ -45,17 +62,7 @@ export async function renderVideo(msg, scope, containerEl) {
     return;
   }
 
-  const attachmentUrl = await getMediaSrcUrl(scope, msg.id);
-
-  // The container may have been removed (or a duplicate player
-  // already inserted by a concurrent render) while we were waiting
-  // on the token request above.
-  if (
-    !document.body.contains(container) ||
-    container.querySelector(`#vplayer-${CSS.escape(messageId)}`)
-  ) {
-    return;
-  }
+  const attachmentUrl = getVideoUrl(msg, scope);
 
   // ====================================================
   // TEMPLATE

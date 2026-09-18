@@ -28,7 +28,8 @@ import { initDragDrop } from '../files/dragdrop.js';
 
 import {
   initAccent,
-  initTheme
+  initTheme,
+  initBackgroundTheme
 } from '../settings/theme.js';
 
 import { initSidebarResize } from '../ui/sidebar-resize.js';
@@ -353,6 +354,8 @@ async function bootstrap() {
   initTheme();
 
   initAccent();
+
+  initBackgroundTheme();
 
 
   /*

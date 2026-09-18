@@ -44,7 +44,11 @@ import {
   getCurrentTheme,
   applyTheme,
   getUseAccentForBubbles,
-  applyUseAccentForBubbles
+  applyUseAccentForBubbles,
+  BACKGROUND_PRESETS,
+  applyBackgroundTheme,
+  getCurrentBackgroundTheme,
+  getBackgroundPreviewCss
 } from './theme.js';
 
 import {
@@ -187,6 +191,48 @@ export async function renderSettings() {
 
     const currentTheme =
       getCurrentTheme();
+
+
+    // ========================================================
+    // Background theme
+    // ========================================================
+
+    const currentBackgroundId =
+      getCurrentBackgroundTheme();
+
+    const backgroundSwatchesHtml =
+      BACKGROUND_PRESETS
+        .map(p => `
+          <button
+            type="button"
+            class="bg-swatch${
+              p.id === currentBackgroundId
+                ? ' selected'
+                : ''
+            }"
+            data-id="${escapeHtml(p.id)}"
+            title="${escapeHtml(p.name)}"
+            aria-pressed="${p.id === currentBackgroundId}"
+            aria-label="Use ${escapeHtml(p.name)} background">
+
+            <span
+              class="bg-swatch-preview"
+              style="background:${
+                getBackgroundPreviewCss(
+                  p.id,
+                  { dark: currentTheme === 'dark' }
+                )
+              };">
+              <span class="bg-swatch-check">${ICONS.check || ''}</span>
+            </span>
+
+            <span class="bg-swatch-name">
+              ${escapeHtml(p.name)}
+            </span>
+
+          </button>
+        `)
+        .join('');
 
 
     // ========================================================
@@ -357,6 +403,31 @@ export async function renderSettings() {
               id="ambient-levels">
 
               ${ambientLevelsHtml}
+
+            </div>
+
+          </div>
+
+
+          <!-- Background theme -->
+
+          <div class="settings-row settings-row-column">
+
+            <div>
+              <div class="settings-row-label">
+                Background
+              </div>
+
+              <div class="settings-row-sublabel">
+                Choose the atmosphere behind the interface
+              </div>
+            </div>
+
+            <div
+              class="bg-swatches"
+              id="bg-swatches">
+
+              ${backgroundSwatchesHtml}
 
             </div>
 
@@ -1364,6 +1435,63 @@ export async function renderSettings() {
 
         button.classList.add(
           'selected'
+        );
+
+      }
+    );
+
+
+    // ==========================================================
+    // Background theme picker
+    // ==========================================================
+
+    const bgSwatches =
+      document.getElementById(
+        'bg-swatches'
+      );
+
+    bgSwatches?.addEventListener(
+      'click',
+      (e) => {
+
+        const swatch =
+          e.target.closest(
+            '.bg-swatch'
+          );
+
+        if (!swatch) return;
+
+        const id =
+          swatch.dataset.id;
+
+
+        applyBackgroundTheme(
+          id
+        );
+
+
+        document
+          .querySelectorAll(
+            '#bg-swatches .bg-swatch'
+          )
+          .forEach(button => {
+            button.classList.remove(
+              'selected'
+            );
+
+            button.setAttribute(
+              'aria-pressed',
+              'false'
+            );
+          });
+
+        swatch.classList.add(
+          'selected'
+        );
+
+        swatch.setAttribute(
+          'aria-pressed',
+          'true'
         );
 
       }

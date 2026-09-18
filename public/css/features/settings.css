@@ -86,6 +86,42 @@
 .theme-toggle-btn:hover{background:var(--hover);color:var(--text);}
 .theme-toggle-btn.selected{background:rgb(var(--indigo));border-color:rgb(var(--indigo));color:var(--accent-contrast);}
 
+/* ---- Background theme picker ----
+   Row stacks (label above the swatch grid) instead of the usual
+   label-left/control-right layout, since the grid needs more width
+   than a single-line control comfortably has. */
+.settings-row-column{flex-direction:column;align-items:stretch;gap:10px;}
+.bg-swatches{display:flex;flex-wrap:wrap;gap:8px;}
+.bg-swatch{
+  display:flex;flex-direction:column;align-items:center;gap:5px;
+  width:64px;padding:6px 4px 7px;cursor:pointer;
+  background:transparent;border:1px solid transparent;border-radius:var(--radius);
+  transition:background var(--ease-fast),border-color var(--ease-fast);
+}
+.bg-swatch:hover{background:var(--hover);}
+.bg-swatch.selected{border-color:var(--border);background:var(--ink2);}
+.bg-swatch-preview{
+  position:relative;width:100%;height:34px;border-radius:6px;
+  border:1px solid var(--border);overflow:hidden;flex-shrink:0;
+  transition:border-color var(--ease-fast),box-shadow var(--ease-fast);
+}
+.bg-swatch:hover .bg-swatch-preview{border-color:#3A3A46;}
+.bg-swatch.selected .bg-swatch-preview{border-color:#8A8A96;box-shadow:0 0 0 3px var(--accent-bg);}
+.bg-swatch-check{
+  position:absolute;top:3px;right:3px;width:15px;height:15px;
+  display:flex;align-items:center;justify-content:center;
+  border-radius:50%;background:rgba(0,0,0,.55);color:#fff;
+  opacity:0;transform:scale(.7);
+  transition:opacity var(--ease-fast),transform var(--ease-fast);
+}
+.bg-swatch-check svg{width:9px;height:9px;}
+.bg-swatch.selected .bg-swatch-check{opacity:1;transform:scale(1);}
+.bg-swatch-name{font-size:10.5px;font-weight:500;color:var(--muted);text-align:center;line-height:1.2;}
+.bg-swatch.selected .bg-swatch-name{color:var(--text);}
+@media (max-width:520px){
+  .bg-swatch{width:56px;}
+}
+
 /* ---- Generic ON/OFF switch (e.g. "Use accent color for chat bubbles") ---- */
 .switch{
   position:relative;flex-shrink:0;cursor:pointer;

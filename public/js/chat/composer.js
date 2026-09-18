@@ -144,6 +144,16 @@ export function createComposer(config) {
                   style="width:${item.progress || 0}%"
                 ></div>
               </div>
+
+              <button
+                type="button"
+                class="attach-chip-remove"
+                title="Cancel upload"
+                aria-label="Cancel upload"
+                onclick="window['__composerCancelUpload_${stagingId}']('${item.key}')"
+              >
+                ${ICONS.close}
+              </button>
             `
             : `
               <button
@@ -208,6 +218,34 @@ export function createComposer(config) {
 
   window[`__composerRemove_${stagingId}`] =
     removeFile;
+
+  // Cancels one in-flight upload without touching any other staged
+  // item. Aborts the underlying XHR (see item.cancel, set in
+  // uploadStagedFile) so the request itself stops, not just its UI.
+  function cancelUpload(key) {
+    const item =
+      staged.find(
+        i => i.key === key
+      );
+
+    if (!item || item.status !== 'uploading') return;
+
+    item.cancelledByUser = true;
+
+    if (item.cancel) {
+      item.cancel();
+    }
+
+    staged =
+      staged.filter(
+        i => i.key !== key
+      );
+
+    renderStaging();
+  }
+
+  window[`__composerCancelUpload_${stagingId}`] =
+    cancelUpload;
 
   function clearStaged() {
     staged = [];
@@ -405,8 +443,8 @@ export function createComposer(config) {
         buildFormExtra(form);
       }
 
-      const message =
-        await xhrUpload(
+      const uploadPromise =
+        xhrUpload(
           uploadUrl,
           form,
           (pct) => {
@@ -418,6 +456,14 @@ export function createComposer(config) {
           }
         );
 
+      // Exposed so the cancel button (see cancelUpload) can abort
+      // this specific request without affecting any other upload.
+      item.cancel = () =>
+        uploadPromise.cancel();
+
+      const message =
+        await uploadPromise;
+
       onMessage(message);
 
       return {
@@ -426,6 +472,17 @@ export function createComposer(config) {
       };
 
     } catch (e) {
+      // The user already removed this chip from `staged` and
+      // aborted the request themselves (see cancelUpload) — nothing
+      // left to clean up or surface as an error.
+      if (item.cancelledByUser) {
+        return {
+          ok: false,
+          key: item.key,
+          cancelled: true
+        };
+      }
+
       item.status = 'error';
 
       item.error =

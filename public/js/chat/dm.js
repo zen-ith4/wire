@@ -388,6 +388,23 @@ onPresenceChange((changedUserId) => {
   statusEl.classList.toggle('online', online);
 });
 
+// Same live-sync approach for the "New message" picker's status lines
+// (the .presence-dot on each row's avatar already updates itself via
+// avatar.js's own listener — this just keeps the "Online"/"Offline"
+// text next to it in sync too, without re-rendering the whole list).
+onPresenceChange((changedUserId) => {
+  const selector =
+    changedUserId === null
+      ? '.dm-picker-status[data-user-id]'
+      : `.dm-picker-status[data-user-id="${changedUserId}"]`;
+
+  document.querySelectorAll(selector).forEach((el) => {
+    const online = isUserOnline(el.dataset.userId);
+    el.textContent = online ? 'Online' : 'Offline';
+    el.classList.toggle('online', online);
+  });
+});
+
 // ---------- Typing indicator ----------
 function renderDmTyping(usernames) {
   const el = document.getElementById('dm-typing-indicator');
@@ -590,37 +607,194 @@ export async function refreshUnreadBadge() {
 }
 
 // ---------- New DM picker ----------
+// Full, unfiltered set of selectable people for the picker session
+// currently on screen — fetched once per open, then filtered
+// client-side as the user types (the app already has this whole list
+// in hand via /api/share/users, so there's no need for a server-side
+// search round-trip for what is, in practice, a short contact list).
+let dmPickerUsers = null;
+
 window.openNewDmPicker = async function () {
+  document.querySelector('.dm-layout')?.classList.add('showing-thread');
+  document.querySelectorAll('.dm-conv').forEach((el) => el.classList.remove('active'));
+
+  const thread = document.getElementById('dm-thread');
+  thread.innerHTML = `
+    <div class="dm-thread-header">
+      <button class="icon-btn dm-back-btn" title="Back" onclick="window.closeNewDmPicker()">${ICONS.arrowLeft}</button>
+      <div class="card-title" style="margin:0;">${ICONS.plus} New message</div>
+      <button class="icon-btn dm-picker-close" title="Close" onclick="window.closeNewDmPicker()">${ICONS.close}</button>
+    </div>
+    <div class="dm-picker-body">
+      <div class="conv-search-wrap dm-picker-search-wrap">
+        <span class="conv-search-icon">${ICONS.search}</span>
+        <input
+          type="text"
+          class="conv-search-input dm-picker-search-input"
+          id="dm-picker-search"
+          placeholder="Search people…"
+          autocomplete="off"
+          aria-label="Search people">
+        <button type="button" class="icon-btn dm-picker-clear hidden" id="dm-picker-clear" title="Clear search">${ICONS.close}</button>
+      </div>
+      <div class="dm-picker-list" id="dm-picker-list" role="listbox" aria-label="People"></div>
+    </div>
+  `;
+
+  const list = document.getElementById('dm-picker-list');
+  list.innerHTML = loadingState();
+
+  const searchInput = document.getElementById('dm-picker-search');
+  const clearBtn = document.getElementById('dm-picker-clear');
+
+  searchInput.addEventListener('input', () => {
+    clearBtn.classList.toggle('hidden', searchInput.value.length === 0);
+    renderDmPickerRows(searchInput.value);
+  });
+  searchInput.addEventListener('keydown', handleDmPickerSearchKeydown);
+
+  clearBtn.addEventListener('click', () => {
+    searchInput.value = '';
+    clearBtn.classList.add('hidden');
+    renderDmPickerRows('');
+    searchInput.focus();
+  });
+
+  list.addEventListener('click', (e) => {
+    const row = e.target.closest('.dm-picker-row');
+    if (row) startDmFromPickerRow(row);
+  });
+  list.addEventListener('keydown', handleDmPickerListKeydown);
+
+  // Focusing immediately lets typing start the search with no extra
+  // click, same as the conversation search box above it.
+  requestAnimationFrame(() => searchInput.focus());
+
   try {
-    const users = await api('/api/share/users');
-    if (users.length === 0) {
-      showToast('No other users to message yet', 'info');
-      return;
-    }
-    document.querySelector('.dm-layout')?.classList.add('showing-thread');
-    const thread = document.getElementById('dm-thread');
-    thread.innerHTML = `
-      <div class="dm-thread-header">
-        <button class="icon-btn dm-back-btn" title="Back" onclick="window.closeDmThreadMobile()">${ICONS.arrowLeft}</button>
-        <div class="card-title" style="margin:0;">${ICONS.plus} New message</div>
-      </div>
-      <div class="toolbar">
-        <select id="dm-new-user">
-          ${users.map((u) => `<option value="${u.id}">${escapeHtml(u.username)}</option>`).join('')}
-        </select>
-        <button class="btn btn-primary btn-sm" onclick="window.startDmFromPicker()">Start chat</button>
-      </div>
-    `;
+    dmPickerUsers = await api('/api/share/users');
   } catch (e) {
-    showToast(e.message, 'error');
+    dmPickerUsers = null;
+    list.innerHTML = emptyState(ICONS.empty, 'Couldn’t load people', escapeHtml(e.message));
+    return;
   }
+
+  if (dmPickerUsers.length === 0) {
+    list.innerHTML = emptyState(
+      ICONS.users,
+      'No one to message yet',
+      'Once other people join, you’ll find them here.'
+    );
+    return;
+  }
+
+  renderDmPickerRows('');
 };
 
-window.startDmFromPicker = function () {
-  const sel = document.getElementById('dm-new-user');
-  const id = Number(sel.value);
-  const username = sel.options[sel.selectedIndex].textContent.trim();
+function renderDmPickerRows(filter = '') {
+  const list = document.getElementById('dm-picker-list');
+  if (!list || !dmPickerUsers) return;
+
+  const q = filter.trim().toLowerCase();
+  const filtered = q
+    ? dmPickerUsers.filter((u) => String(u.username || '').toLowerCase().includes(q))
+    : dmPickerUsers;
+
+  if (filtered.length === 0) {
+    list.innerHTML = q
+      ? emptyState(ICONS.search, 'No matches', `No one found for “${escapeHtml(filter.trim())}”`)
+      : emptyState(
+          ICONS.users,
+          'No one to message yet',
+          'Once other people join, you’ll find them here.'
+        );
+    return;
+  }
+
+  list.innerHTML = filtered
+    .map((u) => {
+      const online = isUserOnline(u.id);
+      return `
+        <div
+          class="dm-picker-row"
+          role="option"
+          tabindex="0"
+          data-user-id="${u.id}"
+          data-username="${escapeAttr(u.username)}"
+          aria-selected="false">
+          ${avatarHtml(u.id, u.username, 'conv-avatar dm-picker-avatar', true)}
+          <div class="dm-picker-info">
+            <div class="dm-picker-name">${escapeHtml(u.username)}</div>
+            <div class="dm-picker-status${online ? ' online' : ''}" data-user-id="${u.id}">${
+              online ? 'Online' : 'Offline'
+            }</div>
+          </div>
+        </div>
+      `;
+    })
+    .join('');
+}
+
+function startDmFromPickerRow(row) {
+  const id = Number(row.dataset.userId);
+  const username = row.dataset.username;
+  if (!Number.isInteger(id) || id <= 0) return;
   openDmConversation(id, username);
+}
+
+function handleDmPickerSearchKeydown(e) {
+  const list = document.getElementById('dm-picker-list');
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    list?.querySelector('.dm-picker-row')?.focus();
+  } else if (e.key === 'Enter') {
+    const rows = list ? list.querySelectorAll('.dm-picker-row') : [];
+    if (rows.length === 1) {
+      e.preventDefault();
+      startDmFromPickerRow(rows[0]);
+    }
+  } else if (e.key === 'Escape') {
+    window.closeNewDmPicker();
+  }
+}
+
+function handleDmPickerListKeydown(e) {
+  const row = e.target.closest('.dm-picker-row');
+  if (!row) return;
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    (row.nextElementSibling || row).focus();
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (row.previousElementSibling) row.previousElementSibling.focus();
+    else document.getElementById('dm-picker-search')?.focus();
+  } else if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    startDmFromPickerRow(row);
+  } else if (e.key === 'Escape') {
+    window.closeNewDmPicker();
+  }
+}
+
+// ---------- Close new-message picker ----------
+// Returns to whichever conversation was open before "New message" was
+// clicked, or to the empty placeholder if none was.
+window.closeNewDmPicker = function () {
+  document.querySelector('.dm-layout')?.classList.remove('showing-thread');
+  dmPickerUsers = null;
+
+  if (dmActivePeer) {
+    openDmConversation(dmActivePeer.id, dmActivePeer.username);
+    return;
+  }
+
+  const thread = document.getElementById('dm-thread');
+  if (thread) {
+    thread.innerHTML = emptyState(
+      ICONS.mail,
+      'Select a conversation',
+      'Or start a new one with a friend.'
+    );
+  }
 };
 
 // ---------- Open conversation ----------

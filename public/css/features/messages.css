@@ -290,10 +290,12 @@ input.conv-search-input:focus{
   flex:1;
   cursor:pointer;
 }
+
 .dm-peer-profile:hover .chat-top-name{
   color:var(--text);
   opacity:.82;
 }
+
 .dm-peer-meta{
   display:flex;
   flex-direction:column;
@@ -336,6 +338,129 @@ input.conv-search-input:focus{
 .dm-back-btn{
   display:none;
   flex-shrink:0;
+}
+
+/* ---------- "New message" recipient picker ----------
+   Reuses .dm-thread-header/.dm-thread above (see the comment on that
+   rule) rather than a separate modal — it takes over the same panel
+   the open conversation would occupy, so it inherits the same
+   mobile show/hide behavior (responsive.css) for free. */
+
+.dm-thread-header .card-title{
+  flex:1;
+  min-width:0;
+}
+
+.dm-picker-close{
+  flex-shrink:0;
+}
+
+@media (max-width:760px){
+  .dm-picker-close{display:none;}
+}
+
+.dm-picker-body{
+  flex:1;
+  min-height:0;
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  padding:14px 16px 16px;
+}
+
+.dm-picker-search-wrap{
+  flex-shrink:0;
+}
+
+.dm-picker-search-input{
+  padding-right:32px;
+}
+
+.dm-picker-clear{
+  position:absolute;
+  right:4px;
+  top:50%;
+  transform:translateY(-50%);
+  width:26px;
+  height:26px;
+  padding:0;
+}
+
+.dm-picker-list{
+  flex:1;
+  min-height:0;
+  overflow-y:auto;
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+  overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch;
+}
+
+.dm-picker-row{
+  display:flex;
+  align-items:center;
+  gap:11px;
+  padding:9px 10px;
+  border-radius:var(--radius);
+  cursor:pointer;
+  min-height:58px;
+  transition:background var(--ease-fast);
+}
+
+.dm-picker-row:hover{
+  background:var(--hover);
+}
+
+.dm-picker-row:active{
+  background:var(--accent-hover-bg);
+}
+
+.dm-picker-row:focus-visible{
+  outline:2px solid var(--accent-ring);
+  outline-offset:-2px;
+  background:var(--hover);
+}
+
+.dm-picker-info{
+  flex:1;
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+}
+
+.dm-picker-name{
+  font-size:13.5px;
+  font-weight:500;
+  color:var(--text);
+  letter-spacing:-0.01em;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+
+.dm-picker-status{
+  font-size:12px;
+  color:var(--muted2);
+  font-weight:430;
+  display:flex;
+  align-items:center;
+  gap:5px;
+}
+
+.dm-picker-status::before{
+  content:'';
+  display:inline-block;
+  width:6px;
+  height:6px;
+  border-radius:50%;
+  background:var(--muted2);
+  flex-shrink:0;
+}
+
+.dm-picker-status.online::before{
+  background:rgb(var(--green));
 }
 
 .chat-messages{
@@ -491,8 +616,8 @@ input.conv-search-input:focus{
    * *reversed* flex container hits a real, reproducible Chromium
    * layout bug: the browser's fit-content/intrinsic-size pass
    * collapses toward min-content, so short messages like "hi there"
-   * or "salam khobi" would render one word per line even though the
-   * bubble had plenty of room. `flex:0 0 auto` below already gives
+   * or "salam khobi" would render one word per line even though
+   * the bubble had plenty of room. `flex:0 0 auto` below already gives
    * this item its natural (shrink-to-fit) width without invoking
    * that broken code path — confirmed via isolated repro before/after.
    *
@@ -1170,6 +1295,10 @@ input.conv-search-input:focus{
 .attach-chip-remove:hover{
   background:rgba(var(--red),.15);
   color:#D6A3A3;
+}
+
+.attach-chip-remove:active{
+  background:rgba(var(--red),.24);
 }
 
 .attach-chip.uploading{

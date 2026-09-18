@@ -20,21 +20,29 @@ export const DEFAULT_AMBIENT_LEVEL = 3;
 //
 // A small, fixed set of background *atmospheres* painted onto the
 // existing #ambient-underlay layer (see paintUnderlay() /
-// buildBackgroundCss() below) — not separate UI themes. "Custom
-// Accent" derives its color from the active accent (--indigo/
-// --indigo-2) so it stays coherent with whatever accent the user has
-// picked; the rest use their own fixed palette so they read the same
-// regardless of accent.
+// buildBackgroundCss() below) — not separate UI themes. Presets
+// flagged `usesAccent: true` derive their color from the active
+// accent (--indigo/--indigo-2), so they stay coherent with — and
+// update live alongside — whatever accent the user has picked; the
+// rest use their own fixed palette so they read the same regardless
+// of accent.
 // ============================================================
 
 export const BACKGROUND_PRESETS = [
-  { id: 'void',          name: 'Void',          usesAccent: false },
-  { id: 'aurora',        name: 'Aurora',        usesAccent: false },
-  { id: 'midnight',      name: 'Midnight',      usesAccent: false },
-  { id: 'glass',         name: 'Glass',         usesAccent: false },
-  { id: 'nebula',        name: 'Nebula',        usesAccent: false },
-  { id: 'monochrome',    name: 'Monochrome',    usesAccent: false },
-  { id: 'custom-accent', name: 'Custom Accent', usesAccent: true  },
+  { id: 'void',           name: 'Void',           usesAccent: false },
+  { id: 'aurora',         name: 'Aurora',         usesAccent: false },
+  { id: 'midnight',       name: 'Midnight',       usesAccent: false },
+  { id: 'glass',          name: 'Glass',          usesAccent: false },
+  { id: 'nebula',         name: 'Nebula',         usesAccent: false },
+  { id: 'monochrome',     name: 'Monochrome',     usesAccent: false },
+  { id: 'custom-accent',  name: 'Custom Accent',  usesAccent: true  },
+  { id: 'accent-flow',    name: 'Accent Flow',    usesAccent: true  },
+  { id: 'accent-glow',    name: 'Accent Glow',    usesAccent: true  },
+  { id: 'accent-depth',   name: 'Accent Depth',   usesAccent: true  },
+  { id: 'accent-horizon', name: 'Accent Horizon', usesAccent: true  },
+  { id: 'accent-corner',  name: 'Accent Corner',  usesAccent: true  },
+  { id: 'accent-orbit',   name: 'Accent Orbit',   usesAccent: true  },
+  { id: 'accent-mesh',    name: 'Accent Mesh',    usesAccent: true  },
 ];
 
 // If a saved id no longer matches any preset here — e.g. a user who
@@ -282,6 +290,123 @@ function buildBackgroundCss(id, { peak, dark }) {
       return `
         radial-gradient(ellipse 100% 85% at 20% 15%, rgba(var(--indigo), ${p1}) 0%, rgba(var(--indigo), ${p2}) 40%, transparent 74%),
         radial-gradient(circle at 90% 94%, rgba(var(--indigo-2), ${p3}) 0%, transparent 42%),
+        var(--void)
+      `;
+    }
+
+    // A diagonal chain of three large, overlapping ellipses running
+    // from one corner to the other (not a top-to-bottom sweep),
+    // alternating accent/secondary-accent and fading in strength —
+    // the fade toward transparent lets the near-black --void show
+    // through, reading as the accent naturally darkening rather than
+    // a hardcoded shade.
+    case 'accent-flow': {
+      const f = (dark ? 1 : 0.55) * peak;
+      const p1 = f.toFixed(3);
+      const p2 = (f * 0.8).toFixed(3);
+      const p3 = (f * 0.6).toFixed(3);
+      return `
+        radial-gradient(ellipse 95% 75% at 10% 88%, rgba(var(--indigo), ${p1}) 0%, transparent 70%),
+        radial-gradient(ellipse 105% 85% at 46% 42%, rgba(var(--indigo-2), ${p2}) 0%, transparent 72%),
+        radial-gradient(ellipse 95% 75% at 84% 8%, rgba(var(--indigo), ${p3}) 0%, transparent 70%),
+        var(--void)
+      `;
+    }
+
+    // A single dominant, concentrated light source well off-center,
+    // with a long smooth multi-stop fade rather than a hard edge —
+    // reads as one atmospheric glow sinking into near-black rather
+    // than a flat colored blob.
+    case 'accent-glow': {
+      const f = (dark ? 1 : 0.5) * peak;
+      const p1 = f.toFixed(3);
+      const p2 = (f * 0.62).toFixed(3);
+      const p3 = (f * 0.32).toFixed(3);
+      return `
+        radial-gradient(ellipse 78% 68% at 70% 32%, rgba(var(--indigo), ${p1}) 0%, rgba(var(--indigo), ${p2}) 34%, rgba(var(--indigo), ${p3}) 60%, transparent 82%),
+        var(--void)
+      `;
+    }
+
+    // Several large layers at deliberately uneven sizes and asymmetric
+    // positions, meant to read as different "distances" — the largest
+    // (furthest) layer is the faintest, the smallest (closest) is the
+    // strongest, rather than every layer sharing one intensity.
+    case 'accent-depth': {
+      const f = (dark ? 1 : 0.5) * peak;
+      const pFar = (f * 0.35).toFixed(3);
+      const pMid = (f * 0.55).toFixed(3);
+      const pNear = (f * 0.8).toFixed(3);
+      return `
+        radial-gradient(ellipse 160% 140% at 32% 72%, rgba(var(--indigo), ${pFar}) 0%, transparent 76%),
+        radial-gradient(ellipse 100% 90% at 78% 22%, rgba(var(--indigo-2), ${pMid}) 0%, transparent 68%),
+        radial-gradient(ellipse 58% 52% at 14% 18%, rgba(var(--indigo), ${pNear}) 0%, transparent 62%),
+        var(--void)
+      `;
+    }
+
+    // A wide, near-horizontal band of light crossing the lower-middle
+    // of the viewport (not the top or bottom edge), plus a soft
+    // surrounding fill above it for depth — a single almost-flat
+    // linear sweep rather than a radial glow.
+    case 'accent-horizon': {
+      const f = (dark ? 1 : 0.5) * peak;
+      const pBand = f.toFixed(3);
+      const pBand2 = (f * 0.75).toFixed(3);
+      const pFill = (f * 0.3).toFixed(3);
+      return `
+        linear-gradient(4deg, transparent 28%, rgba(var(--indigo), ${pBand}) 46%, rgba(var(--indigo-2), ${pBand2}) 62%, transparent 82%),
+        radial-gradient(ellipse 140% 100% at 50% 8%, rgba(var(--indigo), ${pFill}) 0%, transparent 72%),
+        var(--void)
+      `;
+    }
+
+    // One or two large sources planted exactly at opposite viewport
+    // corners, spilling inward as if the light originates from just
+    // outside the frame — most of the interior stays dark.
+    case 'accent-corner': {
+      const f = (dark ? 1 : 0.5) * peak;
+      const p1 = f.toFixed(3);
+      const p2 = (f * 0.7).toFixed(3);
+      return `
+        radial-gradient(ellipse 130% 100% at 0% 0%, rgba(var(--indigo), ${p1}) 0%, transparent 58%),
+        radial-gradient(ellipse 115% 95% at 100% 100%, rgba(var(--indigo-2), ${p2}) 0%, transparent 55%),
+        var(--void)
+      `;
+    }
+
+    // Four huge, extremely soft ellipses ringing the viewport at
+    // uneven intervals — an abstract orbital arrangement where every
+    // layer overlaps its neighbors, kept faint enough that they read
+    // as one atmosphere rather than distinct shapes.
+    case 'accent-orbit': {
+      const f = (dark ? 1 : 0.45) * peak;
+      const pA = (f * 0.6).toFixed(3);
+      const pB = (f * 0.55).toFixed(3);
+      const pC = (f * 0.58).toFixed(3);
+      const pD = (f * 0.5).toFixed(3);
+      return `
+        radial-gradient(ellipse 120% 100% at 18% 12%, rgba(var(--indigo), ${pA}) 0%, transparent 66%),
+        radial-gradient(ellipse 130% 110% at 88% 28%, rgba(var(--indigo-2), ${pB}) 0%, transparent 67%),
+        radial-gradient(ellipse 125% 105% at 68% 90%, rgba(var(--indigo), ${pC}) 0%, transparent 65%),
+        radial-gradient(ellipse 115% 95% at 6% 74%, rgba(var(--indigo-2), ${pD}) 0%, transparent 64%),
+        var(--void)
+      `;
+    }
+
+    // Three very large, very-late-fading fields (transparent doesn't
+    // arrive until 85%+) at scattered positions, so their edges
+    // dissolve into each other and into --void instead of reading as
+    // separate circles — one continuous woven field.
+    case 'accent-mesh': {
+      const f = (dark ? 1 : 0.5) * peak;
+      const pA = (f * 0.55).toFixed(3);
+      const pB = (f * 0.5).toFixed(3);
+      const pC = (f * 0.45).toFixed(3);
+      return `
+        radial-gradient(ellipse 150% 130% at 25% 30%, rgba(var(--indigo), ${pA}) 0%, transparent 85%),
+        radial-gradient(ellipse 140% 150% at 75% 65%, rgba(var(--indigo-2), ${pB}) 0%, transparent 85%),
+        radial-gradient(ellipse 130% 120% at 55% 12%, rgba(var(--indigo), ${pC}) 0%, transparent 82%),
         var(--void)
       `;
     }

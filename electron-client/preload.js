@@ -36,5 +36,24 @@ if (window.location.protocol === 'file:') {
 
     clearIdentityUnlockKey: (origin, userId) =>
       ipcRenderer.invoke('identity:clear-unlock-key', origin, userId),
+
+    // Local device rendering preference — see main.js. Not per-origin or
+    // per-account, so (unlike the identity-key methods above) there's no
+    // origin argument to verify.
+    getHardwareAcceleration: () =>
+      ipcRenderer.invoke('app:hardware-acceleration:get'),
+
+    setHardwareAcceleration: (enabled) =>
+      ipcRenderer.invoke('app:hardware-acceleration:set', enabled),
+
+    relaunchApp: () =>
+      ipcRenderer.invoke('app:relaunch'),
+
+    // Sends the user back to the existing "Connect to Server" screen
+    // (renderer/connect.html) so they can change servers — the Login
+    // screen only shows the current one and delegates the actual
+    // change to that existing flow.
+    showConnectScreen: () =>
+      ipcRenderer.invoke('server:show-connect-screen'),
   });
 }

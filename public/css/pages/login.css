@@ -236,3 +236,61 @@
   outline-offset:3px;
   border-radius:4px;
 }
+
+/* ---------- Server indicator (Electron only) ----------
+   Shown on the Login card only (not Register). Read-only here —
+   "Change" hands off to the existing "Connect to Server" screen
+   (renderer/connect.html) rather than editing the address inline,
+   so there's exactly one place that owns server validation/
+   persistence. Styled as a quiet footnote below .auth-switch, on
+   purpose: it should read as secondary to the actual sign-in form. */
+.auth-server-row{
+  margin-top:14px;
+  padding-top:14px;
+  border-top:1px solid rgb(var(--border) / .5);
+
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  flex-wrap:wrap;
+  gap:5px;
+
+  font-size:12px;
+  line-height:1.5;
+  color:var(--muted);
+}
+
+.auth-server-value{
+  color:var(--text);
+  font-weight:500;
+  word-break:break-all;
+}
+
+.auth-server-change-btn{
+  width:auto !important;
+  padding:0 !important;
+
+  display:inline-flex !important;
+  align-items:center;
+  justify-content:center;
+
+  background:transparent;
+  border:0;
+  color:rgb(var(--indigo));
+
+  font:inherit;
+  font-weight:500;
+
+  cursor:pointer;
+  transition:opacity .15s ease;
+}
+
+.auth-server-change-btn:hover{
+  opacity:.8;
+}
+
+.auth-server-change-btn:focus-visible{
+  outline:2px solid rgb(var(--indigo) / .35);
+  outline-offset:3px;
+  border-radius:4px;
+}

@@ -244,6 +244,25 @@ export async function renderSettings() {
 
 
     // ========================================================
+    // Hardware acceleration
+    //
+    // Electron-only: this is a local rendering preference for the
+    // desktop app's own window, so it's meaningless (and hidden)
+    // when the site is just being viewed in a regular browser tab.
+    // ========================================================
+
+    const isElectronApp = Boolean(
+      window.electronAPI &&
+      window.electronAPI.isElectron
+    );
+
+    const hardwareAccelerationEnabled =
+      isElectronApp
+        ? await window.electronAPI.getHardwareAcceleration()
+        : true;
+
+
+    // ========================================================
     // Settings HTML
     // ========================================================
 
@@ -465,6 +484,47 @@ export async function renderSettings() {
             </button>
 
           </div>
+
+
+          <!-- Hardware acceleration (desktop app only) -->
+
+          ${
+            isElectronApp
+              ? `
+                <div class="settings-row">
+
+                  <div>
+                    <div class="settings-row-label">
+                      Hardware acceleration
+                    </div>
+
+                    <div class="settings-row-sublabel">
+                      Use your GPU to render the app. Turning this off
+                      can help with graphics issues; takes effect after
+                      restarting Wire.
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    class="switch${
+                      hardwareAccelerationEnabled
+                        ? ' on'
+                        : ''
+                    }"
+                    id="hardware-acceleration-toggle"
+                    role="switch"
+                    aria-checked="${hardwareAccelerationEnabled}"
+                    aria-label="Hardware acceleration">
+
+                    <span class="switch-thumb"></span>
+
+                  </button>
+
+                </div>
+              `
+              : ''
+          }
 
         </div>
 
@@ -1385,6 +1445,80 @@ export async function renderSettings() {
 
 
         repaintAllMessageAccents();
+
+      }
+    );
+
+
+    // ==========================================================
+    // Hardware acceleration (desktop app only)
+    // ==========================================================
+
+    const hardwareAccelerationToggle =
+      document.getElementById(
+        'hardware-acceleration-toggle'
+      );
+
+    hardwareAccelerationToggle?.addEventListener(
+      'click',
+      async () => {
+
+        const next =
+          !hardwareAccelerationToggle.classList.contains(
+            'on'
+          );
+
+        // Reflect the choice immediately; it's saved below and only
+        // takes effect on the next launch either way.
+        hardwareAccelerationToggle.classList.toggle(
+          'on',
+          next
+        );
+
+        hardwareAccelerationToggle.setAttribute(
+          'aria-checked',
+          String(next)
+        );
+
+        try {
+          await window.electronAPI.setHardwareAcceleration(
+            next
+          );
+        } catch (e) {
+          showToast(
+            'Could not save that setting.',
+            'error'
+          );
+          hardwareAccelerationToggle.classList.toggle(
+            'on',
+            !next
+          );
+          hardwareAccelerationToggle.setAttribute(
+            'aria-checked',
+            String(!next)
+          );
+          return;
+        }
+
+        const shouldRestart = await showConfirm(
+          `Hardware acceleration is now ${
+            next ? 'on' : 'off'
+          }. Restart Wire now to apply this change?`,
+          {
+            title: 'Restart required',
+            confirmText: 'Restart now',
+            cancelText: 'Later',
+            danger: false,
+          }
+        );
+
+        if (shouldRestart) {
+          window.electronAPI.relaunchApp();
+        } else {
+          showToast(
+            'Setting saved — will apply next time Wire starts.'
+          );
+        }
 
       }
     );

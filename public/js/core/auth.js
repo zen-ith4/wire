@@ -1489,6 +1489,25 @@ function renderAuthCard(
 
       </div>
 
+      ${
+        !isRegister && isElectron()
+          ? `
+            <div class="auth-server-row" id="auth-server-row">
+              <span>Server:</span>
+              <span class="auth-server-value">${
+                escapeHtml(window.location.host)
+              }</span>
+              <button
+                type="button"
+                id="auth-server-change"
+                class="auth-server-change-btn">
+                Change
+              </button>
+            </div>
+          `
+          : ''
+      }
+
     </div>
   `;
 
@@ -1518,6 +1537,26 @@ function renderAuthCard(
         renderRegister(onSuccess);
       }
 
+    };
+  }
+
+
+  /* ---------------------------------------------------------
+   * Server (Electron only, login screen only — see the
+   * conditional block above). Hands off to the existing
+   * "Connect to Server" screen (renderer/connect.html) rather
+   * than reimplementing address entry/validation here.
+   * --------------------------------------------------------- */
+
+  const serverChangeButton =
+    document.getElementById(
+      'auth-server-change'
+    );
+
+  if (serverChangeButton) {
+
+    serverChangeButton.onclick = () => {
+      window.electronAPI.showConnectScreen();
     };
   }
 

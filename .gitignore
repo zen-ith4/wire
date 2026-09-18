@@ -1,25 +1,39 @@
+# Node dependencies
 node_modules/
-electron-client/*
-.env
 
+# Electron build output
+electron-client/dist/
+electron-client/node_modules/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Local databases
 *.db
 *.sqlite
 *.sqlite3
 *.db-shm
 *.db-wal
 
+# Package lockfiles
 package-lock.json
 
+# Local application data
 data/
 logs/
 
+# Uploaded/generated files
 dm-uploads/*
 chat-uploads/*
 
 converted_cache/
 zip_tmp/
 
+# IDE / editor files
 .vscode/
 
+# User-generated media
 avatars/
 banners/

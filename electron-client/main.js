@@ -51,6 +51,55 @@ function clearConfig() {
 }
 
 // ---------------------------------------------------------------------------
+// Persisted app settings (device-level, not tied to any server/account —
+// currently just the Hardware Acceleration preference). Kept in a separate
+// file from server-config.json since it's conceptually unrelated (a chosen
+// server vs. a local rendering preference) and read very early, before
+// `app.whenReady()`.
+// ---------------------------------------------------------------------------
+
+const APP_SETTINGS_PATH = path.join(app.getPath('userData'), 'app-settings.json');
+
+const DEFAULT_APP_SETTINGS = { hardwareAccelerationEnabled: true };
+
+function loadAppSettings() {
+  try {
+    const raw = fs.readFileSync(APP_SETTINGS_PATH, 'utf-8');
+    const parsed = JSON.parse(raw);
+    return {
+      hardwareAccelerationEnabled:
+        typeof parsed.hardwareAccelerationEnabled === 'boolean'
+          ? parsed.hardwareAccelerationEnabled
+          : DEFAULT_APP_SETTINGS.hardwareAccelerationEnabled,
+    };
+  } catch (e) {
+    return { ...DEFAULT_APP_SETTINGS };
+  }
+}
+
+function saveAppSettings(settings) {
+  try {
+    fs.mkdirSync(path.dirname(APP_SETTINGS_PATH), { recursive: true });
+    fs.writeFileSync(APP_SETTINGS_PATH, JSON.stringify(settings, null, 2), 'utf-8');
+  } catch (e) {
+    console.error('Failed to save app settings:', e);
+  }
+}
+
+// Hardware acceleration can only be toggled by calling
+// app.disableHardwareAcceleration() before the app is ready — it cannot be
+// changed at runtime on a window that's already open. So: read the saved
+// preference now, at module load (well before app.whenReady() below), and
+// apply it immediately. A change made later from the renderer (see the
+// 'app:hardware-acceleration:set' handler further down) is written to disk
+// right away but only takes effect the *next* time the app launches, which
+// is why that handler also offers to relaunch the app immediately.
+const initialAppSettings = loadAppSettings();
+if (!initialAppSettings.hardwareAccelerationEnabled) {
+  app.disableHardwareAcceleration();
+}
+
+// ---------------------------------------------------------------------------
 // Address normalization / validation
 // ---------------------------------------------------------------------------
 
@@ -394,6 +443,48 @@ ipcMain.handle('identity:clear-unlock-key', (event, claimedOrigin, userId) => {
   }
 });
 
+
+// ---------------------------------------------------------------------------
+// IPC — Hardware Acceleration setting
+//
+// Exposed to the remote site's Settings page (see preload.js's
+// `electronAPI` branch), same as the identity-unlock-key handlers above.
+// Not security-sensitive (it's a local rendering preference, not
+// per-account data), so unlike those handlers this doesn't need to verify
+// the caller's origin.
+// ---------------------------------------------------------------------------
+
+ipcMain.handle('app:hardware-acceleration:get', () => {
+  return loadAppSettings().hardwareAccelerationEnabled;
+});
+
+ipcMain.handle('app:hardware-acceleration:set', (event, enabled) => {
+  const value = enabled !== false;
+  saveAppSettings({ hardwareAccelerationEnabled: value });
+  // Takes effect on next launch (see the disableHardwareAcceleration() call
+  // above) — the renderer prompts the user to relaunch now.
+  return { success: true, enabled: value };
+});
+
+ipcMain.handle('app:relaunch', () => {
+  app.relaunch();
+  app.exit(0);
+});
+
+// ---------------------------------------------------------------------------
+// IPC — "Change server" from the remote site's Login screen
+//
+// Hands off to the existing connect screen/flow (address entry,
+// validation, persistence, auto-reconnect) rather than duplicating any
+// of that here. Exposed to the remote site (see preload.js's
+// `electronAPI` branch) alongside the other non-sensitive app controls
+// above.
+// ---------------------------------------------------------------------------
+
+ipcMain.handle('server:show-connect-screen', () => {
+  showConnectScreen({ autoAttempt: false });
+  return true;
+});
 
 // ---------------------------------------------------------------------------
 // IPC — only reachable from the local connect.html screen (see preload.js)

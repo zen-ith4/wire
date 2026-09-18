@@ -1,4 +1,4 @@
-const { verifyToken, verifyMediaToken } = require('../utils/jwt');
+const { verifySessionToken, verifyMediaToken } = require('../utils/jwt');
 const { getDb } = require('../config/database');
 
 /*
@@ -66,7 +66,12 @@ function mediaAuth(req, res, next) {
   try {
     if (header && header.startsWith('Bearer ')) {
       const token = header.slice(7).trim();
-      const payload = verifyToken(token);
+      // BUG FIX: was verifyToken() here, which doesn't check
+      // payload.typ — a leaked media token could be replayed as a
+      // full Bearer session token on this path too. Same fix as
+      // middleware/authenticate.js: verifySessionToken() rejects
+      // typ === 'media'.
+      const payload = verifySessionToken(token);
       return loadUserAndContinue(payload.sub || payload.id, req, res, next);
     }
 

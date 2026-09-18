@@ -1,52 +1,65 @@
-# اتصال امن به Wire — راهنما
+Secure Connection to Wire — Guide
 
-این راهنما بسته به این‌که سرور چطور راه‌اندازی شده، مسیرت فرق می‌کنه. تو صفحه‌ی setup وقتی سرور بالا میاد، مشخص میشه کدوم حالتیه.
+This guide depends on how the server is configured. The setup page will tell you which mode your server is using.
 
----
+Mode 1: The server has a domain (automatic HTTPS with Let's Encrypt)
 
-## حالت ۱: سرور دامنه داره (HTTPS خودکار با Let's Encrypt)
+You don't need to do anything. Just open the address:
 
-هیچ کاری لازم نیست بکنی. فقط آدرس رو باز کن:
-```
 https://chat.example.com
-```
-مرورگر یا اپ دسکتاپ بدون هیچ هشداری وصل میشه — دقیقاً مثل هر سایت دیگه‌ای.
 
----
+Your browser or desktop app will connect without any warnings — exactly like any other website.
 
-## حالت ۲: سرور فقط WireGuard داره (بدون دامنه)
+Mode 2: The server only uses WireGuard (no domain)
 
-اول باید به WireGuard وصل باشی (همون‌طور که همیشه بودی). بعدش دو تا مسیر داری، بسته به این‌که از **مرورگر** استفاده می‌کنی یا از **اپ دسکتاپ Electron**:
+First, make sure you're connected to WireGuard, just like you normally would. Then you have two options, depending on whether you're using a browser or the Electron desktop app.
 
-### اگه از مرورگر (Chrome/Firefox/Safari) استفاده می‌کنی
+If you're using a browser (Chrome/Firefox/Safari)
 
-آدرس رو با `https://` باز کن (نه `http://`):
-```
+Open the address using https:// (not http://):
+
 https://10.10.0.7
-```
-یه هشدار می‌بینی («Your connection is not private» یا مشابهش). این طبیعیه — چون این certificate توسط یه CA عمومی صادر نشده (نه چون واقعاً خطریه). روی **Advanced** بزن، بعد **Proceed to 10.10.0.7 (unsafe)** (یا معادلش تو مرورگرت).
 
-**همین کافیه.** بعد از این یه‌بار، همه‌چی عادی کار می‌کنه — از جمله E2EE و صدا، چون از نظر فنی الان واقعاً روی HTTPS هستی، فقط مرورگر بهت هشدار داد که این cert رو از قبل نمی‌شناسه.
+You'll see a warning such as "Your connection is not private" or something similar.
 
-> چرا اصلاً باید `https://` بزنی؟ چون رمزنگاری end-to-end (و فیچر صدا) توی مرورگر فقط روی HTTPS کار می‌کنه — این یه محدودیت خودِ مرورگرهاست، نه چیزی که ما گذاشته باشیم.
+This is expected because the certificate wasn't issued by a publicly trusted CA — not because the connection is actually unsafe.
 
-### اگه از اپ دسکتاپ (Electron) استفاده می‌کنی
+Click Advanced, then Proceed to 10.10.0.7 (unsafe) (or the equivalent option in your browser).
 
-اپ دسکتاپ رفتار متفاوتی داره — به‌جای نشون دادن یه صفحه‌ی هشدار قابل‌کلیک، یه پنجره‌ی تایید نشونت میده که یه **fingerprint** (اثرانگشت رمزنگاری‌شده‌ی سرور) توش هست:
+That's it.
 
-```
+After doing this once, everything will work normally — including E2EE and voice features, because the connection is genuinely using HTTPS. The browser is simply warning you that it doesn't recognize the certificate as being issued by a trusted CA.
+
+Why do I need to use https://?
+
+Because browser features such as end-to-end encryption and voice communication require a secure context (HTTPS). This is a browser security requirement, not a limitation imposed by Wire.
+
+If you're using the Electron desktop app
+
+The desktop app behaves differently. Instead of showing a clickable browser warning page, it displays a confirmation window containing the server's certificate fingerprint:
+
 Fingerprint (SHA-256):
-  40:D3:F4:D0:A8:60:02:39:7E:D2:07:C6:A4:A3:84:DE:...
-```
 
-**قبل از زدن «Trust This Certificate»**، این fingerprint رو با ادمین سرور چک کن — همون چیزیه که موقع اجرای setup wizard روی صفحه چاپ شده. اگه دقیقاً یکی بود، می‌تونی مطمئن بشی.
+40:D3:F4:D0:A8:60:02:39:7E:D2:07:C6:A4:A3:84:DE:...
 
-بعد از تاییدت، اپ این fingerprint رو **به خاطر می‌سپره** — دفعه‌های بعد دیگه چیزی نمی‌پرسه، مگر این‌که fingerprint سرور عوض بشه (که اون‌موقع یه هشدار جدی‌تر می‌بینی، چون یا سرور از نو نصب شده، یا یکی داره وسط ارتباطت دخالت می‌کنه — دقیقاً مثل وقتی SSH بهت میگه «REMOTE HOST IDENTIFICATION HAS CHANGED»).
+Before clicking "Trust This Certificate," verify this fingerprint with the server administrator. It should match the fingerprint displayed during the server setup wizard.
 
-**این یعنی چه چیزی نیازی نیست بکنی:** لازم نیست هیچ certificate ای رو دستی نصب کنی، وارد تنظیمات سیستم بشی، یا هیچ فایلی import کنی. کل کار همون یه‌بار تایید تو همون پنجره‌ست.
+If the fingerprints match, you can safely trust the certificate.
 
----
+After you confirm it, the app remembers the fingerprint. You won't be asked again unless the server's fingerprint changes.
 
-## اگه fingerprint عوض شد و مطمئن نیستی چرا
+If the fingerprint changes, the app shows a more serious warning because the server may have been reinstalled, or someone could potentially be interfering with the connection — similar to SSH showing:
 
-وصل نشو. با ادمین سرور از یه کانال دیگه (نه از طریق خودِ اپ) چک کن — مثلاً پیام‌رسان دیگه یا تلفن. اگه سرور واقعاً از نو نصب شده (مثلاً OS عوض شده)، fingerprint جدید رو ازش بگیر و مقایسه کن. اگه هیچ دلیلی براش نمی‌دونه، وصل نشو و بهش خبر بده.
+REMOTE HOST IDENTIFICATION HAS CHANGED
+
+What you don't need to do: You don't need to manually install any certificate, change system settings, or import any files. The one-time confirmation in the app is all that's required.
+
+If the fingerprint changes and you don't know why
+
+Don't connect.
+
+Contact the server administrator through a separate channel — not through the Wire app itself — such as another messaging app or a phone call.
+
+If the server was genuinely reinstalled (for example, the OS was replaced), get the new fingerprint from the administrator and compare it.
+
+If the administrator doesn't know why the fingerprint changed, don't connect and notify them about it.

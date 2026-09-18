@@ -1,4 +1,4 @@
-const { verifyToken } = require('../utils/jwt');
+const { verifySessionToken } = require('../utils/jwt');
 
 const loginAttempts = new Map();
 
@@ -373,8 +373,10 @@ function userOrIpKey(req) {
 
     try {
 
+      // Same fix as authenticate.js/mediaAuth.js: don't let a media
+      // token be treated as identifying a full session here either.
       const payload =
-        verifyToken(
+        verifySessionToken(
           header.slice(7)
         );
 

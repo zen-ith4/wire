@@ -18,6 +18,38 @@ function verifyToken(token) {
 }
 
 // ======================================================
+// SESSION-TOKEN-ONLY VERIFICATION
+//
+// verifyToken() above only checks the JWT signature/expiry — it says
+// nothing about *what kind* of token was presented. Media tokens
+// (see signMediaToken/verifyMediaToken below) are also valid,
+// correctly-signed JWTs, just narrowly scoped (one attachment,
+// ~90 seconds). Any call site that grants general account access —
+// the `authenticate` middleware, and the Authorization-header path
+// in `mediaAuth` — must reject a media token the same way it would
+// reject a garbage token, or a token minted for one 90-second,
+// one-attachment download would silently work as a full session
+// token everywhere else (chat, DMs, settings, even admin routes for
+// an admin user) for as long as it stays valid.
+//
+// This wraps verifyToken() and adds exactly that check, so every
+// "give me the logged-in user" call site enforces it the same way
+// instead of each one remembering to check `payload.typ` itself.
+function verifySessionToken(token) {
+  const payload = verifyToken(token);
+
+  if (payload.typ === 'media') {
+    const err = new Error(
+      'Media token cannot be used as a session token'
+    );
+    err.code = 'MEDIA_TOKEN_NOT_ALLOWED';
+    throw err;
+  }
+
+  return payload;
+}
+
+// ======================================================
 // MEDIA TOKENS
 //
 // <video>/<audio>/<img> elements can't send a custom Authorization
@@ -70,6 +102,7 @@ function verifyMediaToken(token, resource) {
 module.exports = {
   signToken,
   verifyToken,
+  verifySessionToken,
   signMediaToken,
   verifyMediaToken,
   MEDIA_TOKEN_TTL_SECONDS,

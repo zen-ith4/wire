@@ -17,8 +17,7 @@ electron-client/node_modules/
 *.db-shm
 *.db-wal
 
-# Package lockfiles
-package-lock.json
+tls/
 
 # Local application data
 data/

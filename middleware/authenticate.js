@@ -1,5 +1,5 @@
 const { getDb } = require('../config/database');
-const { verifyToken } = require('../utils/jwt');
+const { verifySessionToken } = require('../utils/jwt');
 
 
 function authenticate(req, res, next) {
@@ -20,7 +20,16 @@ function authenticate(req, res, next) {
 
     const token = header.split(' ')[1];
 
-    const payload = verifyToken(token);
+    // BUG FIX: this used to call verifyToken() directly, which only
+    // checks the JWT signature/expiry. A short-lived, single-
+    // attachment-scoped media token (see utils/jwt.js) is also a
+    // validly signed JWT, so it passed straight through here and
+    // worked as a full session token on every authenticate-protected
+    // route (chat, DMs, settings, admin routes for an admin user) for
+    // its ~90 second lifetime — not just the one attachment it was
+    // minted for. verifySessionToken() additionally rejects any
+    // token whose payload.typ === 'media'.
+    const payload = verifySessionToken(token);
 
 
     const user = getDb()

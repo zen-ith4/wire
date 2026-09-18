@@ -70,7 +70,6 @@ const IMAGE_TYPES = [
 const AVATAR_MAX_BYTES = 5 * 1024 * 1024;
 const BANNER_MAX_BYTES = 8 * 1024 * 1024;
 
-
 function validateImageFile(file, maxBytes) {
   if (!IMAGE_TYPES.includes(file.type)) {
     return 'Please choose a JPG, PNG, WEBP, or GIF image.';
@@ -96,13 +95,101 @@ async function loadSecuritySettings() {
 
 
 // ============================================================
+// Background theme layout
+// ============================================================
+
+const FEATURED_BACKGROUND_IDS = [
+  'void',
+  'aurora',
+  'ocean',
+  'midnight',
+  'glass',
+  'accent-flow',
+  'accent-orbit',
+  'nebula',
+  'accent-glow',
+  'accent-mesh'
+];
+
+function splitBackgroundPresets() {
+  const featured = [];
+  const more = [];
+
+  for (const preset of BACKGROUND_PRESETS) {
+    if (FEATURED_BACKGROUND_IDS.includes(preset.id)) {
+      featured.push(preset);
+    } else {
+      more.push(preset);
+    }
+  }
+
+  featured.sort(
+    (a, b) =>
+      FEATURED_BACKGROUND_IDS.indexOf(a.id) -
+      FEATURED_BACKGROUND_IDS.indexOf(b.id)
+  );
+
+  return {
+    featured,
+    more
+  };
+}
+
+function renderBackgroundPreset(
+  preset,
+  currentBackgroundId,
+  currentTheme
+) {
+  const selected =
+    preset.id === currentBackgroundId;
+
+  const previewCss =
+    getBackgroundPreviewCss(
+      preset.id,
+      {
+        dark: currentTheme === 'dark'
+      }
+    );
+
+  return `
+    <button
+      type="button"
+      class="bg-swatch${selected ? ' selected' : ''}"
+      data-id="${escapeHtml(preset.id)}"
+      title="${escapeHtml(preset.name)}"
+      aria-pressed="${selected}"
+      aria-label="Use ${escapeHtml(preset.name)} background">
+
+      <span
+        class="bg-swatch-preview"
+        style="background:${previewCss};">
+
+        <span class="bg-swatch-check">
+          ${ICONS.check || ''}
+        </span>
+
+      </span>
+
+      <span class="bg-swatch-name">
+        ${escapeHtml(preset.name)}
+      </span>
+
+    </button>
+  `;
+}
+
+
+// ============================================================
 // Render settings
 // ============================================================
 
 export async function renderSettings() {
-  const main = document.getElementById('content-area');
+  const main =
+    document.getElementById('content-area');
 
-  if (!main) return;
+  if (!main) {
+    return;
+  }
 
   main.innerHTML = `
     <div class="card">
@@ -111,17 +198,19 @@ export async function renderSettings() {
   `;
 
   try {
-    const me = await api('/api/me');
-    const security = await loadSecuritySettings();
+    const me =
+      await api('/api/me');
+
+    const security =
+      await loadSecuritySettings();
 
     const email2FAEnabled =
       Boolean(security.email_2fa_enabled);
 
     /*
      * The backend-provided feature state is authoritative.
-     * The entire Email 2FA section is omitted from the
-     * rendered DOM whenever email is disabled server-side —
-     * this is not just a disabled toggle.
+     * The entire Email 2FA section is omitted whenever
+     * email is disabled server-side.
      */
     const emailFeatureEnabled =
       Boolean(security.email_enabled);
@@ -194,45 +283,54 @@ export async function renderSettings() {
 
 
     // ========================================================
-    // Background theme
+    // Background themes
     // ========================================================
 
     const currentBackgroundId =
       getCurrentBackgroundTheme();
 
-    const backgroundSwatchesHtml =
-      BACKGROUND_PRESETS
-        .map(p => `
-          <button
-            type="button"
-            class="bg-swatch${
-              p.id === currentBackgroundId
-                ? ' selected'
-                : ''
-            }"
-            data-id="${escapeHtml(p.id)}"
-            title="${escapeHtml(p.name)}"
-            aria-pressed="${p.id === currentBackgroundId}"
-            aria-label="Use ${escapeHtml(p.name)} background">
+    const {
+      featured: featuredBackgrounds,
+      more: moreBackgrounds
+    } = splitBackgroundPresets();
 
-            <span
-              class="bg-swatch-preview"
-              style="background:${
-                getBackgroundPreviewCss(
-                  p.id,
-                  { dark: currentTheme === 'dark' }
-                )
-              };">
-              <span class="bg-swatch-check">${ICONS.check || ''}</span>
-            </span>
+    /*
+     * If the current background is not one of the featured
+     * backgrounds, open the More section automatically.
+     */
+    const currentBackgroundIsFeatured =
+      featuredBackgrounds.some(
+        preset =>
+          preset.id === currentBackgroundId
+      );
 
-            <span class="bg-swatch-name">
-              ${escapeHtml(p.name)}
-            </span>
+    const moreBackgroundsOpen =
+      !currentBackgroundIsFeatured;
 
-          </button>
-        `)
+    const featuredBackgroundsHtml =
+      featuredBackgrounds
+        .map(preset =>
+          renderBackgroundPreset(
+            preset,
+            currentBackgroundId,
+            currentTheme
+          )
+        )
         .join('');
+
+    const moreBackgroundsHtml =
+      moreBackgrounds
+        .map(preset =>
+          renderBackgroundPreset(
+            preset,
+            currentBackgroundId,
+            currentTheme
+          )
+        )
+        .join('');
+
+    const hasMoreBackgrounds =
+      moreBackgrounds.length > 0;
 
 
     // ========================================================
@@ -245,20 +343,18 @@ export async function renderSettings() {
 
     // ========================================================
     // Hardware acceleration
-    //
-    // Electron-only: this is a local rendering preference for the
-    // desktop app's own window, so it's meaningless (and hidden)
-    // when the site is just being viewed in a regular browser tab.
     // ========================================================
 
-    const isElectronApp = Boolean(
-      window.electronAPI &&
-      window.electronAPI.isElectron
-    );
+    const isElectronApp =
+      Boolean(
+        window.electronAPI &&
+        window.electronAPI.isElectron
+      );
 
     const hardwareAccelerationEnabled =
       isElectronApp
-        ? await window.electronAPI.getHardwareAcceleration()
+        ? await window.electronAPI
+            .getHardwareAcceleration()
         : true;
 
 
@@ -306,8 +402,10 @@ export async function renderSettings() {
                     : ''
                 }"
                 data-theme="dark">
+
                 ${ICONS.moon || ''}
                 <span>Dark</span>
+
               </button>
 
               <button
@@ -318,8 +416,10 @@ export async function renderSettings() {
                     : ''
                 }"
                 data-theme="light">
+
                 ${ICONS.sun || ''}
                 <span>Light</span>
+
               </button>
 
             </div>
@@ -395,7 +495,9 @@ export async function renderSettings() {
                 type="button"
                 class="btn btn-sm btn-primary"
                 id="save-custom-accent">
+
                 Apply
+
               </button>
 
             </div>
@@ -430,7 +532,8 @@ export async function renderSettings() {
 
           <!-- Background theme -->
 
-          <div class="settings-row settings-row-column">
+          <div
+            class="settings-row settings-row-column">
 
             <div>
               <div class="settings-row-label">
@@ -442,13 +545,76 @@ export async function renderSettings() {
               </div>
             </div>
 
-            <div
-              class="bg-swatches"
-              id="bg-swatches">
 
-              ${backgroundSwatchesHtml}
+            <!-- Featured backgrounds -->
+
+            <div
+              class="bg-swatches bg-swatches-featured"
+              id="bg-swatches-featured">
+
+              ${featuredBackgroundsHtml}
 
             </div>
+
+
+            <!-- More backgrounds -->
+
+            ${
+              hasMoreBackgrounds
+                ? `
+                  <div
+                    class="bg-more-wrap"
+                    id="bg-more-wrap">
+
+                    <button
+                      type="button"
+                      class="bg-more-toggle${
+                        moreBackgroundsOpen
+                          ? ' is-open'
+                          : ''
+                      }"
+                      id="bg-more-toggle"
+                      aria-expanded="${moreBackgroundsOpen}"
+                      aria-controls="bg-swatches-more">
+
+                      <span class="bg-more-toggle-label">
+                        ${
+                          moreBackgroundsOpen
+                            ? 'Show less'
+                            : 'Show more'
+                        }
+                      </span>
+
+                      <span
+                        class="bg-more-toggle-icon"
+                        aria-hidden="true">
+
+                        ${
+                          ICONS.chevronDown ||
+                          '⌄'
+                        }
+
+                      </span>
+
+                    </button>
+
+
+                    <div
+                      class="bg-swatches bg-swatches-more${
+                        moreBackgroundsOpen
+                          ? ' is-open'
+                          : ''
+                      }"
+                      id="bg-swatches-more">
+
+                      ${moreBackgroundsHtml}
+
+                    </div>
+
+                  </div>
+                `
+                : ''
+            }
 
           </div>
 
@@ -486,7 +652,7 @@ export async function renderSettings() {
           </div>
 
 
-          <!-- Hardware acceleration (desktop app only) -->
+          <!-- Hardware acceleration -->
 
           ${
             isElectronApp
@@ -499,9 +665,9 @@ export async function renderSettings() {
                     </div>
 
                     <div class="settings-row-sublabel">
-                      Use your GPU to render the app. Turning this off
-                      can help with graphics issues; takes effect after
-                      restarting Wire.
+                      Use your GPU to render the app.
+                      Turning this off can help with graphics
+                      issues; takes effect after restarting Wire.
                     </div>
                   </div>
 
@@ -537,7 +703,10 @@ export async function renderSettings() {
           class="profile-banner-wrap profile-banner-settings-wrap"
           id="profile-banner-wrap">
 
-          ${bannerHtml(me.id, 'profile-banner')}
+          ${bannerHtml(
+            me.id,
+            'profile-banner'
+          )}
 
           <div class="profile-banner-actions">
 
@@ -553,8 +722,10 @@ export async function renderSettings() {
               type="button"
               class="btn btn-sm btn-glass"
               onclick="document.getElementById('banner-input').click()">
+
               ${ICONS.camera}
               Change banner
+
             </button>
 
             ${
@@ -564,7 +735,9 @@ export async function renderSettings() {
                     type="button"
                     class="btn btn-sm btn-glass btn-danger"
                     onclick="window.removeBanner()">
+
                     Remove
+
                   </button>
                 `
                 : ''
@@ -575,7 +748,9 @@ export async function renderSettings() {
         </div>
 
 
-        ${progressBarHtml('banner-upload-progress')}
+        ${progressBarHtml(
+          'banner-upload-progress'
+        )}
 
 
         <!-- ================================================== -->
@@ -613,7 +788,6 @@ export async function renderSettings() {
 
               </div>
 
-
               <div>
 
                 <div class="settings-row-label">
@@ -621,7 +795,11 @@ export async function renderSettings() {
                 </div>
 
                 <div class="settings-row-sublabel">
-                  ${me.is_admin ? 'Administrator' : 'Member'}
+                  ${
+                    me.is_admin
+                      ? 'Administrator'
+                      : 'Member'
+                  }
                 </div>
 
               </div>
@@ -643,8 +821,10 @@ export async function renderSettings() {
                 type="button"
                 class="btn btn-sm"
                 onclick="document.getElementById('avatar-input').click()">
+
                 ${ICONS.camera}
                 Change photo
+
               </button>
 
               ${
@@ -654,7 +834,9 @@ export async function renderSettings() {
                       type="button"
                       class="btn btn-sm btn-danger"
                       onclick="window.removeAvatar()">
+
                       Remove
+
                     </button>
                   `
                   : ''
@@ -665,7 +847,9 @@ export async function renderSettings() {
           </div>
 
 
-          ${progressBarHtml('avatar-upload-progress')}
+          ${progressBarHtml(
+            'avatar-upload-progress'
+          )}
 
 
           <!-- Bio -->
@@ -689,7 +873,9 @@ export async function renderSettings() {
             <textarea
               id="settings-bio"
               rows="3"
-              maxlength="300">${escapeHtml(me.bio || '')}</textarea>
+              maxlength="300">${escapeHtml(
+                me.bio || ''
+              )}</textarea>
 
             <div
               style="
@@ -792,184 +978,176 @@ export async function renderSettings() {
 
 
           <!-- Email 2FA -->
-          <!--
-            The entire section is omitted from the DOM (not just
-            hidden/disabled) when the backend reports the email
-            feature as disabled.
-          -->
+
           ${
             emailFeatureEnabled
               ? `
-          <div
-            class="settings-row"
-            style="
-              flex-direction:column;
-              align-items:stretch;
-              gap:10px;
-            ">
-
-            <div
-              style="
-                display:flex;
-                align-items:center;
-                justify-content:space-between;
-                gap:16px;
-              ">
-
-              <div>
-
-                <div class="settings-row-label">
-                  Email 2FA
-                </div>
-
                 <div
-                  class="settings-row-sublabel"
-                  id="email-2fa-description">
+                  class="settings-row"
+                  style="
+                    flex-direction:column;
+                    align-items:stretch;
+                    gap:10px;
+                  ">
 
-                  Require a verification code from your email when signing in
+                  <div
+                    style="
+                      display:flex;
+                      align-items:center;
+                      justify-content:space-between;
+                      gap:16px;
+                    ">
+
+                    <div>
+
+                      <div class="settings-row-label">
+                        Email 2FA
+                      </div>
+
+                      <div
+                        class="settings-row-sublabel"
+                        id="email-2fa-description">
+
+                        Require a verification code from your email when signing in
+
+                      </div>
+
+                    </div>
+
+
+                    <button
+                      type="button"
+                      class="switch${
+                        email2FAEnabled
+                          ? ' on'
+                          : ''
+                      }"
+                      id="email-2fa-toggle"
+                      role="switch"
+                      aria-checked="${email2FAEnabled}"
+                      aria-label="Enable or disable Email 2FA">
+
+                      <span class="switch-thumb"></span>
+
+                    </button>
+
+                  </div>
+
+
+                  <!-- Enable -->
+
+                  <div
+                    id="email-2fa-setup"
+                    style="
+                      display:none;
+                      flex-direction:column;
+                      gap:10px;
+                      margin-top:4px;
+                    ">
+
+                    <input
+                      type="password"
+                      id="email-2fa-current-password"
+                      placeholder="Current password"
+                      autocomplete="current-password"
+                    />
+
+                    <button
+                      type="button"
+                      class="btn btn-primary btn-sm"
+                      id="email-2fa-send-code"
+                      style="align-self:flex-start;">
+
+                      Send verification code
+
+                    </button>
+
+
+                    <div
+                      id="email-2fa-code-section"
+                      style="
+                        display:none;
+                        flex-direction:column;
+                        gap:10px;
+                      ">
+
+                      <div
+                        class="settings-row-sublabel"
+                        id="email-2fa-code-message">
+
+                        A verification code has been sent to your email.
+
+                      </div>
+
+                      <input
+                        type="text"
+                        id="email-2fa-code"
+                        inputmode="numeric"
+                        autocomplete="one-time-code"
+                        maxlength="6"
+                        pattern="[0-9]{6}"
+                        placeholder="6-digit verification code"
+                      />
+
+                      <button
+                        type="button"
+                        class="btn btn-primary btn-sm"
+                        id="email-2fa-verify"
+                        style="align-self:flex-start;">
+
+                        Verify and enable
+
+                      </button>
+
+                    </div>
+
+                  </div>
+
+
+                  <!-- Disable -->
+
+                  <div
+                    id="email-2fa-disable"
+                    style="
+                      display:none;
+                      flex-direction:column;
+                      gap:10px;
+                      margin-top:4px;
+                    ">
+
+                    <div class="settings-row-sublabel">
+
+                      Enter your current password to disable Email 2FA.
+
+                    </div>
+
+                    <input
+                      type="password"
+                      id="email-2fa-disable-password"
+                      placeholder="Current password"
+                      autocomplete="current-password"
+                    />
+
+                    <button
+                      type="button"
+                      class="btn btn-sm btn-danger"
+                      id="email-2fa-confirm-disable"
+                      style="align-self:flex-start;">
+
+                      Disable Email 2FA
+
+                    </button>
+
+                  </div>
+
+
+                  <div
+                    id="email-2fa-error"
+                    class="field-error">
+                  </div>
 
                 </div>
-
-              </div>
-
-
-              <button
-                type="button"
-                class="switch${
-                  email2FAEnabled
-                    ? ' on'
-                    : ''
-                }"
-                id="email-2fa-toggle"
-                role="switch"
-                aria-checked="${email2FAEnabled}"
-                aria-label="Enable or disable Email 2FA">
-
-                <span class="switch-thumb"></span>
-
-              </button>
-
-            </div>
-
-
-            <!-- ============================================== -->
-            <!-- Inline enable panel -->
-            <!-- ============================================== -->
-
-            <div
-              id="email-2fa-setup"
-              style="
-                display:none;
-                flex-direction:column;
-                gap:10px;
-                margin-top:4px;
-              ">
-
-              <input
-                type="password"
-                id="email-2fa-current-password"
-                placeholder="Current password"
-                autocomplete="current-password"
-              />
-
-              <button
-                type="button"
-                class="btn btn-primary btn-sm"
-                id="email-2fa-send-code"
-                style="align-self:flex-start;">
-
-                Send verification code
-
-              </button>
-
-
-              <div
-                id="email-2fa-code-section"
-                style="
-                  display:none;
-                  flex-direction:column;
-                  gap:10px;
-                ">
-
-                <div
-                  class="settings-row-sublabel"
-                  id="email-2fa-code-message">
-
-                  A verification code has been sent to your email.
-
-                </div>
-
-                <input
-                  type="text"
-                  id="email-2fa-code"
-                  inputmode="numeric"
-                  autocomplete="one-time-code"
-                  maxlength="6"
-                  pattern="[0-9]{6}"
-                  placeholder="6-digit verification code"
-                />
-
-                <button
-                  type="button"
-                  class="btn btn-primary btn-sm"
-                  id="email-2fa-verify"
-                  style="align-self:flex-start;">
-
-                  Verify and enable
-
-                </button>
-
-              </div>
-
-            </div>
-
-
-            <!-- ============================================== -->
-            <!-- Inline disable panel -->
-            <!-- ============================================== -->
-
-            <div
-              id="email-2fa-disable"
-              style="
-                display:none;
-                flex-direction:column;
-                gap:10px;
-                margin-top:4px;
-              ">
-
-              <div class="settings-row-sublabel">
-
-                Enter your current password to disable Email 2FA.
-
-              </div>
-
-              <input
-                type="password"
-                id="email-2fa-disable-password"
-                placeholder="Current password"
-                autocomplete="current-password"
-              />
-
-              <button
-                type="button"
-                class="btn btn-sm btn-danger"
-                id="email-2fa-confirm-disable"
-                style="align-self:flex-start;">
-
-                Disable Email 2FA
-
-              </button>
-
-            </div>
-
-
-            <div
-              id="email-2fa-error"
-              class="field-error">
-            </div>
-
-          </div>
-          `
+              `
               : ''
           }
 
@@ -1056,26 +1234,30 @@ export async function renderSettings() {
 
     accentSwatches?.addEventListener(
       'click',
-      async (e) => {
-
+      async e => {
         const swatch =
           e.target.closest(
             '.accent-swatch'
           );
 
-        if (!swatch) return;
+        if (!swatch) {
+          return;
+        }
 
         const preset =
           ACCENT_PRESETS.find(
-            p => p.name === swatch.dataset.name
+            p =>
+              p.name ===
+              swatch.dataset.name
           );
 
-        if (!preset) return;
+        if (!preset) {
+          return;
+        }
 
-
-        // Apply immediately for instant feedback.
-        applyAccentPreset(preset);
-
+        applyAccentPreset(
+          preset
+        );
 
         document
           .querySelectorAll(
@@ -1091,7 +1273,6 @@ export async function renderSettings() {
           'selected'
         );
 
-
         const colorInput =
           document.getElementById(
             'custom-accent-color'
@@ -1101,7 +1282,6 @@ export async function renderSettings() {
           document.getElementById(
             'custom-accent-hex'
           );
-
 
         if (colorInput) {
           colorInput.value =
@@ -1113,26 +1293,21 @@ export async function renderSettings() {
             preset.hex;
         }
 
-
         try {
-
           await api(
             '/api/me/accent-color',
             {
               method: 'PUT',
-
               headers: {
                 'Content-Type':
                   'application/json'
               },
-
               body: JSON.stringify({
                 accent_color:
                   preset.hex
               })
             }
           );
-
 
           const updatedMe =
             await api('/api/me');
@@ -1143,21 +1318,16 @@ export async function renderSettings() {
 
           repaintAllMessageAccents();
 
-
           showToast(
             'Accent color updated',
             'success'
           );
-
         } catch (e) {
-
           showToast(
             e.message,
             'error'
           );
-
         }
-
       }
     );
 
@@ -1181,23 +1351,17 @@ export async function renderSettings() {
         'save-custom-accent'
       );
 
-
-    // Color picker -> HEX input
-
     customColor?.addEventListener(
       'input',
       () => {
-
         if (customHex) {
           customHex.value =
             customColor.value.toUpperCase();
         }
 
-
         applyAccent(
           customColor.value
         );
-
 
         document
           .querySelectorAll(
@@ -1208,39 +1372,31 @@ export async function renderSettings() {
               'selected'
             );
           });
-
       }
     );
-
-
-    // HEX input -> live preview
 
     customHex?.addEventListener(
       'input',
       () => {
-
         const value =
           customHex.value.trim();
 
-
         if (
-          /^#[0-9a-fA-F]{6}$/.test(value)
+          /^#[0-9a-fA-F]{6}$/.test(
+            value
+          )
         ) {
-
           const normalized =
             value.toUpperCase();
-
 
           if (customColor) {
             customColor.value =
               normalized;
           }
 
-
           applyAccent(
             normalized
           );
-
 
           document
             .querySelectorAll(
@@ -1251,31 +1407,23 @@ export async function renderSettings() {
                 'selected'
               );
             });
-
         }
-
       }
     );
-
-
-    // Save custom color to database.
 
     saveCustomAccent?.addEventListener(
       'click',
       async () => {
-
         const value =
           customHex?.value
             .trim()
             .toUpperCase();
-
 
         if (
           !/^#[0-9A-F]{6}$/.test(
             value || ''
           )
         ) {
-
           showToast(
             'Invalid HEX color. Example: #5F84AD',
             'error'
@@ -1284,36 +1432,29 @@ export async function renderSettings() {
           return;
         }
 
-
         applyAccent(
           value
         );
 
-
         saveCustomAccent.disabled =
           true;
 
-
         try {
-
           const data =
             await api(
               '/api/me/accent-color',
               {
                 method: 'PUT',
-
                 headers: {
                   'Content-Type':
                     'application/json'
                 },
-
                 body: JSON.stringify({
                   accent_color:
                     value
                 })
               }
             );
-
 
           const updatedMe =
             await api('/api/me');
@@ -1323,7 +1464,6 @@ export async function renderSettings() {
           );
 
           repaintAllMessageAccents();
-
 
           if (customColor) {
             customColor.value =
@@ -1335,26 +1475,19 @@ export async function renderSettings() {
               data.accent_color;
           }
 
-
           showToast(
             'Custom accent saved',
             'success'
           );
-
         } catch (e) {
-
           showToast(
             e.message,
             'error'
           );
-
         } finally {
-
           saveCustomAccent.disabled =
             false;
-
         }
-
       }
     );
 
@@ -1370,24 +1503,22 @@ export async function renderSettings() {
 
     themeToggle?.addEventListener(
       'click',
-      (e) => {
-
+      e => {
         const button =
           e.target.closest(
             '.theme-toggle-btn'
           );
 
-        if (!button) return;
-
+        if (!button) {
+          return;
+        }
 
         const theme =
           button.dataset.theme;
 
-
         applyTheme(
           theme
         );
-
 
         document
           .querySelectorAll(
@@ -1399,11 +1530,9 @@ export async function renderSettings() {
             );
           });
 
-
         button.classList.add(
           'selected'
         );
-
       }
     );
 
@@ -1420,38 +1549,32 @@ export async function renderSettings() {
     bubbleAccentToggle?.addEventListener(
       'click',
       () => {
-
         const next =
           !bubbleAccentToggle.classList.contains(
             'on'
           );
 
-
         applyUseAccentForBubbles(
           next
         );
-
 
         bubbleAccentToggle.classList.toggle(
           'on',
           next
         );
 
-
         bubbleAccentToggle.setAttribute(
           'aria-checked',
           String(next)
         );
 
-
         repaintAllMessageAccents();
-
       }
     );
 
 
     // ==========================================================
-    // Hardware acceleration (desktop app only)
+    // Hardware acceleration
     // ==========================================================
 
     const hardwareAccelerationToggle =
@@ -1462,14 +1585,11 @@ export async function renderSettings() {
     hardwareAccelerationToggle?.addEventListener(
       'click',
       async () => {
-
         const next =
           !hardwareAccelerationToggle.classList.contains(
             'on'
           );
 
-        // Reflect the choice immediately; it's saved below and only
-        // takes effect on the next launch either way.
         hardwareAccelerationToggle.classList.toggle(
           'on',
           next
@@ -1481,45 +1601,57 @@ export async function renderSettings() {
         );
 
         try {
-          await window.electronAPI.setHardwareAcceleration(
-            next
-          );
+          await window.electronAPI
+            .setHardwareAcceleration(
+              next
+            );
         } catch (e) {
           showToast(
             'Could not save that setting.',
             'error'
           );
+
           hardwareAccelerationToggle.classList.toggle(
             'on',
             !next
           );
+
           hardwareAccelerationToggle.setAttribute(
             'aria-checked',
             String(!next)
           );
+
           return;
         }
 
-        const shouldRestart = await showConfirm(
-          `Hardware acceleration is now ${
-            next ? 'on' : 'off'
-          }. Restart Wire now to apply this change?`,
-          {
-            title: 'Restart required',
-            confirmText: 'Restart now',
-            cancelText: 'Later',
-            danger: false,
-          }
-        );
+        const shouldRestart =
+          await showConfirm(
+            `Hardware acceleration is now ${
+              next ? 'on' : 'off'
+            }. Restart Wire now to apply this change?`,
+            {
+              title:
+                'Restart required',
+
+              confirmText:
+                'Restart now',
+
+              cancelText:
+                'Later',
+
+              danger:
+                false
+            }
+          );
 
         if (shouldRestart) {
-          window.electronAPI.relaunchApp();
+          window.electronAPI
+            .relaunchApp();
         } else {
           showToast(
             'Setting saved — will apply next time Wire starts.'
           );
         }
-
       }
     );
 
@@ -1535,26 +1667,24 @@ export async function renderSettings() {
 
     ambientLevels?.addEventListener(
       'click',
-      (e) => {
-
+      e => {
         const button =
           e.target.closest(
             '.ambient-level-btn'
           );
 
-        if (!button) return;
-
+        if (!button) {
+          return;
+        }
 
         const level =
           Number(
             button.dataset.level
           );
 
-
         applyAmbientLevel(
           level
         );
-
 
         document
           .querySelectorAll(
@@ -1566,11 +1696,9 @@ export async function renderSettings() {
             );
           });
 
-
         button.classList.add(
           'selected'
         );
-
       }
     );
 
@@ -1579,56 +1707,156 @@ export async function renderSettings() {
     // Background theme picker
     // ==========================================================
 
-    const bgSwatches =
+    const bgMoreToggle =
       document.getElementById(
-        'bg-swatches'
+        'bg-more-toggle'
       );
 
-    bgSwatches?.addEventListener(
-      'click',
-      (e) => {
+    const bgMoreContainer =
+      document.getElementById(
+        'bg-swatches-more'
+      );
 
-        const swatch =
-          e.target.closest(
-            '.bg-swatch'
+    const bgFeatured =
+      document.getElementById(
+        'bg-swatches-featured'
+      );
+
+    const bgMore =
+      document.getElementById(
+        'bg-swatches-more'
+      );
+
+
+    // ----------------------------------------------------------
+    // More backgrounds state
+    // ----------------------------------------------------------
+
+    function setMoreBackgroundsOpen(open) {
+      if (
+        !bgMoreContainer ||
+        !bgMoreToggle
+      ) {
+        return;
+      }
+
+      bgMoreContainer.classList.toggle(
+        'is-open',
+        open
+      );
+
+      bgMoreToggle.classList.toggle(
+        'is-open',
+        open
+      );
+
+      bgMoreToggle.setAttribute(
+        'aria-expanded',
+        String(open)
+      );
+
+      const label =
+        bgMoreToggle.querySelector(
+          '.bg-more-toggle-label'
+        );
+
+      if (label) {
+        label.textContent =
+          open
+            ? 'Show less'
+            : 'Show more';
+      }
+    }
+
+
+    // ----------------------------------------------------------
+    // Show more / Show less
+    // ----------------------------------------------------------
+
+    bgMoreToggle?.addEventListener(
+      'click',
+      () => {
+        if (!bgMoreContainer) {
+          return;
+        }
+
+        const isOpen =
+          bgMoreContainer.classList.contains(
+            'is-open'
           );
 
-        if (!swatch) return;
+        setMoreBackgroundsOpen(
+          !isOpen
+        );
+      }
+    );
 
-        const id =
-          swatch.dataset.id;
 
+    // ----------------------------------------------------------
+    // Background selection
+    // ----------------------------------------------------------
 
-        applyBackgroundTheme(
+    function handleBackgroundClick(e) {
+      const swatch =
+        e.target.closest(
+          '.bg-swatch'
+        );
+
+      if (!swatch) {
+        return;
+      }
+
+      const id =
+        swatch.dataset.id;
+
+      if (!id) {
+        return;
+      }
+
+      applyBackgroundTheme(
+        id
+      );
+
+      document
+        .querySelectorAll(
+          '.bg-swatch'
+        )
+        .forEach(button => {
+          const selected =
+            button.dataset.id === id;
+
+          button.classList.toggle(
+            'selected',
+            selected
+          );
+
+          button.setAttribute(
+            'aria-pressed',
+            String(selected)
+          );
+        });
+
+      const selectedIsFeatured =
+        FEATURED_BACKGROUND_IDS.includes(
           id
         );
 
-
-        document
-          .querySelectorAll(
-            '#bg-swatches .bg-swatch'
-          )
-          .forEach(button => {
-            button.classList.remove(
-              'selected'
-            );
-
-            button.setAttribute(
-              'aria-pressed',
-              'false'
-            );
-          });
-
-        swatch.classList.add(
-          'selected'
+      if (!selectedIsFeatured) {
+        setMoreBackgroundsOpen(
+          true
         );
-
-        swatch.setAttribute(
-          'aria-pressed',
-          'true'
-        );
-
       }
+    }
+
+
+    bgFeatured?.addEventListener(
+      'click',
+      handleBackgroundClick
+    );
+
+    bgMore?.addEventListener(
+      'click',
+      handleBackgroundClick
     );
 
 
@@ -1646,16 +1874,13 @@ export async function renderSettings() {
         'bio-counter'
       );
 
-
     bio?.addEventListener(
       'input',
-      (e) => {
-
+      e => {
         if (bioCounter) {
           bioCounter.textContent =
             `${e.target.value.length}/300`;
         }
-
       }
     );
 
@@ -1724,7 +1949,6 @@ export async function renderSettings() {
         'email-2fa-error'
       );
 
-
     let email2FAChallengeId =
       null;
 
@@ -1736,61 +1960,50 @@ export async function renderSettings() {
     function setEmail2FAError(
       message = ''
     ) {
-
       if (email2FAError) {
         email2FAError.textContent =
           message;
       }
-
     }
 
     function closeEmail2FAPanels() {
-
       if (email2FASetup) {
         email2FASetup.style.display =
           'none';
       }
-
 
       if (email2FADisable) {
         email2FADisable.style.display =
           'none';
       }
 
-
       if (email2FACodeSection) {
         email2FACodeSection.style.display =
           'none';
       }
 
-
       email2FAChallengeId =
         null;
-
 
       if (email2FACurrentPassword) {
         email2FACurrentPassword.value =
           '';
       }
 
-
       if (email2FACode) {
         email2FACode.value =
           '';
       }
-
 
       if (email2FADisablePassword) {
         email2FADisablePassword.value =
           '';
       }
 
-
       if (email2FASendCode) {
         email2FASendCode.style.display =
           '';
       }
-
     }
 
 
@@ -1801,64 +2014,36 @@ export async function renderSettings() {
     email2FAToggle?.addEventListener(
       'click',
       () => {
-
         const currentlyEnabled =
           email2FAToggle.classList.contains(
             'on'
           );
 
-
         setEmail2FAError(
           ''
         );
 
-
         if (currentlyEnabled) {
-
-          /*
-           * User is requesting to disable
-           * Email 2FA.
-           *
-           * IMPORTANT:
-           * The switch remains ON until
-           * the server confirms success.
-           */
-
           closeEmail2FAPanels();
-
 
           if (email2FADisable) {
             email2FADisable.style.display =
               'flex';
           }
 
-
           email2FADisablePassword?.focus();
 
           return;
         }
 
-
-        /*
-         * User is requesting to enable
-         * Email 2FA.
-         *
-         * IMPORTANT:
-         * The switch remains OFF until
-         * the server confirms success.
-         */
-
         closeEmail2FAPanels();
-
 
         if (email2FASetup) {
           email2FASetup.style.display =
             'flex';
         }
 
-
         email2FACurrentPassword?.focus();
-
       }
     );
 
@@ -1870,35 +2055,28 @@ export async function renderSettings() {
     email2FASendCode?.addEventListener(
       'click',
       async () => {
-
         setEmail2FAError(
           ''
         );
 
-
         const currentPassword =
-          email2FACurrentPassword?.value || '';
-
+          email2FACurrentPassword?.value ||
+          '';
 
         if (!currentPassword) {
-
           setEmail2FAError(
             'Current password is required'
           );
-
 
           email2FACurrentPassword?.focus();
 
           return;
         }
 
-
         email2FASendCode.disabled =
           true;
 
-
         try {
-
           const data =
             await api(
               '/api/settings/2fa/email/enable',
@@ -1917,66 +2095,49 @@ export async function renderSettings() {
               }
             );
 
-
           if (
             !data ||
             !data.challengeId
           ) {
-
             throw new Error(
               'Invalid two-factor setup response'
             );
-
           }
-
 
           email2FAChallengeId =
             data.challengeId;
-
 
           if (email2FACodeSection) {
             email2FACodeSection.style.display =
               'flex';
           }
 
-
           if (email2FACodeMessage) {
-
             email2FACodeMessage.textContent =
               `A verification code has been sent to ${
-                data.email || 'your email'
+                data.email ||
+                'your email'
               }.`;
-
           }
-
 
           email2FASendCode.style.display =
             'none';
 
-
           if (email2FACode) {
-
             email2FACode.value =
               '';
 
             email2FACode.focus();
-
           }
-
         } catch (e) {
-
           setEmail2FAError(
             e.message ||
             'Failed to send verification code'
           );
-
         } finally {
-
           email2FASendCode.disabled =
             false;
-
         }
-
       }
     );
 
@@ -1988,18 +2149,15 @@ export async function renderSettings() {
     email2FAVerify?.addEventListener(
       'click',
       async () => {
-
         setEmail2FAError(
           ''
         );
 
-
         const code =
-          email2FACode?.value.trim() || '';
-
+          email2FACode?.value.trim() ||
+          '';
 
         if (!email2FAChallengeId) {
-
           setEmail2FAError(
             'Verification session is missing'
           );
@@ -2007,26 +2165,20 @@ export async function renderSettings() {
           return;
         }
 
-
         if (!/^\d{6}$/.test(code)) {
-
           setEmail2FAError(
             'Enter the 6-digit verification code'
           );
-
 
           email2FACode?.focus();
 
           return;
         }
 
-
         email2FAVerify.disabled =
           true;
 
-
         try {
-
           await api(
             '/api/settings/2fa/email/verify',
             {
@@ -2046,39 +2198,23 @@ export async function renderSettings() {
             }
           );
 
-
           showToast(
             'Email 2FA enabled',
             'success'
           );
 
-
-          /*
-           * Do not manually switch the UI.
-           *
-           * renderSettings() fetches the actual
-           * server state and renders the switch
-           * from that state.
-           */
-
           closeEmail2FAPanels();
 
           await renderSettings();
-
         } catch (e) {
-
           setEmail2FAError(
             e.message ||
             'Invalid verification code'
           );
-
         } finally {
-
           email2FAVerify.disabled =
             false;
-
         }
-
       }
     );
 
@@ -2090,35 +2226,28 @@ export async function renderSettings() {
     email2FAConfirmDisable?.addEventListener(
       'click',
       async () => {
-
         setEmail2FAError(
           ''
         );
 
-
         const currentPassword =
-          email2FADisablePassword?.value || '';
-
+          email2FADisablePassword?.value ||
+          '';
 
         if (!currentPassword) {
-
           setEmail2FAError(
             'Current password is required'
           );
-
 
           email2FADisablePassword?.focus();
 
           return;
         }
 
-
         email2FAConfirmDisable.disabled =
           true;
 
-
         try {
-
           await api(
             '/api/settings/2fa/email/disable',
             {
@@ -2136,38 +2265,23 @@ export async function renderSettings() {
             }
           );
 
-
           showToast(
             'Email 2FA disabled',
             'success'
           );
 
-
-          /*
-           * Again, do not manually switch
-           * the toggle.
-           *
-           * The server is the source of truth.
-           */
-
           closeEmail2FAPanels();
 
           await renderSettings();
-
         } catch (e) {
-
           setEmail2FAError(
             e.message ||
             'Failed to disable Email 2FA'
           );
-
         } finally {
-
           email2FAConfirmDisable.disabled =
             false;
-
         }
-
       }
     );
 
@@ -2176,701 +2290,559 @@ export async function renderSettings() {
     // Save bio
     // ==========================================================
 
-    window.saveBio = async function () {
+    window.saveBio =
+      async function () {
+        const textarea =
+          document.getElementById(
+            'settings-bio'
+          );
 
-      const textarea =
-        document.getElementById(
-          'settings-bio'
-        );
+        if (!textarea) {
+          return;
+        }
 
+        const bio =
+          textarea.value;
 
-      if (!textarea) return;
+        try {
+          await api(
+            '/api/me',
+            {
+              method: 'PUT',
 
+              headers: {
+                'Content-Type':
+                  'application/json'
+              },
 
-      const bio =
-        textarea.value;
+              body: JSON.stringify({
+                bio
+              })
+            }
+          );
 
+          const me =
+            await api('/api/me');
 
-      try {
+          setCurrentUser(
+            me
+          );
 
-        await api(
-          '/api/me',
-          {
-            method: 'PUT',
-
-            headers: {
-              'Content-Type':
-                'application/json'
-            },
-
-            body: JSON.stringify({
-              bio
-            })
-          }
-        );
-
-
-        const me =
-          await api('/api/me');
-
-
-        setCurrentUser(
-          me
-        );
-
-
-        showToast(
-          'Bio saved',
-          'success'
-        );
-
-      } catch (e) {
-
-        showToast(
-          e.message,
-          'error'
-        );
-
-      }
-
-    };
+          showToast(
+            'Bio saved',
+            'success'
+          );
+        } catch (e) {
+          showToast(
+            e.message,
+            'error'
+          );
+        }
+      };
 
 
     // ==========================================================
     // Change password
     // ==========================================================
 
-    window.changePassword = async function () {
-
-      const currentInput =
-        document.getElementById(
-          'pw-current'
-        );
-
-      const newInput =
-        document.getElementById(
-          'pw-new'
-        );
-
-      const confirmInput =
-        document.getElementById(
-          'pw-confirm'
-        );
-
-      const errEl =
-        document.getElementById(
-          'pw-error'
-        );
-
-
-      if (
-        !currentInput ||
-        !newInput ||
-        !confirmInput ||
-        !errEl
-      ) {
-        return;
-      }
-
-
-      const current_password =
-        currentInput.value;
-
-      const new_password =
-        newInput.value;
-
-      const confirm =
-        confirmInput.value;
-
-
-      errEl.textContent =
-        '';
-
-
-      if (!current_password) {
-
-        errEl.textContent =
-          'Current password is required';
-
-        return;
-      }
-
-
-      if (!new_password) {
-
-        errEl.textContent =
-          'New password is required';
-
-        return;
-      }
-
-
-      if (new_password.length < 6) {
-
-        errEl.textContent =
-          'New password must be at least 6 characters';
-
-        return;
-      }
-
-
-      if (new_password !== confirm) {
-
-        errEl.textContent =
-          "New passwords don't match";
-
-        return;
-      }
-
-
-      const button =
-        document.querySelector(
-          '[onclick="window.changePassword()"]'
-        );
-
-
-      if (button) {
-        button.disabled =
-          true;
-      }
-
-
-      try {
-
-        /*
-         * Re-encrypt the SAME identity private key
-         * with the new password.
-         *
-         * This happens entirely in the browser.
-         *
-         * If the user has no identity yet,
-         * reencryptIdentity() returns null.
-         */
-
-        const encryptedIdentity =
-          await reencryptIdentity(
-            current_password,
-            new_password,
-            localStorage.getItem(
-              'token'
-            )
+    window.changePassword =
+      async function () {
+        const currentInput =
+          document.getElementById(
+            'pw-current'
           );
 
+        const newInput =
+          document.getElementById(
+            'pw-new'
+          );
 
-        /*
-         * The backend verifies the old account
-         * password and atomically updates:
-         *
-         *   users.password_hash
-         *   identity_keys encrypted metadata
-         */
+        const confirmInput =
+          document.getElementById(
+            'pw-confirm'
+          );
 
-        await api(
-          '/api/me/password',
-          {
-            method: 'PUT',
+        const errEl =
+          document.getElementById(
+            'pw-error'
+          );
 
-            headers: {
-              'Content-Type':
-                'application/json'
-            },
+        if (
+          !currentInput ||
+          !newInput ||
+          !confirmInput ||
+          !errEl
+        ) {
+          return;
+        }
 
-            body: JSON.stringify({
-              current_password,
-              new_password,
+        const current_password =
+          currentInput.value;
 
-              identity:
-                encryptedIdentity
-            })
-          }
-        );
+        const new_password =
+          newInput.value;
 
-
-        /*
-         * The private CryptoKey currently in RAM
-         * is still the exact same key.
-         *
-         * Nothing needs to be regenerated or
-         * re-unlocked during the current session.
-         */
-
-        currentInput.value =
-          '';
-
-        newInput.value =
-          '';
-
-        confirmInput.value =
-          '';
-
-
-        showToast(
-          'Password updated',
-          'success'
-        );
-
-      } catch (e) {
-
-        console.error(
-          '[Settings] Password change failed:',
-          e
-        );
-
+        const confirm =
+          confirmInput.value;
 
         errEl.textContent =
-          e.message ||
-          'Failed to update password';
+          '';
 
-      } finally {
+        if (!current_password) {
+          errEl.textContent =
+            'Current password is required';
+
+          return;
+        }
+
+        if (!new_password) {
+          errEl.textContent =
+            'New password is required';
+
+          return;
+        }
+
+        if (new_password.length < 6) {
+          errEl.textContent =
+            'New password must be at least 6 characters';
+
+          return;
+        }
+
+        if (new_password !== confirm) {
+          errEl.textContent =
+            "New passwords don't match";
+
+          return;
+        }
+
+        const button =
+          document.querySelector(
+            '[onclick="window.changePassword()"]'
+          );
 
         if (button) {
           button.disabled =
-            false;
+            true;
         }
 
-      }
+        try {
+          /*
+           * Re-encrypt the same identity private key
+           * with the new password.
+           */
+          const encryptedIdentity =
+            await reencryptIdentity(
+              current_password,
+              new_password,
+              localStorage.getItem(
+                'token'
+              )
+            );
 
-    };
+          await api(
+            '/api/me/password',
+            {
+              method: 'PUT',
+
+              headers: {
+                'Content-Type':
+                  'application/json'
+              },
+
+              body: JSON.stringify({
+                current_password,
+                new_password,
+                identity:
+                  encryptedIdentity
+              })
+            }
+          );
+
+          currentInput.value =
+            '';
+
+          newInput.value =
+            '';
+
+          confirmInput.value =
+            '';
+
+          showToast(
+            'Password updated',
+            'success'
+          );
+        } catch (e) {
+          console.error(
+            '[Settings] Password change failed:',
+            e
+          );
+
+          errEl.textContent =
+            e.message ||
+            'Failed to update password';
+        } finally {
+          if (button) {
+            button.disabled =
+              false;
+          }
+        }
+      };
 
 
     // ==========================================================
     // Upload avatar
     // ==========================================================
 
-    window.uploadAvatar = async function () {
+    window.uploadAvatar =
+      async function () {
+        const input =
+          document.getElementById(
+            'avatar-input'
+          );
 
-      const input =
-        document.getElementById(
-          'avatar-input'
-        );
+        if (!input) {
+          return;
+        }
 
+        const file =
+          input.files?.[0];
 
-      if (!input) return;
+        if (!file) {
+          return;
+        }
 
+        const validationError =
+          validateImageFile(
+            file,
+            AVATAR_MAX_BYTES
+          );
 
-      const file =
-        input.files?.[0];
+        if (validationError) {
+          showToast(
+            validationError,
+            'error'
+          );
 
+          input.value =
+            '';
 
-      if (!file) return;
+          return;
+        }
 
+        const previewUrl =
+          URL.createObjectURL(
+            file
+          );
 
-      const validationError =
-        validateImageFile(
-          file,
-          AVATAR_MAX_BYTES
-        );
+        const avatarEl =
+          document.getElementById(
+            'settings-avatar'
+          );
 
+        if (avatarEl) {
+          avatarEl.style.backgroundImage =
+            `url("${previewUrl}")`;
 
-      if (validationError) {
+          avatarEl.style.backgroundSize =
+            'cover';
 
-        showToast(
-          validationError,
-          'error'
-        );
+          avatarEl.style.backgroundPosition =
+            'center';
+        }
 
+        const form =
+          new FormData();
 
-        input.value =
-          '';
-
-
-        return;
-      }
-
-
-      const previewUrl =
-        URL.createObjectURL(
+        form.append(
+          'file',
           file
         );
 
-
-      const avatarEl =
-        document.getElementById(
-          'settings-avatar'
+        showUploadProgress(
+          'avatar-upload-progress',
+          file.name
         );
 
-
-      if (avatarEl) {
-
-        avatarEl.style.backgroundImage =
-          `url("${previewUrl}")`;
-
-        avatarEl.style.backgroundSize =
-          'cover';
-
-        avatarEl.style.backgroundPosition =
-          'center';
-
-      }
-
-
-      const form =
-        new FormData();
-
-
-      form.append(
-        'file',
-        file
-      );
-
-
-      showUploadProgress(
-        'avatar-upload-progress',
-        file.name
-      );
-
-
-      try {
-
-        await xhrUpload(
-          '/api/me/avatar',
-          form,
-          pct => {
-
-            updateUploadProgress(
-              'avatar-upload-progress',
-              pct
-            );
-
-          }
-        );
-
-
-        const user =
-          getCurrentUser();
-
-
-        if (user?.id) {
-
-          refreshAvatarEverywhere(
-            user.id
+        try {
+          await xhrUpload(
+            '/api/me/avatar',
+            form,
+            pct => {
+              updateUploadProgress(
+                'avatar-upload-progress',
+                pct
+              );
+            }
           );
 
+          const user =
+            getCurrentUser();
+
+          if (user?.id) {
+            refreshAvatarEverywhere(
+              user.id
+            );
+          }
+
+          input.value =
+            '';
+
+          await renderSettings();
+
+          showToast(
+            'Photo updated',
+            'success'
+          );
+        } catch (e) {
+          showToast(
+            e.message,
+            'error'
+          );
+        } finally {
+          hideUploadProgress(
+            'avatar-upload-progress'
+          );
+
+          URL.revokeObjectURL(
+            previewUrl
+          );
         }
-
-
-        input.value =
-          '';
-
-
-        await renderSettings();
-
-
-        showToast(
-          'Photo updated',
-          'success'
-        );
-
-      } catch (e) {
-
-        showToast(
-          e.message,
-          'error'
-        );
-
-      } finally {
-
-        hideUploadProgress(
-          'avatar-upload-progress'
-        );
-
-
-        URL.revokeObjectURL(
-          previewUrl
-        );
-
-      }
-
-    };
+      };
 
 
     // ==========================================================
     // Remove avatar
     // ==========================================================
 
-    window.removeAvatar = async function () {
-
-      const confirmed =
-        await showConfirm(
-          'Remove your profile photo?',
-          {
-            title:
-              'Remove photo'
-          }
-        );
-
-
-      if (!confirmed) return;
-
-
-      try {
-
-        await api(
-          '/api/me/avatar',
-          {
-            method:
-              'DELETE'
-          }
-        );
-
-
-        const user =
-          getCurrentUser();
-
-
-        if (user?.id) {
-
-          refreshAvatarEverywhere(
-            user.id
+    window.removeAvatar =
+      async function () {
+        const confirmed =
+          await showConfirm(
+            'Remove your profile photo?',
+            {
+              title:
+                'Remove photo'
+            }
           );
 
+        if (!confirmed) {
+          return;
         }
 
+        try {
+          await api(
+            '/api/me/avatar',
+            {
+              method:
+                'DELETE'
+            }
+          );
 
-        await renderSettings();
+          const user =
+            getCurrentUser();
 
+          if (user?.id) {
+            refreshAvatarEverywhere(
+              user.id
+            );
+          }
 
-        showToast(
-          'Photo removed',
-          'success'
-        );
+          await renderSettings();
 
-      } catch (e) {
-
-        showToast(
-          e.message,
-          'error'
-        );
-
-      }
-
-    };
+          showToast(
+            'Photo removed',
+            'success'
+          );
+        } catch (e) {
+          showToast(
+            e.message,
+            'error'
+          );
+        }
+      };
 
 
     // ==========================================================
     // Upload banner
     // ==========================================================
 
-    window.uploadBanner = async function () {
+    window.uploadBanner =
+      async function () {
+        const input =
+          document.getElementById(
+            'banner-input'
+          );
 
-      const input =
-        document.getElementById(
-          'banner-input'
-        );
+        if (!input) {
+          return;
+        }
 
+        const file =
+          input.files?.[0];
 
-      if (!input) return;
+        if (!file) {
+          return;
+        }
 
+        const validationError =
+          validateImageFile(
+            file,
+            BANNER_MAX_BYTES
+          );
 
-      const file =
-        input.files?.[0];
+        if (validationError) {
+          showToast(
+            validationError,
+            'error'
+          );
 
+          input.value =
+            '';
 
-      if (!file) return;
+          return;
+        }
 
+        const previewUrl =
+          URL.createObjectURL(
+            file
+          );
 
-      const validationError =
-        validateImageFile(
-          file,
-          BANNER_MAX_BYTES
-        );
+        const bannerWrap =
+          document.getElementById(
+            'profile-banner-wrap'
+          );
 
+        const bannerEl =
+          bannerWrap?.querySelector(
+            '.profile-banner'
+          );
 
-      if (validationError) {
+        if (bannerEl) {
+          bannerEl.style.backgroundImage =
+            `url("${previewUrl}")`;
 
-        showToast(
-          validationError,
-          'error'
-        );
+          bannerEl.classList.add(
+            'has-banner'
+          );
+        }
 
+        const form =
+          new FormData();
 
-        input.value =
-          '';
-
-
-        return;
-      }
-
-
-      const previewUrl =
-        URL.createObjectURL(
+        form.append(
+          'file',
           file
         );
 
-
-      const bannerWrap =
-        document.getElementById(
-          'profile-banner-wrap'
+        showUploadProgress(
+          'banner-upload-progress',
+          file.name
         );
 
-
-      const bannerEl =
-        bannerWrap?.querySelector(
-          '.profile-banner'
-        );
-
-
-      if (bannerEl) {
-
-        bannerEl.style.backgroundImage =
-          `url("${previewUrl}")`;
-
-        bannerEl.classList.add(
-          'has-banner'
-        );
-
-      }
-
-
-      const form =
-        new FormData();
-
-
-      form.append(
-        'file',
-        file
-      );
-
-
-      showUploadProgress(
-        'banner-upload-progress',
-        file.name
-      );
-
-
-      try {
-
-        await xhrUpload(
-          '/api/me/banner',
-          form,
-          pct => {
-
-            updateUploadProgress(
-              'banner-upload-progress',
-              pct
-            );
-
-          }
-        );
-
-
-        const user =
-          getCurrentUser();
-
-
-        if (user?.id) {
-
-          refreshBannerEverywhere(
-            user.id
+        try {
+          await xhrUpload(
+            '/api/me/banner',
+            form,
+            pct => {
+              updateUploadProgress(
+                'banner-upload-progress',
+                pct
+              );
+            }
           );
 
+          const user =
+            getCurrentUser();
+
+          if (user?.id) {
+            refreshBannerEverywhere(
+              user.id
+            );
+          }
+
+          input.value =
+            '';
+
+          await renderSettings();
+
+          showToast(
+            'Banner updated',
+            'success'
+          );
+        } catch (e) {
+          showToast(
+            e.message,
+            'error'
+          );
+        } finally {
+          hideUploadProgress(
+            'banner-upload-progress'
+          );
+
+          URL.revokeObjectURL(
+            previewUrl
+          );
         }
-
-
-        input.value =
-          '';
-
-
-        await renderSettings();
-
-
-        showToast(
-          'Banner updated',
-          'success'
-        );
-
-      } catch (e) {
-
-        showToast(
-          e.message,
-          'error'
-        );
-
-      } finally {
-
-        hideUploadProgress(
-          'banner-upload-progress'
-        );
-
-
-        URL.revokeObjectURL(
-          previewUrl
-        );
-
-      }
-
-    };
+      };
 
 
     // ==========================================================
     // Remove banner
     // ==========================================================
 
-    window.removeBanner = async function () {
-
-      const confirmed =
-        await showConfirm(
-          'Remove your profile banner?',
-          {
-            title:
-              'Remove banner'
-          }
-        );
-
-
-      if (!confirmed) return;
-
-
-      try {
-
-        await api(
-          '/api/me/banner',
-          {
-            method:
-              'DELETE'
-          }
-        );
-
-
-        const user =
-          getCurrentUser();
-
-
-        if (user?.id) {
-
-          refreshBannerEverywhere(
-            user.id
+    window.removeBanner =
+      async function () {
+        const confirmed =
+          await showConfirm(
+            'Remove your profile banner?',
+            {
+              title:
+                'Remove banner'
+            }
           );
 
+        if (!confirmed) {
+          return;
         }
 
+        try {
+          await api(
+            '/api/me/banner',
+            {
+              method:
+                'DELETE'
+            }
+          );
 
-        await renderSettings();
+          const user =
+            getCurrentUser();
 
+          if (user?.id) {
+            refreshBannerEverywhere(
+              user.id
+            );
+          }
 
-        showToast(
-          'Banner removed',
-          'success'
-        );
+          await renderSettings();
 
-      } catch (e) {
-
-        showToast(
-          e.message,
-          'error'
-        );
-
-      }
-
-    };
+          showToast(
+            'Banner removed',
+            'success'
+          );
+        } catch (e) {
+          showToast(
+            e.message,
+            'error'
+          );
+        }
+      };
 
   } catch (e) {
-
     console.error(
       '[Settings] Failed to render settings:',
       e
     );
-
 
     main.innerHTML = `
       <div class="card">
@@ -2880,6 +2852,5 @@ export async function renderSettings() {
         )}
       </div>
     `;
-
   }
 }

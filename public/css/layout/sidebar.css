@@ -3,16 +3,9 @@
   height:100vh;
   height:100dvh;
   height:calc(var(--vh, 1vh) * 100);
-  /* Translucent glass instead of a locally-painted gradient patch —
-     the one global #ambient-underlay layer (base.css) now provides
-     all the decorative color; this panel just needs to let it show
-     through instead of drawing its own separate glow (which is what
-     made the sidebar's edge look like a hard cut in the background). */
-  /* Translucent enough for the ambient glow (base.css) to read
-     clearly through the panel, Discord-style, instead of being
-     smothered by a near-opaque flat fill. */
-  background:rgba(var(--ink-rgb), .62);
-  backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  /* Transparent panel — the global #ambient-underlay remains
+     clearly visible behind the sidebar. */
+  background:rgba(var(--ink-rgb), .30);
   display:flex;flex-direction:column;
   border-right:1px solid var(--border);
   user-select:none;z-index:10;
@@ -105,6 +98,12 @@ body.sidebar-resizing *{user-select:none !important;}
 /* ---------- Mobile sidebar ---------- */
 .sidebar-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:45;}
 .sidebar-backdrop.active{display:block;}
+
+/* Light mode: slightly stronger surface tint for readability while
+   still allowing the ambient background to remain clearly visible. */
+:root[data-theme="light"] .sidebar{
+  background:rgba(var(--ink-rgb),.36);
+}
 
 /* این خط تغییر کرد تا زورش از بقیه کلاس‌ها بیشتر بشه */
 button.mobile-menu-btn { display: none; }

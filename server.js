@@ -16,6 +16,7 @@ process.env.UV_THREADPOOL_SIZE = process.env.UV_THREADPOOL_SIZE || '8';
 require('dotenv').config();
 
 const express = require('express');
+const cors = require('cors');
 const http = require('http');
 const path = require('path');
 
@@ -57,6 +58,28 @@ async function startServer() {
     // meant a request from outside the allowed subnet still had its
     // body fully parsed before being rejected.
     app.use(ipRestrict);
+
+    // HTTP CORS for browser-based clients and Capacitor.
+    // Capacitor's WebView uses https://localhost as its origin.
+    // Keep the configured browser origin and explicitly allow the
+    // native app origin without opening the API to arbitrary origins.
+    const allowedCorsOrigins = new Set(
+      [process.env.CLIENT_URL, 'https://localhost'].filter(Boolean)
+    );
+
+    app.use(
+      cors({
+        origin(origin, callback) {
+          // Non-browser requests may not have an Origin header.
+          if (!origin || allowedCorsOrigins.has(origin)) {
+            return callback(null, true);
+          }
+
+          return callback(new Error('Not allowed by CORS'));
+        },
+        credentials: true,
+      })
+    );
 
     app.use(express.json());
 

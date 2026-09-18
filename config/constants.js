@@ -96,4 +96,27 @@ const constants = {
   DEFAULT_ADMIN_PASS: process.env.DEFAULT_ADMIN_PASS,
 };
 
+// Refuse configurations that are clearly unsafe for a production launch.
+// Development keeps its current behavior so the first-run/setup workflow
+// remains usable locally.
+if (constants.NODE_ENV === 'production') {
+  const wildcardSubnet =
+    constants.ALLOWED_SUBNET === '0.0.0.0/0' ||
+    constants.ALLOWED_SUBNET === '::/0';
+
+  if (wildcardSubnet) {
+    console.error(
+      '❌ FATAL: ALLOWED_SUBNET must be restricted in production.'
+    );
+    process.exit(1);
+  }
+
+  if (process.env.SETUP_COMPLETED !== 'true') {
+    console.error(
+      '❌ FATAL: SETUP_COMPLETED=true is required in production.'
+    );
+    process.exit(1);
+  }
+}
+
 module.exports = Object.freeze(constants);

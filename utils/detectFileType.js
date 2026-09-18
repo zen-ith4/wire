@@ -1,4 +1,14 @@
-const { fromFile } = require('file-type');
+// file-type 22 is ESM-only. Keep this utility CommonJS-compatible by
+// loading it lazily when the first file needs inspection.
+let fileTypeModulePromise;
+
+function getFileTypeModule() {
+  if (!fileTypeModulePromise) {
+    fileTypeModulePromise = import('file-type');
+  }
+
+  return fileTypeModulePromise;
+}
 
 /**
  * Sniffs a file's real type from its magic bytes on disk.
@@ -19,7 +29,8 @@ const { fromFile } = require('file-type');
  */
 async function detectMimeFromBytes(filePath) {
   try {
-    const result = await fromFile(filePath);
+    const { fileTypeFromFile } = await getFileTypeModule();
+    const result = await fileTypeFromFile(filePath);
     return result ? result.mime : null;
   } catch (err) {
     console.error('File type detection failed:', err.message);

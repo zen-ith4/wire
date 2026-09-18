@@ -84,7 +84,8 @@ export async function renderVideo(msg, scope, containerEl) {
           <span class="icon-pause" style="display:none">${ICONS.pause}</span>
         </button>
 
-        <div class="video-time">
+        <!-- Hidden outside fullscreen; shown only while this player is fullscreen -->
+        <div class="video-time" style="display:none">
           <span class="current-time">0:00</span>
           <span class="sep">/</span>
           <span class="duration">0:00</span>
@@ -142,14 +143,19 @@ export async function renderVideo(msg, scope, containerEl) {
   // INSERT PLAYER
   // ====================================================
 
-  const contentWrapper = container.querySelector('.chat-msg-content') || container;
+  const contentWrapper =
+    container.querySelector('.chat-msg-content') || container;
+
   contentWrapper.insertAdjacentHTML('beforeend', template);
 
   const playerEl = contentWrapper.lastElementChild;
   const video = playerEl ? playerEl.querySelector('video') : null;
 
   if (!playerEl || !video) {
-    console.error('Video player element not found after insertion for message:', msg.id);
+    console.error(
+      'Video player element not found after insertion for message:',
+      msg.id
+    );
     return;
   }
 
@@ -158,6 +164,7 @@ export async function renderVideo(msg, scope, containerEl) {
   const iconPause = playerEl.querySelector('.icon-pause');
   const currentTimeEl = playerEl.querySelector('.current-time');
   const durationEl = playerEl.querySelector('.duration');
+  const videoTime = playerEl.querySelector('.video-time');
   const seekbar = playerEl.querySelector('.seekbar');
   const volumeSlider = playerEl.querySelector('.volume-slider');
   const muteBtn = playerEl.querySelector('.mute-btn');
@@ -170,6 +177,7 @@ export async function renderVideo(msg, scope, containerEl) {
 
   const formatTime = (seconds) => {
     if (!Number.isFinite(seconds) || seconds < 0) seconds = 0;
+
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     const secs = Math.floor(seconds % 60);
@@ -177,6 +185,7 @@ export async function renderVideo(msg, scope, containerEl) {
     if (hours > 0) {
       return `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
     }
+
     return `${minutes}:${String(secs).padStart(2, '0')}`;
   };
 
@@ -189,6 +198,7 @@ export async function renderVideo(msg, scope, containerEl) {
     const max = Number(seekbar.max);
     const value = Number(seekbar.value);
     const percent = max > 0 ? (value / max) * 100 : 0;
+
     seekbar.style.backgroundSize = `${percent}% 100%`;
   };
 
@@ -196,8 +206,39 @@ export async function renderVideo(msg, scope, containerEl) {
     const max = Number(volumeSlider.max) || 1;
     const value = Number(volumeSlider.value);
     const percent = max > 0 ? (value / max) * 100 : 0;
+
     volumeSlider.style.backgroundSize = `${percent}% 100%`;
   };
+
+  // ====================================================
+  // FULLSCREEN STATE
+  // ====================================================
+
+  const isPlayerFullscreen = () => {
+    return (
+      document.fullscreenElement === playerEl ||
+      document.webkitFullscreenElement === playerEl
+    );
+  };
+
+  const updateVideoTimeVisibility = () => {
+    if (!videoTime) return;
+
+    videoTime.style.display = isPlayerFullscreen()
+      ? ''
+      : 'none';
+  };
+
+  // Keep the timestamp hidden unless THIS player is fullscreen.
+  document.addEventListener(
+    'fullscreenchange',
+    updateVideoTimeVisibility
+  );
+
+  document.addEventListener(
+    'webkitfullscreenchange',
+    updateVideoTimeVisibility
+  );
 
   // ====================================================
   // PLAY / PAUSE
@@ -205,7 +246,11 @@ export async function renderVideo(msg, scope, containerEl) {
 
   playBtn.addEventListener('click', () => {
     if (video.paused) {
-      video.play().catch((error) => console.error('Video playback failed:', error));
+      video
+        .play()
+        .catch((error) =>
+          console.error('Video playback failed:', error)
+        );
     } else {
       video.pause();
     }
@@ -226,10 +271,15 @@ export async function renderVideo(msg, scope, containerEl) {
   // ====================================================
 
   video.addEventListener('loadedmetadata', () => {
-    const duration = Number.isFinite(video.duration) ? video.duration : 0;
+    const duration = Number.isFinite(video.duration)
+      ? video.duration
+      : 0;
+
     seekbar.max = duration;
     seekbar.value = 0;
+
     durationEl.textContent = formatTime(duration);
+
     updateSeekFill();
 
     // Portrait vs. landscape: the CSS default (16/9) is just a
@@ -240,7 +290,8 @@ export async function renderVideo(msg, scope, containerEl) {
     // black bars. max-height in video-player.css still caps how
     // tall that can get on a short phone screen.
     if (video.videoWidth > 0 && video.videoHeight > 0) {
-      playerEl.style.aspectRatio = `${video.videoWidth} / ${video.videoHeight}`;
+      playerEl.style.aspectRatio =
+        `${video.videoWidth} / ${video.videoHeight}`;
     }
   });
 
@@ -249,7 +300,9 @@ export async function renderVideo(msg, scope, containerEl) {
       seekbar.value = video.currentTime;
       updateSeekFill();
     }
-    currentTimeEl.textContent = formatTime(video.currentTime);
+
+    currentTimeEl.textContent =
+      formatTime(video.currentTime);
   });
 
   // ====================================================
@@ -263,24 +316,34 @@ export async function renderVideo(msg, scope, containerEl) {
 
   volumeSlider.addEventListener('input', () => {
     const volume = Number(volumeSlider.value);
+
     video.volume = volume;
     video.muted = volume === 0;
+
     updateVolumeFill();
   });
 
-  const volumeWrap = playerEl.querySelector('.video-volume-wrap');
+  const volumeWrap =
+    playerEl.querySelector('.video-volume-wrap');
 
   muteBtn.addEventListener('click', () => {
     video.muted = !video.muted;
+
     if (!video.muted && video.volume === 0) {
       video.volume = 1;
     }
-    volumeSlider.value = video.muted ? 0 : video.volume;
+
+    volumeSlider.value =
+      video.muted ? 0 : video.volume;
+
     updateVolumeFill();
+
     // Hover can't reveal the slider on touch (see video-player.css
     // `@media (hover:none)`), so tapping mute also toggles it open —
     // same pattern as the voice-message volume control.
-    if (isTouch) volumeWrap.classList.toggle('open');
+    if (isTouch) {
+      volumeWrap.classList.toggle('open');
+    }
   });
 
   // ====================================================
@@ -290,9 +353,15 @@ export async function renderVideo(msg, scope, containerEl) {
   // calls (attachments.js) — downloads the original file via the
   // existing /api/{chat,dm}/attachments/:id?download=1 endpoint,
   // not the in-player video source, and doesn't touch playback.
+
   downloadBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    downloadAttachment(msg.id, msg.attachment_name, scope);
+
+    downloadAttachment(
+      msg.id,
+      msg.attachment_name,
+      scope
+    );
   });
 
   // ====================================================
@@ -305,7 +374,10 @@ export async function renderVideo(msg, scope, containerEl) {
 
   async function toggleFullscreen() {
     try {
-      const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement;
+      const isFullscreen =
+        document.fullscreenElement ||
+        document.webkitFullscreenElement;
+
       if (!isFullscreen) {
         if (playerEl.requestFullscreen) {
           await playerEl.requestFullscreen();
@@ -331,17 +403,25 @@ export async function renderVideo(msg, scope, containerEl) {
   // ====================================================
   // VIDEO CLICK
   // ====================================================
+
   let lastVideoClick = 0;
 
   video.addEventListener('dblclick', (e) => {
     const now = Date.now();
+
     // Ignore the first click of a rapid double-click
     if (now - lastVideoClick < 300) return;
+
     lastVideoClick = now;
 
     video.focus();
+
     if (video.paused) {
-      video.play().catch(error => console.error('Play failed:', error));
+      video
+        .play()
+        .catch((error) =>
+          console.error('Play failed:', error)
+        );
     } else {
       video.pause();
     }
@@ -350,23 +430,34 @@ export async function renderVideo(msg, scope, containerEl) {
   // ====================================================
   // KEYBOARD (SPACEBAR: PLAY/PAUSE | F: FULLSCREEN)
   // ====================================================
+
   playerEl.addEventListener('keydown', async (e) => {
     const tag = e.target.tagName.toLowerCase();
 
     // Ignore native inputs/buttons so they function normally
-    if (tag === 'button' || tag === 'input' || tag === 'textarea') {
-      return; 
+    if (
+      tag === 'button' ||
+      tag === 'input' ||
+      tag === 'textarea'
+    ) {
+      return;
     }
 
     // Spacebar -> Play / Pause
     if (e.key === ' ' || e.code === 'Space') {
       e.preventDefault();
+
       if (video.paused) {
-        video.play().catch(err => console.error('Play failed:', err));
+        video
+          .play()
+          .catch((err) =>
+            console.error('Play failed:', err)
+          );
       } else {
         video.pause();
       }
-    } 
+    }
+
     // F key -> Toggle Fullscreen
     else if (e.key === 'f' || e.key === 'F') {
       e.preventDefault();
@@ -382,12 +473,17 @@ export async function renderVideo(msg, scope, containerEl) {
   // the video itself to hide/show them, same as any native mobile
   // player, and auto-hides them a couple seconds into playback so
   // they don't sit over the picture the whole time.
+
   if (isTouch) {
     let hideTimer = null;
+
     const scheduleAutoHide = () => {
       clearTimeout(hideTimer);
+
       hideTimer = setTimeout(() => {
-        if (!video.paused) playerEl.classList.add('controls-hidden');
+        if (!video.paused) {
+          playerEl.classList.add('controls-hidden');
+        }
       }, 2500);
     };
 
@@ -395,12 +491,23 @@ export async function renderVideo(msg, scope, containerEl) {
       // dblclick above already handles play/pause; a single tap on
       // the video (not the control bar itself) just toggles chrome
       // visibility, matching native mobile players.
-      if (e.target.closest('.video-player-controls')) return;
+      if (
+        e.target.closest('.video-player-controls')
+      ) {
+        return;
+      }
+
       playerEl.classList.toggle('controls-hidden');
-      if (!playerEl.classList.contains('controls-hidden')) scheduleAutoHide();
+
+      if (
+        !playerEl.classList.contains('controls-hidden')
+      ) {
+        scheduleAutoHide();
+      }
     });
 
     video.addEventListener('play', scheduleAutoHide);
+
     video.addEventListener('pause', () => {
       clearTimeout(hideTimer);
       playerEl.classList.remove('controls-hidden');
@@ -416,6 +523,7 @@ export async function renderVideo(msg, scope, containerEl) {
 
   video.addEventListener('error', () => {
     const error = video.error;
+
     console.error('Video error:', {
       code: error?.code,
       message: error?.message,
@@ -424,10 +532,18 @@ export async function renderVideo(msg, scope, containerEl) {
   });
 
   video.addEventListener('stalled', () => {
-    console.warn('Video network stalled:', video.currentSrc);
+    console.warn(
+      'Video network stalled:',
+      video.currentSrc
+    );
   });
+
   video.addEventListener('waiting', () => {});
+
   video.addEventListener('canplay', () => {
-    console.log('Video can play:', video.currentSrc);
+    console.log(
+      'Video can play:',
+      video.currentSrc
+    );
   });
 }

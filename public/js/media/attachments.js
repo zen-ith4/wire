@@ -85,7 +85,7 @@ function attachmentMediaKind(msg) {
   // Detect video attachments by MIME type or file extension
   const isVideoAttachment =
     isVideo(msg.attachment_mime) ||
-    ['mp4', 'webm', 'mov'].includes(
+    ['mp4', 'webm', 'mov', 'mkv', 'mjpeg'].includes(
       (msg.attachment_name || '')
         .split('.')
         .pop()

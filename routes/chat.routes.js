@@ -5,6 +5,7 @@ const { authenticate } = require('../middleware/authenticate');
 const { mediaAuth } = require('../middleware/mediaAuth');
 const { chatUpload } = require('../config/multer');
 const { chatWriteLimiter, uploadLimiter } = require('../middleware/rateLimiter');
+const { asyncHandler } = require('../middleware/asyncHandler');
 
 const {
   getRecentMessages,
@@ -12,6 +13,7 @@ const {
   getMessagesSince,
   sendMessage,
   sendMessageWithAttachment,
+  getAttachmentMediaToken,
   getAttachment,
   deleteMessage,
   toggleReaction,
@@ -62,7 +64,20 @@ router.post(
   authenticate,
   uploadLimiter,
   chatUpload.single('file'),
-  sendMessageWithAttachment
+  asyncHandler(sendMessageWithAttachment)
+);
+
+
+
+// Mint a short-lived, attachment-scoped token for <video>/<audio>
+// elements to use in the `?token=` query string (see
+// middleware/mediaAuth.js) — issued over a normal authenticated
+// (Authorization header) request, so the long-lived session JWT
+// itself never has to appear in a URL.
+router.get(
+  '/attachments/:messageId/media-token',
+  authenticate,
+  getAttachmentMediaToken
 );
 
 

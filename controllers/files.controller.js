@@ -5,7 +5,9 @@ const path = require('path');
 const { findFolderById } = require('../services/file.service');
 const { getUserFolders, getFolderAccess } = require('../services/share.service');
 const { safeSubPath } = require('../utils/safePath');
-const { getMimeType, moveFileSafe } = require('../utils/file');
+const { moveFileSafe } = require('../utils/file');
+const { detectMimeFromBytes } = require('../utils/detectFileType');
+const { isInlineSafeMime } = require('../utils/inlineSafeMime');
 
 function validateFolderId(value) {
   const id = Number(value);
@@ -204,7 +206,24 @@ function downloadFile(req, res) {
 }
 
 // ============ اضافه شده: previewFile ============
-function previewFile(req, res) {
+//
+// SECURITY: this used to trust getMimeType(resolved) — a lookup based
+// purely on the file's *extension* on disk, which the uploader fully
+// controls (fileUpload has no extension/type filtering, same as the
+// chat/DM uploaders). Combined with res.sendFile() never setting
+// Content-Disposition, that meant an attacker with write access to a
+// shared folder could upload e.g. "evil.html" and have it served as
+// `Content-Type: text/html` inline — stored XSS in this app's own
+// origin the moment a victim clicked "Preview" (not even "Download").
+//
+// The fix mirrors chat/DM attachments: the *actual* file content is
+// sniffed via magic bytes, and inline rendering is only ever allowed
+// when that sniffed type is on the shared inline-safe allowlist.
+// Anything else is served as a forced attachment with a generic
+// Content-Type, so "Preview" can never execute attacker content —
+// it just falls back to a download for file types we can't safely
+// render.
+async function previewFile(req, res) {
   const folderId = validateFolderId(req.params.folderId);
   if (!folderId) return res.status(400).json({ error: 'Invalid folder id' });
 
@@ -228,9 +247,30 @@ function previewFile(req, res) {
     return res.status(404).json({ error: 'File not found' });
   }
 
-  const mime = getMimeType(resolved); // تابع تشخیص mime که از utils/file گرفته می‌شود
-  res.setHeader('Content-Type', mime);
-  res.sendFile(resolved);
+  const sniffedMime = await detectMimeFromBytes(resolved);
+  const safeToRenderInline = isInlineSafeMime(sniffedMime);
+
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+
+  if (safeToRenderInline) {
+    res.setHeader('Content-Type', sniffedMime);
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename*=UTF-8''${encodeURIComponent(path.basename(file))}`
+    );
+    return res.sendFile(resolved);
+  }
+
+  // Not a type we've verified is safe to render inline — fall back
+  // to a forced download instead of ever letting the browser render
+  // it, regardless of the file's extension or the caller's intent to
+  // "preview" it.
+  res.setHeader('Content-Type', 'application/octet-stream');
+  res.setHeader(
+    'Content-Disposition',
+    `attachment; filename*=UTF-8''${encodeURIComponent(path.basename(file))}`
+  );
+  return res.sendFile(resolved);
 }
 
 module.exports = {

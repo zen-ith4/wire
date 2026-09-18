@@ -176,7 +176,17 @@
 }
 
 .auth-remember-me input{
-  width:auto;
+  width:15px;
+  height:15px;
+  flex:0 0 15px;
+
+  padding:0;
+  border:1px solid rgb(var(--border));
+  border-radius:4px;
+
+  appearance:auto;
+  accent-color:rgb(var(--indigo));
+
   margin:0;
   cursor:pointer;
 }

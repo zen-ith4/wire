@@ -105,6 +105,59 @@ function randomFilename(ext) {
   return `${crypto.randomUUID()}${ext}`;
 }
 
+// ======================================================
+// UNICODE FILENAME FIX
+// ======================================================
+//
+// Root cause of non-English (Persian/Arabic/CJK/emoji/etc.) filenames
+// getting mangled: browsers put the file's name as *raw UTF-8 bytes*
+// in the multipart Content-Disposition header of the file part (not
+// percent-encoded, not RFC 2231 encoded — just the literal UTF-8
+// bytes). busboy (which multer uses internally to parse multipart
+// bodies) decodes that header value using 'latin1'/'binary', which is
+// correct for plain HTTP header *field* semantics but wrong for this
+// particular value, since it was never latin1 to begin with. The
+// result is that `file.originalname` arrives already corrupted
+// (mojibake) by the time multer hands it to us — e.g. "عکس.jpg"
+// becomes "Ø¹Ú©Ø³.jpg" — well before any of our own code touches it.
+//
+// The fix is to reverse that mis-decode: take the mojibake string,
+// re-encode it as latin1 to get back the original raw bytes, then
+// decode *those* bytes as UTF-8. This is a lossless no-op for
+// pure-ASCII names (English filenames), and correctly recovers any
+// valid UTF-8 filename (Persian, Arabic, CJK, accented Latin,
+// emoji, ...).
+//
+// This must run exactly once, as early as possible — before the
+// extension is ever read off `file.originalname` (both here in
+// storage.filename and in fileFilter) and before it's persisted
+// anywhere. fileFilter is the earliest hook multer offers and runs
+// for every upload regardless of whether a mimeMap/type restriction
+// is configured, so we fix the encoding there for every uploader,
+// mutating the shared `file` object in place — multer carries that
+// same object through to `req.file`, so every later read (in
+// storage.filename here, and in the controllers) sees the corrected
+// name.
+function fixFilenameEncoding(name) {
+  if (typeof name !== 'string' || name === '') return name;
+
+  const reDecoded = Buffer.from(name, 'latin1').toString('utf8');
+
+  // Buffer's utf8 decoder swaps invalid byte sequences for U+FFFD
+  // ("replacement character"). If re-decoding introduced *new*
+  // replacement characters that weren't already in the original
+  // string, then `name` wasn't actually latin1-mis-decoded UTF-8 in
+  // the first place (e.g. a client that — unlike browsers — already
+  // sent a correctly-decoded name some other way), and "fixing" it
+  // would just corrupt it differently. In that case, keep the
+  // original rather than risk making things worse.
+  if (reDecoded.includes('\uFFFD') && !name.includes('\uFFFD')) {
+    return name;
+  }
+
+  return reDecoded;
+}
+
 function createStorage(uploadDir, useUserPrefix = false) {
   return multer.diskStorage({
     destination(req, file, cb) {
@@ -128,10 +181,18 @@ function createStorage(uploadDir, useUserPrefix = false) {
 
 function createFileFilter(allowedTypes) {
   return (req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
+    // Fix the Unicode mojibake first — see fixFilenameEncoding above.
+    // Everything below (and everything downstream, since `file` is
+    // the same object multer attaches as `req.file`) now sees the
+    // real original filename.
+    file.originalname = fixFilenameEncoding(file.originalname);
 
-    if (!allowedTypes[ext]) {
-      return cb(new Error('Unsupported file type'));
+    if (allowedTypes) {
+      const ext = path.extname(file.originalname).toLowerCase();
+
+      if (!allowedTypes[ext]) {
+        return cb(new Error('Unsupported file type'));
+      }
     }
 
     cb(null, true);
@@ -149,11 +210,12 @@ function createUploader({
     limits: {
       fileSize: maxSizeMB * 1024 * 1024,
     },
+    // Always attach the filter: even when there's no mimeMap to
+    // restrict against (chatUpload/dmUpload), it still needs to run
+    // to fix Unicode filename encoding on every upload — see
+    // fixFilenameEncoding above.
+    fileFilter: createFileFilter(mimeMap),
   };
-
-  if (mimeMap) {
-    options.fileFilter = createFileFilter(mimeMap);
-  }
 
   return multer(options);
 }
@@ -179,13 +241,16 @@ const bannerUpload = createUploader({
 const chatUpload = createUploader({
   dir: constants.CHAT_UPLOAD_DIR,
   maxSizeMB: constants.CHAT_UPLOAD_MAX_MB,
-  // No mimeMap/fileFilter here on purpose: chat attachments accept
-  // any reasonable file type (same as the general "My Files" uploader
+  // No mimeMap here on purpose: chat attachments accept any
+  // reasonable file type (same as the general "My Files" uploader
   // below), not just the small predefined list in CHAT_MIME_MAP.
   // CHAT_MIME_MAP is still used elsewhere (see chat.controller.js) to
   // *label* a known extension's mime type when the browser-supplied
   // one is missing/generic — it's just no longer used to *reject*
-  // uploads here.
+  // uploads here. createUploader() still attaches a fileFilter
+  // unconditionally for the Unicode-filename fix (see
+  // fixFilenameEncoding above); with no mimeMap it just fixes the
+  // encoding and never rejects on type.
 });
 
 const dmUpload = createUploader({
@@ -199,6 +264,12 @@ const fileUpload = multer({
   limits: {
     fileSize: constants.UPLOAD_MAX_MB * 1024 * 1024,
   },
+  // Same Unicode-filename fix as the other uploaders above — this is
+  // the uploader behind the "My Files" / Drive upload endpoint,
+  // which stores req.file.originalname as the actual on-disk display
+  // name (see controllers/files.controller.js's uploadFile), so it
+  // needs this even more directly than chat/DM do.
+  fileFilter: createFileFilter(),
 });
 
 // ======================================================

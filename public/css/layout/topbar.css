@@ -1,13 +1,25 @@
-/* No boxed background/border here on purpose — a transparent row
-   floating directly over the global ambient background (base.css).
-   There used to be a "my profile" pill living in this bar too; it's
-   gone (see sidebar.css/.sidebar-profile for where that moved, and
-   messages.css/.dm-peer-profile for the only liquid-glass profile
-   element that's left, inside an open DM). */
 .topbar {
-  height:var(--topbar-height);min-height:var(--topbar-height);
-  display:flex;align-items:center;justify-content:space-between;
+  height:var(--topbar-height);
+  min-height:var(--topbar-height);
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
   padding:0 24px;
-  position:relative;z-index:5;
+  position:relative;
+  z-index:5;
+
+  /* Same transparent surface as the sidebar */
+  background:rgba(var(--ink-rgb), .42);
 }
-.topbar-title{font-size:14px;font-weight:550;color:var(--text);letter-spacing:-0.01em;}
+
+.topbar-title{
+  font-size:14px;
+  font-weight:550;
+  color:var(--text);
+  letter-spacing:-0.01em;
+}
+
+/* Light mode: slightly lighter transparent surface */
+:root[data-theme="light"] .topbar{
+  background:rgba(var(--ink-rgb), .36);
+}

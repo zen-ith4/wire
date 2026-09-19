@@ -5,7 +5,7 @@
   height:calc(var(--vh, 1vh) * 100);
   /* Transparent panel — the global #ambient-underlay remains
      clearly visible behind the sidebar. */
-  background:rgba(var(--ink-rgb), .30);
+  background:rgba(var(--ink-rgb), .42);
   display:flex;flex-direction:column;
   border-right:1px solid var(--border);
   user-select:none;z-index:10;

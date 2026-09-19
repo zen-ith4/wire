@@ -5,8 +5,8 @@
 // which on a multi-core production host means at most 4 password
 // hashes/compares can genuinely run in parallel; on a single-core
 // box it doesn't add real parallelism (all threads still contend
-// for the one core) but it costs nothing there either. This must be
-// set before any module touches the threadpool (the first async
+// for the one core) but it costs nothing there either. This must
+// be set before any module touches the threadpool (the first async
 // fs/crypto/bcrypt call), so it has to be the very first thing in
 // the entry file, before any `require`. 8 is a modest bump from the
 // default 4 — enough headroom for concurrent auth traffic on a
@@ -51,58 +51,27 @@ async function startServer() {
     app.set('trust proxy', false);
 
     // IP restriction runs first and applies to *every* request,
-    // static assets and body parsing included — this is the
-    // WireGuard/network access model and must not be weakened or
-    // bypassed for any route. It has to be the very first app.use()
-    // registered: previously express.json() ran before this, which
-    // meant a request from outside the allowed subnet still had its
-    // body fully parsed before being rejected.
+    // static assets and body parsing included.
     app.use(ipRestrict);
 
-    // HTTP CORS for browser-based clients and Capacitor.
-    // Capacitor's WebView uses https://localhost as its origin.
-    // Keep the configured browser origin and explicitly allow the
-    // native app origin without opening the API to arbitrary origins.
-    const allowedCorsOrigins = new Set(
-      [process.env.CLIENT_URL, 'https://localhost'].filter(Boolean)
-    );
-
+    // HTTP CORS for browser-based clients, Electron, and Capacitor.
+    // Reflect the requesting Origin instead of maintaining a fixed
+    // allowlist. This also supports Capacitor's https://localhost
+    // origin and Electron's origin without special cases.
     app.use(
       cors({
-        origin(origin, callback) {
-          // Non-browser requests may not have an Origin header.
-          if (!origin || allowedCorsOrigins.has(origin)) {
-            return callback(null, true);
-          }
-
-          return callback(new Error('Not allowed by CORS'));
-        },
+        origin: true,
         credentials: true,
       })
     );
 
     app.use(express.json());
 
-    // Static assets are served right after the IP gate, before the
-    // request logger. They're still fully subject to ipRestrict
-    // above (an out-of-subnet request never reaches express.static
-    // at all), so nothing about *who* can reach static files
-    // changes. What changes is that a successfully-served static
-    // asset (css/js/images/fonts on every page load) no longer pays
-    // for the logger's per-request bookkeeping (Date.now(), a
-    // 'finish' listener, a console.log line) — that instrumentation
-    // is genuinely only useful for API calls, and previously ran
-    // unconditionally on every single asset request too. Requests
-    // that don't match a static file (including all /api/* calls)
-    // fall through to logger exactly as before.
+    // Static assets are served right after the IP gate.
     app.use(express.static(path.join(__dirname, 'public')));
     app.use(logger);
 
-    // General-purpose API rate limiting. Everything under /api was
-    // previously unprotected except /api/auth/login — this is a
-    // generous, IP-keyed backstop against runaway/abusive clients;
-    // per-endpoint limiters below add tighter budgets on the
-    // specific expensive write operations.
+    // General-purpose API rate limiting.
     app.use('/api', apiLimiter);
 
     // 5. API routes
@@ -129,11 +98,6 @@ async function startServer() {
 
     // 8. Start listening on the WireGuard IP (strict binding)
     const PORT = process.env.PORT || constants.PORT || 3000;
-    // Use constants.HOST as the single source of truth (it already
-    // reads process.env.HOST with the same fallback logic) instead
-    // of re-deriving HOST independently here — previously this line
-    // never actually read constants.HOST at all, so the two could
-    // silently disagree.
     const HOST = constants.HOST;
 
     server.listen(PORT, HOST, () => {

@@ -5,6 +5,9 @@ node_modules/
 electron-client/dist/
 electron-client/node_modules/
 
+
+user-data/
+
 # Environment / secrets
 .env
 .env.*

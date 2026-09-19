@@ -43,6 +43,42 @@ const downloadProgressState = {
   info: null
 };
 
+function ensureDownloadProgressStyle() {
+  if (
+    document.getElementById(
+      'wire-download-progress-style'
+    )
+  ) {
+    return;
+  }
+
+  const style =
+    document.createElement('style');
+
+  style.id =
+    'wire-download-progress-style';
+
+  style.textContent = `
+    @keyframes wire-download-progress-indeterminate {
+      0% {
+        transform:translateX(-100%);
+      }
+
+      50% {
+        transform:translateX(80%);
+      }
+
+      100% {
+        transform:translateX(280%);
+      }
+    }
+  `;
+
+  document.head.appendChild(
+    style
+  );
+}
+
 function ensureDownloadProgressUI() {
   if (
     downloadProgressState.element &&
@@ -160,7 +196,99 @@ function formatDownloadSpeed(
   )}/s`;
 }
 
+function updateDownloadSpeed(
+  item,
+  bytes
+) {
+  if (
+    !Number.isFinite(bytes) ||
+    bytes < 0
+  ) {
+    return;
+  }
+
+  const now =
+    performance.now();
+
+  if (
+    !Number.isFinite(
+      item.lastBytes
+    )
+  ) {
+    item.lastBytes =
+      bytes;
+
+    item.lastTime =
+      now;
+
+    return;
+  }
+
+  const deltaBytes =
+    bytes -
+    item.lastBytes;
+
+  const deltaTime =
+    now -
+    item.lastTime;
+
+  if (
+    deltaBytes < 0
+  ) {
+    item.lastBytes =
+      bytes;
+
+    item.lastTime =
+      now;
+
+    item.speed =
+      0;
+
+    return;
+  }
+
+  /*
+   * Don't calculate speed from tiny intervals.
+   * Otherwise the displayed value jumps around like a caffeinated squirrel.
+   */
+  if (
+    deltaTime < 200
+  ) {
+    return;
+  }
+
+  const instantSpeed =
+    deltaBytes /
+    (deltaTime / 1000);
+
+  if (
+    Number.isFinite(
+      instantSpeed
+    ) &&
+    instantSpeed >= 0
+  ) {
+    if (
+      item.speed > 0
+    ) {
+      item.speed =
+        item.speed * 0.70 +
+        instantSpeed * 0.30;
+
+    } else {
+      item.speed =
+        instantSpeed;
+    }
+  }
+
+  item.lastBytes =
+    bytes;
+
+  item.lastTime =
+    now;
+}
+
 function updateDownloadProgressUI() {
+  ensureDownloadProgressStyle();
   ensureDownloadProgressUI();
 
   const {
@@ -184,6 +312,9 @@ function updateDownloadProgressUI() {
     info.style.opacity =
       '0';
 
+    info.textContent =
+      '';
+
     return;
   }
 
@@ -192,8 +323,7 @@ function updateDownloadProgressUI() {
 
   /*
    * One active download:
-   *
-   * We can safely show its real percentage.
+   * show exact percentage whenever Content-Length is known.
    */
   if (
     count === 1
@@ -212,14 +342,17 @@ function updateDownloadProgressUI() {
       Number(item.total) ||
       0;
 
-    const speed =
+    const speedText =
       formatDownloadSpeed(
         item.speed
       );
 
+    const name =
+      item.name ||
+      'Downloading';
+
     if (
-      total > 0 &&
-      bytes >= 0
+      total > 0
     ) {
       const percent =
         Math.min(
@@ -241,34 +374,28 @@ function updateDownloadProgressUI() {
           percent
         )}%`;
 
-      const name =
-        item.name ||
-        'Downloading';
-
       info.textContent =
-        speed
-          ? `${name} · ${percentText} · ${speed}`
+        speedText
+          ? `${name} · ${percentText} · ${speedText}`
           : `${name} · ${percentText}`;
 
-    } else {
-      /*
-       * Server didn't provide Content-Length.
-       * Don't invent a percentage.
-       */
-      fill.style.width =
-        '35%';
-
-      fill.style.animation =
-        'wire-download-progress-indeterminate 1.1s ease-in-out infinite';
-
-      const speedText =
-        speed
-          ? ` · ${speed}`
-          : '';
-
-      info.textContent =
-        `${item.name || 'Downloading'}${speedText}`;
+      return;
     }
+
+    /*
+     * No Content-Length.
+     * We know speed but cannot honestly calculate percentage.
+     */
+    fill.style.width =
+      '35%';
+
+    fill.style.animation =
+      'wire-download-progress-indeterminate 1.1s ease-in-out infinite';
+
+    info.textContent =
+      speedText
+        ? `${name} · ${speedText}`
+        : name;
 
     return;
   }
@@ -276,81 +403,99 @@ function updateDownloadProgressUI() {
   /*
    * Multiple simultaneous downloads.
    *
-   * FileTransfer progress events don't expose a reliable transfer ID,
-   * so combining byte counters from different transfers can produce
-   * nonsense. Use an indeterminate bar instead.
+   * Each client can report progress independently, but native
+   * FileTransfer events do not provide a reliable transfer ID.
+   *
+   * For multiple downloads we therefore calculate an aggregate
+   * percentage only when every active item has a known total.
+   *
+   * Otherwise use an indeterminate bar.
    */
-  fill.style.width =
-    '35%';
+  let totalBytes =
+    0;
 
-  fill.style.animation =
-    'wire-download-progress-indeterminate 1.1s ease-in-out infinite';
+  let downloadedBytes =
+    0;
 
-  let bestSpeed =
+  let allTotalsKnown =
+    true;
+
+  let combinedSpeed =
     0;
 
   for (
     const item
     of activeDownloads.values()
   ) {
+    const bytes =
+      Number(item.bytes) ||
+      0;
+
+    const total =
+      Number(item.total) ||
+      0;
+
+    downloadedBytes +=
+      bytes;
+
+    combinedSpeed +=
+      Number(item.speed) || 0;
+
     if (
-      Number.isFinite(
-        item.speed
-      ) &&
-      item.speed > bestSpeed
+      total <= 0
     ) {
-      bestSpeed =
-        item.speed;
+      allTotalsKnown =
+        false;
+
+    } else {
+      totalBytes +=
+        total;
     }
   }
 
   const speedText =
     formatDownloadSpeed(
-      bestSpeed
+      combinedSpeed
     );
 
-  info.textContent =
-    `${count} downloads${
-      speedText
-        ? ` · ${speedText}`
-        : ''
-    }`;
-}
-
-function ensureDownloadProgressStyle() {
   if (
-    document.getElementById(
-      'wire-download-progress-style'
-    )
+    allTotalsKnown &&
+    totalBytes > 0
   ) {
+    const percent =
+      Math.min(
+        100,
+        Math.max(
+          0,
+          (downloadedBytes / totalBytes) *
+            100
+        )
+      );
+
+    fill.style.animation =
+      'none';
+
+    fill.style.width =
+      `${percent}%`;
+
+    info.textContent =
+      speedText
+        ? `${count} downloads · ${Math.round(percent)}% · ${speedText}`
+        : `${count} downloads · ${Math.round(percent)}%`;
+
     return;
   }
 
-  const style =
-    document.createElement('style');
+  fill.style.width =
+    '35%';
 
-  style.id =
-    'wire-download-progress-style';
+  fill.style.animation =
+    'wire-download-progress-indeterminate 1.1s ease-in-out infinite';
 
-  style.textContent = `
-    @keyframes wire-download-progress-indeterminate {
-      0% {
-        transform:translateX(-100%);
-      }
-
-      50% {
-        transform:translateX(80%);
-      }
-
-      100% {
-        transform:translateX(280%);
-      }
-    }
-  `;
-
-  document.head.appendChild(
-    style
-  );
+  info.textContent =
+    speedText
+      ? `${count} downloads · ${speedText}`
+      : `${count} downloads`;
 }
 
 function startDownloadProgress(
@@ -367,16 +512,21 @@ function startDownloadProgress(
       name:
         name ||
         'Downloading',
+
       bytes:
         0,
+
       total:
         0,
+
       speed:
         0,
+
       lastBytes:
         0,
+
       lastTime:
-        Date.now()
+        performance.now()
     }
   );
 
@@ -409,15 +559,17 @@ function updateDownloadProgress(
       progress.contentLength
     );
 
-  const now =
-    Date.now();
-
   if (
     Number.isFinite(bytes) &&
     bytes >= 0
   ) {
     item.bytes =
       bytes;
+
+    updateDownloadSpeed(
+      item,
+      bytes
+    );
   }
 
   if (
@@ -426,55 +578,6 @@ function updateDownloadProgress(
   ) {
     item.total =
       total;
-  }
-
-  /*
-   * Speed is calculated per transfer.
-   *
-   * We intentionally don't merge byte counters from multiple
-   * transfers because FileTransfer progress events don't identify
-   * which transfer generated an event.
-   */
-  if (
-    Number.isFinite(bytes) &&
-    bytes >= item.lastBytes &&
-    now > item.lastTime
-  ) {
-    const deltaBytes =
-      bytes -
-      item.lastBytes;
-
-    const deltaTime =
-      now -
-      item.lastTime;
-
-    if (
-      deltaTime >= 150
-    ) {
-      const instantSpeed =
-        deltaBytes /
-        (deltaTime / 1000);
-
-      /*
-       * Light smoothing so the number doesn't jump around wildly.
-       */
-      if (
-        item.speed > 0
-      ) {
-        item.speed =
-          item.speed * 0.65 +
-          instantSpeed * 0.35;
-      } else {
-        item.speed =
-          instantSpeed;
-      }
-
-      item.lastBytes =
-        bytes;
-
-      item.lastTime =
-        now;
-    }
   }
 
   updateDownloadProgressUI();
@@ -501,8 +604,10 @@ function failDownloadProgress(
 }
 
 /*
- * Expose the same manager globally so Files/Drive can use exactly
- * the same bar instead of creating a second independent progress UI.
+ * Shared manager.
+ *
+ * files.js uses the same object, so Drive downloads and attachment
+ * downloads share exactly one progress bar.
  */
 window.__wireDownloadProgress = {
   start:
@@ -532,8 +637,6 @@ function cacheImageUrl(
     url
   );
 
-  // Cheap LRU-ish cap: once we're over budget, drop the
-  // longest-untouched entry.
   while (
     imageBlobCache.size >
     MAX_CACHED_IMAGES
@@ -553,7 +656,9 @@ function cacheImageUrl(
       oldestKey
     );
 
-    if (oldestUrl) {
+    if (
+      oldestUrl
+    ) {
       URL.revokeObjectURL(
         oldestUrl
       );
@@ -575,7 +680,6 @@ function getCachedImageUrl(
     return undefined;
   }
 
-  // Refresh recency.
   imageBlobCache.delete(
     key
   );
@@ -588,9 +692,6 @@ function getCachedImageUrl(
   return url;
 }
 
-/**
- * CSS `aspect-ratio` value for an image attachment placeholder.
- */
 function imageAspectRatio(
   msg
 ) {
@@ -616,13 +717,9 @@ function imageAspectRatio(
   return '4 / 3';
 }
 
-/**
- * Detect which media player, if any, a message's attachment needs.
- */
 function attachmentMediaKind(
   msg
 ) {
-  // Voice messages are audio attachments too.
   if (
     isVoiceMessage(msg)
   ) {
@@ -672,9 +769,6 @@ function attachmentMediaKind(
   return null;
 }
 
-/**
- * Initializes the audio/video player for a message attachment.
- */
 export function mountAttachmentMedia(
   msg,
   messageEl,
@@ -741,9 +835,6 @@ export function mountAttachmentMedia(
   }
 }
 
-/**
- * Small icon-only download button for image attachments.
- */
 export function imageDownloadButtonHtml(
   msg,
   scope
@@ -794,14 +885,12 @@ export function renderAttachment(
       msg
     );
 
-  // Audio/video attachments are handled by their players.
   if (
     mediaKind
   ) {
     return '';
   }
 
-  // Image attachment.
   if (
     isImage
   ) {
@@ -876,7 +965,6 @@ export function renderAttachment(
     </div>`;
   }
 
-  // Generic file attachment.
   return `
   <div
     class="chat-attachment"
@@ -925,7 +1013,6 @@ export async function loadChatImage(
     return;
   }
 
-  // Already loaded and cached.
   const cachedUrl =
     getCachedImageUrl(
       key
@@ -955,7 +1042,6 @@ export async function loadChatImage(
     return;
   }
 
-  // Existing in-flight request.
   if (
     pendingLoads.has(
       key
@@ -991,7 +1077,6 @@ export async function loadChatImage(
             blob
           );
 
-        // Cache regardless of whether the element is still visible.
         cacheImageUrl(
           key,
           objectURL
@@ -1126,9 +1211,6 @@ export async function loadChatImage(
   return loadPromise;
 }
 
-/**
- * Cancels in-flight image fetches for a container being removed.
- */
 export function cleanupImageUrls(
   container,
   scope
@@ -1167,6 +1249,7 @@ export function cleanupImageUrls(
           entry
         ) {
           entry.controller.abort();
+
           pendingLoads.delete(
             key
           );
@@ -1175,9 +1258,6 @@ export function cleanupImageUrls(
     );
 }
 
-/**
- * Revokes and forgets a single cached attachment image.
- */
 export function revokeAttachmentImage(
   id,
   scope
@@ -1223,9 +1303,6 @@ export function revokeAttachmentImage(
   }
 }
 
-/**
- * Cancel all pending attachment loads.
- */
 export function cancelAllAttachmentLoads() {
   for (
     const { controller }
@@ -1242,11 +1319,6 @@ export function cancelAllAttachmentLoads() {
  * DOWNLOAD HELPERS
  * ========================================================= */
 
-/**
- * Returns true when running inside a native Capacitor platform.
- *
- * Web/PWA keeps using the normal browser download path.
- */
 function isNativeCapacitor() {
   try {
     return Capacitor.isNativePlatform();
@@ -1255,9 +1327,6 @@ function isNativeCapacitor() {
   }
 }
 
-/**
- * Make a filename safe for filesystem paths.
- */
 function sanitizeFilename(
   name
 ) {
@@ -1286,9 +1355,6 @@ function sanitizeFilename(
     'download';
 }
 
-/**
- * Handle an authentication failure coming from native FileTransfer.
- */
 function handleNativeDownloadAuthError(
   error
 ) {
@@ -1324,9 +1390,10 @@ function handleNativeDownloadAuthError(
 }
 
 
-/**
- * Download using Capacitor native FileTransfer.
- */
+/* =========================================================
+ * NATIVE DOWNLOAD
+ * ========================================================= */
+
 async function downloadAttachmentNative(
   id,
   name,
@@ -1342,11 +1409,6 @@ async function downloadAttachmentNative(
     );
   }
 
-  const safeName =
-    sanitizeFilename(
-      name
-    );
-
   const url =
     scope === 'dm'
       ? `/api/dm/attachments/${id}?download=1`
@@ -1357,6 +1419,14 @@ async function downloadAttachmentNative(
       url
     );
 
+  const safeName =
+    sanitizeFilename(
+      name
+    );
+
+  const destinationUri =
+    `file:///storage/emulated/0/Download/${safeName}`;
+
   console.log(
     '[Download] Native download:',
     {
@@ -1366,16 +1436,10 @@ async function downloadAttachmentNative(
         safeName,
       url:
         resolvedUrl,
+      destination:
+        destinationUri,
       downloadId
     }
-  );
-
-  const destinationUri =
-    `file:///storage/emulated/0/Download/${safeName}`;
-
-  console.log(
-    '[Download] Native destination:',
-    destinationUri
   );
 
   let progressListener =
@@ -1390,29 +1454,25 @@ async function downloadAttachmentNative(
             return;
           }
 
-          console.log(
-            '[Download] Progress:',
-            {
-              bytes:
-                progress.bytes,
+          const bytes =
+            Number(
+              progress.bytes
+            ) || 0;
 
-              contentLength:
-                progress.contentLength,
-
-              downloadId
-            }
-          );
+          const contentLength =
+            Number(
+              progress.contentLength
+            ) || 0;
 
           updateDownloadProgress(
             downloadId,
-            progress
+            {
+              bytes,
+              contentLength
+            }
           );
         }
       );
-
-    console.log(
-      '[Download] Starting native transfer...'
-    );
 
     const result =
       await FileTransfer.downloadFile({
@@ -1436,11 +1496,6 @@ async function downloadAttachmentNative(
         readTimeout:
           60_000
       });
-
-    console.log(
-      '[Download] Native transfer complete:',
-      result
-    );
 
     return {
       ...result,
@@ -1507,45 +1562,304 @@ async function downloadAttachmentNative(
 }
 
 
+/* =========================================================
+ * WEB / ELECTRON STREAMING DOWNLOAD
+ * ========================================================= */
+
 /**
- * Browser/PWA download fallback.
+ * Browser and Electron both use the normal Fetch API.
  *
- * The browser fetch path currently doesn't expose streaming progress
- * through fetchBlob(), so no native progress events are emitted here.
+ * Instead of fetchBlob(), this reads response.body chunk-by-chunk,
+ * allowing the same progress UI to work in:
+ *
+ *   - normal browser
+ *   - PWA
+ *   - Electron
+ *
+ * The server's Content-Length is used for percentage when available.
  */
 async function downloadAttachmentWeb(
   id,
   name,
-  scope
+  scope,
+  downloadId
 ) {
+  const token =
+    getToken();
+
+  if (!token) {
+    throw new Error(
+      'Authentication required'
+    );
+  }
+
   const url =
     scope === 'dm'
       ? `/api/dm/attachments/${id}?download=1`
       : `/api/chat/attachments/${id}?download=1`;
 
-  console.log(
-    '[Download] Web download:',
-    {
-      id,
-      scope,
-      name,
-      url
-    }
-  );
-
-  const blob =
-    await fetchBlob(
+  const resolvedUrl =
+    resolveServerUrl(
       url
     );
 
   console.log(
-    '[Download] Blob received:',
+    '[Download] Web/Electron streaming download:',
     {
-      size:
-        blob.size,
+      id,
+      scope,
+      name,
+      url:
+        resolvedUrl,
+      downloadId
+    }
+  );
 
-      type:
-        blob.type
+  const response =
+    await fetch(
+      resolvedUrl,
+      {
+        method:
+          'GET',
+
+        headers: {
+          Authorization:
+            `Bearer ${token}`
+        }
+      }
+    );
+
+  if (
+    !response.ok
+  ) {
+    if (
+      response.status ===
+      401
+    ) {
+      if (
+        typeof logout ===
+        'function'
+      ) {
+        try {
+          logout();
+
+        } catch (logoutError) {
+          console.error(
+            '[Download] Logout failed:',
+            logoutError
+          );
+        }
+      }
+
+      throw new Error(
+        'Session expired'
+      );
+    }
+
+    let serverBody =
+      '';
+
+    try {
+      serverBody =
+        await response.text();
+
+    } catch {
+      // Ignore body parsing failure.
+    }
+
+    throw new Error(
+      `Download failed (${response.status})${
+        serverBody
+          ? `: ${serverBody}`
+          : ''
+      }`
+    );
+  }
+
+  /*
+   * Content-Length is the only reliable way for a normal HTTP
+   * response to expose an exact total byte count.
+   *
+   * If absent, the progress UI remains indeterminate but speed
+   * still works.
+   */
+  const contentLength =
+    Number(
+      response.headers.get(
+        'content-length'
+      )
+    );
+
+  const total =
+    Number.isFinite(
+      contentLength
+    ) &&
+    contentLength > 0
+      ? contentLength
+      : 0;
+
+  updateDownloadProgress(
+    downloadId,
+    {
+      bytes:
+        0,
+
+      contentLength:
+        total
+    }
+  );
+
+  /*
+   * Some older WebViews may not expose response.body.
+   *
+   * In that case fall back to response.blob().
+   * The download still works, but exact streaming progress is
+   * unavailable in that environment.
+   */
+  if (
+    !response.body ||
+    typeof response.body.getReader !==
+      'function'
+  ) {
+    const blob =
+      await response.blob();
+
+    updateDownloadProgress(
+      downloadId,
+      {
+        bytes:
+          blob.size,
+
+        contentLength:
+          total ||
+          blob.size
+      }
+    );
+
+    const objectURL =
+      URL.createObjectURL(
+        blob
+      );
+
+    try {
+      const a =
+        document.createElement(
+          'a'
+        );
+
+      a.href =
+        objectURL;
+
+      a.download =
+        name ||
+        'download';
+
+      document.body.appendChild(
+        a
+      );
+
+      a.click();
+
+      a.remove();
+
+    } finally {
+      setTimeout(
+        () => {
+          URL.revokeObjectURL(
+            objectURL
+          );
+        },
+        1000
+      );
+    }
+
+    return;
+  }
+
+  const reader =
+    response.body.getReader();
+
+  const chunks =
+    [];
+
+  let downloaded =
+    0;
+
+  try {
+    while (
+      true
+    ) {
+      const {
+        done,
+        value
+      } =
+        await reader.read();
+
+      if (
+        done
+      ) {
+        break;
+      }
+
+      if (
+        value
+      ) {
+        chunks.push(
+          value
+        );
+
+        downloaded +=
+          value.byteLength;
+
+        updateDownloadProgress(
+          downloadId,
+          {
+            bytes:
+              downloaded,
+
+            contentLength:
+              total
+          }
+        );
+      }
+    }
+
+  } finally {
+    try {
+      reader.releaseLock();
+
+    } catch {
+      // Nothing to release.
+    }
+  }
+
+  /*
+   * Reconstruct a Blob after the stream is complete.
+   *
+   * This keeps the existing browser/Electron download behavior
+   * without requiring filesystem-specific APIs.
+   */
+  const blob =
+    new Blob(
+      chunks,
+      {
+        type:
+          response.headers.get(
+            'content-type'
+          ) ||
+          'application/octet-stream'
+      }
+    );
+
+  updateDownloadProgress(
+    downloadId,
+    {
+      bytes:
+        downloaded,
+
+      contentLength:
+        total ||
+        downloaded
     }
   );
 
@@ -1588,9 +1902,10 @@ async function downloadAttachmentWeb(
 }
 
 
-/**
- * Downloads an attachment.
- */
+/* =========================================================
+ * PUBLIC DOWNLOAD API
+ * ========================================================= */
+
 export async function downloadAttachment(
   id,
   name,
@@ -1601,11 +1916,6 @@ export async function downloadAttachment(
       name
     );
 
-  /*
-   * Unique ID per transfer.
-   *
-   * This is critical when several downloads start at once.
-   */
   const downloadId =
     `attachment-${scope}-${id}-${Date.now()}-${Math.random()
       .toString(36)
@@ -1652,10 +1962,22 @@ export async function downloadAttachment(
       return;
     }
 
+    /*
+     * Browser + Electron.
+     *
+     * Both use streaming Fetch here, so both get:
+     *
+     *   percentage
+     *   downloaded bytes
+     *   speed
+     *
+     * when the server supplies Content-Length.
+     */
     await downloadAttachmentWeb(
       id,
       filename,
-      scope
+      scope,
+      downloadId
     );
 
     finishDownloadProgress(
@@ -1683,7 +2005,5 @@ export async function downloadAttachment(
   }
 }
 
-
-// Expose for inline onclick.
 window.downloadAttachment =
   downloadAttachment;

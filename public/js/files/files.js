@@ -510,14 +510,27 @@ async function downloadFileNative(
 }
 
 /**
- * Browser/PWA download fallback.
+ * Browser/Electron download fallback.
  *
- * This path does not use FileTransfer, so native download progress
- * is not available here.
+ * Uses XMLHttpRequest instead of fetchBlob() so the shared download
+ * progress UI receives real download progress events.
+ *
+ * XMLHttpRequest supports binary responses through responseType="blob"
+ * and exposes download progress through the XHR progress event.
  */
 async function downloadFileWeb(
-  file
+  file,
+  downloadId
 ) {
+  const token =
+    getToken();
+
+  if (!token) {
+    throw new Error(
+      'Authentication required'
+    );
+  }
+
   const url =
     `/api/files/download/${currentFolderId}` +
     `?subpath=${encodeURIComponent(currentSubpath)}` +
@@ -527,25 +540,212 @@ async function downloadFileWeb(
     '[Files Download] Web download:',
     {
       file,
-      url
+      url,
+      downloadId
     }
   );
 
   const blob =
-    await fetchBlob(
-      url
+    await new Promise(
+      (
+        resolve,
+        reject
+      ) => {
+        const xhr =
+          new XMLHttpRequest();
+
+        xhr.open(
+          'GET',
+          url,
+          true
+        );
+
+        xhr.responseType =
+          'blob';
+
+        xhr.timeout =
+          120_000;
+
+        xhr.setRequestHeader(
+          'Authorization',
+          `Bearer ${token}`
+        );
+
+        /*
+         * Download progress.
+         *
+         * event.loaded:
+         *   bytes received so far
+         *
+         * event.total:
+         *   Content-Length when available
+         *
+         * If total is unavailable, the shared progress manager
+         * automatically falls back to its indeterminate state.
+         */
+        xhr.addEventListener(
+          'progress',
+          event => {
+            const bytes =
+              Number(
+                event.loaded
+              ) || 0;
+
+            const contentLength =
+              event.lengthComputable
+                ? Number(
+                    event.total
+                  ) || 0
+                : 0;
+
+            window.__wireDownloadProgress?.progress(
+              downloadId,
+              {
+                bytes,
+                contentLength
+              }
+            );
+          }
+        );
+
+        xhr.addEventListener(
+          'load',
+          () => {
+            if (
+              xhr.status >= 200 &&
+              xhr.status < 300
+            ) {
+              resolve(
+                xhr.response
+              );
+
+              return;
+            }
+
+            if (
+              xhr.status === 401
+            ) {
+              try {
+                logout();
+
+              } catch (logoutError) {
+                console.error(
+                  '[Files Download] Logout failed:',
+                  logoutError
+                );
+              }
+
+              reject(
+                new Error(
+                  'Session expired'
+                )
+              );
+
+              return;
+            }
+
+            let message =
+              `Download failed (${xhr.status})`;
+
+            /*
+             * Some server errors may be returned as text even though
+             * the request expects a Blob. Try to expose that text when
+             * available without making it a requirement for success.
+             */
+            if (
+              xhr.response instanceof Blob &&
+              xhr.response.size > 0 &&
+              xhr.status >= 400
+            ) {
+              xhr.response
+                .text()
+                .then(
+                  body => {
+                    reject(
+                      new Error(
+                        body
+                          ? `${message}: ${body}`
+                          : message
+                      )
+                    );
+                  }
+                )
+                .catch(
+                  () => {
+                    reject(
+                      new Error(
+                        message
+                      )
+                    );
+                  }
+                );
+
+              return;
+            }
+
+            reject(
+              new Error(
+                message
+              )
+            );
+          }
+        );
+
+        xhr.addEventListener(
+          'error',
+          () => {
+            reject(
+              new Error(
+                'Network error'
+              )
+            );
+          }
+        );
+
+        xhr.addEventListener(
+          'abort',
+          () => {
+            reject(
+              new Error(
+                'Download cancelled'
+              )
+            );
+          }
+        );
+
+        xhr.addEventListener(
+          'timeout',
+          () => {
+            reject(
+              new Error(
+                'Download timed out'
+              )
+            );
+          }
+        );
+
+        xhr.send();
+      }
     );
 
   console.log(
     '[Files Download] Blob received:',
     {
       size:
-        blob.size,
+        blob?.size,
 
       type:
-        blob.type
+        blob?.type
     }
   );
+
+  if (
+    !(blob instanceof Blob)
+  ) {
+    throw new Error(
+      'Invalid download response'
+    );
+  }
 
   const objectURL =
     URL.createObjectURL(
@@ -562,8 +762,9 @@ async function downloadFileWeb(
       objectURL;
 
     a.download =
-      file ||
-      'download';
+      sanitizeFilename(
+        file
+      );
 
     document.body.appendChild(
       a
@@ -596,10 +797,12 @@ async function downloadFileWeb(
  *   -> Android Download/
  *   -> shared Wire download progress UI
  *
- * Browser/PWA:
- *   fetchBlob()
- *   -> Blob URL
+ * Browser/Electron:
+ *   XMLHttpRequest
+ *   Authorization: Bearer token
+ *   -> Blob
  *   -> <a download>
+ *   -> shared Wire download progress UI
  */
 async function downloadFile(
   file
@@ -650,9 +853,39 @@ async function downloadFile(
       return;
     }
 
-    await downloadFileWeb(
-      file
+    /*
+     * Browser/Electron use the same shared progress UI.
+     *
+     * The Web download owns start/finish/fail here because
+     * downloadFileWeb() only performs the actual XHR transfer.
+     */
+    window.__wireDownloadProgress?.start(
+      downloadId,
+      filename
     );
+
+    try {
+      await downloadFileWeb(
+        file,
+        downloadId
+      );
+
+      window.__wireDownloadProgress?.finish(
+        downloadId
+      );
+
+      showToast(
+        `Downloaded: ${filename}`,
+        'success'
+      );
+
+    } catch (error) {
+      window.__wireDownloadProgress?.fail(
+        downloadId
+      );
+
+      throw error;
+    }
 
   } catch (e) {
     console.error(

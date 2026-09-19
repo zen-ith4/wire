@@ -93,18 +93,8 @@ body.sidebar-resizing *{user-select:none !important;}
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
 
-/* ---------- Mobile sidebar ---------- */
-.sidebar-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:45;}
-.sidebar-backdrop.active{display:block;}
-
 /* Light mode: slightly stronger surface tint for readability while
    still allowing the ambient background to remain clearly visible. */
 :root[data-theme="light"] .sidebar{
-  background:rgba(var(--ink-rgb),.42);
+  background:rgba(var(--ink-rgb),.36);
 }
-:root[data-theme="dark"] .sidebar{
-  background:rgba(var(--ink-rgb),.42);
-}
-
-/* این خط تغییر کرد تا زورش از بقیه کلاس‌ها بیشتر بشه */
-button.mobile-menu-btn { display: none; }

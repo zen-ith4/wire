@@ -83,12 +83,22 @@ export function navigate(view, params) {
   destroyChatComposer();
   destroyDmComposer();
 
-  document.querySelectorAll('.nav-link').forEach((link) => {
-    link.classList.toggle(
-      'active',
-      link.dataset.view === view
-    );
-  });
+  // One pass marks the active item in every navigation surface: the
+  // desktop sidebar (.nav-link), the phone bottom tabs and the phone
+  // admin menu (see ui/mobile-shell.js) — they all read the same route.
+  document
+    .querySelectorAll('.nav-link, .bottom-nav-item, .more-menu-item')
+    .forEach((link) => {
+      const isActive = link.dataset.view === view;
+
+      link.classList.toggle('active', isActive);
+
+      if (isActive) {
+        link.setAttribute('aria-current', 'page');
+      } else {
+        link.removeAttribute('aria-current');
+      }
+    });
 
   const title = document.getElementById('topbar-title');
 

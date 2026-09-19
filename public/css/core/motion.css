@@ -18,7 +18,7 @@
      remembering to check it in every place motion happens.
    - This file does NOT touch any animation/transition that already
      existed (modal/toast entrance, hover color transitions using
-     --ease-fast/--ease-smooth, the mobile sidebar slide-in, the
+     --ease-fast/--ease-smooth, the
      loading spinner, the voice message waveform, ...). Those keep
      their own hard-coded durations and keep running the same
      regardless of this setting, so the app's default appearance is

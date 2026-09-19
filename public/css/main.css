@@ -16,6 +16,7 @@
 @import url("layout/app.css");
 @import url("layout/sidebar.css");
 @import url("layout/topbar.css");
+@import url("layout/bottom-nav.css");
 @import url("layout/content.css");
 
 /* Components */

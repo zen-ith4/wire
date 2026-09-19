@@ -594,14 +594,16 @@ export async function loadDmConversations() {
 export async function refreshUnreadBadge() {
   try {
     const { count } = await api('/api/dm/unread-count');
-    const badge = document.getElementById('dm-nav-badge');
-    if (!badge) return;
-    if (count > 0) {
-      badge.textContent = count > 99 ? '99+' : count;
-      badge.classList.remove('hidden');
-    } else {
-      badge.classList.add('hidden');
-    }
+    // Sidebar + phone bottom bar each render a badge (see navBadgeHtml
+    // in ui/mobile-shell.js) — update every one of them.
+    document.querySelectorAll('[data-badge="dm"]').forEach((badge) => {
+      if (count > 0) {
+        badge.textContent = count > 99 ? '99+' : count;
+        badge.classList.remove('hidden');
+      } else {
+        badge.classList.add('hidden');
+      }
+    });
   } catch {
     /* ignore */
   }

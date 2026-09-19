@@ -1,5 +1,6 @@
 /* ---------- Toasts ---------- */
-.toast{position:fixed;top:20px;left:50%;
+.toast{position:fixed;top:20px;top:calc(20px + env(safe-area-inset-top));left:50%;
+ width:max-content;max-width:calc(100vw - 32px);
  transform:translateX(-50%);z-index:1000;padding:11px 18px;
  border-radius:var(--radius);font-size:13px;font-weight:500;
 background:rgba(var(--ink2-rgb),.92);

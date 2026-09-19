@@ -41,6 +41,7 @@
 
   --sidebar-width:224px;
   --topbar-height:48px;
+  --bottom-nav-height:56px;
   --conv-panel-width:348px;
 
   --ease-fast:120ms ease;
@@ -59,7 +60,7 @@
      own enabled/disabled branch.
      Pre-existing transitions/animations (modal/toast entrance,
      hover color transitions using --ease-fast/--ease-smooth, the
-     mobile sidebar slide, the loading spinner, etc.) are untouched
+     loading spinner, etc.) are untouched
      and keep running regardless of this setting — see motion.css
      for the split between "always on" and "new, toggled" motion. */
   --motion-fast:0ms;

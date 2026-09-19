@@ -1,9 +1,16 @@
 /* ---------- Login ---------- */
 .login-wrap{
-  min-height:100vh;
+  /* Pinned to the visible height (same 3-tier fallback as .app, see
+     layout/app.css) and scrollable: html/body never scroll, so a form
+     taller than what's left above the on-screen keyboard used to be
+     clipped with no way to reach the button. */
+  height:100vh;
+  height:100dvh;
+  height:calc(var(--vh, 1vh) * 100);
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch;
   display:flex;
-  align-items:center;
-  justify-content:center;
   position:relative;
   z-index:1;
   padding:20px;
@@ -12,6 +19,10 @@
 .login-card{
   width:100%;
   max-width:380px;
+  /* margin:auto centres the card both ways when there's room and,
+     unlike align-items:center, falls back to top-aligned + scrollable
+     instead of clipping the top when there isn't. */
+  margin:auto;
   text-align:center;
 }
 

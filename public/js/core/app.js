@@ -36,6 +36,12 @@ import {
 import { initSidebarResize } from '../ui/sidebar-resize.js';
 
 import {
+  initMobileShell,
+  navBadgeHtml,
+  renderMobileNav
+} from '../ui/mobile-shell.js';
+
+import {
   isIdentityUnlocked
 } from '../crypto/identity-service.js';
 
@@ -60,7 +66,7 @@ const NAV_ITEMS = [
     view: 'messages',
     label: 'Messages',
     icon: ICONS.mail,
-    badgeId: 'dm-nav-badge'
+    badge: 'dm'
   },
 
   {
@@ -75,25 +81,29 @@ const ADMIN_NAV_ITEMS = [
   {
     view: 'admin-users',
     label: 'Users',
-    icon: ICONS.users
+    icon: ICONS.users,
+    group: 'People & access'
   },
 
   {
     view: 'admin-folders',
     label: 'Shared Folders',
-    icon: ICONS.folders
+    icon: ICONS.folders,
+    group: 'Server'
   },
 
   {
     view: 'admin-permissions',
     label: 'Permissions',
-    icon: ICONS.key
+    icon: ICONS.key,
+    group: 'People & access'
   },
 
   {
     view: 'admin-wireguard',
     label: 'WireGuard',
-    icon: ICONS.shield
+    icon: ICONS.shield,
+    group: 'Server'
   }
 ];
 
@@ -112,13 +122,19 @@ function buildNav(user) {
   container.innerHTML = '';
 
 
-  const items =
+  // The one admin permission check for navigation: feeds the desktop
+  // sidebar below AND the phone "more" menu (ui/mobile-shell.js).
+  const adminItems =
     user.is_admin
-      ? [
-          ...NAV_ITEMS,
-          ...ADMIN_NAV_ITEMS
-        ]
-      : NAV_ITEMS;
+      ? ADMIN_NAV_ITEMS
+      : [];
+
+
+  const items =
+    [
+      ...NAV_ITEMS,
+      ...adminItems
+    ];
 
 
   items.forEach(item => {
@@ -138,17 +154,7 @@ function buildNav(user) {
     el.innerHTML = `
       ${item.icon || ''}
       <span>${item.label}</span>
-      ${
-        item.badgeId
-          ? `
-            <span
-              class="nav-badge hidden"
-              id="${item.badgeId}">
-              0
-            </span>
-          `
-          : ''
-      }
+      ${navBadgeHtml(item)}
     `;
 
 
@@ -157,13 +163,22 @@ function buildNav(user) {
       () => {
 
         navigate(item.view);
-
-        window.closeMobileSidebar();
       }
     );
 
 
     container.appendChild(el);
+  });
+
+
+  /*
+   * Phones: bottom tab bar + admin "more" menu, built from the
+   * same lists and driven by the same navigate().
+   */
+  renderMobileNav({
+    tabs: NAV_ITEMS,
+    adminItems,
+    navigate
   });
 }
 
@@ -293,34 +308,6 @@ window.logout =
   logout;
 
 
-window.openMobileSidebar =
-  function () {
-
-    document
-      .getElementById('sidebar')
-      ?.classList.add('open');
-
-
-    document
-      .getElementById('sidebar-backdrop')
-      ?.classList.add('active');
-  };
-
-
-window.closeMobileSidebar =
-  function () {
-
-    document
-      .getElementById('sidebar')
-      ?.classList.remove('open');
-
-
-    document
-      .getElementById('sidebar-backdrop')
-      ?.classList.remove('active');
-  };
-
-
 /* =========================================================
  * Application startup
  * ========================================================= */
@@ -367,6 +354,14 @@ async function bootstrap() {
    */
 
   initSidebarResize();
+
+
+  /*
+   * Phone layout: keyboard awareness + the admin menu's
+   * global listeners (bottom bar itself is built in buildNav).
+   */
+
+  initMobileShell();
 
 
   /*

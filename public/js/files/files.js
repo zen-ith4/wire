@@ -19,6 +19,14 @@ let currentCanWrite = false;
 let sortState = { key: 'name', dir: 1 };
 let myFoldersById = new Map(); // folder id -> { shared_with_count } for folders the current user owns
 
+// Phones (<=760px, see responsive.css): the folder list and the file
+// listing are two full-screen panes, like Messages. Every navigation in
+// this view re-renders the whole layout, so which pane is showing has to
+// live here rather than in the DOM. Files come first (like desktop, which
+// opens the first folder); the header's back arrow reveals the folder list
+// and picking a folder brings the files back. No effect on desktop.
+let showFolderList = false;
+
 // ====================== توابع داخلی ======================
 
 function sortEntries() {
@@ -42,7 +50,13 @@ window.goToPath = function(path) {
 window.changeFolder = function(id) {
   currentFolderId = Number(id);
   currentSubpath = '';
+  showFolderList = false;
   renderFiles();
+};
+
+window.openFolderListMobile = function() {
+  showFolderList = true;
+  document.querySelector('.dm-layout')?.classList.remove('showing-thread');
 };
 
 window.enterFolder = function(name) {
@@ -303,7 +317,7 @@ function renderFileCard(folders, data) {
   ` : `<div style="flex:1;"></div>`;
 
   main.innerHTML = `
-    <div class="dm-layout">
+    <div class="dm-layout${folders.length > 0 && !showFolderList ? ' showing-thread' : ''}">
       <div class="dm-sidebar">
         <div class="conv-header">
           <div class="conv-header-row">
@@ -318,10 +332,11 @@ function renderFileCard(folders, data) {
       </div>
       <div class="dm-thread">
         <div class="chat-top-bar">
+          <button class="icon-btn dm-back-btn" title="Folders" onclick="window.openFolderListMobile()">${ICONS.arrowLeft}</button>
           ${breadcrumbHtml}
           ${topBarControls}
         </div>
-        <div style="flex:1;overflow-y:auto;padding:16px 24px;">
+        <div class="files-body">
           ${mainThreadContent}
         </div>
       </div>

@@ -12,8 +12,8 @@ const DEFAULT_WIDTH = 224;
 const MIN_WIDTH = 180;
 const MAX_WIDTH = 420;
 
-// Sidebar becomes a fixed overlay drawer below this width (see
-// responsive.css) — resizing doesn't make sense there.
+// The sidebar is hidden below this width (the phone bottom nav takes
+// over, see responsive.css) — resizing doesn't make sense there.
 const MOBILE_BREAKPOINT = 900;
 
 function safeGetStorage(key) {
@@ -90,7 +90,7 @@ export function initSidebarResize() {
   handle.addEventListener('pointerdown', (e) => {
     // Left mouse button / primary touch point only.
     if (e.button !== 0) return;
-    // Sidebar is an overlay drawer on mobile — nothing to resize there.
+    // Sidebar is hidden on mobile — nothing to resize there.
     if (window.innerWidth <= MOBILE_BREAKPOINT) return;
 
     dragging = true;

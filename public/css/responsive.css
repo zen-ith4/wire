@@ -41,29 +41,61 @@
   .emoji-picker{width:calc(100vw - 24px);height:340px;}
 }
 
-/* ---- App shell / sidebar / topbar / cards (layout + components) ---- */
-@media (max-width:900px){
-  .sidebar{
-    position:fixed;left:0;top:0;transform:translateX(-100%);transition:transform .2s ease;z-index:50;
-    /* Fixed overlay now covers the full device edge-to-edge, so it
-       needs to clear the notch/status bar and (in landscape, when
-       the notch sits on the left) the side inset itself. */
-    padding-top:env(safe-area-inset-top);
-    padding-left:env(safe-area-inset-left);
-    box-shadow:0 0 40px rgba(0,0,0,.35);
-  }
-  .sidebar.open{transform:translateX(0);}
+/* ---- Phone navigation (layout/bottom-nav.css, ui/mobile-shell.js) ----
+   Phones — narrow viewports, plus short landscape phones whatever
+   their width — swap the sidebar for the bottom tab bar (and an admin
+   ⋮ menu in the top bar). Desktop never matches this and keeps the
+   sidebar untouched. This is the one place that decides which
+   navigation is on screen. */
+@media (max-width:900px), (max-height:480px) and (orientation:landscape){
+  .sidebar,
   .sidebar-resize-handle{display:none;}
-  .content{padding:20px 16px 50px;}
+
+  /* Side safe-area insets (landscape notch) for the whole column —
+     topbar, content and bar. The bar's own background bleeds under
+     them again via negative margins (bottom-nav.css); top/bottom
+     insets are handled by the topbar and the bar respectively. */
+  .main{
+    padding-left:env(safe-area-inset-left);
+    padding-right:env(safe-area-inset-right);
+  }
+
+  .bottom-nav{display:flex;}
+  button.topbar-more-btn{display:flex;width:40px;height:40px;margin-right:-8px;}
+  .more-menu.open{display:block;}
+
+  /* On-screen keyboard up (ui/mobile-shell.js sets html.kb-open while a
+     text field is focused): drop the bar so the composer sits right on
+     the keyboard instead of leaving a nav bar's worth of dead space. */
+  html.kb-open .bottom-nav{display:none;}
+}
+
+/* ---- App shell / topbar / cards (layout + components) ---- */
+@media (max-width:900px){
+  /* The bar is in flow under .content, so unlike the old floating
+     layout this needs no extra bottom room to clear it. */
+  .content{padding:20px 16px 24px;}
   .topbar{
     padding:0 16px;
     padding-top:env(safe-area-inset-top);
     height:calc(var(--topbar-height) + env(safe-area-inset-top));
-    padding-left:calc(16px + env(safe-area-inset-left));
-    padding-right:calc(16px + env(safe-area-inset-right));
   }
-  button.mobile-menu-btn { display: flex; }
   .card{padding:16px;}
+
+  /* ---- Modals ----
+     Keep clear of the notch / gesture bar, and never taller than the
+     visible area: max-height:100% resolves against the padded,
+     viewport-sized backdrop, so it follows the keyboard too (88vh
+     didn't — it's the *large* viewport on mobile browsers). */
+  .modal{
+    padding:
+      calc(12px + env(safe-area-inset-top))
+      calc(12px + env(safe-area-inset-right))
+      calc(12px + env(safe-area-inset-bottom))
+      calc(12px + env(safe-area-inset-left));
+  }
+  .modal-content{padding:20px;max-height:100%;}
+  .confirm-modal-content{padding:20px;}
 
   /* ---- Touch target + hover-reveal fixes ----
      Hover-only reveal (opacity:0 until :hover) leaves these
@@ -97,6 +129,16 @@
   input.emoji-picker-search{
     font-size:16px;
   }
+
+  /* Same for every other text field (settings, admin, forms, login). */
+  input[type=text],
+  input[type=password],
+  input[type=email],
+  input[type=search],
+  input[type=number],
+  textarea{
+    font-size:16px;
+  }
 }
 
 /* Touch-capable devices regardless of viewport width (covers
@@ -112,12 +154,12 @@
 }
 
 /* ---- Composer / keyboard ----
-   Bottom margin includes the safe-area inset (home-indicator strip
-   on notched phones) so the send button never sits flush against
-   it or, worse, partly behind it. */
+   Plain bottom margin: the bottom bar underneath already owns the
+   safe-area inset (home-indicator strip), and while the keyboard is up
+   there is no strip to clear — the composer sits right on it. */
 @media (max-width:900px){
   .composer-wrapper{
-    margin:0 12px calc(12px + env(safe-area-inset-bottom));
+    margin:0 12px 12px;
   }
   .chat-messages{padding:14px 12px;gap:3px;}
   .chat-top-bar.chat-header-glass + .chat-messages{padding-top:70px;}
@@ -126,23 +168,64 @@
   .dm-thread-header,.chat-top-bar{padding:10px 14px;}
 }
 
+/* Narrow phones: five controls share the composer row, which left the
+   textarea too thin for even its placeholder ("Type a message…" wrapped
+   and got clipped). Slightly tighter buttons/gaps give the text room. */
+@media (max-width:480px){
+  .chat-input-area{gap:4px;padding:8px;}
+  .chat-input-area .btn-icon,
+  .composer-mic-btn{width:36px;height:36px;}
+  .chat-input-area .btn-send{width:38px;height:38px;}
+  /* If it still can't fit, truncate instead of wrapping into a clipped 2nd line. */
+  .chat-input-area textarea::placeholder{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+}
+@media (max-width:340px){
+  .composer-wrapper{margin-left:8px;margin-right:8px;}
+  .chat-input-area{padding:8px 6px;}
+  .chat-input-area .btn-icon,
+  .composer-mic-btn{width:34px;height:34px;}
+}
+
 /* ---- Short / landscape phones ----
    Landscape width on a lot of phones is well past the 900px
-   sidebar-collapse breakpoint above, so it's handled on height
-   instead: short viewports get the same overlay sidebar + tighter
-   vertical rhythm regardless of width. */
+   breakpoint above, so it's handled on height instead: short viewports
+   get the same bottom-bar navigation (see "Phone navigation") in a
+   compact, icon-beside-label form, plus tighter vertical rhythm,
+   regardless of width. */
 @media (max-height:480px) and (orientation:landscape){
-  .sidebar{
-    position:fixed;left:0;top:0;transform:translateX(-100%);transition:transform .2s ease;z-index:50;
-    padding-top:env(safe-area-inset-top);
-    padding-left:env(safe-area-inset-left);
-  }
-  .sidebar.open{transform:translateX(0);}
-  .sidebar-resize-handle{display:none;}
-  button.mobile-menu-btn{display:flex;}
-  .topbar{height:40px;min-height:40px;padding:0 14px;padding-top:env(safe-area-inset-top);}
+  :root{--topbar-height:40px;--bottom-nav-height:44px;}
+  .topbar{padding:0 14px;padding-top:env(safe-area-inset-top);}
   .chat-empty-state{padding:24px 20px;gap:10px;}
-  .composer-wrapper{margin:0 10px calc(8px + env(safe-area-inset-bottom));}
+  .composer-wrapper{margin:0 10px 8px;}
+
+  .bottom-nav-item{flex-direction:row;gap:8px;}
+  .bottom-nav-icon{padding:0;}
+  .bottom-nav-item svg{width:20px;height:20px;}
+  .bottom-nav-item.active .bottom-nav-icon{background:none;}
+  .bottom-nav-icon .nav-badge{top:-6px;right:-10px;}
+}
+
+/* ---- My Files on phones (features/files.css, js/files/files.js) ----
+   Same two-pane master/detail as Messages (the <=760px rules above show
+   one pane at a time). Within the file pane the table becomes a compact
+   name / size / actions list: long names truncate instead of forcing a
+   sideways scroll, and Modified drops out (least essential). */
+@media (max-width:760px){
+  .files-body{padding:12px;}
+  .files-body .table-scroll .file-table{min-width:0;table-layout:fixed;}
+  .files-body .file-table th,
+  .files-body .file-table td{padding-left:8px;padding-right:8px;}
+  .files-body .file-table th:nth-child(2){width:76px;}
+  .files-body .file-table th:last-child{width:84px;}
+  .files-body .file-table th:nth-child(3),
+  .files-body .file-table td:nth-child(3){display:none;}
+  .files-body .file-table td:first-child{overflow:hidden;}
+  .files-body .file-name{min-width:0;}
+  .files-body .file-name span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .chat-top-bar .breadcrumb{flex:1 1 auto;min-width:0;margin-bottom:0;overflow-wrap:anywhere;}
+}
+@media (max-width:480px){
+  .chat-top-bar > .text-muted{display:none;} /* "N items" — the header is out of room */
 }
 
 /* ---- File / peer / user tables (features/files.css) ----

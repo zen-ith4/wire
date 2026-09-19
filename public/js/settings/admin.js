@@ -12,7 +12,23 @@ export async function renderAdminUsers() {
 
   try {
     const users = await api('/api/admin/users');
-    let rows = users.map(u => `
+    const currentUser = getCurrentUser();
+
+    let rows = users.map(u => {
+      const isSelf = !!currentUser && Number(u.id) === Number(currentUser.id);
+
+      // The signed-in admin can neither delete nor demote themselves.
+      // (The backend enforces this too; this just avoids offering it.)
+      const actions = isSelf
+        ? '<span class="text-muted">You</span>'
+        : `<div style="display:inline-flex;gap:8px;">
+            <button class="btn btn-sm" onclick="window.setUserAdmin(${u.id}, ${!u.is_admin}, this)">
+              ${u.is_admin ? 'Remove admin' : 'Make admin'}
+            </button>
+            <button class="btn btn-danger btn-sm" onclick="window.deleteUser(${u.id})">Delete</button>
+          </div>`;
+
+      return `
       <tr class="file-row">
         <td>
           <div style="display:flex;align-items:center;gap:10px;">
@@ -21,21 +37,13 @@ export async function renderAdminUsers() {
           </div>
         </td>
         <td>${u.is_admin ? '<span class="badge badge-green"><span class="badge-dot"></span>Admin</span>' : '<span class="text-muted">User</span>'}</td>
-        <td class="col-right">
-          <button class="btn btn-danger btn-sm" onclick="window.deleteUser(${u.id})">Delete</button>
-        </td>
+        <td class="col-right">${actions}</td>
       </tr>
-    `).join('');
+    `;
+    }).join('');
 
     main.innerHTML = `<div class="card">
       <div class="card-head"><div class="card-title">${ICONS.users} Users</div></div>
-      <div class="toolbar">
-        <input type="text" id="new-username" placeholder="Username">
-        <input type="password" id="new-password" placeholder="Password">
-        <label class="check"><input type="checkbox" id="new-admin"> Admin</label>
-        <button class="btn btn-primary btn-sm" onclick="window.addUser()">+ Add user</button>
-      </div>
-      <div id="admin-user-error" class="field-error"></div>
       <div class="table-scroll">
   <table class="file-table">
           <thead><tr><th>Username</th><th>Role</th><th></th></tr></thead>
@@ -48,26 +56,28 @@ export async function renderAdminUsers() {
   }
 }
 
-window.addUser = async function() {
-  const username = document.getElementById('new-username').value.trim();
-  const password = document.getElementById('new-password').value;   // we keep password as is (could be spaces allowed)
-  const is_admin = document.getElementById('new-admin').checked;
-  const errEl = document.getElementById('admin-user-error');
-  errEl.textContent = '';
+window.setUserAdmin = async function(id, makeAdmin, btn) {
+  const currentUser = getCurrentUser();
+  if (currentUser && Number(id) === Number(currentUser.id)) {
+    showToast('You cannot change your own admin role', 'error');
+    return;
+  }
+
+  // Prevent double-clicks while the request is in flight.
+  if (btn) btn.disabled = true;
 
   try {
-    await api('/api/admin/users', {
-      method: 'POST',
+    await api(`/api/admin/users/${id}/is-admin`, {
+      method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password, is_admin }),
+      body: JSON.stringify({ is_admin: makeAdmin }),
     });
-    // Clear inputs
-    document.getElementById('new-username').value = '';
-    document.getElementById('new-password').value = '';
     await renderAdminUsers();
-    showToast('User created', 'success');
+    showToast(makeAdmin ? 'Admin role granted' : 'Admin role removed', 'success');
   } catch (e) {
-    errEl.textContent = e.message;
+    // List is left untouched; just re-enable the button and surface the error.
+    if (btn) btn.disabled = false;
+    showToast(e.message, 'error');
   }
 };
 

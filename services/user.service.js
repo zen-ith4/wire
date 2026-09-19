@@ -54,31 +54,6 @@ function findUserWithPassword(id) {
 }
 
 
-// ساخت کاربر معمولی (یا ادمین، اگر isAdmin=true باشد)
-async function createUser(username, password, isAdmin = false) {
-
-  username = normalizeUsername(username);
-
-  const hash = await hashPassword(password);
-
-  return getDb()
-    .prepare(`
-      INSERT INTO users
-      (
-        username,
-        password_hash,
-        is_admin
-      )
-      VALUES (?, ?, ?)
-    `)
-    .run(
-      username,
-      hash,
-      isAdmin ? 1 : 0
-    );
-}
-
-
 // ساخت ادمین
 // فقط از admin controller استفاده شود
 async function createAdmin(username, password) {
@@ -100,6 +75,23 @@ async function createAdmin(username, password) {
     .run(
       username,
       hash
+    );
+}
+
+
+// Changes ONLY the is_admin flag of one user. Callers are responsible
+// for authorization and for validating that isAdmin is a boolean.
+function setUserAdmin(userId, isAdmin) {
+
+  return getDb()
+    .prepare(`
+      UPDATE users
+      SET is_admin = ?
+      WHERE id = ?
+    `)
+    .run(
+      isAdmin ? 1 : 0,
+      userId
     );
 }
 
@@ -506,9 +498,9 @@ module.exports = {
   findUserById,
   findUserWithPassword,
 
-  createUser,
   createAdmin,
 
+  setUserAdmin,
   updateBio,
   updateAccentColor,
   updateAvatar,

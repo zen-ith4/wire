@@ -7,11 +7,9 @@ const {
   adminOnly,
 } = require('../middleware/authenticate');
 
-const { asyncHandler } = require('../middleware/asyncHandler');
-
 const {
   listUsers,
-  createUser,
+  setUserAdmin,
   deleteUser,
   listFolders,
   createFolder,
@@ -35,9 +33,12 @@ router.get(
   listUsers
 );
 
-router.post(
-  '/users',
-  asyncHandler(createUser)
+// Change a user's admin flag. PUT (not PATCH) with a single-property
+// sub-path mirrors the project's existing convention, e.g.
+// PUT /api/me/accent-color.
+router.put(
+  '/users/:id/is-admin',
+  setUserAdmin
 );
 
 router.delete(

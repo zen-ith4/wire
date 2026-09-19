@@ -1,12 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 
-const { getDb } = require('../config/database');
-
 const {
   listUsers,
   findUserById,
-  createUser: createUserService,
+  setUserAdmin: setUserAdminService,
   deleteUser: deleteUserService,
 } = require('../services/user.service');
 
@@ -23,72 +21,62 @@ const {
   revokePermission,
 } = require('../services/share.service');
 
-const { createUserDrive } = require('../services/drive.service');
-const { isValidUsername, isValidPassword } = require('../utils/validator');
-
 function listUsersHandler(req, res) {
   res.json(listUsers());
 }
 
-async function createUser(req, res) {
+function setUserAdmin(req, res) {
 
-  const { username, password, is_admin } = req.body || {};
-
-  if (!username || !password) {
+  // Strict positive-integer id: Number() alone would also accept
+  // things like "0x10", "1e2" or " 5 ".
+  if (!/^[1-9]\d*$/.test(req.params.id)) {
     return res.status(400).json({
-      error: 'Username and password required',
+      error: 'Invalid user id',
     });
   }
 
-  if (!isValidUsername(username.trim())) {
+  const userId = Number(req.params.id);
+
+  if (!Number.isSafeInteger(userId)) {
     return res.status(400).json({
-      error: 'Username must be 3-20 characters (letters, numbers, underscore only)',
+      error: 'Invalid user id',
     });
   }
 
-  if (!isValidPassword(password)) {
+  const { is_admin } = req.body || {};
+
+  // Strictly a boolean: "true", 1, "yes", null, etc. are rejected
+  // so a malformed client can never flip a role by accident.
+  if (typeof is_admin !== 'boolean') {
     return res.status(400).json({
-      error: 'Password must be 6-128 characters',
+      error: 'is_admin must be a boolean',
     });
   }
 
-  try {
-
-    const info = await createUserService(
-      username.trim(),
-      password,
-      !!is_admin
-    );
-
-    createUserDrive(getDb(), {
-      id: info.lastInsertRowid,
-      username,
+  // An admin can never remove their own admin rights. Combined with
+  // the fact that this route is only reachable by an admin, this
+  // guarantees at least one admin (the caller) always remains.
+  if (userId === req.user.id && !is_admin) {
+    return res.status(400).json({
+      error: "You can't remove your own admin privileges",
     });
-
-    res.json({
-      id: info.lastInsertRowid,
-      username,
-      is_admin: !!is_admin,
-    });
-
-  } catch (err) {
-
-    if (
-      err.code === 'SQLITE_CONSTRAINT' ||
-      err.code === 'SQLITE_CONSTRAINT_UNIQUE'
-    ) {
-      return res.status(409).json({
-        error: 'Username already exists',
-      });
-    }
-
-    console.error(err);
-
-    res.status(500).json({
-      error: 'Failed to create user',
-    });
-
   }
+
+  const user = findUserById(userId);
+
+  if (!user) {
+    return res.status(404).json({
+      error: 'User not found',
+    });
+  }
+
+  setUserAdminService(userId, is_admin);
+
+  res.json({
+    success: true,
+    id: userId,
+    is_admin,
+  });
 
 }
 
@@ -300,7 +288,7 @@ function revokePermissionHandler(req, res) {
 
 module.exports = {
   listUsers: listUsersHandler,
-  createUser,
+  setUserAdmin,
   deleteUser,
   listFolders,
   createFolder,

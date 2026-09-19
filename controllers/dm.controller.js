@@ -387,7 +387,16 @@ function getAttachment(req, res) {
     // See the identical comment in chat.controller.js's getAttachment
     // — without this, a client disconnecting mid-download leaves the
     // server still reading the rest of the file off disk for no one.
+    //
+    // BUG FIX: guard with res.writableEnded — see the matching fix
+    // and comment in chat.controller.js's getAttachment. Without it,
+    // a normally-finishing response can have its tail truncated when
+    // 'close' fires (e.g. the reverse proxy closing the origin
+    // connection right after a normal response) slightly before the
+    // pipe has fully flushed, which surfaces client-side as
+    // MEDIA_ERR_NETWORK even though status/headers looked fine.
     req.on('close', () => {
+      if (res.writableEnded) return;
       if (!downloadStream.destroyed) downloadStream.destroy();
     });
     return downloadStream.pipe(res);
@@ -412,7 +421,10 @@ function getAttachment(req, res) {
     );
 
     const fullStream = fs.createReadStream(filePath);
+    // BUG FIX: same res.writableEnded guard as the download branch
+    // above — see that comment.
     req.on('close', () => {
+      if (res.writableEnded) return;
       if (!fullStream.destroyed) fullStream.destroy();
     });
     return fullStream.pipe(res);
@@ -528,7 +540,11 @@ function getAttachment(req, res) {
   // cancels the previous in-flight range request from the browser's
   // side. Destroying the stream when the request closes stops the
   // server from continuing to read an abandoned byte range off disk.
+  //
+  // BUG FIX: same res.writableEnded guard as the other branches —
+  // see the download branch above for the full explanation.
   req.on('close', () => {
+    if (res.writableEnded) return;
     if (!stream.destroyed) stream.destroy();
   });
 

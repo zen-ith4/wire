@@ -479,7 +479,20 @@ function getAttachment(req, res) {
     // reading the rest of the file off disk and holding its file
     // descriptor open until the read completes, for a client that's
     // no longer there to receive any of it.
+    //
+    // BUG FIX: `req`'s 'close' event fires whenever the underlying
+    // connection closes — not only on a genuine client abort. Behind
+    // a reverse proxy that doesn't hold origin connections open (e.g.
+    // Cloudflare), it can fire right as a *normal* response finishes,
+    // sometimes a moment before `res` has actually flushed the last
+    // chunk to the socket. Destroying the stream unconditionally then
+    // truncates an otherwise-successful response — the client sees a
+    // 200/206 with correct headers but a cut-off body, which browsers
+    // surface as MEDIA_ERR_NETWORK for <audio>/<video>. Checking
+    // `res.writableEnded` first means we only ever cancel a download
+    // that's genuinely still in flight.
     req.on('close', () => {
+      if (res.writableEnded) return;
       if (!downloadStream.destroyed) downloadStream.destroy();
     });
     return downloadStream.pipe(res);
@@ -495,6 +508,7 @@ function getAttachment(req, res) {
     const fullStream = fs.createReadStream(filePath);
     // Same reasoning as the download branch above.
     req.on('close', () => {
+      if (res.writableEnded) return;
       if (!fullStream.destroyed) fullStream.destroy();
     });
     return fullStream.pipe(res);
@@ -582,7 +596,14 @@ function getAttachment(req, res) {
   // completion instead of stopping the moment the client moves on,
   // so scrubbing repeatedly through a large file could have several
   // abandoned reads running at once.
+  //
+  // BUG FIX: see the identical comment on the download-branch
+  // req.on('close') above — must not destroy a stream whose response
+  // has already finished sending, or a normal request can get its
+  // tail end truncated (MEDIA_ERR_NETWORK client-side) if 'close'
+  // fires slightly before the last chunk is flushed.
   req.on('close', () => {
+    if (res.writableEnded) return;
     if (!stream.destroyed) stream.destroy();
   });
 

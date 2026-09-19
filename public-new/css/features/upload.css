@@ -1,0 +1,9 @@
+/* ---------- Upload progress ---------- */
+/* animation replays each time showUploadProgress() flips this from
+   none to flex; new/toggle-gated, no-op when Animations is off. */
+.upload-progress{display:none;align-items:center;gap:12px;padding:10px 14px;border-radius:var(--radius);background:var(--ink2);border:1px solid var(--border);margin-bottom:14px;font-size:12px;animation:motion-rise-in var(--motion-fast) var(--motion-ease);}
+.upload-progress-info{min-width:0;max-width:180px;flex-shrink:0;}
+.upload-progress-name{color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;font-weight:550;}
+.upload-progress-track{flex:1;height:5px;border-radius:99px;background:var(--border);overflow:hidden;}
+.upload-progress-fill{height:100%;width:0%;border-radius:99px;background:rgb(var(--indigo));transition:width .12s ease;}
+.upload-progress-pct{color:var(--muted);flex-shrink:0;width:36px;text-align:right;font-variant-numeric:tabular-nums;}

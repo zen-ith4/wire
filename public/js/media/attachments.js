@@ -30,37 +30,560 @@ const pendingLoads = new Map();
 const imageBlobCache = new Map();
 const MAX_CACHED_IMAGES = 80;
 
-function cacheImageUrl(key, url) {
-  imageBlobCache.set(key, url);
+
+/* =========================================================
+ * SHARED DOWNLOAD PROGRESS UI
+ * ========================================================= */
+
+const downloadProgressState = {
+  activeDownloads: new Map(),
+  element: null,
+  track: null,
+  fill: null,
+  info: null
+};
+
+function ensureDownloadProgressUI() {
+  if (
+    downloadProgressState.element &&
+    document.body.contains(
+      downloadProgressState.element
+    )
+  ) {
+    return;
+  }
+
+  const container =
+    document.createElement('div');
+
+  container.id =
+    'wire-download-progress';
+
+  container.style.cssText = `
+    position:fixed;
+    top:0;
+    left:0;
+    right:0;
+    z-index:2147483647;
+    pointer-events:none;
+    font-family:inherit;
+  `;
+
+  const track =
+    document.createElement('div');
+
+  track.style.cssText = `
+    width:100%;
+    height:3px;
+    background:rgba(255,255,255,.10);
+    overflow:hidden;
+  `;
+
+  const fill =
+    document.createElement('div');
+
+  fill.style.cssText = `
+    width:0%;
+    height:100%;
+    background:var(--accent,#4da6ff);
+    transition:width:.15s ease;
+    transform-origin:left center;
+  `;
+
+  track.appendChild(
+    fill
+  );
+
+  const info =
+    document.createElement('div');
+
+  info.style.cssText = `
+    position:absolute;
+    top:7px;
+    left:50%;
+    transform:translateX(-50%);
+    max-width:calc(100vw - 24px);
+    padding:4px 10px;
+    border-radius:999px;
+    background:rgba(15,15,20,.88);
+    color:rgba(255,255,255,.92);
+    border:1px solid rgba(255,255,255,.10);
+    box-shadow:0 4px 16px rgba(0,0,0,.22);
+    font-size:11px;
+    line-height:1.2;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    opacity:0;
+    transition:opacity:.15s ease;
+  `;
+
+  container.appendChild(
+    track
+  );
+
+  container.appendChild(
+    info
+  );
+
+  document.body.appendChild(
+    container
+  );
+
+  downloadProgressState.element =
+    container;
+
+  downloadProgressState.track =
+    track;
+
+  downloadProgressState.fill =
+    fill;
+
+  downloadProgressState.info =
+    info;
+}
+
+function formatDownloadSpeed(
+  bytesPerSecond
+) {
+  if (
+    !Number.isFinite(
+      bytesPerSecond
+    ) ||
+    bytesPerSecond <= 0
+  ) {
+    return '';
+  }
+
+  return `${formatBytes(
+    bytesPerSecond
+  )}/s`;
+}
+
+function updateDownloadProgressUI() {
+  ensureDownloadProgressUI();
+
+  const {
+    activeDownloads,
+    fill,
+    info
+  } = downloadProgressState;
+
+  const count =
+    activeDownloads.size;
+
+  if (
+    count === 0
+  ) {
+    fill.style.width =
+      '0%';
+
+    fill.style.animation =
+      'none';
+
+    info.style.opacity =
+      '0';
+
+    return;
+  }
+
+  info.style.opacity =
+    '1';
+
+  /*
+   * One active download:
+   *
+   * We can safely show its real percentage.
+   */
+  if (
+    count === 1
+  ) {
+    const item =
+      activeDownloads
+        .values()
+        .next()
+        .value;
+
+    const bytes =
+      Number(item.bytes) ||
+      0;
+
+    const total =
+      Number(item.total) ||
+      0;
+
+    const speed =
+      formatDownloadSpeed(
+        item.speed
+      );
+
+    if (
+      total > 0 &&
+      bytes >= 0
+    ) {
+      const percent =
+        Math.min(
+          100,
+          Math.max(
+            0,
+            (bytes / total) * 100
+          )
+        );
+
+      fill.style.animation =
+        'none';
+
+      fill.style.width =
+        `${percent}%`;
+
+      const percentText =
+        `${Math.round(
+          percent
+        )}%`;
+
+      const name =
+        item.name ||
+        'Downloading';
+
+      info.textContent =
+        speed
+          ? `${name} · ${percentText} · ${speed}`
+          : `${name} · ${percentText}`;
+
+    } else {
+      /*
+       * Server didn't provide Content-Length.
+       * Don't invent a percentage.
+       */
+      fill.style.width =
+        '35%';
+
+      fill.style.animation =
+        'wire-download-progress-indeterminate 1.1s ease-in-out infinite';
+
+      const speedText =
+        speed
+          ? ` · ${speed}`
+          : '';
+
+      info.textContent =
+        `${item.name || 'Downloading'}${speedText}`;
+    }
+
+    return;
+  }
+
+  /*
+   * Multiple simultaneous downloads.
+   *
+   * FileTransfer progress events don't expose a reliable transfer ID,
+   * so combining byte counters from different transfers can produce
+   * nonsense. Use an indeterminate bar instead.
+   */
+  fill.style.width =
+    '35%';
+
+  fill.style.animation =
+    'wire-download-progress-indeterminate 1.1s ease-in-out infinite';
+
+  let bestSpeed =
+    0;
+
+  for (
+    const item
+    of activeDownloads.values()
+  ) {
+    if (
+      Number.isFinite(
+        item.speed
+      ) &&
+      item.speed > bestSpeed
+    ) {
+      bestSpeed =
+        item.speed;
+    }
+  }
+
+  const speedText =
+    formatDownloadSpeed(
+      bestSpeed
+    );
+
+  info.textContent =
+    `${count} downloads${
+      speedText
+        ? ` · ${speedText}`
+        : ''
+    }`;
+}
+
+function ensureDownloadProgressStyle() {
+  if (
+    document.getElementById(
+      'wire-download-progress-style'
+    )
+  ) {
+    return;
+  }
+
+  const style =
+    document.createElement('style');
+
+  style.id =
+    'wire-download-progress-style';
+
+  style.textContent = `
+    @keyframes wire-download-progress-indeterminate {
+      0% {
+        transform:translateX(-100%);
+      }
+
+      50% {
+        transform:translateX(80%);
+      }
+
+      100% {
+        transform:translateX(280%);
+      }
+    }
+  `;
+
+  document.head.appendChild(
+    style
+  );
+}
+
+function startDownloadProgress(
+  id,
+  name
+) {
+  ensureDownloadProgressStyle();
+  ensureDownloadProgressUI();
+
+  downloadProgressState.activeDownloads.set(
+    id,
+    {
+      id,
+      name:
+        name ||
+        'Downloading',
+      bytes:
+        0,
+      total:
+        0,
+      speed:
+        0,
+      lastBytes:
+        0,
+      lastTime:
+        Date.now()
+    }
+  );
+
+  updateDownloadProgressUI();
+}
+
+function updateDownloadProgress(
+  id,
+  progress
+) {
+  const item =
+    downloadProgressState
+      .activeDownloads
+      .get(id);
+
+  if (
+    !item ||
+    !progress
+  ) {
+    return;
+  }
+
+  const bytes =
+    Number(
+      progress.bytes
+    );
+
+  const total =
+    Number(
+      progress.contentLength
+    );
+
+  const now =
+    Date.now();
+
+  if (
+    Number.isFinite(bytes) &&
+    bytes >= 0
+  ) {
+    item.bytes =
+      bytes;
+  }
+
+  if (
+    Number.isFinite(total) &&
+    total > 0
+  ) {
+    item.total =
+      total;
+  }
+
+  /*
+   * Speed is calculated per transfer.
+   *
+   * We intentionally don't merge byte counters from multiple
+   * transfers because FileTransfer progress events don't identify
+   * which transfer generated an event.
+   */
+  if (
+    Number.isFinite(bytes) &&
+    bytes >= item.lastBytes &&
+    now > item.lastTime
+  ) {
+    const deltaBytes =
+      bytes -
+      item.lastBytes;
+
+    const deltaTime =
+      now -
+      item.lastTime;
+
+    if (
+      deltaTime >= 150
+    ) {
+      const instantSpeed =
+        deltaBytes /
+        (deltaTime / 1000);
+
+      /*
+       * Light smoothing so the number doesn't jump around wildly.
+       */
+      if (
+        item.speed > 0
+      ) {
+        item.speed =
+          item.speed * 0.65 +
+          instantSpeed * 0.35;
+      } else {
+        item.speed =
+          instantSpeed;
+      }
+
+      item.lastBytes =
+        bytes;
+
+      item.lastTime =
+        now;
+    }
+  }
+
+  updateDownloadProgressUI();
+}
+
+function finishDownloadProgress(
+  id
+) {
+  downloadProgressState
+    .activeDownloads
+    .delete(id);
+
+  updateDownloadProgressUI();
+}
+
+function failDownloadProgress(
+  id
+) {
+  downloadProgressState
+    .activeDownloads
+    .delete(id);
+
+  updateDownloadProgressUI();
+}
+
+/*
+ * Expose the same manager globally so Files/Drive can use exactly
+ * the same bar instead of creating a second independent progress UI.
+ */
+window.__wireDownloadProgress = {
+  start:
+    startDownloadProgress,
+
+  progress:
+    updateDownloadProgress,
+
+  finish:
+    finishDownloadProgress,
+
+  fail:
+    failDownloadProgress
+};
+
+
+/* =========================================================
+ * IMAGE CACHE
+ * ========================================================= */
+
+function cacheImageUrl(
+  key,
+  url
+) {
+  imageBlobCache.set(
+    key,
+    url
+  );
 
   // Cheap LRU-ish cap: once we're over budget, drop the
   // longest-untouched entry.
-  while (imageBlobCache.size > MAX_CACHED_IMAGES) {
+  while (
+    imageBlobCache.size >
+    MAX_CACHED_IMAGES
+  ) {
     const oldestKey =
-      imageBlobCache.keys().next().value;
+      imageBlobCache
+        .keys()
+        .next()
+        .value;
 
     const oldestUrl =
-      imageBlobCache.get(oldestKey);
+      imageBlobCache.get(
+        oldestKey
+      );
 
-    imageBlobCache.delete(oldestKey);
+    imageBlobCache.delete(
+      oldestKey
+    );
 
     if (oldestUrl) {
-      URL.revokeObjectURL(oldestUrl);
+      URL.revokeObjectURL(
+        oldestUrl
+      );
     }
   }
 }
 
-function getCachedImageUrl(key) {
+function getCachedImageUrl(
+  key
+) {
   const url =
-    imageBlobCache.get(key);
+    imageBlobCache.get(
+      key
+    );
 
-  if (url === undefined) {
+  if (
+    url === undefined
+  ) {
     return undefined;
   }
 
   // Refresh recency.
-  imageBlobCache.delete(key);
-  imageBlobCache.set(key, url);
+  imageBlobCache.delete(
+    key
+  );
+
+  imageBlobCache.set(
+    key,
+    url
+  );
 
   return url;
 }
@@ -68,12 +591,18 @@ function getCachedImageUrl(key) {
 /**
  * CSS `aspect-ratio` value for an image attachment placeholder.
  */
-function imageAspectRatio(msg) {
+function imageAspectRatio(
+  msg
+) {
   const w =
-    Number(msg.attachment_width);
+    Number(
+      msg.attachment_width
+    );
 
   const h =
-    Number(msg.attachment_height);
+    Number(
+      msg.attachment_height
+    );
 
   if (
     Number.isFinite(w) &&
@@ -90,22 +619,34 @@ function imageAspectRatio(msg) {
 /**
  * Detect which media player, if any, a message's attachment needs.
  */
-function attachmentMediaKind(msg) {
+function attachmentMediaKind(
+  msg
+) {
   // Voice messages are audio attachments too.
-  if (isVoiceMessage(msg)) {
+  if (
+    isVoiceMessage(msg)
+  ) {
     return 'voice';
   }
 
   const isAudioAttachment =
-    isAudio(msg.attachment_mime) ||
-    isAudio(msg.attachment_name);
+    isAudio(
+      msg.attachment_mime
+    ) ||
+    isAudio(
+      msg.attachment_name
+    );
 
-  if (isAudioAttachment) {
+  if (
+    isAudioAttachment
+  ) {
     return 'audio';
   }
 
   const isVideoAttachment =
-    isVideo(msg.attachment_mime) ||
+    isVideo(
+      msg.attachment_mime
+    ) ||
     [
       'mp4',
       'webm',
@@ -113,13 +654,18 @@ function attachmentMediaKind(msg) {
       'mkv',
       'mjpeg'
     ].includes(
-      (msg.attachment_name || '')
+      (
+        msg.attachment_name ||
+        ''
+      )
         .split('.')
         .pop()
         .toLowerCase()
     );
 
-  if (isVideoAttachment) {
+  if (
+    isVideoAttachment
+  ) {
     return 'video';
   }
 
@@ -142,25 +688,35 @@ export function mountAttachmentMedia(
   }
 
   const kind =
-    attachmentMediaKind(msg);
+    attachmentMediaKind(
+      msg
+    );
 
   let renderPromise;
 
-  if (kind === 'voice') {
+  if (
+    kind === 'voice'
+  ) {
     renderPromise =
       renderVoiceMessage(
         msg,
         scope,
         messageEl
       );
-  } else if (kind === 'audio') {
+
+  } else if (
+    kind === 'audio'
+  ) {
     renderPromise =
       renderAudio(
         msg,
         scope,
         messageEl
       );
-  } else if (kind === 'video') {
+
+  } else if (
+    kind === 'video'
+  ) {
     renderPromise =
       renderVideo(
         msg,
@@ -171,14 +727,17 @@ export function mountAttachmentMedia(
 
   if (
     renderPromise &&
-    typeof renderPromise.catch === 'function'
+    typeof renderPromise.catch ===
+      'function'
   ) {
-    renderPromise.catch((err) => {
-      console.error(
-        `Failed to render ${kind} attachment for message ${msg.id}:`,
-        err
-      );
-    });
+    renderPromise.catch(
+      err => {
+        console.error(
+          `Failed to render ${kind} attachment for message ${msg.id}:`,
+          err
+        );
+      }
+    );
   }
 }
 
@@ -196,7 +755,9 @@ export function imageDownloadButtonHtml(
       'image/'
     );
 
-  if (!isImage) {
+  if (
+    !isImage
+  ) {
     return '';
   }
 
@@ -204,8 +765,12 @@ export function imageDownloadButtonHtml(
     <button
       type="button"
       class="chat-msg-download"
-      title="Download ${escapeAttr(msg.attachment_name)}"
-      onclick="window.downloadAttachment(${msg.id}, '${escapeAttr(msg.attachment_name)}', '${scope}')"
+      title="Download ${escapeAttr(
+        msg.attachment_name
+      )}"
+      onclick="window.downloadAttachment(${msg.id}, '${escapeAttr(
+        msg.attachment_name
+      )}', '${scope}')"
     >${ICONS.download}</button>`;
 }
 
@@ -225,15 +790,21 @@ export function renderAttachment(
       : 'att';
 
   const mediaKind =
-    attachmentMediaKind(msg);
+    attachmentMediaKind(
+      msg
+    );
 
   // Audio/video attachments are handled by their players.
-  if (mediaKind) {
+  if (
+    mediaKind
+  ) {
     return '';
   }
 
   // Image attachment.
-  if (isImage) {
+  if (
+    isImage
+  ) {
     const username =
       msg.username ||
       msg.sender_username ||
@@ -248,19 +819,27 @@ export function renderAttachment(
       `${prefix}-${msg.id}`;
 
     const ratio =
-      imageAspectRatio(msg);
+      imageAspectRatio(
+        msg
+      );
 
     const cachedUrl =
-      getCachedImageUrl(key);
+      getCachedImageUrl(
+        key
+      );
 
     const innerHtml =
       cachedUrl
         ? `
         <img
-          src="${escapeAttr(cachedUrl)}"
+          src="${escapeAttr(
+            cachedUrl
+          )}"
           alt="attachment"
           class="loaded"
-          data-blob-url="${escapeAttr(cachedUrl)}"
+          data-blob-url="${escapeAttr(
+            cachedUrl
+          )}"
         >
       `
         : `
@@ -276,12 +855,20 @@ export function renderAttachment(
         id="${key}"
         style="aspect-ratio:${ratio};"
         data-scope="${scope}"
-        data-filename="${escapeAttr(msg.attachment_name)}"
-        data-username="${escapeAttr(username)}"
-        data-user-id="${escapeAttr(userId)}"
+        data-filename="${escapeAttr(
+          msg.attachment_name
+        )}"
+        data-username="${escapeAttr(
+          username
+        )}"
+        data-user-id="${escapeAttr(
+          userId
+        )}"
         ${
           cachedUrl
-            ? `data-blob-url="${escapeAttr(cachedUrl)}"`
+            ? `data-blob-url="${escapeAttr(
+                cachedUrl
+              )}"`
             : ''
         }
         onclick="window.openImageViewer(this)"
@@ -293,17 +880,23 @@ export function renderAttachment(
   return `
   <div
     class="chat-attachment"
-    onclick="window.downloadAttachment(${msg.id}, '${escapeAttr(msg.attachment_name)}', '${scope}')"
+    onclick="window.downloadAttachment(${msg.id}, '${escapeAttr(
+      msg.attachment_name
+    )}', '${scope}')"
   >
     ${ICONS.file}
 
     <div class="chat-attachment-info">
       <div class="chat-attachment-name">
-        ${escapeHtml(msg.attachment_name)}
+        ${escapeHtml(
+          msg.attachment_name
+        )}
       </div>
 
       <div class="chat-attachment-size">
-        ${formatBytes(msg.attachment_size)}
+        ${formatBytes(
+          msg.attachment_size
+        )}
       </div>
     </div>
 
@@ -324,7 +917,9 @@ export async function loadChatImage(
     `${prefix}-${id}`;
 
   const el =
-    document.getElementById(key);
+    document.getElementById(
+      key
+    );
 
   if (!el) {
     return;
@@ -332,10 +927,18 @@ export async function loadChatImage(
 
   // Already loaded and cached.
   const cachedUrl =
-    getCachedImageUrl(key);
+    getCachedImageUrl(
+      key
+    );
 
-  if (cachedUrl) {
-    if (!el.querySelector('img')) {
+  if (
+    cachedUrl
+  ) {
+    if (
+      !el.querySelector(
+        'img'
+      )
+    ) {
       el.innerHTML = `
         <img
           src="${cachedUrl}"
@@ -353,8 +956,14 @@ export async function loadChatImage(
   }
 
   // Existing in-flight request.
-  if (pendingLoads.has(key)) {
-    return pendingLoads.get(key).promise;
+  if (
+    pendingLoads.has(
+      key
+    )
+  ) {
+    return pendingLoads.get(
+      key
+    ).promise;
   }
 
   const controller =
@@ -378,7 +987,9 @@ export async function loadChatImage(
           );
 
         const objectURL =
-          URL.createObjectURL(blob);
+          URL.createObjectURL(
+            blob
+          );
 
         // Cache regardless of whether the element is still visible.
         cacheImageUrl(
@@ -387,7 +998,9 @@ export async function loadChatImage(
         );
 
         const liveEl =
-          document.getElementById(key);
+          document.getElementById(
+            key
+          );
 
         if (
           !liveEl ||
@@ -398,13 +1011,16 @@ export async function loadChatImage(
           return;
         }
 
-        liveEl.innerHTML = '';
+        liveEl.innerHTML =
+          '';
 
         liveEl.dataset.blobUrl =
           objectURL;
 
         const img =
-          document.createElement('img');
+          document.createElement(
+            'img'
+          );
 
         img.src =
           objectURL;
@@ -415,46 +1031,57 @@ export async function loadChatImage(
         img.dataset.blobUrl =
           objectURL;
 
-        img.onerror = () => {
-          imageBlobCache.delete(
-            key
-          );
-
-          URL.revokeObjectURL(
-            objectURL
-          );
-
-          delete liveEl.dataset.blobUrl;
-
-          liveEl.innerHTML =
-            '<div class="text-muted">Image broken</div>';
-        };
-
-        if (img.decode) {
-          img.decode()
-            .then(() => {
-              img.classList.add(
-                'loaded'
-              );
-            })
-            .catch(() => {
-              img.classList.add(
-                'loaded'
-              );
-            });
-        } else {
-          img.onload = () => {
-            img.classList.add(
-              'loaded'
+        img.onerror =
+          () => {
+            imageBlobCache.delete(
+              key
             );
+
+            URL.revokeObjectURL(
+              objectURL
+            );
+
+            delete liveEl.dataset.blobUrl;
+
+            liveEl.innerHTML =
+              '<div class="text-muted">Image broken</div>';
           };
+
+        if (
+          img.decode
+        ) {
+          img.decode()
+            .then(
+              () => {
+                img.classList.add(
+                  'loaded'
+                );
+              }
+            )
+            .catch(
+              () => {
+                img.classList.add(
+                  'loaded'
+                );
+              }
+            );
+        } else {
+          img.onload =
+            () => {
+              img.classList.add(
+                'loaded'
+              );
+            };
         }
 
-        liveEl.appendChild(img);
+        liveEl.appendChild(
+          img
+        );
 
       } catch (e) {
         if (
-          e.name === 'AbortError'
+          e.name ===
+          'AbortError'
         ) {
           return;
         }
@@ -465,7 +1092,9 @@ export async function loadChatImage(
         );
 
         if (
-          document.body.contains(el)
+          document.body.contains(
+            el
+          )
         ) {
           el.innerHTML =
             '<div class="text-muted">Failed to load image</div>';
@@ -473,10 +1102,14 @@ export async function loadChatImage(
 
       } finally {
         if (
-          pendingLoads.get(key)
-            ?.promise === loadPromise
+          pendingLoads.get(
+            key
+          )?.promise ===
+          loadPromise
         ) {
-          pendingLoads.delete(key);
+          pendingLoads.delete(
+            key
+          );
         }
       }
     })();
@@ -500,7 +1133,9 @@ export function cleanupImageUrls(
   container,
   scope
 ) {
-  if (!container) {
+  if (
+    !container
+  ) {
     return;
   }
 
@@ -513,21 +1148,31 @@ export function cleanupImageUrls(
     .querySelectorAll(
       '.chat-attachment-image'
     )
-    .forEach(el => {
-      const id =
-        el.id.split('-').pop();
+    .forEach(
+      el => {
+        const id =
+          el.id
+            .split('-')
+            .pop();
 
-      const key =
-        `${prefix}-${id}`;
+        const key =
+          `${prefix}-${id}`;
 
-      const entry =
-        pendingLoads.get(key);
+        const entry =
+          pendingLoads.get(
+            key
+          );
 
-      if (entry) {
-        entry.controller.abort();
-        pendingLoads.delete(key);
+        if (
+          entry
+        ) {
+          entry.controller.abort();
+          pendingLoads.delete(
+            key
+          );
+        }
       }
-    });
+    );
 }
 
 /**
@@ -546,19 +1191,35 @@ export function revokeAttachmentImage(
     `${prefix}-${id}`;
 
   const entry =
-    pendingLoads.get(key);
+    pendingLoads.get(
+      key
+    );
 
-  if (entry) {
+  if (
+    entry
+  ) {
     entry.controller.abort();
-    pendingLoads.delete(key);
+
+    pendingLoads.delete(
+      key
+    );
   }
 
   const url =
-    imageBlobCache.get(key);
+    imageBlobCache.get(
+      key
+    );
 
-  if (url) {
-    imageBlobCache.delete(key);
-    URL.revokeObjectURL(url);
+  if (
+    url
+  ) {
+    imageBlobCache.delete(
+      key
+    );
+
+    URL.revokeObjectURL(
+      url
+    );
   }
 }
 
@@ -575,6 +1236,7 @@ export function cancelAllAttachmentLoads() {
 
   pendingLoads.clear();
 }
+
 
 /* =========================================================
  * DOWNLOAD HELPERS
@@ -595,11 +1257,10 @@ function isNativeCapacitor() {
 
 /**
  * Make a filename safe for filesystem paths.
- *
- * This deliberately keeps the extension and normal characters,
- * while removing characters that are problematic in Android paths.
  */
-function sanitizeFilename(name) {
+function sanitizeFilename(
+  name
+) {
   const original =
     typeof name === 'string'
       ? name.trim()
@@ -621,15 +1282,12 @@ function sanitizeFilename(name) {
       )
       .trim();
 
-  return cleaned || 'download';
+  return cleaned ||
+    'download';
 }
 
 /**
  * Handle an authentication failure coming from native FileTransfer.
- *
- * fetchBlob() already handles this for normal web fetches, so native
- * downloads need to mirror that behavior because FileTransfer does
- * not pass through fetchBlob().
  */
 function handleNativeDownloadAuthError(
   error
@@ -641,15 +1299,19 @@ function handleNativeDownloadAuthError(
       0
     );
 
-  if (status !== 401) {
+  if (
+    status !== 401
+  ) {
     return false;
   }
 
   if (
-    typeof logout === 'function'
+    typeof logout ===
+    'function'
   ) {
     try {
       logout();
+
     } catch (logoutError) {
       console.error(
         '[Download] Logout failed:',
@@ -661,27 +1323,15 @@ function handleNativeDownloadAuthError(
   return true;
 }
 
+
 /**
  * Download using Capacitor native FileTransfer.
- *
- * Authentication:
- *   Authorization: Bearer <Wire token>
- *
- * Storage:
- *   Android public Downloads folder
- *
- * Android 10:
- *   Directly targets:
- *
- *   /storage/emulated/0/Download/
- *
- * This works with the Android 10 legacy external-storage mode
- * already configured in AndroidManifest.xml.
  */
 async function downloadAttachmentNative(
   id,
   name,
-  scope
+  scope,
+  downloadId
 ) {
   const token =
     getToken();
@@ -693,7 +1343,9 @@ async function downloadAttachmentNative(
   }
 
   const safeName =
-    sanitizeFilename(name);
+    sanitizeFilename(
+      name
+    );
 
   const url =
     scope === 'dm'
@@ -701,31 +1353,23 @@ async function downloadAttachmentNative(
       : `/api/chat/attachments/${id}?download=1`;
 
   const resolvedUrl =
-    resolveServerUrl(url);
+    resolveServerUrl(
+      url
+    );
 
   console.log(
     '[Download] Native download:',
     {
       id,
       scope,
-      name: safeName,
-      url: resolvedUrl
+      name:
+        safeName,
+      url:
+        resolvedUrl,
+      downloadId
     }
   );
 
-  /*
-   * Public Android Downloads directory.
-   *
-   * IMPORTANT:
-   *
-   * This is:
-   *
-   *   /storage/emulated/0/Download/
-   *
-   * NOT:
-   *
-   *   /storage/emulated/0/Documents/
-   */
   const destinationUri =
     `file:///storage/emulated/0/Download/${safeName}`;
 
@@ -738,10 +1382,6 @@ async function downloadAttachmentNative(
     null;
 
   try {
-    /*
-     * Progress is useful for large attachments and also gives us
-     * proof in logcat that the native transfer is actually moving.
-     */
     progressListener =
       await FileTransfer.addListener(
         'progress',
@@ -757,8 +1397,15 @@ async function downloadAttachmentNative(
                 progress.bytes,
 
               contentLength:
-                progress.contentLength
+                progress.contentLength,
+
+              downloadId
             }
+          );
+
+          updateDownloadProgress(
+            downloadId,
+            progress
           );
         }
       );
@@ -783,10 +1430,6 @@ async function downloadAttachmentNative(
         progress:
           true,
 
-        /*
-         * One minute to establish the connection and one minute
-         * between received chunks.
-         */
         connectTimeout:
           60_000,
 
@@ -815,10 +1458,6 @@ async function downloadAttachmentNative(
       error
     );
 
-    /*
-     * FileTransfer does not pass through fetchBlob(), so authentication
-     * errors have to be handled here.
-     */
     if (
       handleNativeDownloadAuthError(
         error
@@ -836,7 +1475,9 @@ async function downloadAttachmentNative(
     const serverBody =
       error?.data?.body;
 
-    if (status) {
+    if (
+      status
+    ) {
       throw new Error(
         `Download failed (${status})${
           serverBody
@@ -849,9 +1490,12 @@ async function downloadAttachmentNative(
     throw error;
 
   } finally {
-    if (progressListener) {
+    if (
+      progressListener
+    ) {
       try {
         await progressListener.remove();
+
       } catch (error) {
         console.warn(
           '[Download] Failed to remove progress listener:',
@@ -862,10 +1506,12 @@ async function downloadAttachmentNative(
   }
 }
 
+
 /**
  * Browser/PWA download fallback.
  *
- * This is intentionally kept separate from the Capacitor native path.
+ * The browser fetch path currently doesn't expose streaming progress
+ * through fetchBlob(), so no native progress events are emitted here.
  */
 async function downloadAttachmentWeb(
   id,
@@ -888,7 +1534,9 @@ async function downloadAttachmentWeb(
   );
 
   const blob =
-    await fetchBlob(url);
+    await fetchBlob(
+      url
+    );
 
   console.log(
     '[Download] Blob received:',
@@ -902,11 +1550,15 @@ async function downloadAttachmentWeb(
   );
 
   const objectURL =
-    URL.createObjectURL(blob);
+    URL.createObjectURL(
+      blob
+    );
 
   try {
     const a =
-      document.createElement('a');
+      document.createElement(
+        'a'
+      );
 
     a.href =
       objectURL;
@@ -915,34 +1567,29 @@ async function downloadAttachmentWeb(
       name ||
       'download';
 
-    document.body.appendChild(a);
+    document.body.appendChild(
+      a
+    );
 
     a.click();
 
     a.remove();
 
   } finally {
-    /*
-     * Give the browser a little time to consume the object URL before
-     * revoking it. Immediate revocation is unreliable in some browsers.
-     */
-    setTimeout(() => {
-      URL.revokeObjectURL(
-        objectURL
-      );
-    }, 1000);
+    setTimeout(
+      () => {
+        URL.revokeObjectURL(
+          objectURL
+        );
+      },
+      1000
+    );
   }
 }
 
+
 /**
  * Downloads an attachment.
- *
- * Native Capacitor:
- *   FileTransfer + Authorization Bearer
- *   -> /storage/emulated/0/Download/
- *
- * Browser:
- *   fetchBlob() + Blob URL + <a download>
  */
 export async function downloadAttachment(
   id,
@@ -950,7 +1597,24 @@ export async function downloadAttachment(
   scope
 ) {
   const filename =
-    sanitizeFilename(name);
+    sanitizeFilename(
+      name
+    );
+
+  /*
+   * Unique ID per transfer.
+   *
+   * This is critical when several downloads start at once.
+   */
+  const downloadId =
+    `attachment-${scope}-${id}-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2)}`;
+
+  startDownloadProgress(
+    downloadId,
+    filename
+  );
 
   try {
     console.log(
@@ -961,7 +1625,8 @@ export async function downloadAttachment(
           filename,
         scope,
         native:
-          isNativeCapacitor()
+          isNativeCapacitor(),
+        downloadId
       }
     );
 
@@ -971,7 +1636,12 @@ export async function downloadAttachment(
       await downloadAttachmentNative(
         id,
         filename,
-        scope
+        scope,
+        downloadId
+      );
+
+      finishDownloadProgress(
+        downloadId
       );
 
       showToast(
@@ -988,10 +1658,18 @@ export async function downloadAttachment(
       scope
     );
 
+    finishDownloadProgress(
+      downloadId
+    );
+
   } catch (e) {
     console.error(
       '[Download] Failed:',
       e
+    );
+
+    failDownloadProgress(
+      downloadId
     );
 
     showToast(
@@ -1004,6 +1682,7 @@ export async function downloadAttachment(
     );
   }
 }
+
 
 // Expose for inline onclick.
 window.downloadAttachment =

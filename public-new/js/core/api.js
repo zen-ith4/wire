@@ -1,0 +1,215 @@
+import {
+getToken,
+logout
+} from './auth.js';
+
+import {
+resolveServerUrl
+} from './server.js';
+
+let isHandlingUnauthorized = false;
+
+/* =========================================================
+
+* API
+* ========================================================= */
+
+export async function api(
+url,
+options = {}
+) {
+const token = getToken();
+
+const headers = {
+...options.headers
+};
+
+if (token) {
+headers['Authorization'] =
+'Bearer ' + token;
+}
+
+const response =
+await fetch(
+resolveServerUrl(url),
+{
+...options,
+headers
+}
+);
+
+const text =
+await response.text();
+
+let data = null;
+
+try {
+data = text
+? JSON.parse(text)
+: null;
+} catch {
+data = null;
+}
+
+/*
+
+* Handle authentication failures separately.
+* 
+* A 401 does NOT automatically mean that the session
+* expired. Some endpoints may legitimately use 401 for
+* things such as incorrect credentials.
+  */
+  if (response.status === 401) {
+
+const errorMessage =
+  data?.error ||
+  'Authentication required';
+
+/*
+ * Only treat the response as an expired/invalid session
+ * when the server explicitly tells us that authentication
+ * failed because of the session/token.
+ */
+const sessionError =
+  data?.code === 'TOKEN_EXPIRED' ||
+  data?.code === 'INVALID_TOKEN' ||
+  data?.code === 'AUTH_REQUIRED' ||
+  data?.error === 'Session expired' ||
+  data?.error === 'Invalid token' ||
+  data?.error === 'Authentication required';
+
+if (sessionError && !isHandlingUnauthorized) {
+  isHandlingUnauthorized = true;
+
+  try {
+    logout();
+  } catch (error) {
+    console.error(
+      'Logout failed:',
+      error
+    );
+  }
+
+  throw new Error(
+    'Session expired'
+  );
+}
+
+throw new Error(errorMessage);
+
+}
+
+if (!response.ok) {
+
+if (!data) {
+  throw new Error(
+    `Server error (${response.status}): ${
+      text.substring(0, 100)
+    }`
+  );
+}
+
+throw new Error(
+  data.error ||
+  `Request failed (${response.status})`
+);
+
+}
+
+return data;
+}
+
+/* =========================================================
+
+* Blob API
+* ========================================================= */
+
+export async function fetchBlob(
+url,
+options = {}
+) {
+const token = getToken();
+
+const headers = {
+...options.headers
+};
+
+if (token) {
+headers['Authorization'] =
+'Bearer ' + token;
+}
+
+const response =
+await fetch(
+resolveServerUrl(url),
+{
+...options,
+headers
+}
+);
+
+if (response.status === 401) {
+
+const text =
+  await response.text();
+
+let data = null;
+
+try {
+  data = text
+    ? JSON.parse(text)
+    : null;
+} catch {
+  data = null;
+}
+
+const sessionError =
+  data?.code === 'TOKEN_EXPIRED' ||
+  data?.code === 'INVALID_TOKEN' ||
+  data?.code === 'AUTH_REQUIRED' ||
+  data?.error === 'Session expired' ||
+  data?.error === 'Invalid token' ||
+  data?.error === 'Authentication required';
+
+if (sessionError && !isHandlingUnauthorized) {
+  isHandlingUnauthorized = true;
+
+  try {
+    logout();
+  } catch (error) {
+    console.error(
+      'Logout failed:',
+      error
+    );
+  }
+
+  throw new Error(
+    'Session expired'
+  );
+}
+
+throw new Error(
+  data?.error ||
+  'Authentication required'
+);
+
+}
+
+if (!response.ok) {
+
+const err =
+  await response
+    .json()
+    .catch(() => ({
+      error: 'Request failed'
+    }));
+
+throw new Error(
+  err.error ||
+  'Request failed'
+);
+
+}
+
+return await response.blob();
+}

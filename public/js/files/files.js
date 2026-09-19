@@ -49,134 +49,158 @@ let showFolderList = false;
 // ====================== داخلی ======================
 
 function sortEntries() {
-  const { key, dir } = sortState;
+  const { key, dir } =
+    sortState;
 
-  currentEntries.sort((a, b) => {
-    if (a.type !== b.type) {
-      return a.type === 'dir' ? -1 : 1;
+  currentEntries.sort(
+    (a, b) => {
+      if (
+        a.type !== b.type
+      ) {
+        return a.type === 'dir'
+          ? -1
+          : 1;
+      }
+
+      let cmp = 0;
+
+      if (
+        key === 'name'
+      ) {
+        cmp =
+          a.name.localeCompare(
+            b.name,
+            undefined,
+            {
+              sensitivity: 'base',
+              numeric: true
+            }
+          );
+
+      } else if (
+        key === 'size'
+      ) {
+        cmp =
+          a.size - b.size;
+
+      } else if (
+        key === 'modified'
+      ) {
+        cmp =
+          new Date(a.modified) -
+          new Date(b.modified);
+      }
+
+      return cmp * dir;
     }
-
-    let cmp = 0;
-
-    if (key === 'name') {
-      cmp = a.name.localeCompare(
-        b.name,
-        undefined,
-        {
-          sensitivity: 'base',
-          numeric: true
-        }
-      );
-    } else if (key === 'size') {
-      cmp = a.size - b.size;
-    } else if (key === 'modified') {
-      cmp =
-        new Date(a.modified) -
-        new Date(b.modified);
-    }
-
-    return cmp * dir;
-  });
+  );
 }
 
 // ====================== عمومی برای onclick ======================
 
-window.goToPath = function(path) {
-  currentSubpath =
-    path || '';
+window.goToPath =
+  function(path) {
+    currentSubpath =
+      path || '';
 
-  renderFiles();
-};
+    renderFiles();
+  };
 
-window.changeFolder = function(id) {
-  currentFolderId =
-    Number(id);
+window.changeFolder =
+  function(id) {
+    currentFolderId =
+      Number(id);
 
-  currentSubpath =
-    '';
+    currentSubpath =
+      '';
 
-  showFolderList =
-    false;
+    showFolderList =
+      false;
 
-  renderFiles();
-};
+    renderFiles();
+  };
 
-window.openFolderListMobile = function() {
-  showFolderList =
-    true;
+window.openFolderListMobile =
+  function() {
+    showFolderList =
+      true;
 
-  document
-    .querySelector('.dm-layout')
-    ?.classList.remove(
-      'showing-thread'
-    );
-};
+    document
+      .querySelector('.dm-layout')
+      ?.classList.remove(
+        'showing-thread'
+      );
+  };
 
-window.enterFolder = function(name) {
-  currentSubpath =
-    currentSubpath
-      ? `${currentSubpath}/${name}`
-      : name;
+window.enterFolder =
+  function(name) {
+    currentSubpath =
+      currentSubpath
+        ? `${currentSubpath}/${name}`
+        : name;
 
-  renderFiles();
-};
+    renderFiles();
+  };
 
-window.previewFile = async function(file) {
-  const ext =
-    file
-      .split('.')
-      .pop()
-      .toLowerCase();
-
-  if (
-    [
-      'jpg',
-      'jpeg',
-      'png',
-      'gif',
-      'webp'
-    ].includes(ext)
-  ) {
-    openPreview(
-      'image',
-      currentFolderId,
-      currentSubpath,
+window.previewFile =
+  async function(file) {
+    const ext =
       file
-    );
+        .split('.')
+        .pop()
+        .toLowerCase();
 
-  } else if (
-    [
-      'mp4',
-      'webm',
-      'mov'
-    ].includes(ext)
-  ) {
-    openPreview(
-      'video',
-      currentFolderId,
-      currentSubpath,
-      file
-    );
+    if (
+      [
+        'jpg',
+        'jpeg',
+        'png',
+        'gif',
+        'webp'
+      ].includes(ext)
+    ) {
+      openPreview(
+        'image',
+        currentFolderId,
+        currentSubpath,
+        file
+      );
 
-  } else if (
-    [
-      'mp3',
-      'wav',
-      'flac',
-      'ogg'
-    ].includes(ext)
-  ) {
-    openPreview(
-      'audio',
-      currentFolderId,
-      currentSubpath,
-      file
-    );
+    } else if (
+      [
+        'mp4',
+        'webm',
+        'mov'
+      ].includes(ext)
+    ) {
+      openPreview(
+        'video',
+        currentFolderId,
+        currentSubpath,
+        file
+      );
 
-  } else {
-    window.downloadFile(file);
-  }
-};
+    } else if (
+      [
+        'mp3',
+        'wav',
+        'flac',
+        'ogg'
+      ].includes(ext)
+    ) {
+      openPreview(
+        'audio',
+        currentFolderId,
+        currentSubpath,
+        file
+      );
+
+    } else {
+      window.downloadFile(
+        file
+      );
+    }
+  };
 
 /* =========================================================
  * DOWNLOAD HELPERS
@@ -190,7 +214,9 @@ function isNativeCapacitor() {
   }
 }
 
-function sanitizeFilename(name) {
+function sanitizeFilename(
+  name
+) {
   const original =
     typeof name === 'string'
       ? name.trim()
@@ -212,7 +238,18 @@ function sanitizeFilename(name) {
       )
       .trim();
 
-  return cleaned || 'download';
+  return cleaned ||
+    'download';
+}
+
+function createDownloadId(
+  file
+) {
+  return (
+    `files-${currentFolderId}-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2)}`
+  );
 }
 
 function handleNativeDownloadAuthError(
@@ -225,12 +262,15 @@ function handleNativeDownloadAuthError(
       0
     );
 
-  if (status !== 401) {
+  if (
+    status !== 401
+  ) {
     return false;
   }
 
   try {
     logout();
+
   } catch (logoutError) {
     console.error(
       '[Files] Logout failed:',
@@ -249,9 +289,14 @@ function handleNativeDownloadAuthError(
  * /storage/emulated/0/Download/
  *
  * The server still receives the normal Wire Bearer token.
+ *
+ * Progress is handled by the shared Wire download progress manager:
+ *
+ * window.__wireDownloadProgress
  */
 async function downloadFileNative(
-  file
+  file,
+  downloadId
 ) {
   const token =
     getToken();
@@ -263,7 +308,9 @@ async function downloadFileNative(
   }
 
   const safeName =
-    sanitizeFilename(file);
+    sanitizeFilename(
+      file
+    );
 
   const relativeSubpath =
     currentSubpath || '';
@@ -274,7 +321,9 @@ async function downloadFileNative(
     `&file=${encodeURIComponent(file)}`;
 
   const resolvedUrl =
-    resolveServerUrl(url);
+    resolveServerUrl(
+      url
+    );
 
   console.log(
     '[Files Download] Native download:',
@@ -289,16 +338,14 @@ async function downloadFileNative(
         safeName,
 
       url:
-        resolvedUrl
+        resolvedUrl,
+
+      downloadId
     }
   );
 
   /*
    * Android public Downloads folder.
-   *
-   * Example:
-   *
-   * file:///storage/emulated/0/Download/app-release.apk
    */
   const destinationUri =
     `file:///storage/emulated/0/Download/${safeName}`;
@@ -312,6 +359,17 @@ async function downloadFileNative(
     null;
 
   try {
+    /*
+     * Register this transfer with the shared download-progress UI.
+     *
+     * Each transfer gets its own ID so finishing one transfer does not
+     * blindly hide the progress UI for another active transfer.
+     */
+    window.__wireDownloadProgress?.start(
+      downloadId,
+      safeName
+    );
+
     progressListener =
       await FileTransfer.addListener(
         'progress',
@@ -320,14 +378,30 @@ async function downloadFileNative(
             return;
           }
 
+          const bytes =
+            Number(
+              progress.bytes
+            ) || 0;
+
+          const contentLength =
+            Number(
+              progress.contentLength
+            ) || 0;
+
           console.log(
             '[Files Download] Progress:',
             {
-              bytes:
-                progress.bytes,
+              bytes,
+              contentLength,
+              downloadId
+            }
+          );
 
-              contentLength:
-                progress.contentLength
+          window.__wireDownloadProgress?.progress(
+            downloadId,
+            {
+              bytes,
+              contentLength
             }
           );
         }
@@ -365,6 +439,10 @@ async function downloadFileNative(
       result
     );
 
+    window.__wireDownloadProgress?.finish(
+      downloadId
+    );
+
     return {
       ...result,
 
@@ -379,6 +457,10 @@ async function downloadFileNative(
     console.error(
       '[Files Download] Native transfer failed:',
       error
+    );
+
+    window.__wireDownloadProgress?.fail(
+      downloadId
     );
 
     if (
@@ -411,9 +493,12 @@ async function downloadFileNative(
     throw error;
 
   } finally {
-    if (progressListener) {
+    if (
+      progressListener
+    ) {
       try {
         await progressListener.remove();
+
       } catch (error) {
         console.warn(
           '[Files Download] Failed to remove progress listener:',
@@ -426,6 +511,9 @@ async function downloadFileNative(
 
 /**
  * Browser/PWA download fallback.
+ *
+ * This path does not use FileTransfer, so native download progress
+ * is not available here.
  */
 async function downloadFileWeb(
   file
@@ -444,7 +532,9 @@ async function downloadFileWeb(
   );
 
   const blob =
-    await fetchBlob(url);
+    await fetchBlob(
+      url
+    );
 
   console.log(
     '[Files Download] Blob received:',
@@ -458,30 +548,42 @@ async function downloadFileWeb(
   );
 
   const objectURL =
-    URL.createObjectURL(blob);
+    URL.createObjectURL(
+      blob
+    );
 
   try {
     const a =
-      document.createElement('a');
+      document.createElement(
+        'a'
+      );
 
     a.href =
       objectURL;
 
     a.download =
-      file || 'download';
+      file ||
+      'download';
 
-    document.body.appendChild(a);
+    document.body.appendChild(
+      a
+    );
 
     a.click();
 
-    document.body.removeChild(a);
+    document.body.removeChild(
+      a
+    );
 
   } finally {
-    setTimeout(() => {
-      URL.revokeObjectURL(
-        objectURL
-      );
-    }, 1000);
+    setTimeout(
+      () => {
+        URL.revokeObjectURL(
+          objectURL
+        );
+      },
+      1000
+    );
   }
 }
 
@@ -492,6 +594,7 @@ async function downloadFileWeb(
  *   FileTransfer
  *   Authorization: Bearer token
  *   -> Android Download/
+ *   -> shared Wire download progress UI
  *
  * Browser/PWA:
  *   fetchBlob()
@@ -503,7 +606,14 @@ async function downloadFile(
 ) {
   try {
     const filename =
-      sanitizeFilename(file);
+      sanitizeFilename(
+        file
+      );
+
+    const downloadId =
+      createDownloadId(
+        file
+      );
 
     console.log(
       '[Files Download] Requested:',
@@ -518,7 +628,9 @@ async function downloadFile(
           filename,
 
         native:
-          isNativeCapacitor()
+          isNativeCapacitor(),
+
+        downloadId
       }
     );
 
@@ -526,7 +638,8 @@ async function downloadFile(
       isNativeCapacitor()
     ) {
       await downloadFileNative(
-        file
+        file,
+        downloadId
       );
 
       showToast(
@@ -563,54 +676,58 @@ window.downloadFile =
 
 // ====================== لینک ======================
 
-window.copyLink = function(file) {
-  const url =
-    location.origin +
-    `/api/files/download/${currentFolderId}` +
-    `?subpath=${encodeURIComponent(currentSubpath)}` +
-    `&file=${encodeURIComponent(file)}`;
+window.copyLink =
+  function(file) {
+    const url =
+      location.origin +
+      `/api/files/download/${currentFolderId}` +
+      `?subpath=${encodeURIComponent(currentSubpath)}` +
+      `&file=${encodeURIComponent(file)}`;
 
-  navigator.clipboard
-    ?.writeText(url)
-    .then(
-      () =>
-        showToast(
-          'Link copied',
-          'success'
-        ),
+    navigator.clipboard
+      ?.writeText(url)
+      .then(
+        () =>
+          showToast(
+            'Link copied',
+            'success'
+          ),
 
-      () =>
-        showToast(
-          'Could not copy link',
-          'error'
-        )
-    );
-};
+        () =>
+          showToast(
+            'Could not copy link',
+            'error'
+          )
+      );
+  };
 
-window.toggleSort = function(key) {
-  if (
-    sortState.key === key
-  ) {
-    sortState.dir *= -1;
-  } else {
-    sortState.key =
-      key;
+window.toggleSort =
+  function(key) {
+    if (
+      sortState.key === key
+    ) {
+      sortState.dir *=
+        -1;
 
-    sortState.dir =
-      1;
-  }
+    } else {
+      sortState.key =
+        key;
 
-  renderFileCard(
-    currentFolders,
-    {
-      entries:
-        currentEntries,
-
-      can_write:
-        currentCanWrite
+      sortState.dir =
+        1;
     }
-  );
-};
+
+    renderFileCard(
+      currentFolders,
+      {
+        entries:
+          currentEntries,
+
+        can_write:
+          currentCanWrite
+      }
+    );
+  };
 
 // ====================== UPLOAD ======================
 
@@ -700,7 +817,9 @@ window.uploadFile =
 export async function uploadFilesMultiple(
   fileList
 ) {
-  if (!currentCanWrite) {
+  if (
+    !currentCanWrite
+  ) {
     showToast(
       "You don't have write access to this folder",
       'error'
@@ -710,7 +829,9 @@ export async function uploadFilesMultiple(
   }
 
   const files =
-    Array.from(fileList);
+    Array.from(
+      fileList
+    );
 
   let succeeded =
     0;
@@ -735,7 +856,9 @@ export async function uploadFilesMultiple(
     }
   }
 
-  if (succeeded > 0) {
+  if (
+    succeeded > 0
+  ) {
     renderFiles();
 
     showToast(
@@ -791,8 +914,12 @@ export async function renderFiles() {
       folders,
       mineResponse
     ] = await Promise.all([
-      api('/api/files/folders'),
-      api('/api/share/mine')
+      api(
+        '/api/files/folders'
+      ),
+      api(
+        '/api/share/mine'
+      )
     ]);
 
     currentFolders =
@@ -811,7 +938,10 @@ export async function renderFiles() {
     myFoldersById =
       new Map(
         mineFolders.map(
-          f => [f.id, f]
+          f => [
+            f.id,
+            f
+          ]
         )
       );
 
@@ -925,11 +1055,15 @@ function folderRowHtml(
 
       <div class="conv-info">
         <div class="dm-conv-name">
-          ${escapeHtml(folder.display_name)}
+          ${escapeHtml(
+            folder.display_name
+          )}
         </div>
 
         <div class="dm-conv-preview">
-          ${escapeHtml(preview)}
+          ${escapeHtml(
+            preview
+          )}
         </div>
       </div>
 
@@ -990,7 +1124,9 @@ function renderFileCard(
   let breadcrumbHtml =
     `<div class="breadcrumb">
       <a onclick="goToPath('')">
-        ${escapeHtml(rootName)}
+        ${escapeHtml(
+          rootName
+        )}
       </a>`;
 
   crumbs.forEach(
@@ -1097,7 +1233,9 @@ function renderFileCard(
                   }
 
                   <span>
-                    ${escapeHtml(entry.name)}
+                    ${escapeHtml(
+                      entry.name
+                    )}
                   </span>
                 </div>
               </td>
@@ -1152,13 +1290,17 @@ function renderFileCard(
     }
 
     mainThreadContent = `
-      ${progressBarHtml('file-upload-progress')}
+      ${progressBarHtml(
+        'file-upload-progress'
+      )}
 
       <div class="table-scroll">
         <table class="file-table">
           <thead>
             <tr>
-              <th onclick="toggleSort('name')">
+              <th
+                onclick="toggleSort('name')"
+              >
                 Name
               </th>
 
@@ -1274,7 +1416,9 @@ function renderFileCard(
         >
           ${
             folders
-              .map(folderRowHtml)
+              .map(
+                folderRowHtml
+              )
               .join('')
           }
         </div>

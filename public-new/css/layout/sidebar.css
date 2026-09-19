@@ -1,0 +1,110 @@
+.sidebar{
+  width:var(--sidebar-width);min-width:var(--sidebar-width);
+  height:100vh;
+  height:100dvh;
+  height:calc(var(--vh, 1vh) * 100);
+  background:rgba(var(--ink-rgb), .42);
+  display:flex;flex-direction:column;
+  border-right:1px solid var(--border);
+  user-select:none;z-index:10;
+}
+.brand{display:flex;align-items:center;gap:10px;padding:18px 20px 16px;border-bottom:1px solid var(--border);flex-shrink:0;}
+.brand-mark{
+  width:26px;height:26px;border-radius:6px;flex-shrink:0;
+  background:rgb(var(--indigo));
+  display:flex;align-items:center;justify-content:center;
+  color:var(--text);font-weight:700;font-size:12px;
+  overflow:hidden;
+}
+.brand-mark img{
+  width:100%;height:100%;object-fit:cover;display:block;
+}
+.brand-name{font-size:15px;font-weight:600;letter-spacing:-0.02em;color:var(--text);white-space:nowrap;}
+
+/* ---------- Sidebar resize handle ----------
+   A slim flex sibling sitting between .sidebar and .main. .main is
+   flex:1;min-width:0 (app.css) so it already reflows to fill whatever
+   space is left the instant --sidebar-width changes — no JS needed
+   to touch the main content itself. */
+.sidebar-resize-handle{
+  flex-shrink:0;width:5px;margin-left:-2px;margin-right:-3px;
+  position:relative;z-index:11;cursor:col-resize;touch-action:none;
+}
+.sidebar-resize-handle::after{
+  content:'';position:absolute;top:0;bottom:0;left:50%;width:2px;
+  transform:translateX(-50%);border-radius:2px;background:transparent;
+  transition:background var(--ease-fast);
+}
+.sidebar-resize-handle:hover::after,
+.sidebar-resize-handle.active::after{background:rgba(var(--indigo),.55);}
+
+/* While dragging: lock the resize cursor and kill text selection
+   page-wide so a fast drag can't select surrounding text. */
+body.sidebar-resizing{cursor:col-resize;}
+body.sidebar-resizing,
+body.sidebar-resizing *{user-select:none !important;}
+
+.nav-group-label,.nav-section-label{
+  font-size:10px;font-weight:550;text-transform:uppercase;letter-spacing:.06em;
+  color:var(--muted2);padding:14px 20px 8px;
+}
+#nav-links{display:flex;flex-direction:column;gap:1px;padding:6px 10px;}
+.sidebar > #nav-links:first-of-type{padding-top:10px;}
+.nav-link{
+  display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius);
+  cursor:pointer;color:var(--muted);font-size:13.5px;font-weight:500;letter-spacing:-0.01em;
+  white-space:nowrap;position:relative;text-decoration:none;
+  transition:background var(--ease-fast),color var(--ease-fast);
+}
+.nav-link:hover{background:var(--hover);color:var(--text);}
+.nav-link.active{background:var(--accent-bg);color:var(--text);font-weight:550;}
+.nav-link.active::before{
+  content:'';position:absolute;left:-10px;top:50%;transform:translateY(-50%);
+  width:3px;height:20px;border-radius:0 3px 3px 0;background:rgb(var(--indigo));
+}
+.nav-link svg{width:16px;height:16px;flex-shrink:0;opacity:.75;stroke-width:1.6;}
+.nav-link.active svg{opacity:1;}
+.nav-badge{margin-left:auto;background:rgba(var(--indigo),.16);color:var(--text);border:1px solid rgba(var(--indigo),.3);font-size:10.5px;font-weight:600;border-radius:99px;min-width:17px;height:17px;display:flex;align-items:center;justify-content:center;padding:0 5px;}
+
+.sidebar-footer{margin-top:auto;padding:10px;}
+.sidebar-footer .nav-link{color:var(--muted);}
+.sidebar-footer .nav-link:hover{color:rgb(var(--red));background:rgba(var(--red),.14);}
+
+/* ---------- My profile (sidebar footer) ----------
+   Deliberately plain, not liquid-glass — that treatment belongs only
+   to the other person's header inside an open DM (messages.css /
+   .dm-peer-profile). This is just "my avatar, click to view my
+   profile", styled like the nav links around it. */
+.sidebar-profile{
+  display:flex;align-items:center;gap:10px;
+  padding:8px;border-radius:var(--radius);
+  cursor:pointer;
+  transition:background var(--ease-fast);
+}
+.sidebar-profile:hover{background:var(--hover);}
+.sidebar-profile-avatar{
+  width:28px;height:28px;border-radius:50%;flex-shrink:0;
+  background:var(--ink2);border:1px solid var(--border);
+  display:flex;align-items:center;justify-content:center;
+  font-size:11px;font-weight:550;color:var(--muted);
+}
+.sidebar-profile-name{
+  font-size:12.5px;font-weight:550;color:var(--text);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+
+/* ---------- Mobile sidebar ---------- */
+.sidebar-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:45;}
+.sidebar-backdrop.active{display:block;}
+
+/* Light mode: slightly stronger surface tint for readability while
+   still allowing the ambient background to remain clearly visible. */
+:root[data-theme="light"] .sidebar{
+  background:rgba(var(--ink-rgb),.42);
+}
+:root[data-theme="dark"] .sidebar{
+  background:rgba(var(--ink-rgb),.42);
+}
+
+/* این خط تغییر کرد تا زورش از بقیه کلاس‌ها بیشتر بشه */
+button.mobile-menu-btn { display: none; }

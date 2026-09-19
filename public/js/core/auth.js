@@ -1,6 +1,12 @@
 import { api } from './api.js';
 
 import {
+  getServerEndpoint,
+  setServerEndpoint,
+  isNativeApp
+} from './server.js';
+
+import {
   createIdentity,
   restoreIdentity,
   restoreIdentityWithUnlockKey
@@ -11,7 +17,6 @@ import {
   idbGetUnlockKey,
   idbClearUnlockKey
 } from '../crypto/keys/unlock-key-store.js';
-
 
 let currentUser = null;
 let token = localStorage.getItem('token');
@@ -24,7 +29,6 @@ let token = localStorage.getItem('token');
  */
 let pendingVerification = null;
 
-
 /* =========================================================
  * Token / User
  * ========================================================= */
@@ -32,7 +36,6 @@ let pendingVerification = null;
 export function getToken() {
   return token;
 }
-
 
 export function setToken(newToken) {
   token = newToken;
@@ -44,16 +47,13 @@ export function setToken(newToken) {
   }
 }
 
-
 export function getCurrentUser() {
   return currentUser;
 }
 
-
 export function setCurrentUser(user) {
   currentUser = user;
 }
-
 
 export function logout() {
   const signedOutUser = currentUser;
@@ -81,24 +81,78 @@ export function logout() {
   });
 }
 
+/* =========================================================
+ * Server switching
+ * ========================================================= */
+
+async function changeNativeServer(rawAddress, errorElement = null) {
+  if (!isNativeApp()) {
+    return;
+  }
+
+  try {
+    /*
+     * Validate and normalize before changing anything.
+     */
+    const newEndpoint =
+      setServerEndpoint(rawAddress);
+
+    /*
+     * The unlock key belongs to the old server origin.
+     * Remove it before switching origins.
+     */
+    if (currentUser) {
+      await clearPersistedUnlockKey(currentUser);
+    }
+
+    /*
+     * Never send the old server's JWT to the new server.
+     */
+    setToken(null);
+    currentUser = null;
+    pendingVerification = null;
+
+    /*
+     * The endpoint is already stored by setServerEndpoint().
+     * Reload so every module starts from the new server.
+     */
+    window.location.reload();
+
+    return newEndpoint;
+
+  } catch (error) {
+
+    console.error(
+      '[Server] Failed to change server:',
+      error
+    );
+
+    if (errorElement) {
+      errorElement.textContent =
+        error?.message ||
+        'Failed to change server';
+    }
+
+    throw error;
+  }
+}
 
 /* =========================================================
  * Auto-unlock ("Remember me on this device")
  *
  * The E2EE identity's derived unlock key (see identity.js /
  * identity-service.js) can be cached locally so a valid,
- * already-authenticated session can restore the identity on the
- * next launch without a password prompt. This is never the
- * password itself and never the raw private key - only the
- * PBKDF2-derived AES key that already exists transiently in
- * memory during every normal unlock.
+ * already-authenticated session can restore the identity on
+ * the next launch without a password prompt.
+ *
+ * This is never the password itself and never the raw private key.
  *
  * Two backends, chosen automatically:
- *  - Electron: OS-level secure storage (safeStorage: Keychain /
- *    DPAPI / libsecret) via the main process, over IPC.
- *  - Browser: IndexedDB, scoped by the page's own origin (the
- *    same isolation the browser already gives every other piece
- *    of this site's local data).
+ * - Electron: OS-level secure storage
+ * - Browser: IndexedDB, scoped by the server origin.
+ * - Capacitor Android: IndexedDB, scoped by the selected server
+ *   endpoint rather than capacitor://localhost.
+ *
  * Both are opt-in: nothing is cached unless the user checks
  * "Remember me on this device" at login/unlock time.
  * ========================================================= */
@@ -113,6 +167,22 @@ function isElectron() {
   );
 }
 
+/*
+ * Returns the identity storage scope.
+ *
+ * Browser:
+ * window.location.origin
+ *
+ * Electron:
+ * The remote server's origin, which is also
+ * window.location.origin.
+ *
+ * Capacitor:
+ * The actual selected backend server.
+ */
+function getIdentityStorageOrigin() {
+  return getServerEndpoint();
+}
 
 async function persistUnlockKey(
   unlockKey,
@@ -127,10 +197,13 @@ async function persistUnlockKey(
 
   try {
 
+    const storageOrigin =
+      getIdentityStorageOrigin();
+
     if (isElectron()) {
 
       await window.electronAPI.storeIdentityUnlockKey(
-        window.location.origin,
+        storageOrigin,
         user.id,
         unlockKey
       );
@@ -138,7 +211,7 @@ async function persistUnlockKey(
     } else {
 
       await idbStoreUnlockKey(
-        window.location.origin,
+        storageOrigin,
         user.id,
         unlockKey
       );
@@ -146,15 +219,13 @@ async function persistUnlockKey(
 
   } catch (err) {
 
-    // Non-fatal: auto-unlock simply won't be available next
-    // launch. The normal password flow is unaffected.
     console.error(
       '[Identity] Failed to persist unlock key:',
       err
     );
+
   }
 }
-
 
 export async function clearPersistedUnlockKey(user) {
   if (!user) {
@@ -163,17 +234,20 @@ export async function clearPersistedUnlockKey(user) {
 
   try {
 
+    const storageOrigin =
+      getIdentityStorageOrigin();
+
     if (isElectron()) {
 
       await window.electronAPI.clearIdentityUnlockKey(
-        window.location.origin,
+        storageOrigin,
         user.id
       );
 
     } else {
 
       await idbClearUnlockKey(
-        window.location.origin,
+        storageOrigin,
         user.id
       );
     }
@@ -184,18 +258,13 @@ export async function clearPersistedUnlockKey(user) {
       '[Identity] Failed to clear unlock key:',
       err
     );
+
   }
 }
 
-
 /*
  * Attempts to unlock the E2EE identity using material cached from
- * a previous successful login on this device - no password
- * prompt. Returns true if the identity is now unlocked, false if
- * auto-unlock isn't available/applicable (first login on this
- * device, "remember me" was never opted into, or the cached
- * material is missing/stale) - callers should fall back to the
- * normal password unlock (renderUnlock) in that case.
+ * a previous successful login on this device.
  */
 export async function attemptAutoUnlock(
   user,
@@ -212,14 +281,17 @@ export async function attemptAutoUnlock(
 
   try {
 
+    const storageOrigin =
+      getIdentityStorageOrigin();
+
     cached =
       isElectron()
         ? await window.electronAPI.getIdentityUnlockKey(
-            window.location.origin,
+            storageOrigin,
             user.id
           )
         : await idbGetUnlockKey(
-            window.location.origin,
+            storageOrigin,
             user.id
           );
 
@@ -251,14 +323,6 @@ export async function attemptAutoUnlock(
 
   } catch (err) {
 
-    /*
-     * The cached material is missing, stale (e.g. the account
-     * password was changed elsewhere), or otherwise fails to
-     * decrypt. Treat this exactly like "not available": clear it
-     * so we don't keep retrying a dead key on every future
-     * launch, and let the caller fall back to the password
-     * prompt.
-     */
     console.warn(
       '[Identity] Auto-unlock failed, falling back to password:',
       err
@@ -270,7 +334,6 @@ export async function attemptAutoUnlock(
   }
 }
 
-
 /* =========================================================
  * Identity
  * ========================================================= */
@@ -280,7 +343,6 @@ export async function initializeIdentity(
   onSuccess = null,
   { rememberMe = undefined } = {}
 ) {
-
   if (!token) {
     throw new Error(
       'Authentication token not found'
@@ -296,7 +358,6 @@ export async function initializeIdentity(
     );
   }
 
-
   const identity =
     await api(
       '/api/me/identity-key',
@@ -309,7 +370,6 @@ export async function initializeIdentity(
       }
     );
 
-
   if (
     !identity ||
     typeof identity.exists !== 'boolean'
@@ -318,7 +378,6 @@ export async function initializeIdentity(
       'Invalid identity response'
     );
   }
-
 
   let result;
 
@@ -353,15 +412,6 @@ export async function initializeIdentity(
     );
   }
 
-
-  /*
-   * "Remember me on this device": only touches the cached unlock
-   * key when the caller explicitly says so (i.e. the checkbox at
-   * login/unlock time). If rememberMe is left undefined (e.g. the
-   * registration-verification and 2FA flows below, which don't
-   * currently surface the checkbox), any previously-cached key for
-   * this account/device is left exactly as it was.
-   */
   if (rememberMe === true) {
 
     await persistUnlockKey(
@@ -371,9 +421,10 @@ export async function initializeIdentity(
 
   } else if (rememberMe === false) {
 
-    await clearPersistedUnlockKey(currentUser);
+    await clearPersistedUnlockKey(
+      currentUser
+    );
   }
-
 
   if (
     typeof onSuccess === 'function'
@@ -381,7 +432,6 @@ export async function initializeIdentity(
     await onSuccess();
   }
 }
-
 
 /* =========================================================
  * Login
@@ -391,7 +441,6 @@ export async function login(
   username,
   password
 ) {
-
   const data =
     await api(
       '/api/auth/login',
@@ -409,7 +458,6 @@ export async function login(
       }
     );
 
-
   if (
     !data ||
     data.id == null ||
@@ -420,14 +468,6 @@ export async function login(
     );
   }
 
-
-  /*
-   * The password is correct, but the account
-   * still requires email verification.
-   *
-   * The backend intentionally does not issue
-   * a normal JWT in this state.
-   */
   if (
     data.requiresEmailVerification === true ||
     (
@@ -438,13 +478,6 @@ export async function login(
     return data;
   }
 
-
-  /*
-   * The password is correct and the account
-   * requires email 2FA.
-   *
-   * No JWT exists yet.
-   */
   if (
     data.requiresTwoFactor === true
   ) {
@@ -459,20 +492,13 @@ export async function login(
     return data;
   }
 
-
-  /*
-   * A fully authenticated account must receive
-   * a valid JWT.
-   */
   if (!data.token) {
     throw new Error(
       'Invalid login response'
     );
   }
 
-
   setToken(data.token);
-
 
   setCurrentUser({
     id: data.id,
@@ -490,10 +516,8 @@ export async function login(
     accent_color: data.accent_color ?? null
   });
 
-
   return data;
 }
-
 
 /* =========================================================
  * Verify Email 2FA
@@ -504,7 +528,6 @@ export async function verifyTwoFactor(
   challengeId,
   code
 ) {
-
   const data =
     await api(
       '/api/auth/verify-2fa',
@@ -523,7 +546,6 @@ export async function verifyTwoFactor(
       }
     );
 
-
   if (
     !data ||
     !data.token ||
@@ -535,9 +557,7 @@ export async function verifyTwoFactor(
     );
   }
 
-
   setToken(data.token);
-
 
   setCurrentUser({
     id: data.id,
@@ -555,10 +575,8 @@ export async function verifyTwoFactor(
     accent_color: data.accent_color ?? null
   });
 
-
   return data;
 }
-
 
 /* =========================================================
  * Register
@@ -569,7 +587,6 @@ export async function register(
   email,
   password
 ) {
-
   const data =
     await api(
       '/api/auth/register',
@@ -588,7 +605,6 @@ export async function register(
       }
     );
 
-
   if (
     !data ||
     data.id == null ||
@@ -599,13 +615,6 @@ export async function register(
     );
   }
 
-
-  /*
-   * Email is enabled: registration does not authenticate the
-   * user yet. Keep the password only in memory so that the
-   * E2EE identity can be initialized immediately after
-   * successful email verification.
-   */
   if (data.requiresEmailVerification === true) {
 
     if (!data.email) {
@@ -624,12 +633,6 @@ export async function register(
     return data;
   }
 
-
-  /*
-   * Email is disabled: there is no verification step, so the
-   * server considers the account immediately usable and returns
-   * a normal authentication token right away.
-   */
   if (!data.token) {
     throw new Error(
       'Invalid registration response'
@@ -655,7 +658,6 @@ export async function register(
   return data;
 }
 
-
 /* =========================================================
  * Email Verification
  * ========================================================= */
@@ -664,7 +666,6 @@ export async function verifyEmail(
   userId,
   code
 ) {
-
   const data =
     await api(
       '/api/auth/verify-email',
@@ -682,7 +683,6 @@ export async function verifyEmail(
       }
     );
 
-
   if (
     !data ||
     !data.token ||
@@ -694,9 +694,7 @@ export async function verifyEmail(
     );
   }
 
-
   setToken(data.token);
-
 
   setCurrentUser({
     id: data.id,
@@ -712,15 +710,12 @@ export async function verifyEmail(
     accent_color: data.accent_color ?? null
   });
 
-
   return data;
 }
-
 
 export async function resendVerification(
   userId
 ) {
-
   const data =
     await api(
       '/api/auth/resend-verification',
@@ -737,7 +732,6 @@ export async function resendVerification(
       }
     );
 
-
   if (
     !data ||
     data.success !== true
@@ -747,10 +741,8 @@ export async function resendVerification(
     );
   }
 
-
   return data;
 }
-
 
 /* =========================================================
  * Email Verification UI
@@ -766,92 +758,86 @@ function renderVerification(
       'login-wrap'
     );
 
-
   if (!wrap) {
-
     console.error(
       'Login container not found'
     );
-
     return;
   }
 
-
   wrap.style.display = 'flex';
 
-
   wrap.innerHTML = `
-    <div class="card login-card">
+<div class="card login-card">
 
-      <div class="login-mark">
-        <img
-          src="/img/logo.jpg"
-          alt="Wire"
-        />
-      </div>
+  <div class="login-mark">
+    <img
+      src="/img/logo.jpg"
+      alt="Wire"
+    />
+  </div>
 
-      <h1>
-        Verify your email
-      </h1>
+  <h1>
+    Verify your email
+  </h1>
 
-      <p class="hint">
-        We sent a 6-digit verification code to
-        <strong>${escapeHtml(verification.email)}</strong>
-      </p>
+  <p class="hint">
+    We sent a 6-digit verification code to
+    <strong>${escapeHtml(verification.email)}</strong>
+  </p>
 
-      <form id="verification-form">
+  <form id="verification-form">
 
-        <input
-          type="text"
-          id="verification-code"
-          inputmode="numeric"
-          autocomplete="one-time-code"
-          maxlength="6"
-          pattern="[0-9]{6}"
-          placeholder="Verification code"
-          required
-        >
+    <input
+      type="text"
+      id="verification-code"
+      inputmode="numeric"
+      autocomplete="one-time-code"
+      maxlength="6"
+      pattern="[0-9]{6}"
+      placeholder="Verification code"
+      required
+    >
 
-        <button
-          type="submit"
-          class="btn btn-primary"
-        >
-          Verify email
-        </button>
+    <button
+      type="submit"
+      class="btn btn-primary"
+    >
+      Verify email
+    </button>
 
-      </form>
+  </form>
 
-      <div
-        id="verification-error"
-        class="field-error"
-      ></div>
+  <div
+    id="verification-error"
+    class="field-error"
+  ></div>
 
-      <div class="auth-switch">
-        Didn't receive the code?
+  <div class="auth-switch">
+    Didn't receive the code?
 
-        <button
-          type="button"
-          id="resend-verification"
-          class="btn btn-ghost btn-sm"
-          style="margin-left:4px;"
-        >
-          Resend
-        </button>
-      </div>
+    <button
+      type="button"
+      id="resend-verification"
+      class="btn btn-ghost btn-sm"
+      style="margin-left:4px;"
+    >
+      Resend
+    </button>
+  </div>
 
-      <div class="auth-switch">
-        <button
-          type="button"
-          id="back-to-login"
-          class="btn btn-ghost btn-sm"
-        >
-          Back to login
-        </button>
-      </div>
+  <div class="auth-switch">
+    <button
+      type="button"
+      id="back-to-login"
+      class="btn btn-ghost btn-sm"
+    >
+      Back to login
+    </button>
+  </div>
 
-    </div>
-  `;
-
+</div>
+`;
 
   const form =
     document.getElementById(
@@ -878,21 +864,14 @@ function renderVerification(
       'back-to-login'
     );
 
-
-  /* ---------------------------------------------------------
-   * Verify code
-   * --------------------------------------------------------- */
-
   if (form) {
 
     form.onsubmit = async (event) => {
 
       event.preventDefault();
 
-
       const code =
         codeInput?.value.trim() || '';
-
 
       if (!/^\d{6}$/.test(code)) {
 
@@ -906,12 +885,10 @@ function renderVerification(
         return;
       }
 
-
       const button =
         form.querySelector(
           'button[type="submit"]'
         );
-
 
       if (button) {
         button.disabled = true;
@@ -921,25 +898,15 @@ function renderVerification(
         errorEl.textContent = '';
       }
 
-
       try {
 
-        /*
-         * Backend verifies the code and returns
-         * the normal authentication JWT.
-         */
         await verifyEmail(
           verification.userId,
           code
         );
 
-
-        /*
-         * The password exists only in memory.
-         */
         const password =
           verification.password;
-
 
         if (
           typeof password !== 'string' ||
@@ -950,21 +917,11 @@ function renderVerification(
           );
         }
 
-
-        /*
-         * Initialize the E2EE identity using the
-         * registration password.
-         */
         await initializeIdentity(
           password
         );
 
-
-        /*
-         * Destroy the temporary password reference.
-         */
         pendingVerification = null;
-
 
         if (
           typeof onSuccess === 'function'
@@ -979,18 +936,15 @@ function renderVerification(
           error
         );
 
-
         if (errorEl) {
           errorEl.textContent =
             error?.message ||
             'Email verification failed';
         }
 
-
         if (button) {
           button.disabled = false;
         }
-
 
         if (codeInput) {
           codeInput.value = '';
@@ -1000,29 +954,21 @@ function renderVerification(
     };
   }
 
-
-  /* ---------------------------------------------------------
-   * Resend code
-   * --------------------------------------------------------- */
-
   if (resendButton) {
 
     resendButton.onclick = async () => {
 
       resendButton.disabled = true;
 
-
       if (errorEl) {
         errorEl.textContent = '';
       }
-
 
       try {
 
         await resendVerification(
           verification.userId
         );
-
 
         if (errorEl) {
           errorEl.textContent =
@@ -1036,7 +982,6 @@ function renderVerification(
           error
         );
 
-
         if (errorEl) {
           errorEl.textContent =
             error?.message ||
@@ -1045,10 +990,6 @@ function renderVerification(
 
       } finally {
 
-        /*
-         * This is only UI protection.
-         * The real cooldown is enforced by the backend.
-         */
         setTimeout(() => {
           resendButton.disabled = false;
         }, 1000);
@@ -1056,28 +997,18 @@ function renderVerification(
     };
   }
 
-
-  /* ---------------------------------------------------------
-   * Back to login
-   * --------------------------------------------------------- */
-
   if (backButton) {
 
     backButton.onclick = () => {
 
-      /*
-       * Destroy the temporary password.
-       */
       pendingVerification = null;
 
       renderLogin(onSuccess);
     };
   }
 
-
   codeInput?.focus();
 }
-
 
 /* =========================================================
  * Two-Factor Authentication UI
@@ -1094,79 +1025,73 @@ function renderTwoFactor(
       'login-wrap'
     );
 
-
   if (!wrap) {
-
     console.error(
       'Login container not found'
     );
-
     return;
   }
 
-
   wrap.style.display = 'flex';
 
-
   wrap.innerHTML = `
-    <div class="card login-card">
+<div class="card login-card">
 
-      <div class="login-mark">
-        <img
-          src="/img/logo.jpg"
-          alt="Wire"
-        />
-      </div>
+  <div class="login-mark">
+    <img
+      src="/img/logo.jpg"
+      alt="Wire"
+    />
+  </div>
 
-      <h1>
-        Two-factor authentication
-      </h1>
+  <h1>
+    Two-factor authentication
+  </h1>
 
-      <p class="hint">
-        We sent a 6-digit verification code to
-        <strong>${escapeHtml(twoFactor.email || 'your email')}</strong>
-      </p>
+  <p class="hint">
+    We sent a 6-digit verification code to
+    <strong>${escapeHtml(twoFactor.email || 'your email')}</strong>
+  </p>
 
-      <form id="two-factor-form">
+  <form id="two-factor-form">
 
-        <input
-          type="text"
-          id="two-factor-code"
-          inputmode="numeric"
-          autocomplete="one-time-code"
-          maxlength="6"
-          pattern="[0-9]{6}"
-          placeholder="Verification code"
-          required
-        >
+    <input
+      type="text"
+      id="two-factor-code"
+      inputmode="numeric"
+      autocomplete="one-time-code"
+      maxlength="6"
+      pattern="[0-9]{6}"
+      placeholder="Verification code"
+      required
+    >
 
-        <button
-          type="submit"
-          class="btn btn-primary"
-        >
-          Verify
-        </button>
+    <button
+      type="submit"
+      class="btn btn-primary"
+    >
+      Verify
+    </button>
 
-      </form>
+  </form>
 
-      <div
-        id="two-factor-error"
-        class="field-error"
-      ></div>
+  <div
+    id="two-factor-error"
+    class="field-error"
+  ></div>
 
-      <div class="auth-switch">
-        <button
-          type="button"
-          id="two-factor-back"
-          class="btn btn-ghost btn-sm"
-        >
-          Back to login
-        </button>
-      </div>
+  <div class="auth-switch">
+    <button
+      type="button"
+      id="two-factor-back"
+      class="btn btn-ghost btn-sm"
+    >
+      Back to login
+    </button>
+  </div>
 
-    </div>
-  `;
-
+</div>
+`;
 
   const form =
     document.getElementById(
@@ -1188,21 +1113,14 @@ function renderTwoFactor(
       'two-factor-back'
     );
 
-
-  /* ---------------------------------------------------------
-   * Verify 2FA code
-   * --------------------------------------------------------- */
-
   if (form) {
 
     form.onsubmit = async (event) => {
 
       event.preventDefault();
 
-
       const code =
         codeInput?.value.trim() || '';
-
 
       if (!/^\d{6}$/.test(code)) {
 
@@ -1216,12 +1134,10 @@ function renderTwoFactor(
         return;
       }
 
-
       const button =
         form.querySelector(
           'button[type="submit"]'
         );
-
 
       if (button) {
         button.disabled = true;
@@ -1231,7 +1147,6 @@ function renderTwoFactor(
         errorEl.textContent = '';
       }
 
-
       try {
 
         await verifyTwoFactor(
@@ -1240,15 +1155,6 @@ function renderTwoFactor(
           code
         );
 
-
-        /*
-         * Only after successful 2FA verification
-         * does a JWT exist.
-         *
-         * The password is still only in memory and
-         * is immediately used for E2EE identity
-         * restoration/creation.
-         */
         await initializeIdentity(
           password,
           async () => {
@@ -1258,16 +1164,10 @@ function renderTwoFactor(
             ) {
               await onSuccess();
             }
-
           }
         );
 
-
-        /*
-         * Destroy the temporary password reference.
-         */
         pendingVerification = null;
-
 
       } catch (error) {
 
@@ -1276,18 +1176,15 @@ function renderTwoFactor(
           error
         );
 
-
         if (errorEl) {
           errorEl.textContent =
             error?.message ||
             'Two-factor authentication failed';
         }
 
-
         if (button) {
           button.disabled = false;
         }
-
 
         if (codeInput) {
           codeInput.value = '';
@@ -1297,29 +1194,18 @@ function renderTwoFactor(
     };
   }
 
-
-  /* ---------------------------------------------------------
-   * Back to login
-   * --------------------------------------------------------- */
-
   if (backButton) {
 
     backButton.onclick = () => {
 
-      /*
-       * Do not retain the password if the user
-       * abandons the authentication flow.
-       */
       pendingVerification = null;
 
       renderLogin(onSuccess);
     };
   }
 
-
   codeInput?.focus();
 }
-
 
 /* =========================================================
  * Auth UI
@@ -1335,182 +1221,278 @@ function renderAuthCard(
       'login-wrap'
     );
 
-
   if (!wrap) {
-
     console.error(
       'Login container not found'
     );
-
     return;
   }
 
-
   wrap.style.display = 'flex';
-
 
   const isRegister =
     mode === 'register';
 
+  const nativeApp =
+    isNativeApp();
 
   wrap.innerHTML = `
-    <div class="card login-card">
+<div class="card login-card">
 
-      <div class="login-mark">
-        <img
-          src="/img/logo.jpg"
-          alt="Wire"
-        />
-      </div>
+  <div class="login-mark">
+    <img
+      src="/img/logo.jpg"
+      alt="Wire"
+    />
+  </div>
 
-      <h1>
-        ${
-          isRegister
-            ? 'Create your Wire account'
-            : 'Sign in to Wire'
-        }
-      </h1>
+  <h1>
+    ${
+      isRegister
+        ? 'Create your Wire account'
+        : 'Sign in to Wire'
+    }
+  </h1>
 
-      <p class="hint">
-        Your private drive over WireGuard
-      </p>
+  <p class="hint">
+    Your private drive over WireGuard
+  </p>
 
-      <form id="auth-form">
+  <form id="auth-form">
 
-        <input
-          type="text"
-          id="auth-username"
-          placeholder="Username"
-          autocomplete="username"
-          required
-        >
+    <input
+      type="text"
+      id="auth-username"
+      placeholder="Username"
+      autocomplete="username"
+      required
+    >
 
-        ${
-          isRegister
-            ? `
-              <input
-                type="email"
-                id="auth-email"
-                placeholder="Email"
-                autocomplete="email"
-                required
-              >
-            `
-            : ''
-        }
+    ${
+      isRegister
+        ? `
+          <input
+            type="email"
+            id="auth-email"
+            placeholder="Email"
+            autocomplete="email"
+            required
+          >
+        `
+        : ''
+    }
 
-        <input
-          type="password"
-          id="auth-password"
-          placeholder="Password"
-          autocomplete="${
-            isRegister
-              ? 'new-password'
-              : 'current-password'
-          }"
-          required
-        >
+    <input
+      type="password"
+      id="auth-password"
+      placeholder="Password"
+      autocomplete="${
+        isRegister
+          ? 'new-password'
+          : 'current-password'
+      }"
+      required
+    >
 
-        ${
-          isRegister
-            ? `
-              <input
-                type="password"
-                id="auth-password-confirm"
-                placeholder="Confirm password"
-                autocomplete="new-password"
-                required
-              >
-            `
-            : ''
-        }
+    ${
+      isRegister
+        ? `
+          <input
+            type="password"
+            id="auth-password-confirm"
+            placeholder="Confirm password"
+            autocomplete="new-password"
+            required
+          >
+        `
+        : ''
+    }
 
-        ${
-          !isRegister
-            ? `
-              <label class="auth-remember-me">
-                <input
-                  type="checkbox"
-                  id="auth-remember-me"
-                >
-                Remember me on this device
-              </label>
-            `
-            : ''
-        }
+    ${
+      !isRegister
+        ? `
+          <label class="auth-remember-me">
+            <input
+              type="checkbox"
+              id="auth-remember-me"
+            >
+            Remember me on this device
+          </label>
+        `
+        : ''
+    }
 
-        <button
-          type="submit"
-          class="btn btn-primary"
-        >
-          ${
-            isRegister
-              ? 'Create account'
-              : 'Sign in'
-          }
-        </button>
-
-      </form>
-
-      <div
-        id="auth-error"
-        class="field-error"
-      ></div>
-
-      <div class="auth-switch">
-
-        ${
-          isRegister
-            ? `
-              Already have an account?
-
-              <button
-                type="button"
-                id="switch-auth"
-                class="btn btn-ghost btn-sm"
-                style="margin-left:4px;"
-              >
-                Sign in
-              </button>
-            `
-            : `
-              Don't have an account?
-
-              <button
-                type="button"
-                id="switch-auth"
-                class="btn btn-ghost btn-sm"
-                style="margin-left:4px;"
-              >
-                Create account
-              </button>
-            `
-        }
-
-      </div>
-
+    <button
+      type="submit"
+      class="btn btn-primary"
+    >
       ${
-        !isRegister && isElectron()
-          ? `
-            <div class="auth-server-row" id="auth-server-row">
-              <span>Server:</span>
-              <span class="auth-server-value">${
-                escapeHtml(window.location.host)
-              }</span>
+        isRegister
+          ? 'Create account'
+          : 'Sign in'
+      }
+    </button>
+
+  </form>
+
+  <div
+    id="auth-error"
+    class="field-error"
+  ></div>
+
+  <div class="auth-switch">
+
+    ${
+      isRegister
+        ? `
+          Already have an account?
+
+          <button
+            type="button"
+            id="switch-auth"
+            class="btn btn-ghost btn-sm"
+            style="margin-left:4px;"
+          >
+            Sign in
+          </button>
+        `
+        : `
+          Don't have an account?
+
+          <button
+            type="button"
+            id="switch-auth"
+            class="btn btn-ghost btn-sm"
+            style="margin-left:4px;"
+          >
+            Create account
+          </button>
+        `
+    }
+
+  </div>
+
+  ${
+    nativeApp
+      ? `
+        <div
+          class="auth-server-row"
+          id="auth-server-row"
+          style="
+            margin-top:16px;
+            display:flex;
+            flex-direction:column;
+            gap:8px;
+          "
+        >
+
+          <div
+            style="
+              display:flex;
+              align-items:center;
+              justify-content:space-between;
+              gap:10px;
+            "
+          >
+            <span>Server</span>
+
+            <button
+              type="button"
+              id="auth-server-change"
+              class="auth-server-change-btn"
+            >
+              Change
+            </button>
+          </div>
+
+          <span
+            class="auth-server-value"
+            id="auth-server-value"
+            style="
+              overflow:hidden;
+              text-overflow:ellipsis;
+              white-space:nowrap;
+              opacity:.75;
+              font-size:.9em;
+            "
+          >${escapeHtml(getServerEndpoint())}</span>
+
+          <div
+            id="auth-server-editor"
+            style="display:none;"
+          >
+            <input
+              type="text"
+              id="auth-server-input"
+              placeholder="https://example.com"
+              autocomplete="url"
+              autocapitalize="none"
+              spellcheck="false"
+              value="${escapeHtml(getServerEndpoint())}"
+            >
+
+            <div
+              style="
+                display:flex;
+                gap:8px;
+                margin-top:8px;
+              "
+            >
               <button
                 type="button"
-                id="auth-server-change"
-                class="auth-server-change-btn">
-                Change
+                id="auth-server-connect"
+                class="btn btn-primary"
+                style="flex:1;"
+              >
+                Connect
+              </button>
+
+              <button
+                type="button"
+                id="auth-server-cancel"
+                class="btn btn-ghost"
+                style="flex:1;"
+              >
+                Cancel
               </button>
             </div>
-          `
-          : ''
-      }
 
-    </div>
-  `;
+            <div
+              id="auth-server-error"
+              class="field-error"
+              style="margin-top:8px;"
+            ></div>
+          </div>
 
+        </div>
+      `
+      : ''
+  }
+
+  ${
+    !isRegister && isElectron()
+      ? `
+        <div class="auth-server-row" id="auth-server-row">
+          <span>Server:</span>
+
+          <span class="auth-server-value">
+            ${escapeHtml(window.location.host)}
+          </span>
+
+          <button
+            type="button"
+            id="auth-server-change"
+            class="auth-server-change-btn"
+          >
+            Change
+          </button>
+        </div>
+      `
+      : ''
+  }
+
+</div>
+`;
 
   const form =
     document.getElementById(
@@ -1522,11 +1504,6 @@ function renderAuthCard(
       'switch-auth'
     );
 
-
-  /* ---------------------------------------------------------
-   * Login / register switch
-   * --------------------------------------------------------- */
-
   if (switchButton) {
 
     switchButton.onclick = () => {
@@ -1536,35 +1513,121 @@ function renderAuthCard(
       } else {
         renderRegister(onSuccess);
       }
-
     };
   }
-
 
   /* ---------------------------------------------------------
-   * Server (Electron only, login screen only — see the
-   * conditional block above). Hands off to the existing
-   * "Connect to Server" screen (renderer/connect.html) rather
-   * than reimplementing address entry/validation here.
+   * Native Android server selector
    * --------------------------------------------------------- */
 
-  const serverChangeButton =
-    document.getElementById(
-      'auth-server-change'
-    );
+  if (nativeApp) {
 
-  if (serverChangeButton) {
+    const changeButton =
+      document.getElementById(
+        'auth-server-change'
+      );
 
-    serverChangeButton.onclick = () => {
-      window.electronAPI.showConnectScreen();
-    };
+    const editor =
+      document.getElementById(
+        'auth-server-editor'
+      );
+
+    const input =
+      document.getElementById(
+        'auth-server-input'
+      );
+
+    const connectButton =
+      document.getElementById(
+        'auth-server-connect'
+      );
+
+    const cancelButton =
+      document.getElementById(
+        'auth-server-cancel'
+      );
+
+    const errorEl =
+      document.getElementById(
+        'auth-server-error'
+      );
+
+    if (changeButton) {
+
+      changeButton.onclick = () => {
+
+        if (editor) {
+          editor.style.display = 'block';
+        }
+
+        if (changeButton) {
+          changeButton.style.display = 'none';
+        }
+
+        input?.focus();
+        input?.select();
+      };
+    }
+
+    if (cancelButton) {
+
+      cancelButton.onclick = () => {
+
+        if (editor) {
+          editor.style.display = 'none';
+        }
+
+        if (changeButton) {
+          changeButton.style.display = '';
+        }
+
+        if (input) {
+          input.value =
+            getServerEndpoint();
+        }
+
+        if (errorEl) {
+          errorEl.textContent = '';
+        }
+      };
+    }
+
+    if (connectButton) {
+
+      connectButton.onclick = async () => {
+
+        if (errorEl) {
+          errorEl.textContent = '';
+        }
+
+        if (input) {
+          input.disabled = true;
+        }
+
+        connectButton.disabled = true;
+
+        try {
+
+          await changeNativeServer(
+            input?.value || '',
+            errorEl
+          );
+
+        } catch {
+
+          if (input) {
+            input.disabled = false;
+          }
+
+          connectButton.disabled = false;
+        }
+      };
+    }
   }
-
 
   if (!form) {
     return;
   }
-
 
   /* ---------------------------------------------------------
    * Submit
@@ -1573,7 +1636,6 @@ function renderAuthCard(
   form.onsubmit = async (event) => {
 
     event.preventDefault();
-
 
     const usernameInput =
       document.getElementById(
@@ -1605,7 +1667,6 @@ function renderAuthCard(
         'auth-error'
       );
 
-
     const username =
       usernameInput?.value || '';
 
@@ -1618,7 +1679,6 @@ function renderAuthCard(
     const confirmPassword =
       confirmInput?.value || '';
 
-
     if (button) {
       button.disabled = true;
     }
@@ -1626,7 +1686,6 @@ function renderAuthCard(
     if (errorEl) {
       errorEl.textContent = '';
     }
-
 
     try {
 
@@ -1644,15 +1703,6 @@ function renderAuthCard(
           );
         }
 
-
-        /*
-         * When email is enabled, this creates the account and
-         * sends the verification code (no JWT is returned yet).
-         *
-         * When email is disabled, the server has no verification
-         * mechanism, so the account comes back already usable
-         * with a normal JWT.
-         */
         const registerData =
           await register(
             username,
@@ -1660,14 +1710,10 @@ function renderAuthCard(
             password
           );
 
-
         if (
           registerData.requiresEmailVerification === true
         ) {
 
-          /*
-           * Move directly to verification.
-           */
           renderVerification(
             pendingVerification,
             onSuccess
@@ -1676,11 +1722,6 @@ function renderAuthCard(
           return;
         }
 
-
-        /*
-         * Email is disabled: proceed straight to identity
-         * initialization, exactly like a normal login.
-         */
         await initializeIdentity(
           password,
           async () => {
@@ -1690,7 +1731,6 @@ function renderAuthCard(
             ) {
               await onSuccess();
             }
-
           }
         );
 
@@ -1705,7 +1745,6 @@ function renderAuthCard(
         return;
       }
 
-
       /* -----------------------------------------------------
        * Login
        * ----------------------------------------------------- */
@@ -1716,11 +1755,6 @@ function renderAuthCard(
           password
         );
 
-
-      /*
-       * Existing account with an email that has not
-       * been verified yet.
-       */
       if (
         data.email &&
         !data.email_verified
@@ -1733,24 +1767,16 @@ function renderAuthCard(
           password
         };
 
-
-        /*
-         * Do not keep the normal JWT while waiting
-         * for email verification.
-         */
         setToken(null);
         currentUser = null;
-
 
         renderVerification(
           pendingVerification,
           onSuccess
         );
 
-
         return;
       }
-
 
       /* -----------------------------------------------------
        * Email 2FA
@@ -1760,10 +1786,6 @@ function renderAuthCard(
         data.requiresTwoFactor === true
       ) {
 
-        /*
-         * The password is retained only in memory
-         * until the OTP is successfully verified.
-         */
         pendingVerification = {
           userId: data.id,
           username: data.username,
@@ -1771,14 +1793,8 @@ function renderAuthCard(
           password
         };
 
-
-        /*
-         * There should be no authentication token
-         * before successful 2FA verification.
-         */
         setToken(null);
         currentUser = null;
-
 
         renderTwoFactor(
           data,
@@ -1786,10 +1802,8 @@ function renderAuthCard(
           onSuccess
         );
 
-
         return;
       }
-
 
       /* -----------------------------------------------------
        * Identity initialization
@@ -1809,7 +1823,6 @@ function renderAuthCard(
           ) {
             await onSuccess();
           }
-
         },
         {
           rememberMe: Boolean(
@@ -1818,11 +1831,6 @@ function renderAuthCard(
         }
       );
 
-
-      /*
-       * Remove credentials from the DOM after
-       * successful initialization.
-       */
       if (passwordInput) {
         passwordInput.value = '';
       }
@@ -1840,7 +1848,6 @@ function renderAuthCard(
         error
       );
 
-
       if (errorEl) {
 
         errorEl.textContent =
@@ -1852,16 +1859,10 @@ function renderAuthCard(
           );
       }
 
-
       if (button) {
         button.disabled = false;
       }
 
-
-      /*
-       * Never leave passwords in the DOM after
-       * a failed operation.
-       */
       if (passwordInput) {
         passwordInput.value = '';
       }
@@ -1870,19 +1871,16 @@ function renderAuthCard(
         confirmInput.value = '';
       }
 
-
       passwordInput?.focus();
     }
   };
 }
-
 
 /* =========================================================
  * HTML escaping
  * ========================================================= */
 
 function escapeHtml(value) {
-
   return String(value ?? '')
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
@@ -1891,7 +1889,6 @@ function escapeHtml(value) {
     .replaceAll("'", '&#039;');
 }
 
-
 /* =========================================================
  * Login UI
  * ========================================================= */
@@ -1899,30 +1896,14 @@ function escapeHtml(value) {
 export function renderLogin(
   onSuccess = null
 ) {
-
   renderAuthCard(
     'login',
     onSuccess
   );
 }
 
-
 /* =========================================================
  * Unlock UI
- *
- * Used when a valid account session already exists (a
- * verified token + /api/me succeeded) but the E2EE identity
- * key is not currently unlocked in memory - e.g. right after
- * a full app restart, since the password is intentionally
- * never persisted anywhere.
- *
- * This is NOT a login form: it never touches
- * /api/auth/login, never requests a username, and never
- * issues or replaces the auth token. It only collects the
- * password needed to unlock (or, on first run for this
- * account, create) the local encrypted identity, via the
- * exact same initializeIdentity() path renderAuthCard()
- * already uses after a real login.
  * ========================================================= */
 
 export function renderUnlock(
@@ -1935,7 +1916,6 @@ export function renderUnlock(
       'login-wrap'
     );
 
-
   if (!wrap) {
 
     console.error(
@@ -1945,74 +1925,174 @@ export function renderUnlock(
     return;
   }
 
-
   wrap.style.display = 'flex';
 
+  const nativeApp =
+    isNativeApp();
 
   wrap.innerHTML = `
-    <div class="card login-card">
+<div class="card login-card">
 
-      <div class="login-mark">
-        <img
-          src="/img/logo.jpg"
-          alt="Wire"
-        />
-      </div>
+  <div class="login-mark">
+    <img
+      src="/img/logo.jpg"
+      alt="Wire"
+    />
+  </div>
 
-      <h1>
-        Welcome back, ${escapeHtml(user?.username || '')}
-      </h1>
+  <h1>
+    Welcome back, ${escapeHtml(user?.username || '')}
+  </h1>
 
-      <p class="hint">
-        Enter your password to unlock your encrypted messages
-        on this device.
-      </p>
+  <p class="hint">
+    Enter your password to unlock your encrypted messages
+    on this device.
+  </p>
 
-      <form id="unlock-form">
+  <form id="unlock-form">
 
-        <input
-          type="password"
-          id="unlock-password"
-          placeholder="Password"
-          autocomplete="current-password"
-          required
+    <input
+      type="password"
+      id="unlock-password"
+      placeholder="Password"
+      autocomplete="current-password"
+      required
+    >
+
+    <label class="auth-remember-me">
+      <input
+        type="checkbox"
+        id="unlock-remember-me"
+      >
+      Remember me on this device
+    </label>
+
+    <button
+      type="submit"
+      class="btn btn-primary"
+    >
+      Unlock
+    </button>
+
+  </form>
+
+  <div
+    id="unlock-error"
+    class="field-error"
+  ></div>
+
+  <div class="auth-switch">
+    <button
+      type="button"
+      id="unlock-sign-out"
+      class="btn btn-ghost btn-sm"
+    >
+      Not you? Sign out
+    </button>
+  </div>
+
+  ${
+    nativeApp
+      ? `
+        <div
+          class="auth-server-row"
+          id="unlock-server-row"
+          style="
+            margin-top:16px;
+            display:flex;
+            flex-direction:column;
+            gap:8px;
+          "
         >
 
-        <label class="auth-remember-me">
-          <input
-            type="checkbox"
-            id="unlock-remember-me"
+          <div
+            style="
+              display:flex;
+              align-items:center;
+              justify-content:space-between;
+              gap:10px;
+            "
           >
-          Remember me on this device
-        </label>
+            <span>Server</span>
 
-        <button
-          type="submit"
-          class="btn btn-primary"
-        >
-          Unlock
-        </button>
+            <button
+              type="button"
+              id="unlock-server-change"
+              class="auth-server-change-btn"
+            >
+              Change
+            </button>
+          </div>
 
-      </form>
+          <span
+            id="unlock-server-value"
+            style="
+              overflow:hidden;
+              text-overflow:ellipsis;
+              white-space:nowrap;
+              opacity:.75;
+              font-size:.9em;
+            "
+          >${escapeHtml(getServerEndpoint())}</span>
 
-      <div
-        id="unlock-error"
-        class="field-error"
-      ></div>
+          <div
+            id="unlock-server-editor"
+            style="display:none;"
+          >
 
-      <div class="auth-switch">
-        <button
-          type="button"
-          id="unlock-sign-out"
-          class="btn btn-ghost btn-sm"
-        >
-          Not you? Sign out
-        </button>
-      </div>
+            <input
+              type="text"
+              id="unlock-server-input"
+              placeholder="https://example.com"
+              autocomplete="url"
+              autocapitalize="none"
+              spellcheck="false"
+              value="${escapeHtml(getServerEndpoint())}"
+            >
 
-    </div>
-  `;
+            <div
+              style="
+                display:flex;
+                gap:8px;
+                margin-top:8px;
+              "
+            >
 
+              <button
+                type="button"
+                id="unlock-server-connect"
+                class="btn btn-primary"
+                style="flex:1;"
+              >
+                Connect
+              </button>
+
+              <button
+                type="button"
+                id="unlock-server-cancel"
+                class="btn btn-ghost"
+                style="flex:1;"
+              >
+                Cancel
+              </button>
+
+            </div>
+
+            <div
+              id="unlock-server-error"
+              class="field-error"
+              style="margin-top:8px;"
+            ></div>
+
+          </div>
+
+        </div>
+      `
+      : ''
+  }
+
+</div>
+`;
 
   const form =
     document.getElementById(
@@ -2034,6 +2114,110 @@ export function renderUnlock(
       'unlock-sign-out'
     );
 
+  /* ---------------------------------------------------------
+   * Native Android server selector
+   * --------------------------------------------------------- */
+
+  if (nativeApp) {
+
+    const changeButton =
+      document.getElementById(
+        'unlock-server-change'
+      );
+
+    const editor =
+      document.getElementById(
+        'unlock-server-editor'
+      );
+
+    const input =
+      document.getElementById(
+        'unlock-server-input'
+      );
+
+    const connectButton =
+      document.getElementById(
+        'unlock-server-connect'
+      );
+
+    const cancelButton =
+      document.getElementById(
+        'unlock-server-cancel'
+      );
+
+    const serverError =
+      document.getElementById(
+        'unlock-server-error'
+      );
+
+    if (changeButton) {
+
+      changeButton.onclick = () => {
+
+        if (editor) {
+          editor.style.display = 'block';
+        }
+
+        changeButton.style.display = 'none';
+
+        input?.focus();
+        input?.select();
+      };
+    }
+
+    if (cancelButton) {
+
+      cancelButton.onclick = () => {
+
+        if (editor) {
+          editor.style.display = 'none';
+        }
+
+        changeButton.style.display = '';
+
+        if (input) {
+          input.value =
+            getServerEndpoint();
+        }
+
+        if (serverError) {
+          serverError.textContent = '';
+        }
+      };
+    }
+
+    if (connectButton) {
+
+      connectButton.onclick = async () => {
+
+        if (serverError) {
+          serverError.textContent = '';
+        }
+
+        if (input) {
+          input.disabled = true;
+        }
+
+        connectButton.disabled = true;
+
+        try {
+
+          await changeNativeServer(
+            input?.value || '',
+            serverError
+          );
+
+        } catch {
+
+          if (input) {
+            input.disabled = false;
+          }
+
+          connectButton.disabled = false;
+        }
+      };
+    }
+  }
 
   if (form) {
 
@@ -2041,10 +2225,8 @@ export function renderUnlock(
 
       event.preventDefault();
 
-
       const password =
         passwordInput?.value || '';
-
 
       if (!password) {
 
@@ -2056,12 +2238,10 @@ export function renderUnlock(
         return;
       }
 
-
       const button =
         form.querySelector(
           'button[type="submit"]'
         );
-
 
       if (button) {
         button.disabled = true;
@@ -2071,17 +2251,8 @@ export function renderUnlock(
         errorEl.textContent = '';
       }
 
-
       try {
 
-        /*
-         * The account is already authenticated - a valid
-         * token exists and the server has already confirmed
-         * the current user via /api/me. This call only
-         * unlocks (or creates) the local E2EE identity; it
-         * does not call /api/auth/login and does not touch
-         * the account session at all.
-         */
         const rememberMeInput =
           document.getElementById(
             'unlock-remember-me'
@@ -2104,18 +2275,15 @@ export function renderUnlock(
           error
         );
 
-
         if (errorEl) {
           errorEl.textContent =
             error?.message ||
             'Incorrect password';
         }
 
-
         if (button) {
           button.disabled = false;
         }
-
 
         if (passwordInput) {
           passwordInput.value = '';
@@ -2125,28 +2293,18 @@ export function renderUnlock(
     };
   }
 
-
   if (signOutButton) {
 
     signOutButton.onclick = () => {
 
-      /*
-       * The person at the keyboard isn't the signed-in
-       * user (or doesn't remember the password) - a real
-       * logout is the correct, explicit way out of this
-       * screen. This clears the token, so the next launch
-       * goes through the normal login flow again.
-       */
       logout();
 
       renderLogin(onSuccess);
     };
   }
 
-
   passwordInput?.focus();
 }
-
 
 /* =========================================================
  * Register UI
@@ -2155,7 +2313,6 @@ export function renderUnlock(
 export function renderRegister(
   onSuccess = null
 ) {
-
   renderAuthCard(
     'register',
     onSuccess

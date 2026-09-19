@@ -1,4 +1,5 @@
 import { getToken } from '../core/auth.js';
+import { resolveServerUrl } from '../core/server.js';
 
 
 export function progressBarHtml(id) {
@@ -68,7 +69,10 @@ export function xhrUpload(url, formData, onProgress) {
 
     xhr = new XMLHttpRequest();
 
-    xhr.open('POST', url);
+    xhr.open(
+      'POST',
+      resolveServerUrl(url)
+    );
 
     // 5 minutes timeout
     xhr.timeout = 300000;

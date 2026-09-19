@@ -1,6 +1,18 @@
+import { io } from '../vendor/socket.io-client.js';
+
 import { getCurrentUser, getToken } from './auth.js';
 
-import { addChatMessage, removeChatMessage, showChatTyping, hideChatTyping, clearAllChatTyping } from '../chat/chat.js';
+import {
+  getServerEndpoint
+} from './server.js';
+
+import {
+  addChatMessage,
+  removeChatMessage,
+  showChatTyping,
+  hideChatTyping,
+  clearAllChatTyping
+} from '../chat/chat.js';
 
 import {
   addDmMessage,
@@ -13,54 +25,83 @@ import {
   clearAllDmTyping,
 } from '../chat/dm.js';
 
-import { setOnlineSnapshot, setUserOnline, setUserOffline } from '../chat/presence.js';
+import {
+  setOnlineSnapshot,
+  setUserOnline,
+  setUserOffline
+} from '../chat/presence.js';
+
 import { updateMessageReactions } from '../chat/reactions.js';
-import { refreshAvatarEverywhere, refreshBannerEverywhere } from '../ui/avatar.js';
+
+import {
+  refreshAvatarEverywhere,
+  refreshBannerEverywhere
+} from '../ui/avatar.js';
 
 let socket = null;
 
+function socketLog(...args) {
+  console.log('[Wire][Socket]', ...args);
+}
+
+function socketWarn(...args) {
+  console.warn('[Wire][Socket]', ...args);
+}
+
+function socketError(...args) {
+  console.error('[Wire][Socket]', ...args);
+}
+
 export function initSocket(token) {
-  // Socket.IO is a singleton in this app. Never create a second Manager/
-  // connection if initialization is requested again during app startup or
-  // after a view/router lifecycle event.
+  // Socket.IO is a singleton in this app. Never create a second
+  // Manager/connection if initialization is requested again.
   if (socket) {
+    socketLog('Already initialized:', {
+      connected: socket.connected,
+      active: socket.active,
+      id: socket.id || null,
+    });
+
     return socket;
   }
 
-  // The auth module is the source of truth. The argument is kept for
-  // backwards compatibility with the existing initSocket(token) call, but
-  // reconnections must read the current token so a refreshed/replaced token
-  // is never stuck behind a stale closure value.
   const initialToken = getToken() || token;
 
   if (!initialToken) {
-    console.warn('Socket not initialized: no authentication token.');
+    socketWarn('Socket not initialized: no authentication token.');
     return null;
   }
 
-  socket = io({
-    // Do not connect until every handler below has been registered. This
-    // removes a small startup race where autoConnect could fail before our
-    // diagnostics/cleanup handlers were attached.
+  const serverEndpoint = getServerEndpoint();
+
+  socketLog('Initializing...');
+  socketLog('Endpoint:', serverEndpoint);
+  socketLog('Initial token available:', Boolean(initialToken));
+
+  socket = io(serverEndpoint, {
+    // Register every handler before connecting.
     autoConnect: false,
 
-    // Socket.IO calls this for every new connection attempt, including
-    // reconnects. Always provide the newest token from auth.js/localStorage.
+    // Always use the newest token for new connections/reconnections.
     auth: (cb) => {
-      const currentToken = getToken() || localStorage.getItem('token');
-      cb({ token: currentToken || null });
+      const currentToken =
+        getToken() || localStorage.getItem('token');
+
+      socketLog(
+        'Providing auth token:',
+        Boolean(currentToken)
+      );
+
+      cb({
+        token: currentToken || null
+      });
     },
 
-    // WebSocket is preferred, while polling remains a fallback for networks
-    // that temporarily cannot establish a WebSocket transport.
+    // Prefer WebSocket, fall back to polling.
     transports: ['websocket', 'polling'],
 
-    // A dead/unreachable upstream should fail quickly enough for the
-    // reconnect loop to recover instead of leaving the UI waiting forever.
     timeout: 10000,
 
-    // Back off between reconnect attempts so a temporary Caddy/upstream
-    // failure cannot create a tight reconnect storm.
     reconnection: true,
     reconnectionAttempts: Infinity,
     reconnectionDelay: 1000,
@@ -69,86 +110,214 @@ export function initSocket(token) {
   });
 
   socket.on('connect', () => {
-    console.log(`Socket connected (${socket.id}) via ${socket.io.engine.transport.name}`);
+    socketLog('CONNECTED', {
+      id: socket.id,
+      transport:
+        socket.io?.engine?.transport?.name || null,
+      endpoint: serverEndpoint,
+    });
   });
 
   socket.on('disconnect', (reason, details) => {
-    console.warn('Socket disconnected:', reason, details || '');
+    socketWarn(
+      'DISCONNECTED:',
+      reason,
+      details || null
+    );
 
-    // Without this, a typing indicator could stay stuck on screen
-    // for the whole reconnect gap if the 'stop-typing' event that
-    // would have cleared it never made it through.
     clearAllChatTyping();
     clearAllDmTyping();
 
-    // We no longer have live presence data while disconnected —
-    // showing stale "online" dots would be misleading. A fresh
-    // 'presence:snapshot' arrives automatically once reconnected.
     setOnlineSnapshot([]);
   });
 
   socket.on('connect_error', (err) => {
-    // Never log the JWT. Socket.IO errors can include request/transport
-    // details, so keep diagnostics useful without exposing credentials.
-    console.warn('Socket connection failed:', err.message, {
-      description: err.description,
-      context: err.context,
-      active: socket.active,
-      transport: socket.io?.engine?.transport?.name || null,
+    socketError('CONNECT ERROR:', {
+      message: err?.message || null,
+      description: err?.description || null,
+      context: err?.context || null,
+      active: socket?.active ?? null,
+      connected: socket?.connected ?? null,
+      transport:
+        socket?.io?.engine?.transport?.name || null,
+      endpoint: serverEndpoint,
     });
   });
 
   socket.io.on('reconnect_attempt', (attempt) => {
-    console.log(`Socket reconnect attempt #${attempt}`);
+    socketLog('RECONNECT ATTEMPT:', attempt);
   });
 
   socket.io.on('reconnect', (attempt) => {
-    console.log(`Socket reconnected after ${attempt} attempt(s)`);
+    socketLog(
+      'RECONNECTED after attempt:',
+      attempt,
+      {
+        id: socket.id,
+        transport:
+          socket.io?.engine?.transport?.name || null,
+      }
+    );
   });
 
   socket.io.on('reconnect_error', (err) => {
-    console.warn('Socket reconnect failed:', err.message);
+    socketWarn(
+      'RECONNECT ERROR:',
+      err?.message || err
+    );
   });
 
   socket.io.on('reconnect_failed', () => {
-    console.error('Socket reconnect failed permanently.');
+    socketError('RECONNECT FAILED PERMANENTLY.');
   });
 
-  socket.on('new-chat-message', handleChatMessage);
-
-  socket.on('new-dm-message', handleDirectMessage);
-
-  socket.on('chat-message-deleted', handleChatMessageDeleted);
-
-  socket.on('dm-message-deleted', handleDirectMessageDeleted);
-
-  socket.on('chat:typing', handleChatTyping);
-
-  socket.on('chat:stop-typing', handleChatStopTyping);
-
-  socket.on('dm:typing', handleDmTyping);
-
-  socket.on('dm:stop-typing', handleDmStopTyping);
-
-  socket.on('presence:snapshot', ({ online_user_ids }) => setOnlineSnapshot(online_user_ids || []));
-
-  socket.on('presence:online', ({ user_id }) => setUserOnline(user_id));
-
-  socket.on('presence:offline', ({ user_id }) => setUserOffline(user_id));
-
-  socket.on('chat-reaction-update', ({ message_id, reactions }) => {
-    updateMessageReactions('chat', message_id, reactions);
+  socket.io.on('open', () => {
+    socketLog('ENGINE OPEN:', {
+      transport:
+        socket.io?.engine?.transport?.name || null,
+    });
   });
 
-  socket.on('dm-reaction-update', ({ message_id, reactions }) => {
-    updateMessageReactions('dm', message_id, reactions);
+  socket.io.on('close', (reason) => {
+    socketWarn('ENGINE CLOSED:', reason);
   });
 
-  socket.on('profile:avatar-updated', handleProfileAvatarUpdated);
+  socket.io.on('error', (error) => {
+    socketError('ENGINE ERROR:', error);
+  });
 
-  socket.on('profile:banner-updated', handleProfileBannerUpdated);
+  socket.io.engine?.on?.('upgrade', () => {
+    socketLog('TRANSPORT UPGRADED:', {
+      transport:
+        socket.io?.engine?.transport?.name || null,
+    });
+  });
 
-  // All handlers are now attached, so start the first connection.
+  // Chat events
+  socket.on(
+    'new-chat-message',
+    handleChatMessage
+  );
+
+  socket.on(
+    'chat-message-deleted',
+    handleChatMessageDeleted
+  );
+
+  socket.on(
+    'chat:typing',
+    handleChatTyping
+  );
+
+  socket.on(
+    'chat:stop-typing',
+    handleChatStopTyping
+  );
+
+  // DM events
+  socket.on(
+    'new-dm-message',
+    handleDirectMessage
+  );
+
+  socket.on(
+    'dm-message-deleted',
+    handleDirectMessageDeleted
+  );
+
+  socket.on(
+    'dm:typing',
+    handleDmTyping
+  );
+
+  socket.on(
+    'dm:stop-typing',
+    handleDmStopTyping
+  );
+
+  // Presence
+  socket.on(
+    'presence:snapshot',
+    ({ online_user_ids } = {}) => {
+      const ids = Array.isArray(online_user_ids)
+        ? online_user_ids
+        : [];
+
+      socketLog(
+        'PRESENCE SNAPSHOT:',
+        ids
+      );
+
+      setOnlineSnapshot(ids);
+    }
+  );
+
+  socket.on(
+    'presence:online',
+    ({ user_id } = {}) => {
+      socketLog(
+        'PRESENCE ONLINE:',
+        user_id
+      );
+
+      if (user_id != null) {
+        setUserOnline(user_id);
+      }
+    }
+  );
+
+  socket.on(
+    'presence:offline',
+    ({ user_id } = {}) => {
+      socketLog(
+        'PRESENCE OFFLINE:',
+        user_id
+      );
+
+      if (user_id != null) {
+        setUserOffline(user_id);
+      }
+    }
+  );
+
+  // Reactions
+  socket.on(
+    'chat-reaction-update',
+    ({ message_id, reactions }) => {
+      updateMessageReactions(
+        'chat',
+        message_id,
+        reactions
+      );
+    }
+  );
+
+  socket.on(
+    'dm-reaction-update',
+    ({ message_id, reactions }) => {
+      updateMessageReactions(
+        'dm',
+        message_id,
+        reactions
+      );
+    }
+  );
+
+  // Profile updates
+  socket.on(
+    'profile:avatar-updated',
+    handleProfileAvatarUpdated
+  );
+
+  socket.on(
+    'profile:banner-updated',
+    handleProfileBannerUpdated
+  );
+
+  socketLog(
+    'Handlers registered. Connecting...'
+  );
+
   socket.connect();
 
   return socket;
@@ -159,7 +328,8 @@ export function getSocket() {
 }
 
 function handleChatMessage(message) {
-  const container = document.getElementById('chat-messages');
+  const container =
+    document.getElementById('chat-messages');
 
   if (!container) {
     return;
@@ -167,26 +337,21 @@ function handleChatMessage(message) {
 
   addChatMessage(message);
 
-  const input = document.getElementById('chat-input');
+  const input =
+    document.getElementById('chat-input');
 
-  if (input && message.user_id === getCurrentUser()?.id) {
+  if (
+    input &&
+    message.user_id === getCurrentUser()?.id
+  ) {
     input.value = '';
   }
 }
 
 function handleDirectMessage(message) {
   const currentUser = getCurrentUser();
-
-  // addDmMessage() now always updates that peer's conversation
-  // cache (if one exists from earlier this session) regardless of
-  // which thread is on screen, and only touches the DOM when the
-  // message's conversation happens to be the currently-open one —
-  // so it's called unconditionally rather than gated on an
-  // isRelevant check here. This is what lets a conversation that
-  // isn't currently open still stay caught up while the user is
-  // looking at a different thread, instead of needing a full
-  // refetch the next time it's reopened.
   const activePeer = getDmActivePeer();
+
   const isRelevant =
     activePeer &&
     (
@@ -200,14 +365,20 @@ function handleDirectMessage(message) {
     document.getElementById('dm-messages') &&
     isRelevant
   ) {
-    const input = document.getElementById('dm-input');
+    const input =
+      document.getElementById('dm-input');
 
-    if (input && message.sender_id === currentUser?.id) {
+    if (
+      input &&
+      message.sender_id === currentUser?.id
+    ) {
       input.value = '';
     }
   }
 
-  if (document.getElementById('dm-conv-list')) {
+  if (
+    document.getElementById('dm-conv-list')
+  ) {
     loadDmConversations();
   }
 
@@ -221,49 +392,62 @@ function handleChatMessageDeleted({ id }) {
 function handleDirectMessageDeleted({ id }) {
   removeDmMessage(id);
 
-  if (document.getElementById('dm-conv-list')) {
+  if (
+    document.getElementById('dm-conv-list')
+  ) {
     loadDmConversations();
   }
 
   refreshUnreadBadge();
 }
 
-function handleChatTyping({ user_id, username }) {
-  // The server already excludes the sender's own socket via
-  // socket.to(), but a user connected from two tabs would otherwise
-  // see their own "is typing" from their other tab — skip that too.
-  if (user_id === getCurrentUser()?.id) return;
-  showChatTyping(user_id, username);
+function handleChatTyping({
+  user_id,
+  username
+}) {
+  // The server excludes the sender's own socket.
+  // This also prevents another tab of the same account
+  // from displaying its own typing indicator.
+  if (
+    user_id === getCurrentUser()?.id
+  ) {
+    return;
+  }
+
+  showChatTyping(
+    user_id,
+    username
+  );
 }
 
 function handleChatStopTyping({ user_id }) {
   hideChatTyping(user_id);
 }
 
-function handleDmTyping({ sender_id, sender_username }) {
-  showDmTyping(sender_id, sender_username);
+function handleDmTyping({
+  sender_id,
+  sender_username
+}) {
+  showDmTyping(
+    sender_id,
+    sender_username
+  );
 }
 
-function handleDmStopTyping({ sender_id }) {
+function handleDmStopTyping({
+  sender_id
+}) {
   hideDmTyping(sender_id);
 }
 
-// The server broadcasts these to every connected client (see
-// services/socket.service.js), including every socket the uploading
-// user themselves has open. That last part is intentional, not just
-// tolerated: settings.js's own refreshAvatarEverywhere() call after a
-// successful upload only ever reaches the tab that made the request -
-// if that same account is also open in a second tab/device (or just
-// has the DM list / a profile card showing their own avatar open
-// elsewhere), nothing local updates that view. Re-running the refresh
-// unconditionally here is what actually covers those cases; the one
-// downside is a single harmless extra fetch in the originating tab
-// (invalidateAvatar()/invalidateBanner() + a re-fetch of something
-// already fresh), which is cheap and one-shot, not a repeating cost.
-function handleProfileAvatarUpdated({ user_id }) {
+function handleProfileAvatarUpdated({
+  user_id
+}) {
   refreshAvatarEverywhere(user_id);
 }
 
-function handleProfileBannerUpdated({ user_id }) {
+function handleProfileBannerUpdated({
+  user_id
+}) {
   refreshBannerEverywhere(user_id);
 }

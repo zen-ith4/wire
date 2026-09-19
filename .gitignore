@@ -5,8 +5,10 @@ node_modules/
 electron-client/dist/
 electron-client/node_modules/
 
-
+capacitor.config.json
+android/
 user-data/
+resources/
 
 # Environment / secrets
 .env

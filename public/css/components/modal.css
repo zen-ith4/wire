@@ -1,6 +1,9 @@
 /* ---------- Modal ---------- */
 .modal{display:none;position:fixed;inset:0;background:rgba(var(--scrim-rgb),.72);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);z-index:200;align-items:center;justify-content:center;padding:20px;}
-.modal.active{display:flex;}
+/* Backdrop fade — new, toggle-gated (0ms/no-op when Animations is
+   off, matching the backdrop's previous instant show). The existing
+   .modal-content's own modalIn animation just below is untouched. */
+.modal.active{display:flex;animation:motion-fade-in var(--motion-fast) var(--motion-ease);}
 .modal-content {
   background:rgba(var(--ink2-rgb),.92);
   backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);

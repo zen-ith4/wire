@@ -103,6 +103,7 @@ const AMBIENT_STORAGE_KEY = 'wire-ambient-level';
 const THEME_STORAGE_KEY = 'wire-theme';
 const BUBBLE_ACCENT_STORAGE_KEY = 'wire-bubble-accent';
 const BACKGROUND_STORAGE_KEY = 'wire-background-theme';
+const ANIMATIONS_STORAGE_KEY = 'wire-animations';
 
 
 // ============================================================
@@ -2039,4 +2040,70 @@ export function applyUseAccentForBubbles(
   }
 
   return value;
+}
+
+
+// ============================================================
+// Animations (global appearance toggle)
+// ------------------------------------------------------------
+// Turns the "new" decorative animations described in
+// core/motion.css on/off app-wide via a single attribute,
+// html[data-animations="on"], which raises the --motion-* CSS
+// variables those animations are all written against from 0ms to
+// real durations. No default preference exists yet elsewhere in
+// the app, so — per spec — this defaults to OFF rather than
+// inheriting on/off from any other setting.
+// ============================================================
+
+const ANIMATIONS_ATTR = 'data-animations';
+
+export function getAnimationsEnabled() {
+  const saved =
+    safeGetStorage(
+      ANIMATIONS_STORAGE_KEY
+    );
+
+  return saved === 'on';
+}
+
+
+export function applyAnimationsEnabled(
+  enabled,
+  { persist = true } = {}
+) {
+  const value =
+    enabled === true;
+
+  if (value) {
+    document.documentElement.setAttribute(
+      ANIMATIONS_ATTR,
+      'on'
+    );
+  } else {
+    document.documentElement.removeAttribute(
+      ANIMATIONS_ATTR
+    );
+  }
+
+  if (persist) {
+    safeSetStorage(
+      ANIMATIONS_STORAGE_KEY,
+      value ? 'on' : 'off'
+    );
+  }
+
+  return value;
+}
+
+
+export function initAnimations() {
+  const enabled =
+    getAnimationsEnabled();
+
+  applyAnimationsEnabled(
+    enabled,
+    { persist: false }
+  );
+
+  return enabled;
 }

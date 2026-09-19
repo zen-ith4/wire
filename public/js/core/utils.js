@@ -167,6 +167,45 @@ export function loadingState() {
 }
 
 /**
+ * Removes `el` from the DOM, playing its CSS exit transition first
+ * (the 'msg-exit' class added to a chat message right before removal
+ * — see core/motion.css) when the global Animations setting is on.
+ * When it's off, this removes `el` synchronously, exactly as a plain
+ * `el.remove()` would — no behavior change from before this setting
+ * existed. `done`, if given, runs right after the element is
+ * detached (for empty-state / cache bookkeeping that has to happen
+ * post-removal).
+ */
+export function animateRemoval(el, done) {
+  if (!el) return;
+
+  const animationsOn =
+    document.documentElement.getAttribute('data-animations') === 'on';
+
+  if (!animationsOn) {
+    el.remove();
+    done?.();
+    return;
+  }
+
+  let settled = false;
+  const finish = () => {
+    if (settled) return;
+    settled = true;
+    el.remove();
+    done?.();
+  };
+
+  el.addEventListener('transitionend', finish, { once: true });
+  // Fallback in case the element has no matching transition running
+  // (e.g. it was already hidden, or the transitionend event is
+  // otherwise missed) so removal never gets stuck.
+  setTimeout(finish, 300);
+
+  el.classList.add('msg-exit');
+}
+
+/**
  * Inserts `text` at the current cursor position (or replaces the
  * current selection) inside a text input, then restores focus and
  * places the cursor right after what was just inserted. Generic —

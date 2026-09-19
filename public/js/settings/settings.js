@@ -45,6 +45,8 @@ import {
   applyTheme,
   getUseAccentForBubbles,
   applyUseAccentForBubbles,
+  getAnimationsEnabled,
+  applyAnimationsEnabled,
   BACKGROUND_PRESETS,
   applyBackgroundTheme,
   getCurrentBackgroundTheme,
@@ -339,6 +341,9 @@ export async function renderSettings() {
 
     const useAccentForBubbles =
       getUseAccentForBubbles();
+
+    const animationsEnabled =
+      getAnimationsEnabled();
 
 
     // ========================================================
@@ -644,6 +649,40 @@ export async function renderSettings() {
               role="switch"
               aria-checked="${useAccentForBubbles}"
               aria-label="Use accent color for chat bubbles">
+
+              <span class="switch-thumb"></span>
+
+            </button>
+
+          </div>
+
+
+          <!-- Animations -->
+
+          <div class="settings-row">
+
+            <div>
+              <div class="settings-row-label">
+                Animations
+              </div>
+
+              <div class="settings-row-sublabel">
+                Subtle motion for page transitions, messages,
+                modals and more throughout Wire
+              </div>
+            </div>
+
+            <button
+              type="button"
+              class="switch${
+                animationsEnabled
+                  ? ' on'
+                  : ''
+              }"
+              id="animations-toggle"
+              role="switch"
+              aria-checked="${animationsEnabled}"
+              aria-label="Animations">
 
               <span class="switch-thumb"></span>
 
@@ -1569,6 +1608,40 @@ export async function renderSettings() {
         );
 
         repaintAllMessageAccents();
+      }
+    );
+
+
+    // ==========================================================
+    // Animations
+    // ==========================================================
+
+    const animationsToggle =
+      document.getElementById(
+        'animations-toggle'
+      );
+
+    animationsToggle?.addEventListener(
+      'click',
+      () => {
+        const next =
+          !animationsToggle.classList.contains(
+            'on'
+          );
+
+        applyAnimationsEnabled(
+          next
+        );
+
+        animationsToggle.classList.toggle(
+          'on',
+          next
+        );
+
+        animationsToggle.setAttribute(
+          'aria-checked',
+          String(next)
+        );
       }
     );
 

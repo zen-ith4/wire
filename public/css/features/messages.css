@@ -499,6 +499,25 @@ input.conv-search-input:focus{
   align-items:flex-start;
 }
 
+/* New message entrance — added only by addChatMessage()/addDmMessage()
+   in chat.js/dm.js for a message that just arrived or was just sent,
+   never by the initial history load, so a long scrollback never
+   animates in all at once. No-op (0ms) when Animations is off. */
+.chat-msg.msg-enter{
+  animation: motion-rise-in var(--motion-base) var(--motion-ease);
+}
+
+/* Exit — added right before removal by the animateRemoval() helper
+   in core/utils.js, which waits for this transition (or a fallback
+   timeout) before detaching the element. When Animations is off the
+   helper skips the transition and removes the element synchronously,
+   exactly as before this feature existed. */
+.chat-msg.msg-exit{
+  transition: opacity var(--motion-fast) var(--motion-ease), transform var(--motion-fast) var(--motion-ease);
+  opacity: 0;
+  transform: translateY(-4px) scale(.98);
+}
+
 .chat-msg.own{
   align-self:flex-end;
   flex-direction:row-reverse;
@@ -1026,6 +1045,12 @@ input.conv-search-input:focus{
   transition:
     background var(--ease-fast),
     border-color var(--ease-fast);
+  /* New, toggle-gated: pills pop in whenever the reactions row is
+     (re-)rendered — the row is always small (a handful of pills at
+     most), so re-playing this on every reaction change rather than
+     diffing is intentional, not "animating a large amount of
+     content". No-op at 0ms when Animations is off. */
+  animation: motion-pop-in var(--motion-fast) var(--motion-ease);
 }
 
 .reaction-pill:hover{

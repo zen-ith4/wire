@@ -3,10 +3,14 @@ button{font-family:inherit;}
   display:inline-flex;align-items:center;gap:8px;
   padding:9px 16px;border-radius:var(--radius);font-size:13px;font-weight:550;
   background:var(--ink2);border:1px solid var(--border);color:var(--text);
-  cursor:pointer;transition:all var(--ease-fast);
+  cursor:pointer;
+  /* Existing color/background cross-fade (--ease-fast, unconditional)
+     kept exactly as-is; the press "lift" is new and separately gated
+     via --motion-fast so it's a no-op when Animations is off. */
+  transition:background var(--ease-fast),border-color var(--ease-fast),color var(--ease-fast),transform var(--motion-fast) var(--motion-ease);
 }
 .btn:hover{background:var(--accent-bg);border-color:var(--accent-border);color:var(--text);}
-.btn:active{background:var(--accent-hover-bg);}
+.btn:active{background:var(--accent-hover-bg);transform:scale(.97);}
 .btn-primary{background:rgb(var(--indigo));border-color:rgb(var(--indigo));color:var(--accent-contrast);}
 .btn-primary:hover{background:#87879C;border-color:#87879C;color:#fff;}
 .btn-danger{background:rgba(var(--red),.12);border-color:rgba(var(--red),.3);color:#D6A3A3;}
@@ -30,10 +34,11 @@ button{font-family:inherit;}
 .btn-send{
   width:40px;height:40px;border-radius:var(--radius);border:1px solid var(--border);
   background:var(--ink2);cursor:pointer;display:flex;align-items:center;justify-content:center;
-  flex-shrink:0;transition:all var(--ease-fast);color:var(--muted);
+  flex-shrink:0;color:var(--muted);
+  transition:background var(--ease-fast),border-color var(--ease-fast),color var(--ease-fast),transform var(--motion-fast) var(--motion-ease);
 }
 .btn-send:hover{background:var(--accent-bg);border-color:var(--accent-border);color:var(--text);}
-.btn-send:active{background:var(--accent-hover-bg);}
+.btn-send:active{background:var(--accent-hover-bg);transform:scale(.94);}
 
 .btn-new-message{
   padding:7px 14px;border-radius:var(--radius);border:1px solid var(--border);

@@ -108,6 +108,20 @@ export function navigate(view, params) {
 
   route.render(params);
 
+  // Page/view transition (new, toggle-gated — see core/motion.css /
+  // .view-enter). #content-area is a single persistent DOM node that
+  // each route.render() just refills, so simply adding the class
+  // wouldn't replay the animation on the 2nd+ navigation; removing it
+  // and forcing a reflow before re-adding does. No-op when Animations
+  // is off (var(--motion-base) is 0ms), and this only animates the
+  // outer wrapper's opacity/transform, never the flush chat/DM
+  // views' own internal scroll regions.
+  if (content) {
+    content.classList.remove('view-enter');
+    void content.offsetWidth;
+    content.classList.add('view-enter');
+  }
+
   if (window.location.hash !== `#${view}`) {
     window.location.hash = view;
   }

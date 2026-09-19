@@ -8,7 +8,8 @@ import {
   linkifyHtml,
   escapeAttr,
   formatDate,
-  insertAtCursor
+  insertAtCursor,
+  animateRemoval
 } from '../core/utils.js';
 import {
   renderAttachment,
@@ -1286,6 +1287,10 @@ export async function addDmMessage(msg) {
   if (container.querySelector(`.chat-msg[data-msg-id="${msg.id}"]`)) return;
 
   const el = buildDmMessageEl(decrypted, currentUser);
+  // New-message entrance — only for a message arriving/sent live
+  // here, never the initial history load, so scrollback never
+  // animates in all at once.
+  el.classList.add('msg-enter');
   const emptyEl = container.querySelector('.empty-state');
   if (emptyEl) container.innerHTML = '';
 
@@ -1319,15 +1324,15 @@ export function removeDmMessage(id) {
   if (!el) return;
 
   cleanupImageUrls(el, 'dm');
-  el.remove();
-
-  if (!container.querySelector('.chat-msg')) {
-    container.innerHTML = emptyState(
-      ICONS.mail,
-      'No messages yet',
-      dmActivePeer ? `Say hello to ${escapeHtml(dmActivePeer.username)} 👋` : ''
-    );
-  }
+  animateRemoval(el, () => {
+    if (!container.querySelector('.chat-msg')) {
+      container.innerHTML = emptyState(
+        ICONS.mail,
+        'No messages yet',
+        dmActivePeer ? `Say hello to ${escapeHtml(dmActivePeer.username)} 👋` : ''
+      );
+    }
+  });
 }
 
 // ---------- Emoji ----------

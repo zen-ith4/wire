@@ -47,6 +47,26 @@
   --ease-smooth:180ms ease;
   --ambient-strength: 0.34;
 
+  /* ---- Global "Animations" appearance setting ----
+     Every duration a NEW (decorative) animation/transition uses
+     throughout the app should reference one of these three
+     variables instead of a literal duration. They default to 0ms
+     here, so anything built on them is inert — identical to the
+     app's appearance before this setting existed — until
+     html[data-animations="on"] below (toggled from Settings →
+     Appearance, see theme.js) turns them on. This is the single
+     switch the whole system hangs off of: no component needs its
+     own enabled/disabled branch.
+     Pre-existing transitions/animations (modal/toast entrance,
+     hover color transitions using --ease-fast/--ease-smooth, the
+     mobile sidebar slide, the loading spinner, etc.) are untouched
+     and keep running regardless of this setting — see motion.css
+     for the split between "always on" and "new, toggled" motion. */
+  --motion-fast:0ms;
+  --motion-base:0ms;
+  --motion-slow:0ms;
+  --motion-ease:linear;
+
   /* RGB triplets of the flat panel colors above, for rgba() use on
      glass surfaces (sidebar/topbar/cards) that need to stay
      translucent so the global atmospheric background layer

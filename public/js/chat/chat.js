@@ -7,7 +7,8 @@ import {
   escapeHtml,
   linkifyHtml,
   formatDate,
-  insertAtCursor
+  insertAtCursor,
+  animateRemoval
 } from '../core/utils.js';
 import { renderAttachment, loadChatImage, mountAttachmentMedia, cleanupImageUrls, revokeAttachmentImage, imageDownloadButtonHtml } from '../media/attachments.js';
 import { avatarHtml } from '../ui/avatar.js';
@@ -291,6 +292,11 @@ export function addChatMessage(msg) {
   const container = document.getElementById('chat-messages');
   if (!container) return;
   const el = buildChatMessageEl(msg);
+  // New-message entrance (see .chat-msg.msg-enter in messages.css) —
+  // only for messages arriving/sent live, never the initial history
+  // load in loadRecentChat()/loadOlderChat(), so scrollback never
+  // animates in all at once.
+  el.classList.add('msg-enter');
   const emptyEl = container.querySelector('.empty-state');
   if (emptyEl) container.innerHTML = '';
   container.appendChild(el);
@@ -315,10 +321,11 @@ export function removeChatMessage(id) {
   // cached for.
   cleanupImageUrls(el, 'chat');
   revokeAttachmentImage(id, 'chat');
-  el.remove();
-  if (!container.querySelector('.chat-msg')) {
-    container.innerHTML = emptyState(ICONS.chat, 'No messages yet', 'Say hello 👋');
-  }
+  animateRemoval(el, () => {
+    if (!container.querySelector('.chat-msg')) {
+      container.innerHTML = emptyState(ICONS.chat, 'No messages yet', 'Say hello 👋');
+    }
+  });
 }
 
 window.openChatEmojiPicker = function(triggerEl) {

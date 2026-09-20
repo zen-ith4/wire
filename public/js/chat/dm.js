@@ -21,6 +21,7 @@ import {
 } from '../media/attachments.js';
 import { avatarHtml } from '../ui/avatar.js';
 import { getCurrentUser } from '../core/auth.js';
+import { claimRender } from '../core/view-session.js';
 import { showConfirm } from '../ui/confirm.js';
 import { openEmojiPicker } from '../ui/emoji-picker.js';
 import { renderReactionsRow } from './reactions.js';
@@ -449,6 +450,7 @@ export function destroyDmComposer() {
 
 // ---------- Render ----------
 export async function renderDm(openPeerId) {
+  const isCurrent = claimRender('messages');
   const main = document.getElementById('content-area');
 
   saveDmScrollState();
@@ -493,6 +495,10 @@ export async function renderDm(openPeerId) {
   });
 
   const convs = await loadDmConversations();
+
+  // The user may have left Messages while the list was loading; opening a
+  // conversation now would target a thread pane that no longer exists.
+  if (!isCurrent()) return;
 
   if (openPeerId !== undefined && openPeerId !== null) {
     const isObjectParam = typeof openPeerId === 'object';

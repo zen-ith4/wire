@@ -1,4 +1,5 @@
 import { getCurrentUser } from './auth.js';
+import { enterView } from './view-session.js';
 
 import { renderFiles } from '../files/files.js';
 import { renderChat, destroyChatComposer } from '../chat/chat.js';
@@ -58,11 +59,33 @@ const routes = {
   },
 };
 
+// The view navigate() last mounted (the raw name it was called with).
+let currentView = null;
+let hashListenerAttached = false;
+
 export function initRouter() {
   navigate(window.location.hash.slice(1) || 'files');
 
+  // initRouter() can run again if startup is re-entered (e.g. login after
+  // a failed boot); one listener is all the URL ever needs.
+  if (hashListenerAttached) return;
+  hashListenerAttached = true;
+
   window.addEventListener('hashchange', () => {
-    navigate(window.location.hash.slice(1) || 'files');
+    const view = window.location.hash.slice(1) || 'files';
+
+    // navigate() writes location.hash itself to keep the URL in sync, and
+    // that write fires a hashchange too. That event is just the echo of a
+    // navigation that has already been rendered — running it again would
+    // render every click twice (two sets of API calls racing each other,
+    // and params such as navigate('messages', { id }) dropped by the second
+    // pass). Only a hash that differs from what is mounted — Back/Forward,
+    // a typed URL — is a new navigation. Clicks never come through here:
+    // they call navigate() directly, so re-tapping the active tab still
+    // re-renders it.
+    if (view === currentView) return;
+
+    navigate(view);
   });
 }
 
@@ -74,6 +97,13 @@ export function navigate(view, params) {
   }
 
   const route = routes[view] || routes.files;
+
+  // Record what is being mounted and tell the view-ownership tracker
+  // (core/view-session.js) BEFORE rendering, so that renders still in
+  // flight for the previously mounted view know they are stale and stop
+  // writing into #content-area.
+  currentView = view;
+  enterView(routes[view] ? view : 'files');
 
   // Release any in-progress voice recording before switching views —
   // see destroyChatComposer()/destroyDmComposer() for why this can't

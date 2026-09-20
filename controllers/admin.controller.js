@@ -4,6 +4,7 @@ const path = require('path');
 const {
   listUsers,
   findUserById,
+  createUser: createUserService,
   setUserAdmin: setUserAdminService,
   deleteUser: deleteUserService,
 } = require('../services/user.service');
@@ -23,6 +24,61 @@ const {
 
 function listUsersHandler(req, res) {
   res.json(listUsers());
+}
+
+// Maps the `code` of an error thrown by createUser() (user.service.js)
+// to an HTTP status, the same way auth.controller.js does for register.
+// Their messages are written for the client, so they are returned as-is.
+const CREATE_USER_ERROR_STATUS = new Map([
+  ['INVALID_USERNAME', 400],
+  ['INVALID_EMAIL', 400],
+  ['INVALID_PASSWORD', 400],
+  ['INVALID_IS_ADMIN', 400],
+  ['USERNAME_EXISTS', 409],
+  ['EMAIL_EXISTS', 409],
+]);
+
+async function createUser(req, res) {
+
+  // Field validation and normalization live in createUser() itself.
+  const {
+    username,
+    email,
+    password,
+    is_admin,
+  } = req.body || {};
+
+  try {
+
+    const user =
+      await createUserService(
+        username,
+        email,
+        password,
+        is_admin
+      );
+
+    return res.status(201).json(user);
+
+  } catch (err) {
+
+    const status =
+      CREATE_USER_ERROR_STATUS.get(err.code);
+
+    if (status) {
+      return res.status(status).json({
+        error: err.message,
+      });
+    }
+
+    console.error(err);
+
+    res.status(500).json({
+      error: 'Failed to create user',
+    });
+
+  }
+
 }
 
 function setUserAdmin(req, res) {
@@ -288,6 +344,7 @@ function revokePermissionHandler(req, res) {
 
 module.exports = {
   listUsers: listUsersHandler,
+  createUser,
   setUserAdmin,
   deleteUser,
   listFolders,

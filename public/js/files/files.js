@@ -1,6 +1,7 @@
-import { api, fetchBlob } from '../core/api.js';
+import { api } from '../core/api.js';
 import { getToken, logout } from '../core/auth.js';
 import { resolveServerUrl } from '../core/server.js';
+import { claimRender } from '../core/view-session.js';
 
 import {
   Capacitor,
@@ -344,9 +345,6 @@ async function downloadFileNative(
     }
   );
 
-  /*
-   * Android public Downloads folder.
-   */
   const destinationUri =
     `file:///storage/emulated/0/Download/${safeName}`;
 
@@ -359,12 +357,6 @@ async function downloadFileNative(
     null;
 
   try {
-    /*
-     * Register this transfer with the shared download-progress UI.
-     *
-     * Each transfer gets its own ID so finishing one transfer does not
-     * blindly hide the progress UI for another active transfer.
-     */
     window.__wireDownloadProgress?.start(
       downloadId,
       safeName
@@ -510,13 +502,10 @@ async function downloadFileNative(
 }
 
 /**
- * Browser/Electron download fallback.
+ * Browser/Electron download.
  *
  * Uses XMLHttpRequest instead of fetchBlob() so the shared download
  * progress UI receives real download progress events.
- *
- * XMLHttpRequest supports binary responses through responseType="blob"
- * and exposes download progress through the XHR progress event.
  */
 async function downloadFileWeb(
   file,
@@ -571,18 +560,6 @@ async function downloadFileWeb(
           `Bearer ${token}`
         );
 
-        /*
-         * Download progress.
-         *
-         * event.loaded:
-         *   bytes received so far
-         *
-         * event.total:
-         *   Content-Length when available
-         *
-         * If total is unavailable, the shared progress manager
-         * automatically falls back to its indeterminate state.
-         */
         xhr.addEventListener(
           'progress',
           event => {
@@ -647,11 +624,6 @@ async function downloadFileWeb(
             let message =
               `Download failed (${xhr.status})`;
 
-            /*
-             * Some server errors may be returned as text even though
-             * the request expects a Blob. Try to expose that text when
-             * available without making it a requirement for success.
-             */
             if (
               xhr.response instanceof Blob &&
               xhr.response.size > 0 &&
@@ -793,13 +765,11 @@ async function downloadFileWeb(
  *
  * Native Capacitor:
  *   FileTransfer
- *   Authorization: Bearer token
  *   -> Android Download/
  *   -> shared Wire download progress UI
  *
  * Browser/Electron:
  *   XMLHttpRequest
- *   Authorization: Bearer token
  *   -> Blob
  *   -> <a download>
  *   -> shared Wire download progress UI
@@ -854,10 +824,10 @@ async function downloadFile(
     }
 
     /*
-     * Browser/Electron use the same shared progress UI.
+     * Browser/Electron use the shared progress UI.
      *
-     * The Web download owns start/finish/fail here because
-     * downloadFileWeb() only performs the actual XHR transfer.
+     * downloadFileWeb() only performs the XHR transfer, while this
+     * wrapper owns start/finish/fail for the complete transfer.
      */
     window.__wireDownloadProgress?.start(
       downloadId,
@@ -1134,6 +1104,17 @@ window.showNewFolderInput =
 // ====================== رندر اصلی ======================
 
 export async function renderFiles() {
+  // #content-area is shared by every view: only write to it while this
+  // render still owns it (see core/view-session.js).
+  const isCurrent =
+    claimRender(
+      'files'
+    );
+
+  if (!isCurrent()) {
+    return;
+  }
+
   const main =
     document.getElementById(
       'content-area'
@@ -1154,6 +1135,10 @@ export async function renderFiles() {
         '/api/share/mine'
       )
     ]);
+
+    if (!isCurrent()) {
+      return;
+    }
 
     currentFolders =
       folders;
@@ -1224,6 +1209,10 @@ export async function renderFiles() {
         `/api/files/list/${currentFolderId}?subpath=${encodeURIComponent(currentSubpath)}`
       );
 
+    if (!isCurrent()) {
+      return;
+    }
+
     currentEntries =
       data.entries ||
       [];
@@ -1238,6 +1227,10 @@ export async function renderFiles() {
     );
 
   } catch (e) {
+    if (!isCurrent()) {
+      return;
+    }
+
     main.innerHTML =
       `<div class="card">${
         emptyState(

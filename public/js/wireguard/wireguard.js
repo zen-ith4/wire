@@ -1,13 +1,18 @@
 import { api } from '../core/api.js';
 import { ICONS } from '../icons.js';
 import { showToast, emptyState, loadingState, escapeHtml, formatDate } from '../core/utils.js';
+import { claimRender } from '../core/view-session.js';
 
 export async function renderWireguard() {
+  const isCurrent = claimRender('admin-wireguard');
+  if (!isCurrent()) return;
+
   const main = document.getElementById('content-area');
   main.innerHTML = `<div class="card">${loadingState()}</div>`;
 
   try {
     const peers = await api('/api/admin/wireguard');
+    if (!isCurrent()) return;
     let rows = peers.map(p => `
       <tr class="file-row">
         <td>${escapeHtml(p.username)}</td>
@@ -32,6 +37,7 @@ export async function renderWireguard() {
       </div>
     </div>`;
   } catch (e) {
+    if (!isCurrent()) return;
     main.innerHTML = `<div class="card">${emptyState(ICONS.empty, 'Failed to load', escapeHtml(e.message))}</div>`;
   }
 }

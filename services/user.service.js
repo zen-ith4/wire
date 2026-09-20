@@ -3,7 +3,16 @@ const path = require('path');
 
 const { getDb } = require('../config/database');
 const { hashPassword } = require('../utils/password');
+const {
+  isValidUsername,
+  isValidPassword,
+} = require('../utils/validator');
+const { isEmailEnabled } = require('./email.service');
 const constants = require('../config/constants');
+
+// Same pattern registerUser() (auth.service.js) and the setup wizard
+// use to accept an email address.
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 
 function normalizeUsername(username) {
@@ -76,6 +85,254 @@ async function createAdmin(username, password) {
       username,
       hash
     );
+}
+
+
+// Errors thrown by createUser() carry the same `code`s that
+// registerUser() (auth.service.js) uses, so callers can map them to
+// HTTP statuses the same way auth.controller.js does.
+function createUserError(code, message) {
+
+  const error = new Error(message);
+
+  error.code = code;
+
+  return error;
+}
+
+
+function requireString(value, label, code) {
+
+  if (value === undefined || value === null) {
+    throw createUserError(
+      code,
+      `${label} is required`
+    );
+  }
+
+  if (typeof value !== 'string') {
+    throw createUserError(
+      code,
+      `${label} must be a string`
+    );
+  }
+
+  return value;
+}
+
+
+function findDuplicateUserError(db, username, email) {
+
+  if (
+    db.prepare(`
+      SELECT id
+      FROM users
+      WHERE username = ?
+      LIMIT 1
+    `).get(username)
+  ) {
+    return createUserError(
+      'USERNAME_EXISTS',
+      'Username already exists'
+    );
+  }
+
+  if (
+    db.prepare(`
+      SELECT id
+      FROM users
+      WHERE email = ?
+      LIMIT 1
+    `).get(email)
+  ) {
+    return createUserError(
+      'EMAIL_EXISTS',
+      'Email already exists'
+    );
+  }
+
+  return null;
+}
+
+
+// Creates a user on behalf of an admin (POST /api/admin/users).
+// Authorization is the caller's job (authenticate + adminOnly on the
+// admin router). Unlike registerUser() this issues no JWT and sends
+// no verification email — the account belongs to someone else.
+//
+// Resolves to the created user's safe fields (never password_hash).
+async function createUser(username, email, password, isAdmin) {
+
+  const db = getDb();
+
+  username = normalizeUsername(
+    requireString(
+      username,
+      'Username',
+      'INVALID_USERNAME'
+    )
+  );
+
+  if (!username) {
+    throw createUserError(
+      'INVALID_USERNAME',
+      'Username is required'
+    );
+  }
+
+  if (!isValidUsername(username)) {
+    throw createUserError(
+      'INVALID_USERNAME',
+      'Username must be 3-20 characters: letters, numbers and underscores'
+    );
+  }
+
+  email = requireString(
+    email,
+    'Email',
+    'INVALID_EMAIL'
+  )
+    .trim()
+    .toLowerCase();
+
+  if (!email) {
+    throw createUserError(
+      'INVALID_EMAIL',
+      'Email is required'
+    );
+  }
+
+  if (!EMAIL_PATTERN.test(email)) {
+    throw createUserError(
+      'INVALID_EMAIL',
+      'Invalid email address'
+    );
+  }
+
+  // The password is kept exactly as entered (never trimmed).
+  requireString(
+    password,
+    'Password',
+    'INVALID_PASSWORD'
+  );
+
+  if (!password) {
+    throw createUserError(
+      'INVALID_PASSWORD',
+      'Password is required'
+    );
+  }
+
+  if (!isValidPassword(password)) {
+    throw createUserError(
+      'INVALID_PASSWORD',
+      'Password must be between 6 and 128 characters'
+    );
+  }
+
+  // Strictly a boolean: "true", 1, null, undefined, etc. are rejected
+  // so a malformed caller can never grant admin rights by accident.
+  if (typeof isAdmin !== 'boolean') {
+    throw createUserError(
+      'INVALID_IS_ADMIN',
+      'is_admin must be a boolean'
+    );
+  }
+
+
+  // Cheap duplicate check first, so an obvious duplicate doesn't pay
+  // for a bcrypt hash.
+  const duplicate =
+    findDuplicateUserError(
+      db,
+      username,
+      email
+    );
+
+  if (duplicate) {
+    throw duplicate;
+  }
+
+
+  const passwordHash =
+    await hashPassword(password);
+
+  // Same rule as registerUser(): with the email subsystem disabled
+  // nothing could ever verify the address, so the account counts as
+  // verified; otherwise the user verifies at first login.
+  const emailVerified =
+    isEmailEnabled() ? 0 : 1;
+
+  let userId;
+
+  try {
+
+    const result = db.prepare(`
+      INSERT INTO users (
+        username,
+        email,
+        password_hash,
+        email_verified,
+        is_admin
+      )
+      VALUES (?, ?, ?, ?, ?)
+    `).run(
+      username,
+      email,
+      passwordHash,
+      emailVerified,
+      isAdmin ? 1 : 0
+    );
+
+    userId =
+      Number(result.lastInsertRowid);
+
+  } catch (error) {
+
+    // hashPassword() yields to the event loop, so a concurrent request
+    // can win the race after the check above; the UNIQUE constraints
+    // are the real guarantee.
+    if (
+      error.code === 'SQLITE_CONSTRAINT_UNIQUE' ||
+      error.code === 'SQLITE_CONSTRAINT'
+    ) {
+
+      const duplicateError =
+        findDuplicateUserError(
+          db,
+          username,
+          email
+        );
+
+      if (duplicateError) {
+        throw duplicateError;
+      }
+    }
+
+    throw error;
+  }
+
+
+  const user = db.prepare(`
+    SELECT
+      id,
+      username,
+      email,
+      email_verified,
+      is_admin,
+      created_at
+    FROM users
+    WHERE id = ?
+  `).get(userId);
+
+  return {
+    id: user.id,
+    username: user.username,
+    email: user.email,
+    email_verified: Boolean(user.email_verified),
+    is_admin: Boolean(user.is_admin),
+    created_at: user.created_at,
+  };
 }
 
 
@@ -470,6 +727,7 @@ function listUsers() {
       SELECT
         id,
         username,
+        email,
         is_admin
       FROM users
       ORDER BY username
@@ -499,6 +757,7 @@ module.exports = {
   findUserWithPassword,
 
   createAdmin,
+  createUser,
 
   setUserAdmin,
   updateBio,

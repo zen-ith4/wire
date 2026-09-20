@@ -8,7 +8,12 @@ const {
 } = require('../middleware/authenticate');
 
 const {
+  asyncHandler,
+} = require('../middleware/asyncHandler');
+
+const {
   listUsers,
+  createUser,
   setUserAdmin,
   deleteUser,
   listFolders,
@@ -31,6 +36,13 @@ router.use(
 router.get(
   '/users',
   listUsers
+);
+
+// createUser is async (bcrypt), so it goes through asyncHandler the
+// same way the async auth routes do.
+router.post(
+  '/users',
+  asyncHandler(createUser)
 );
 
 // Change a user's admin flag. PUT (not PATCH) with a single-property

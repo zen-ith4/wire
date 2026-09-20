@@ -487,6 +487,8 @@ export async function renderDm(openPeerId, opts) {
   const isCurrent = claimRender('messages');
   const main = document.getElementById('content-area');
 
+  bindDmMobileSwipeBack(main);
+
   saveDmScrollState();
   dmActivePeer = null;
   dmEntry = null;
@@ -866,6 +868,209 @@ window.closeNewDmPicker = function () {
   }
 };
 
+// ---------- Mobile DM swipe-back ----------
+function bindDmMobileSwipeBack(root) {
+  if (!root || root.dataset.dmSwipeBackBound === '1') return;
+  root.dataset.dmSwipeBackBound = '1';
+
+  const EDGE_START_PX = 48;
+  const ACTIVATION_DISTANCE_PX = 6;
+  const COMMIT_DISTANCE_PX = 50;
+  const MOBILE_BREAKPOINT = 900;
+  const ANIMATION_MS = 180;
+
+  let pointerId = null;
+  let startX = 0;
+  let startY = 0;
+
+  let tracking = false;
+  let active = false;
+  let committed = false;
+  let thread = null;
+
+  function reset() {
+    pointerId = null;
+    startX = 0;
+    startY = 0;
+    tracking = false;
+    active = false;
+    committed = false;
+    thread = null;
+  }
+
+  function clearVisualState(animate = true) {
+    if (!thread) return;
+
+    const currentThread = thread;
+
+    currentThread.style.transition = animate
+      ? `transform ${ANIMATION_MS}ms ease`
+      : 'none';
+
+    currentThread.style.transform = '';
+
+    if (animate) {
+      window.setTimeout(() => {
+        currentThread.style.transition = '';
+      }, ANIMATION_MS);
+    }
+  }
+
+  function isInteractiveTarget(target) {
+    return !!target?.closest(
+      'input, textarea, button, select, a, [contenteditable="true"], [role="button"]'
+    );
+  }
+
+  function cancel(pointerEvent) {
+    if (
+      pointerEvent &&
+      root.hasPointerCapture?.(pointerEvent.pointerId)
+    ) {
+      try {
+        root.releasePointerCapture(pointerEvent.pointerId);
+      } catch {}
+    }
+
+    clearVisualState(true);
+    reset();
+  }
+
+  root.addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'touch') return;
+    if (window.innerWidth > MOBILE_BREAKPOINT) return;
+    if (!dmActivePeer) return;
+    if (e.isPrimary === false) return;
+
+    // Only start the gesture from the left edge.
+    if (e.clientX > EDGE_START_PX) return;
+
+    // Don't steal touches from buttons, inputs, etc.
+    if (isInteractiveTarget(e.target)) return;
+
+    thread = e.target.closest('.dm-thread');
+
+    // The New Message picker can exist while dmActivePeer still
+    // references the previous conversation. Only allow the gesture
+    // when an actual DM thread is present.
+    if (
+      !thread ||
+      !root.contains(thread) ||
+      !thread.querySelector('#dm-messages')
+    ) {
+      thread = null;
+      return;
+    }
+
+    pointerId = e.pointerId;
+    startX = e.clientX;
+    startY = e.clientY;
+
+    tracking = true;
+    active = false;
+    committed = false;
+  });
+
+  root.addEventListener(
+    'pointermove',
+    (e) => {
+      if (!tracking || e.pointerId !== pointerId) return;
+
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+
+      // Before activation, let clearly vertical gestures remain
+      // normal message scrolling.
+      if (!active) {
+        if (
+          Math.abs(dy) > 8 &&
+          Math.abs(dy) > Math.abs(dx)
+        ) {
+          cancel(e);
+          return;
+        }
+
+        // Only left-to-right.
+        if (dx <= 0) return;
+
+        if (dx < ACTIVATION_DISTANCE_PX) return;
+
+        active = true;
+
+        try {
+          root.setPointerCapture(e.pointerId);
+        } catch {}
+
+        thread.style.transition = 'none';
+
+        e.preventDefault();
+      }
+
+      if (!active || committed) return;
+
+      // Once the swipe is active, follow the finger directly.
+      // There is intentionally NO maximum distance.
+      if (dx <= 0) return;
+
+      thread.style.transform =
+        `translate3d(${dx}px, 0, 0)`;
+
+      e.preventDefault();
+    },
+    { passive: false }
+  );
+
+  root.addEventListener('pointerup', (e) => {
+    if (!tracking || e.pointerId !== pointerId) return;
+
+    const dx = e.clientX - startX;
+
+    if (
+      active &&
+      dx >= COMMIT_DISTANCE_PX &&
+      !committed &&
+      dmActivePeer
+    ) {
+      committed = true;
+
+      const currentThread = thread;
+
+      currentThread.style.transition =
+        `transform ${ANIMATION_MS}ms ease`;
+
+      // Finish the animation across the entire remaining width.
+      currentThread.style.transform =
+        'translate3d(100%, 0, 0)';
+
+      window.setTimeout(() => {
+        if (dmActivePeer) {
+          window.closeDmThreadMobile();
+        }
+      }, ANIMATION_MS);
+    } else {
+      clearVisualState(true);
+    }
+
+    try {
+      if (root.hasPointerCapture?.(e.pointerId)) {
+        root.releasePointerCapture(e.pointerId);
+      }
+    } catch {}
+
+    reset();
+  });
+
+  // Do NOT treat pointercancel as a normal swipe failure.
+  // touch-action below prevents the browser from stealing the
+  // horizontal gesture in the first place.
+  root.addEventListener('pointercancel', (e) => {
+    if (!tracking || e.pointerId !== pointerId) return;
+
+    clearVisualState(true);
+    reset();
+  });
+}
+
 // ---------- Open conversation ----------
 window.openDmConversation = async function (peerId, username) {
   peerId = Number(peerId);
@@ -900,7 +1105,12 @@ window.openDmConversation = async function (peerId, username) {
   }
 
   const thread = document.getElementById('dm-thread');
-  thread.innerHTML = `
+      // Defensive reset in case the thread was previously closed
+    // through a swipe animation or another animated transition.
+    thread.style.transition = 'none';
+    thread.style.transform = '';
+
+thread.innerHTML = `
     <div class="chat-top-bar chat-header-glass">
       <button class="icon-btn dm-back-btn" title="Back" onclick="window.closeDmThreadMobile()">${ICONS.arrowLeft}</button>
       <div class="dm-peer-profile" title="View ${escapeAttr(username)}'s profile" onclick="window.openProfileCard(${peerId})">
@@ -1012,12 +1222,27 @@ window.openDmConversation = async function (peerId, username) {
 // ---------- Close conversation ----------
 window.closeDmThreadMobile = function () {
   saveDmScrollState();
+
+  const thread = document.getElementById('dm-thread');
+
+  // A swipe-back leaves the thread translated to 100%.
+  // Reset the inline transform before this same DOM node is
+  // reused for another conversation.
+  if (thread) {
+    thread.style.transition = 'none';
+    thread.style.transform = '';
+  }
+
   document.querySelector('.dm-layout')?.classList.remove('showing-thread');
+
   dmTypingEmitter.stop();
   dmTypingIndicator.clearAll();
   dmActivePeer = null;
   dmEntry = null;
-  document.querySelectorAll('.dm-conv').forEach((el) => el.classList.remove('active'));
+
+  document
+    .querySelectorAll('.dm-conv')
+    .forEach((el) => el.classList.remove('active'));
 };
 
 // ---------- Render cache ----------

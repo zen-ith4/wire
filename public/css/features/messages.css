@@ -1649,3 +1649,9 @@ input.conv-search-input:focus{
   text-align:center;
   padding:6px 0 14px;
 }
+
+/* Mobile DM swipe-back */
+.dm-thread,
+.dm-thread .chat-messages {
+  touch-action: pan-y;
+}

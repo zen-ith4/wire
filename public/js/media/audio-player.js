@@ -1,6 +1,7 @@
 import { ICONS } from '../icons.js';
 import { escapeAttr, escapeHtml } from '../core/utils.js';
 import { getMediaSrcUrl } from './mediaToken.js';
+import { resolveServerUrl } from '../core/server.js';
 
 // ======================================================
 // PLAYBACK STATE PERSISTENCE (across tab/view switches)
@@ -37,15 +38,30 @@ function saveAudioState(messageId, audio, playing) {
 // AUDIO DETECTION
 // ======================================================
 
-const AUDIO_EXTENSIONS = ['mp3', 'wav', 'flac', 'ogg', 'oga', 'aac', 'wma', 'm4a', 'opus', 'weba'];
+const AUDIO_EXTENSIONS = [
+  'mp3',
+  'wav',
+  'flac',
+  'ogg',
+  'oga',
+  'aac',
+  'wma',
+  'm4a',
+  'opus',
+  'weba'
+];
 
 // Accepts either a MIME type ("audio/mpeg") or a filename
 // ("song.mp3") - attachments.js calls this with both.
 export function isAudio(value) {
   if (!value || typeof value !== 'string') return false;
+
   const v = value.toLowerCase();
+
   if (v.startsWith('audio/')) return true;
+
   const ext = v.split('.').pop();
+
   return AUDIO_EXTENSIONS.includes(ext);
 }
 
@@ -53,8 +69,49 @@ export function isAudio(value) {
 // MEDIA URL
 // ======================================================
 //
-// See media/mediaToken.js: playback URLs carry a short-lived,
-// attachment-scoped token rather than the raw session JWT.
+// getMediaSrcUrl() returns the attachment-scoped media path.
+//
+// On the web this may be:
+//
+//   /api/dm/attachments/91?token=...
+//
+// But inside Capacitor, the app itself is served from:
+//
+//   https://localhost
+//
+// Therefore the relative path MUST be resolved against the configured
+// server URL before being assigned to <audio src>.
+//
+// This prevents Capacitor's local asset handler from attempting to
+// interpret /api/... as:
+//
+//   https://localhost/api/...
+//
+// The final URL used by the media element must be:
+//
+//   https://wireapp.ir/api/dm/attachments/91?token=...
+// ======================================================
+
+async function resolveAudioUrl(scope, messageId) {
+  const mediaPath = await getMediaSrcUrl(scope, messageId);
+
+  if (!mediaPath) {
+    throw new Error(
+      `Failed to resolve media path for audio attachment ${messageId}`
+    );
+  }
+
+  const resolvedUrl = resolveServerUrl(mediaPath);
+
+  console.log(
+    '[Audio] Media URL:',
+    mediaPath,
+    '→',
+    resolvedUrl
+  );
+
+  return resolvedUrl;
+}
 
 // ======================================================
 // AUDIO PLAYER
@@ -76,30 +133,54 @@ export async function renderAudio(msg, scope, containerEl) {
     );
 
   if (!container) {
-    console.error('Audio container not found for message:', msg.id);
+    console.error(
+      'Audio container not found for message:',
+      msg.id
+    );
     return;
   }
 
   const playerId = `aplayer-${messageId}`;
 
   // Prevent duplicate players
-  if (container.querySelector(`#${CSS.escape(playerId)}`)) {
+  if (
+    container.querySelector(
+      `#${CSS.escape(playerId)}`
+    )
+  ) {
     return;
   }
 
-  const attachmentUrl = await getMediaSrcUrl(scope, msg.id);
+  let attachmentUrl;
+
+  try {
+    attachmentUrl = await resolveAudioUrl(
+      scope,
+      msg.id
+    );
+  } catch (error) {
+    console.error(
+      '[Audio] Failed to resolve media URL:',
+      error
+    );
+
+    return;
+  }
 
   // The container may have been torn down (or a duplicate player
   // already inserted by a concurrent render) while we awaited the
   // token request above.
   if (
     !document.body.contains(container) ||
-    container.querySelector(`#${CSS.escape(playerId)}`)
+    container.querySelector(
+      `#${CSS.escape(playerId)}`
+    )
   ) {
     return;
   }
 
-  const filename = msg.attachment_name || 'Audio';
+  const filename =
+    msg.attachment_name || 'Audio';
 
   // ====================================================
   // TEMPLATE
@@ -115,15 +196,26 @@ export async function renderAudio(msg, scope, containerEl) {
   const template = `
     <div class="audio-player loading" id="${playerId}">
       <div class="audio-player-header">
-        <div class="audio-player-title" title="${escapeAttr(filename)}">${escapeHtml(filename)}</div>
+        <div
+          class="audio-player-title"
+          title="${escapeAttr(filename)}"
+        >${escapeHtml(filename)}</div>
+
         <span class="audio-player-current-time">0:00</span>
         <span class="audio-player-duration">0:00</span>
       </div>
 
       <div class="audio-player-controls">
-        <button class="audio-player-play" type="button" title="Play">
+        <button
+          class="audio-player-play"
+          type="button"
+          title="Play"
+        >
           <span class="icon-play">${ICONS.play}</span>
-          <span class="icon-pause" style="display:none">${ICONS.pause}</span>
+          <span
+            class="icon-pause"
+            style="display:none"
+          >${ICONS.pause}</span>
         </button>
 
         <div class="audio-player-waveform">
@@ -132,9 +224,21 @@ export async function renderAudio(msg, scope, containerEl) {
         </div>
 
         <div class="audio-player-volume-control">
-          <button class="audio-player-volume" type="button" title="Mute">${ICONS.volume}</button>
+          <button
+            class="audio-player-volume"
+            type="button"
+            title="Mute"
+          >${ICONS.volume}</button>
+
           <div class="audio-player-volume-slider-wrap">
-            <input type="range" class="audio-player-volume-slider" min="0" max="1" step="0.01" value="1">
+            <input
+              type="range"
+              class="audio-player-volume-slider"
+              min="0"
+              max="1"
+              step="0.01"
+              value="1"
+            >
           </div>
         </div>
 
@@ -146,7 +250,9 @@ export async function renderAudio(msg, scope, containerEl) {
         >${ICONS.download}</button>
       </div>
 
-      <div class="audio-player-error">${ICONS.alert} Failed to load audio</div>
+      <div class="audio-player-error">
+        ${ICONS.alert} Failed to load audio
+      </div>
 
       <audio
         id="audio-${messageId}"
@@ -165,9 +271,13 @@ export async function renderAudio(msg, scope, containerEl) {
   // ====================================================
 
   const contentWrapper =
-    container.querySelector('.chat-msg-content') || container;
+    container.querySelector('.chat-msg-content') ||
+    container;
 
-  contentWrapper.insertAdjacentHTML('beforeend', template);
+  contentWrapper.insertAdjacentHTML(
+    'beforeend',
+    template
+  );
 
   // ====================================================
   // ELEMENTS
@@ -179,56 +289,147 @@ export async function renderAudio(msg, scope, containerEl) {
   // entirely, leaving a visible-but-inert player.
   // ====================================================
 
-  const playerEl = contentWrapper.lastElementChild;
-  const audio = playerEl ? playerEl.querySelector('audio') : null;
+  const playerEl =
+    contentWrapper.lastElementChild;
+
+  const audio =
+    playerEl
+      ? playerEl.querySelector('audio')
+      : null;
 
   if (!playerEl || !audio) {
-    console.error('Audio player element not found after insertion for message:', msg.id);
+    console.error(
+      'Audio player element not found after insertion for message:',
+      msg.id
+    );
+
     return;
   }
 
-  const playBtn = playerEl.querySelector('.audio-player-play');
-  const iconPlay = playerEl.querySelector('.icon-play');
-  const iconPause = playerEl.querySelector('.icon-pause');
-  const currentTimeEl = playerEl.querySelector('.audio-player-current-time');
-  const durationEl = playerEl.querySelector('.audio-player-duration');
-  const waveform = playerEl.querySelector('.audio-player-waveform');
-  const progressFill = playerEl.querySelector('.audio-player-progress-fill');
-  const volumeBtn = playerEl.querySelector('.audio-player-volume');
-  const volumeSlider = playerEl.querySelector('.audio-player-volume-slider');
-  const errorEl = playerEl.querySelector('.audio-player-error');
+  const playBtn =
+    playerEl.querySelector(
+      '.audio-player-play'
+    );
+
+  const iconPlay =
+    playerEl.querySelector(
+      '.icon-play'
+    );
+
+  const iconPause =
+    playerEl.querySelector(
+      '.icon-pause'
+    );
+
+  const currentTimeEl =
+    playerEl.querySelector(
+      '.audio-player-current-time'
+    );
+
+  const durationEl =
+    playerEl.querySelector(
+      '.audio-player-duration'
+    );
+
+  const waveform =
+    playerEl.querySelector(
+      '.audio-player-waveform'
+    );
+
+  const progressFill =
+    playerEl.querySelector(
+      '.audio-player-progress-fill'
+    );
+
+  const volumeBtn =
+    playerEl.querySelector(
+      '.audio-player-volume'
+    );
+
+  const volumeSlider =
+    playerEl.querySelector(
+      '.audio-player-volume-slider'
+    );
+
+  const errorEl =
+    playerEl.querySelector(
+      '.audio-player-error'
+    );
 
   // ====================================================
   // HELPERS
   // ====================================================
 
   const formatTime = (seconds) => {
-    if (!Number.isFinite(seconds) || seconds < 0) seconds = 0;
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = Math.floor(seconds % 60);
-    if (hours > 0) {
-      return `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    if (
+      !Number.isFinite(seconds) ||
+      seconds < 0
+    ) {
+      seconds = 0;
     }
-    return `${minutes}:${String(secs).padStart(2, '0')}`;
+
+    const hours =
+      Math.floor(seconds / 3600);
+
+    const minutes =
+      Math.floor(
+        (seconds % 3600) / 60
+      );
+
+    const secs =
+      Math.floor(seconds % 60);
+
+    if (hours > 0) {
+      return `${hours}:${String(minutes).padStart(
+        2,
+        '0'
+      )}:${String(secs).padStart(
+        2,
+        '0'
+      )}`;
+    }
+
+    return `${minutes}:${String(secs).padStart(
+      2,
+      '0'
+    )}`;
   };
 
   const updateProgressFill = () => {
-    const duration = audio.duration;
+    const duration =
+      audio.duration;
+
     const pct =
-      Number.isFinite(duration) && duration > 0
+      Number.isFinite(duration) &&
+      duration > 0
         ? (audio.currentTime / duration) * 100
         : 0;
-    progressFill.style.width = `${pct}%`;
+
+    progressFill.style.width =
+      `${pct}%`;
   };
 
   const updateVolumeSliderFill = () => {
-    const pct = Math.round(Number(volumeSlider.value) * 100);
-    volumeSlider.style.background = `linear-gradient(to right, rgb(var(--indigo)) 0%, rgb(var(--indigo)) ${pct}%, var(--border-soft) ${pct}%, var(--border-soft) 100%)`;
+    const pct =
+      Math.round(
+        Number(volumeSlider.value) * 100
+      );
+
+    volumeSlider.style.background =
+      `linear-gradient(
+        to right,
+        rgb(var(--indigo)) 0%,
+        rgb(var(--indigo)) ${pct}%,
+        var(--border-soft) ${pct}%,
+        var(--border-soft) 100%
+      )`;
   };
 
   const setLoading = (isLoading) => {
-    playerEl.classList.toggle('loading', isLoading);
+    playerEl.classList.toggle(
+      'loading',
+      isLoading
+    );
   };
 
   // ====================================================
@@ -245,30 +446,76 @@ export async function renderAudio(msg, scope, containerEl) {
   let rafId = null;
 
   function startProgressLoop() {
-    if (rafId !== null) return;
+    if (rafId !== null) {
+      return;
+    }
+
     const tick = () => {
       updateProgressFill();
-      currentTimeEl.textContent = formatTime(audio.currentTime);
-      rafId = requestAnimationFrame(tick);
+
+      currentTimeEl.textContent =
+        formatTime(
+          audio.currentTime
+        );
+
+      rafId =
+        requestAnimationFrame(
+          tick
+        );
     };
-    rafId = requestAnimationFrame(tick);
+
+    rafId =
+      requestAnimationFrame(
+        tick
+      );
   }
 
   function stopProgressLoop() {
     if (rafId !== null) {
-      cancelAnimationFrame(rafId);
+      cancelAnimationFrame(
+        rafId
+      );
+
       rafId = null;
     }
   }
 
-  const seekToClientX = (clientX) => {
-    const duration = audio.duration;
-    if (!Number.isFinite(duration) || duration <= 0) return;
-    const rect = waveform.getBoundingClientRect();
-    const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
-    audio.currentTime = ratio * duration;
+  const seekToClientX = (
+    clientX
+  ) => {
+    const duration =
+      audio.duration;
+
+    if (
+      !Number.isFinite(duration) ||
+      duration <= 0
+    ) {
+      return;
+    }
+
+    const rect =
+      waveform.getBoundingClientRect();
+
+    const ratio =
+      Math.min(
+        1,
+        Math.max(
+          0,
+          (clientX - rect.left) /
+            rect.width
+        )
+      );
+
+    audio.currentTime =
+      ratio * duration;
+
     updateProgressFill();
-    saveAudioState(messageId, audio, intendedPlaying);
+
+    saveAudioState(
+      messageId,
+      audio,
+      intendedPlaying
+    );
   };
 
   // ====================================================
@@ -283,7 +530,7 @@ export async function renderAudio(msg, scope, containerEl) {
   // including navigating back to a tab you were already on) makes
   // the browser implicitly fire a `pause` event on the element as
   // part of removing it. An earlier version of this fix saved that
-  // teardown-triggered pause as if the user had paused it, which
+  // teardown-triggered pause as if it was user intent, which
   // silently overwrote "was playing" with false a split second before
   // it was needed - position restored correctly, but it never
   // resumed. Driving the saved "playing" flag off `intendedPlaying`
@@ -292,48 +539,90 @@ export async function renderAudio(msg, scope, containerEl) {
 
   let intendedPlaying = false;
 
-  playBtn.addEventListener('click', () => {
-    if (audio.paused) {
-      intendedPlaying = true;
-      audio.play().catch((error) => {
-        intendedPlaying = false;
-        console.error('Audio playback failed:', error);
-      });
-    } else {
-      intendedPlaying = false;
-      audio.pause();
-    }
-  });
+  playBtn.addEventListener(
+    'click',
+    () => {
+      if (audio.paused) {
+        intendedPlaying = true;
 
-  audio.addEventListener('play', () => {
-    iconPlay.style.display = 'none';
-    iconPause.style.display = 'block';
-    saveAudioState(messageId, audio, intendedPlaying);
-  });
+        audio.play().catch(
+          (error) => {
+            intendedPlaying = false;
+
+            console.error(
+              'Audio playback failed:',
+              error
+            );
+          }
+        );
+      } else {
+        intendedPlaying = false;
+
+        audio.pause();
+      }
+    }
+  );
+
+  audio.addEventListener(
+    'play',
+    () => {
+      iconPlay.style.display =
+        'none';
+
+      iconPause.style.display =
+        'block';
+
+      saveAudioState(
+        messageId,
+        audio,
+        intendedPlaying
+      );
+    }
+  );
 
   // `play` fires before any data has necessarily arrived; `playing`
   // fires once playback is actually advancing — that's the real
-  // "progress can now move" signal (see voice-message.js for the
-  // same reasoning).
-  audio.addEventListener('playing', () => {
-    setLoading(false);
-    startProgressLoop();
-  });
+  // "progress can now move" signal.
+  audio.addEventListener(
+    'playing',
+    () => {
+      setLoading(false);
+      startProgressLoop();
+    }
+  );
 
-  audio.addEventListener('waiting', () => {
-    stopProgressLoop();
-  });
+  audio.addEventListener(
+    'waiting',
+    () => {
+      stopProgressLoop();
+    }
+  );
 
-  audio.addEventListener('pause', () => {
-    iconPlay.style.display = 'block';
-    iconPause.style.display = 'none';
-    stopProgressLoop();
-    // Final sync so the fill/time land exactly on the paused position
-    // rather than wherever the last rAF frame happened to be.
-    updateProgressFill();
-    currentTimeEl.textContent = formatTime(audio.currentTime);
-    saveAudioState(messageId, audio, intendedPlaying);
-  });
+  audio.addEventListener(
+    'pause',
+    () => {
+      iconPlay.style.display =
+        'block';
+
+      iconPause.style.display =
+        'none';
+
+      stopProgressLoop();
+
+      updateProgressFill();
+
+      currentTimeEl.textContent =
+        formatTime(
+          audio.currentTime
+        );
+
+      saveAudioState(
+        messageId,
+        audio,
+        intendedPlaying
+      );
+    }
+  );
 
   // ====================================================
   // LOADING / METADATA
@@ -342,111 +631,183 @@ export async function renderAudio(msg, scope, containerEl) {
   setLoading(true);
 
   // Restore playback position/volume left over from before this
-  // player was torn down and rebuilt (see audioPlaybackState above).
-  // Applied once metadata is available, since currentTime can't be
-  // set meaningfully before the browser knows the track's duration.
-  const savedState = audioPlaybackState.get(messageId);
+  // player was torn down and rebuilt.
+  const savedState =
+    audioPlaybackState.get(
+      messageId
+    );
 
-  audio.addEventListener('loadedmetadata', () => {
-    setLoading(false);
-    const duration = audio.duration;
-    if (Number.isFinite(duration) && duration > 0) {
-      durationEl.textContent = formatTime(duration);
-    }
+  audio.addEventListener(
+    'loadedmetadata',
+    () => {
+      setLoading(false);
 
-    if (savedState) {
-      audio.currentTime = Math.min(savedState.currentTime, duration || savedState.currentTime);
-      audio.volume = savedState.volume;
-      audio.muted = savedState.muted;
-      volumeSlider.value = savedState.muted ? 0 : savedState.volume;
-      updateVolumeSliderFill();
-      currentTimeEl.textContent = formatTime(audio.currentTime);
+      const duration =
+        audio.duration;
 
-      if (savedState.playing) {
-        intendedPlaying = true;
-        audio.play().catch((error) => {
-          // Autoplay can be blocked by the browser (e.g. no recent
-          // enough user gesture) - fall back to leaving it
-          // paused-but-seeked-to-position rather than erroring out.
-          intendedPlaying = false;
-          console.error('Audio resume failed:', error);
-        });
+      if (
+        Number.isFinite(duration) &&
+        duration > 0
+      ) {
+        durationEl.textContent =
+          formatTime(duration);
       }
+
+      if (savedState) {
+        audio.currentTime =
+          Math.min(
+            savedState.currentTime,
+            duration ||
+              savedState.currentTime
+          );
+
+        audio.volume =
+          savedState.volume;
+
+        audio.muted =
+          savedState.muted;
+
+        volumeSlider.value =
+          savedState.muted
+            ? 0
+            : savedState.volume;
+
+        updateVolumeSliderFill();
+
+        currentTimeEl.textContent =
+          formatTime(
+            audio.currentTime
+          );
+
+        if (savedState.playing) {
+          intendedPlaying = true;
+
+          audio.play().catch(
+            (error) => {
+              intendedPlaying = false;
+
+              console.error(
+                'Audio resume failed:',
+                error
+              );
+            }
+          );
+        }
+      }
+
+      updateProgressFill();
     }
+  );
 
-    updateProgressFill();
-  });
-
-  // Note: deliberately NOT re-enabling the 'loading' class (which
-  // sets pointer-events:none via CSS) on 'waiting'. That event fires
-  // for ordinary mid-playback buffering stalls with a streamed file,
-  // and blocking the whole player - including Pause/Mute - every
-  // time the network pauses briefly would look exactly like "the
-  // controls don't respond" to a user who just wants to pause during
-  // a stall. The loading state here only covers the initial
-  // pre-metadata window, before there's anything meaningful to
-  // interact with yet.
-  audio.addEventListener('canplay', () => setLoading(false));
+  // Note: deliberately NOT re-enabling the 'loading' class on
+  // 'waiting'. That event fires for ordinary mid-playback buffering
+  // stalls with a streamed file, and blocking the whole player would
+  // make the controls appear unresponsive.
+  audio.addEventListener(
+    'canplay',
+    () => setLoading(false)
+  );
 
   // ====================================================
   // PROGRESS
   // ====================================================
 
-  audio.addEventListener('timeupdate', () => {
-    currentTimeEl.textContent = formatTime(audio.currentTime);
-    updateProgressFill();
-    saveAudioState(messageId, audio, intendedPlaying);
-  });
+  audio.addEventListener(
+    'timeupdate',
+    () => {
+      currentTimeEl.textContent =
+        formatTime(
+          audio.currentTime
+        );
 
-  audio.addEventListener('ended', () => {
-    iconPlay.style.display = 'block';
-    iconPause.style.display = 'none';
-    intendedPlaying = false;
-    stopProgressLoop();
-    // A track that finished naturally shouldn't "resume" mid-playback
-    // from near its end the next time this player is rebuilt.
-    audioPlaybackState.delete(messageId);
-  });
+      updateProgressFill();
+
+      saveAudioState(
+        messageId,
+        audio,
+        intendedPlaying
+      );
+    }
+  );
+
+  audio.addEventListener(
+    'ended',
+    () => {
+      iconPlay.style.display =
+        'block';
+
+      iconPause.style.display =
+        'none';
+
+      intendedPlaying = false;
+
+      stopProgressLoop();
+
+      // A track that finished naturally shouldn't "resume" mid-playback
+      // from near its end the next time this player is rebuilt.
+      audioPlaybackState.delete(
+        messageId
+      );
+    }
+  );
 
   // ====================================================
   // SEEK (click / drag on the waveform bar)
   // ====================================================
 
-  // renderAudio() runs once per audio message per render, and this
-  // view rebuilds its whole message list via innerHTML on every
-  // navigation (see chat.js/dm.js). Registering the drag-tracking
-  // mousemove/mouseup listeners on `window` unconditionally here —
-  // as opposed to only while a drag on *this* player's waveform is
-  // actually in progress — added one permanent pair of window
-  // listeners per audio message ever rendered, none of which were
-  // ever removed even after the player's own DOM was torn down.
-  // Scoping them to the lifetime of a single drag (added on
-  // mousedown, removed on the matching mouseup) keeps at most one
-  // pair alive at a time, for whichever player is actively being
-  // scrubbed.
   let scrubbing = false;
 
   function onWindowMouseMove(e) {
-    if (!scrubbing) return;
+    if (!scrubbing) {
+      return;
+    }
+
     seekToClientX(e.clientX);
   }
 
   function onWindowMouseUp() {
     scrubbing = false;
-    window.removeEventListener('mousemove', onWindowMouseMove);
-    window.removeEventListener('mouseup', onWindowMouseUp);
+
+    window.removeEventListener(
+      'mousemove',
+      onWindowMouseMove
+    );
+
+    window.removeEventListener(
+      'mouseup',
+      onWindowMouseUp
+    );
   }
 
-  waveform.addEventListener('mousedown', (e) => {
-    scrubbing = true;
-    seekToClientX(e.clientX);
-    window.addEventListener('mousemove', onWindowMouseMove);
-    window.addEventListener('mouseup', onWindowMouseUp);
-  });
+  waveform.addEventListener(
+    'mousedown',
+    (e) => {
+      scrubbing = true;
 
-  waveform.addEventListener('click', (e) => {
-    seekToClientX(e.clientX);
-  });
+      seekToClientX(
+        e.clientX
+      );
+
+      window.addEventListener(
+        'mousemove',
+        onWindowMouseMove
+      );
+
+      window.addEventListener(
+        'mouseup',
+        onWindowMouseUp
+      );
+    }
+  );
+
+  waveform.addEventListener(
+    'click',
+    (e) => {
+      seekToClientX(
+        e.clientX
+      );
+    }
+  );
 
   // ====================================================
   // VOLUME
@@ -454,36 +815,81 @@ export async function renderAudio(msg, scope, containerEl) {
 
   updateVolumeSliderFill();
 
-  volumeSlider.addEventListener('input', () => {
-    const volume = Number(volumeSlider.value);
-    audio.volume = volume;
-    audio.muted = volume === 0;
-    updateVolumeSliderFill();
-    saveAudioState(messageId, audio, intendedPlaying);
-  });
+  volumeSlider.addEventListener(
+    'input',
+    () => {
+      const volume =
+        Number(
+          volumeSlider.value
+        );
 
-  volumeBtn.addEventListener('click', () => {
-    audio.muted = !audio.muted;
-    if (!audio.muted && audio.volume === 0) {
-      audio.volume = 1;
+      audio.volume =
+        volume;
+
+      audio.muted =
+        volume === 0;
+
+      updateVolumeSliderFill();
+
+      saveAudioState(
+        messageId,
+        audio,
+        intendedPlaying
+      );
     }
-    volumeSlider.value = audio.muted ? 0 : audio.volume;
-    updateVolumeSliderFill();
-    saveAudioState(messageId, audio, intendedPlaying);
-  });
+  );
+
+  volumeBtn.addEventListener(
+    'click',
+    () => {
+      audio.muted =
+        !audio.muted;
+
+      if (
+        !audio.muted &&
+        audio.volume === 0
+      ) {
+        audio.volume = 1;
+      }
+
+      volumeSlider.value =
+        audio.muted
+          ? 0
+          : audio.volume;
+
+      updateVolumeSliderFill();
+
+      saveAudioState(
+        messageId,
+        audio,
+        intendedPlaying
+      );
+    }
+  );
 
   // ====================================================
   // ERRORS
   // ====================================================
 
-  audio.addEventListener('error', () => {
-    setLoading(false);
-    const error = audio.error;
-    console.error('Audio error:', {
-      code: error?.code,
-      message: error?.message,
-      src: audio.currentSrc
-    });
-    errorEl.style.display = 'flex';
-  });
+  audio.addEventListener(
+    'error',
+    () => {
+      setLoading(false);
+
+      const error =
+        audio.error;
+
+      console.error(
+        'Audio error:',
+        {
+          code: error?.code,
+          message: error?.message,
+          src: audio.currentSrc
+        }
+      );
+
+      errorEl.style.display =
+        'flex';
+    }
+  );
 }

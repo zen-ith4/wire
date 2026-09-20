@@ -7,6 +7,8 @@ import {
 resolveServerUrl
 } from './server.js';
 
+import { perfApi } from './perf.js';
+
 let isHandlingUnauthorized = false;
 
 /* =========================================================
@@ -14,7 +16,22 @@ let isHandlingUnauthorized = false;
 * API
 * ========================================================= */
 
+// Every request goes through this thin wrapper so opt-in timing
+// (core/perf.js, off unless localStorage.wire_perf === '1') can see it.
 export async function api(
+url,
+options = {}
+) {
+const perfDone = perfApi();
+
+try {
+return await apiRequest(url, options);
+} finally {
+perfDone();
+}
+}
+
+async function apiRequest(
 url,
 options = {}
 ) {

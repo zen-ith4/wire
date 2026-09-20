@@ -47,6 +47,7 @@ import {
 
 import '../ui/profile-card.js';
 import '../media/image-viewer.js';
+import { registerServiceWorker } from './pwa.js';
 
 
 const NAV_ITEMS = [
@@ -610,6 +611,9 @@ async function bootstrap() {
   }
 }
 
+
+// Browser/PWA only (no-op in the native app): keep the app shell available locally.
+registerServiceWorker();
 
 bootstrap().catch(err => {
 

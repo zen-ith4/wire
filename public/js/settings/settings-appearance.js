@@ -321,6 +321,8 @@ event.target.closest(
   }
 
   try {
+    // This write makes the cached settings data stale (see settings.js).
+    window.dispatchEvent(new Event('wire:settings-stale'));
     await api(
       '/api/me/accent-color',
       {
@@ -462,6 +464,8 @@ hexInput?.value
     true;
 
   try {
+    // This write makes the cached settings data stale (see settings.js).
+    window.dispatchEvent(new Event('wire:settings-stale'));
     const data =
       await api(
         '/api/me/accent-color',

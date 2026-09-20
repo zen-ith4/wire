@@ -2,15 +2,29 @@ const SERVER_STORAGE_KEY = 'wire_server_endpoint';
 
 const DEFAULT_SERVER_ENDPOINT = 'https://wireapp.ir';
 
+let nativeDetected = null;
+
 function isCapacitor() {
+  if (nativeDetected !== null) {
+    return nativeDetected;
+  }
+
   const capacitor = window.Capacitor;
 
+  // window.Capacitor may not exist yet the first time this runs: answer
+  // "not native" but do not remember it. Once it exists, the answer is
+  // fixed for the life of the page, so it is computed (and logged) once
+  // instead of on every API request.
+  if (!capacitor) {
+    return false;
+  }
+
   const native =
-    Boolean(capacitor) &&
     typeof capacitor.isNativePlatform === 'function' &&
     capacitor.isNativePlatform();
 
-  console.log('[Server] Capacitor:', capacitor);
+  nativeDetected = native;
+
   console.log('[Server] Native app:', native);
 
   return native;
@@ -98,11 +112,7 @@ export function resolveServerUrl(url) {
 
   try {
     const endpoint = getServerEndpoint();
-    const resolvedUrl = new URL(url, endpoint).toString();
-
-    console.log('[Server] Resolve:', url, '→', resolvedUrl);
-
-    return resolvedUrl;
+    return new URL(url, endpoint).toString();
   } catch {
     return url;
   }

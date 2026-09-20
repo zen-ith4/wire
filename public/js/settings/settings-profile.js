@@ -56,6 +56,8 @@ async function saveBio() {
   if (!textarea) return;
 
   try {
+    // This write makes the cached settings data stale (see settings.js).
+    window.dispatchEvent(new Event('wire:settings-stale'));
     await api(
       '/api/me',
       {

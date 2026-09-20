@@ -15,7 +15,7 @@ import { avatarHtml } from '../ui/avatar.js';
 import { getCurrentUser } from '../core/auth.js';
 import { showConfirm } from '../ui/confirm.js';
 import { openEmojiPicker } from '../ui/emoji-picker.js';
-import { renderReactionsRow } from './reactions.js';
+import { renderReactionsRow, updateMessageReactions, onReactionsUpdated } from './reactions.js';
 import { buildReplyQuoteHtml, buildReplyPreview } from './reply.js';
 import { createTypingEmitter, createTypingIndicator, wireTypingInput } from './typing.js';
 import { getSocket } from '../core/socket.js';
@@ -32,6 +32,34 @@ const renderedChatIds = new Set();
 // without a round trip.
 const chatMsgById = new Map();
 let chatComposer = null;
+
+// ---------- In-memory message cache ----------
+// The ordered (oldest -> newest) messages the Chat view has loaded.
+// It is the single source of truth for what the view shows: a tab
+// switch repaints from it locally and then reconciles with the server
+// in the background (see showChat / reconcileChat). It keeps growing
+// from live socket events while another tab is open, so coming back
+// never has to wait for the network. Memory only; cleared on logout.
+let chatMessages = [];
+let chatLoaded = false;
+
+window.addEventListener('wire:logout', () => {
+  chatMessages = [];
+  chatLoaded = false;
+  chatOldest = null;
+  chatHasMore = true;
+  renderedChatIds.clear();
+  chatMsgById.clear();
+});
+
+// Keep cached message objects in step with reaction changes (local
+// toggles and socket updates both flow through updateMessageReactions),
+// so a repaint from the cache never shows stale reactions.
+onReactionsUpdated((scope, messageId, reactions) => {
+  if (scope !== 'chat') return;
+  const cached = chatMsgById.get(messageId);
+  if (cached) cached.reactions = reactions;
+});
 
 // ---------- Typing indicator ----------
 function renderChatTyping(usernames) {
@@ -83,7 +111,14 @@ export function destroyChatComposer() {
   if (chatComposer) chatComposer.destroy();
 }
 
-export async function renderChat() {
+// Tab-switch entry point: first visit loads from the network exactly
+// as before; afterwards the view is painted from the cache immediately.
+export async function showChat() {
+  return renderChat({ fromCache: chatLoaded });
+}
+
+export async function renderChat(opts) {
+  const fromCache = !!(opts && opts.fromCache);
   const main = document.getElementById('content-area');
   const generation = ++chatRenderGeneration;
   // Revoke any blob URLs (loaded image attachments) owned by the
@@ -102,7 +137,7 @@ export async function renderChat() {
           <div class="chat-top-status">Everyone in this workspace</div>
         </div>
       </div>
-      <div class="chat-messages" id="chat-messages">${loadingState()}</div>
+      <div class="chat-messages" id="chat-messages">${fromCache ? '' : loadingState()}</div>
       <div class="typing-indicator" id="chat-typing-indicator"></div>
       <div class="composer-wrapper">
         <div class="reply-preview-bar" id="chat-reply-preview"></div>
@@ -126,10 +161,12 @@ export async function renderChat() {
       </div>
     </div>
   `;
-  chatOldest = null;
-  chatHasMore = true;
-  renderedChatIds.clear();
-  chatMsgById.clear();
+  if (!fromCache) {
+    chatOldest = null;
+    chatHasMore = true;
+    renderedChatIds.clear();
+    chatMsgById.clear();
+  }
   chatTypingIndicator.clearAll();
 
   // Release any mic/timer resources an in-progress recording on the
@@ -157,7 +194,119 @@ export async function renderChat() {
   });
   wirePasteImage('chat-input', (file) => chatComposer.addFiles([file]));
   wireTypingInput('chat-input', chatTypingEmitter);
+
+  if (fromCache) {
+    paintChatFromCache();
+    void reconcileChat(generation);
+    return;
+  }
+
   await loadRecentChat(generation);
+}
+
+// Rebuilds the message list from chatMessages (no network).
+function paintChatFromCache() {
+  const container = document.getElementById('chat-messages');
+  if (!container) return;
+
+  cleanupImageUrls(container, 'chat');
+  container.innerHTML = '';
+  renderedChatIds.clear();
+  chatMsgById.clear();
+
+  if (chatMessages.length === 0) {
+    container.innerHTML = emptyState(ICONS.chat, 'No messages yet', 'Say hello 👋');
+    chatHasMore = false;
+    return;
+  }
+
+  if (chatHasMore) {
+    container.appendChild(buildLoadMoreEl(loadOlderChat));
+  }
+  for (const msg of chatMessages) {
+    renderedChatIds.add(msg.id);
+    chatMsgById.set(msg.id, msg);
+    container.appendChild(buildChatMessageEl(msg));
+  }
+  container.scrollTop = container.scrollHeight;
+}
+
+// Background revalidation after a paint from the cache. Applies only
+// the differences (deleted messages, changed reactions, new messages)
+// so the list does not flicker or lose its scroll position.
+async function reconcileChat(generation) {
+  try {
+    const fresh = await api('/api/chat/messages/recent?limit=50');
+    // Stale: the user left, or a newer render replaced this one.
+    if (generation !== chatRenderGeneration) return;
+    if (!document.getElementById('chat-messages')) return;
+
+    if (fresh.length === 0) {
+      if (chatMessages.length > 0) {
+        chatMessages = [];
+        paintChatFromCache();
+      }
+      return;
+    }
+
+    const firstIdx = chatMessages.findIndex((m) => m.id === fresh[0].id);
+    if (firstIdx === -1) {
+      // Cache and server no longer overlap (long absence): start over
+      // from the server's window.
+      chatMessages = fresh;
+      chatOldest = fresh[0].timestamp;
+      chatHasMore = fresh.length >= 50;
+      paintChatFromCache();
+      return;
+    }
+
+    const freshIds = new Set(fresh.map((m) => m.id));
+    let lastKnownIdx = -1;
+    chatMessages.forEach((m, i) => {
+      if (freshIds.has(m.id)) lastKnownIdx = i;
+    });
+
+    // A message missing from the *middle* of what we hold (missed while
+    // the socket was not delivering, with later ones arriving after it)
+    // cannot be appended in order: replace that window with the server's.
+    let lastCachedFreshPos = -1;
+    fresh.forEach((m, i) => {
+      if (chatMsgById.has(m.id)) lastCachedFreshPos = i;
+    });
+    const hasGap = fresh.some(
+      (m, i) => i < lastCachedFreshPos && !chatMsgById.has(m.id)
+    );
+    if (hasGap) {
+      chatMessages = chatMessages
+        .slice(0, firstIdx)
+        .concat(fresh, chatMessages.slice(lastKnownIdx + 1));
+      paintChatFromCache();
+      return;
+    }
+
+    // Deleted while we were away: cached, inside the server's window, gone.
+    // (Messages after the last one the server knew about arrived live in
+    // the meantime and must be kept.)
+    chatMessages
+      .slice(firstIdx, lastKnownIdx + 1)
+      .filter((m) => !freshIds.has(m.id))
+      .forEach((m) => removeChatMessage(m.id));
+
+    for (const msg of fresh) {
+      const cached = chatMsgById.get(msg.id);
+      if (!cached) {
+        addChatMessage(msg); // arrived while the socket was not delivering
+      } else if (
+        JSON.stringify(cached.reactions || []) !== JSON.stringify(msg.reactions || [])
+      ) {
+        cached.reactions = msg.reactions;
+        updateMessageReactions('chat', msg.id, msg.reactions || []);
+      }
+    }
+  } catch (e) {
+    if (generation !== chatRenderGeneration) return;
+    console.warn('[Chat] Background refresh failed:', e);
+  }
 }
 
 async function loadRecentChat(generation) {
@@ -167,31 +316,16 @@ async function loadRecentChat(generation) {
     // Stale render: abort if a newer render has replaced this one
     if (generation !== chatRenderGeneration) return;
 
-    renderedChatIds.clear();
-    chatMsgById.clear();
-    // Same reasoning as renderChat() above — this innerHTML clear
-    // discards the loading-state markup, but on a background
-    // refresh it can also discard a previously-rendered batch of
-    // messages (and their loaded-image blob URLs) that never got a
-    // matching revoke.
-    cleanupImageUrls(container, 'chat');
-    container.innerHTML = '';
-    if (messages.length === 0) {
-      container.innerHTML = emptyState(ICONS.chat, 'No messages yet', 'Say hello 👋');
-      chatHasMore = false;
-      return;
+    chatMessages = messages;
+    chatLoaded = true;
+    if (messages.length > 0) {
+      chatOldest = messages[0].timestamp;
+      chatHasMore = messages.length >= 50;
     }
-    chatOldest = messages[0].timestamp;
-    chatHasMore = messages.length >= 50;
-    if (chatHasMore) {
-      container.appendChild(buildLoadMoreEl(loadOlderChat));
-    }
-    messages.forEach(msg => {
-      renderedChatIds.add(msg.id);
-      chatMsgById.set(msg.id, msg);
-      container.appendChild(buildChatMessageEl(msg));
-    });
-    container.scrollTop = container.scrollHeight;
+    // Same reasoning as renderChat() above — the painter clears the
+    // loading-state markup and revokes/aborts the previous batch's
+    // image loads before rebuilding the list.
+    paintChatFromCache();
   } catch (e) {
     // Stale render: abort if a newer render has replaced this one
     if (generation !== chatRenderGeneration) return;
@@ -222,13 +356,16 @@ async function loadOlderChat() {
     if (chatHasMore) {
       frag.appendChild(buildLoadMoreEl(loadOlderChat));
     }
+    const older = [];
     messages.forEach(msg => {
       if (!renderedChatIds.has(msg.id)) {
         renderedChatIds.add(msg.id);
         chatMsgById.set(msg.id, msg);
+        older.push(msg);
         frag.appendChild(buildChatMessageEl(msg));
       }
     });
+    chatMessages = older.concat(chatMessages);
     container.insertBefore(frag, container.firstChild);
     container.scrollTop = oldTop + (container.scrollHeight - prevHeight);
   } catch (e) {
@@ -289,6 +426,9 @@ export function addChatMessage(msg) {
   if (renderedChatIds.has(msg.id)) return;
   renderedChatIds.add(msg.id);
   chatMsgById.set(msg.id, msg);
+  // Keep the cache current even while another tab is open, so the next
+  // visit needs no refetch to show this message.
+  if (chatLoaded) chatMessages.push(msg);
   const container = document.getElementById('chat-messages');
   if (!container) return;
   const el = buildChatMessageEl(msg);
@@ -310,8 +450,12 @@ export function addChatMessage(msg) {
 export function removeChatMessage(id) {
   renderedChatIds.delete(id);
   chatMsgById.delete(id);
+  chatMessages = chatMessages.filter((m) => m.id !== id);
   const container = document.getElementById('chat-messages');
-  if (!container) return;
+  if (!container) {
+    revokeAttachmentImage(id, 'chat'); // message is gone for good; free its cached image
+    return;
+  }
   const el = container.querySelector(`.chat-msg[data-msg-id="${id}"]`);
   if (!el) return;
   // Cancel any in-flight fetch for this element, and free its cached

@@ -134,6 +134,8 @@ async function uploadAvatar() {
   );
 
   try {
+    // This write makes the cached settings data stale (see settings.js).
+    window.dispatchEvent(new Event('wire:settings-stale'));
     await xhrUpload(
       '/api/me/avatar',
       form,
@@ -217,6 +219,8 @@ async function removeAvatar() {
       '../core/api.js'
     );
 
+    // This write makes the cached settings data stale (see settings.js).
+    window.dispatchEvent(new Event('wire:settings-stale'));
     await api(
       '/api/me/avatar',
       {
@@ -327,6 +331,8 @@ async function uploadBanner() {
   );
 
   try {
+    // This write makes the cached settings data stale (see settings.js).
+    window.dispatchEvent(new Event('wire:settings-stale'));
     await xhrUpload(
       '/api/me/banner',
       form,
@@ -406,6 +412,8 @@ async function removeBanner() {
       '../core/api.js'
     );
 
+    // This write makes the cached settings data stale (see settings.js).
+    window.dispatchEvent(new Event('wire:settings-stale'));
     await api(
       '/api/me/banner',
       {

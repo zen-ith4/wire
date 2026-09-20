@@ -109,6 +109,8 @@ async function changePassword() {
         localStorage.getItem('token')
       );
 
+    // This write makes the cached settings data stale (see settings.js).
+    window.dispatchEvent(new Event('wire:settings-stale'));
     await api(
       '/api/me/password',
       {
@@ -356,6 +358,8 @@ function createEmail2FAController() {
         true;
 
       try {
+        // This write makes the cached settings data stale (see settings.js).
+        window.dispatchEvent(new Event('wire:settings-stale'));
         const data =
           await api(
             '/api/settings/2fa/email/enable',
@@ -458,6 +462,8 @@ function createEmail2FAController() {
         true;
 
       try {
+        // This write makes the cached settings data stale (see settings.js).
+        window.dispatchEvent(new Event('wire:settings-stale'));
         await api(
           '/api/settings/2fa/email/verify',
           {
@@ -525,6 +531,8 @@ function createEmail2FAController() {
         true;
 
       try {
+        // This write makes the cached settings data stale (see settings.js).
+        window.dispatchEvent(new Event('wire:settings-stale'));
         await api(
           '/api/settings/2fa/email/disable',
           {

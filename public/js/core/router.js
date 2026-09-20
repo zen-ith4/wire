@@ -1,10 +1,14 @@
 import { getCurrentUser } from './auth.js';
 import { enterView } from './view-session.js';
+import { perfNavStart } from './perf.js';
 
-import { renderFiles } from '../files/files.js';
-import { renderChat, destroyChatComposer } from '../chat/chat.js';
-import { renderDm, destroyDmComposer } from '../chat/dm.js';
-import { renderSettings } from '../settings/settings.js';
+// The four primary tabs use their cache-first entry points (show*): a
+// view that has been loaded before paints from memory immediately and
+// revalidates in the background; the first visit loads normally.
+import { showFiles } from '../files/files.js';
+import { showChat, destroyChatComposer } from '../chat/chat.js';
+import { showDm, destroyDmComposer } from '../chat/dm.js';
+import { showSettings } from '../settings/settings.js';
 
 import {
   renderAdminUsers,
@@ -17,25 +21,25 @@ import { renderWireguard } from '../wireguard/wireguard.js';
 const routes = {
   files: {
     title: 'My Files',
-    render: renderFiles,
+    render: showFiles,
     flush: true,
   },
 
   chat: {
     title: 'Chat',
-    render: renderChat,
+    render: showChat,
     flush: true,
   },
 
   messages: {
     title: 'Messages',
-    render: renderDm,
+    render: showDm,
     flush: true,
   },
 
   settings: {
     title: 'Settings',
-    render: renderSettings,
+    render: showSettings,
   },
 
   'admin-users': {
@@ -95,6 +99,8 @@ export function navigate(view, params) {
   if (!user) {
     return;
   }
+
+  perfNavStart(view);
 
   const route = routes[view] || routes.files;
 

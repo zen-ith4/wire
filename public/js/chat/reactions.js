@@ -61,7 +61,16 @@ export function renderReactionsRow(msg, scope) {
  * socket.js) — the same function serves both, so there's no separate
  * "local" vs "remote" rendering path to keep in sync.
  */
+// Views that keep their own message cache (chat.js, dm.js) subscribe here
+// so cached messages follow every reaction change, wherever it came from.
+const reactionListeners = new Set();
+export function onReactionsUpdated(fn) {
+  reactionListeners.add(fn);
+}
+
 export function updateMessageReactions(scope, messageId, reactions) {
+  reactionListeners.forEach((fn) => fn(scope, messageId, reactions));
+
   const containerId = MESSAGES_CONTAINER_ID[scope];
   const container = document.getElementById(containerId);
   if (!container) return;

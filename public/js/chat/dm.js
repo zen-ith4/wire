@@ -24,7 +24,7 @@ import { getCurrentUser } from '../core/auth.js';
 import { claimRender } from '../core/view-session.js';
 import { showConfirm } from '../ui/confirm.js';
 import { openEmojiPicker } from '../ui/emoji-picker.js';
-import { renderReactionsRow } from './reactions.js';
+import { renderReactionsRow, onReactionsUpdated } from './reactions.js';
 import {
   buildReplyQuoteHtml,
   buildReplyPreview
@@ -52,6 +52,31 @@ let dmActivePeer = null;
 let dmEntry = null;
 let dmComposer = null;
 const dmConvMap = new Map();
+
+// Last conversation list, previews already decrypted. A tab switch
+// paints from this synchronously and refreshes in the background
+// (see showDm / loadDmConversations). Memory only; cleared on logout.
+let dmPreparedConvs = [];
+let dmConvsLoaded = false;
+
+window.addEventListener('wire:logout', () => {
+  dmCache.clear();
+  dmConvMap.clear();
+  dmPreparedConvs = [];
+  dmConvsLoaded = false;
+  dmActivePeer = null;
+  dmEntry = null;
+});
+
+// Keep cached DM messages in step with reaction changes so reopening a
+// conversation from the cache never shows stale reactions.
+onReactionsUpdated((scope, messageId, reactions) => {
+  if (scope !== 'dm') return;
+  for (const entry of dmCache.values()) {
+    const cached = entry.byId.get(messageId);
+    if (cached) cached.reactions = reactions;
+  }
+});
 
 // ---------- Helpers ----------
 function canLoadMoreDm() {
@@ -449,7 +474,16 @@ export function destroyDmComposer() {
 }
 
 // ---------- Render ----------
-export async function renderDm(openPeerId) {
+// Tab-switch entry point. With no target conversation and a list we
+// already have, paint it locally and refresh in the background; anything
+// else (first visit, "message this person" with a target) is a normal render.
+export async function showDm(params) {
+  const hasTarget = params !== undefined && params !== null;
+  return renderDm(params, { fromCache: dmConvsLoaded && !hasTarget });
+}
+
+export async function renderDm(openPeerId, opts) {
+  const fromCache = !!(opts && opts.fromCache);
   const isCurrent = claimRender('messages');
   const main = document.getElementById('content-area');
 
@@ -472,7 +506,7 @@ export async function renderDm(openPeerId) {
             <input type="text" class="conv-search-input" id="dm-conv-search" placeholder="Search conversations…" autocomplete="off">
           </div>
         </div>
-        <div id="dm-conv-list" class="dm-conv-list">${loadingState()}</div>
+        <div id="dm-conv-list" class="dm-conv-list">${fromCache ? '' : loadingState()}</div>
       </div>
       <div class="dm-thread" id="dm-thread">
         ${emptyState(ICONS.mail, 'Select a conversation', 'Or start a new one with a friend.')}
@@ -493,6 +527,13 @@ export async function renderDm(openPeerId) {
   searchInput.addEventListener('input', () => {
     void renderConvListRows(Array.from(dmConvMap.values()), searchInput.value);
   });
+
+  if (fromCache) {
+    paintConvRows(dmPreparedConvs, '');
+    void loadDmConversations();
+    void refreshUnreadBadge();
+    return;
+  }
 
   const convs = await loadDmConversations();
 
@@ -525,6 +566,17 @@ async function renderConvListRows(convs, filter = '') {
     }))
   );
 
+  dmPreparedConvs = preparedConvs;
+  dmConvsLoaded = true;
+
+  paintConvRows(preparedConvs, filter);
+}
+
+// Synchronous: turns already-prepared conversations into rows.
+function paintConvRows(preparedConvs, filter = '') {
+  const list = document.getElementById('dm-conv-list');
+  if (!list) return;
+
   const q = filter.trim().toLowerCase();
   const filtered = q
     ? preparedConvs.filter(
@@ -534,16 +586,16 @@ async function renderConvListRows(convs, filter = '') {
       )
     : preparedConvs;
 
+  let html;
+
   if (filtered.length === 0) {
-    list.innerHTML = q
+    html = q
       ? `<div class="text-muted" style="font-size:12.5px;padding:16px 10px;text-align:center;">No conversations found</div>`
       : `<div class="text-muted" style="font-size:12.5px;padding:10px 4px;">No conversations yet. Start one above.</div>`;
-    return;
-  }
-
-  list.innerHTML = filtered
-    .map(
-      (c) => `
+  } else {
+    html = filtered
+      .map(
+        (c) => `
         <div class="dm-conv ${
           dmActivePeer && dmActivePeer.id == c.peer_id ? 'active' : ''
         }" data-peer="${c.peer_id}">
@@ -570,8 +622,15 @@ async function renderConvListRows(convs, filter = '') {
           </div>
         </div>
       `
-    )
-    .join('');
+      )
+      .join('');
+  }
+
+  // A background refresh that produced identical rows must not touch the
+  // DOM (no flicker, no lost hover/scroll state).
+  if (list._wireHtml === html) return;
+  list._wireHtml = html;
+  list.innerHTML = html;
 }
 
 export async function loadDmConversations() {
@@ -589,7 +648,8 @@ export async function loadDmConversations() {
 
     return convs;
   } catch (e) {
-    if (list) {
+    if (list && !dmConvsLoaded) {
+      list._wireHtml = null;
       list.innerHTML = emptyState(ICONS.empty, 'Failed to load', escapeHtml(e.message));
     }
     return [];

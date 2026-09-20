@@ -63,6 +63,13 @@ export function logout() {
   pendingVerification = null;
 
   /*
+   * Views keep in-memory copies of the signed-in user's data (files,
+   * chat, DMs, settings) so tab switches can paint locally. Tell them
+   * to drop it: nothing from this session may be visible to the next.
+   */
+  window.dispatchEvent(new Event('wire:logout'));
+
+  /*
    * Explicit sign-out must also invalidate auto-unlock: clear the
    * cached unlock key (OS-secured via safeStorage in Electron,
    * IndexedDB in the browser) so the next launch goes through the

@@ -50,3 +50,20 @@ export function claimRender(name) {
   latestClaim.set(name, id);
   return () => mountedView === name && latestClaim.get(name) === id;
 }
+
+/**
+ * True while the user has text typed into a focused field inside
+ * `container`. Views that repaint themselves from a background refresh
+ * (stale-while-revalidate) use this to avoid wiping what is being typed.
+ */
+export function isUserTypingIn(container) {
+  const a = document.activeElement;
+
+  return !!(
+    a &&
+    container &&
+    container.contains(a) &&
+    (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA') &&
+    a.value
+  );
+}

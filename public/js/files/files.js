@@ -1,7 +1,7 @@
 import { api } from '../core/api.js';
 import { getToken, logout } from '../core/auth.js';
 import { resolveServerUrl } from '../core/server.js';
-import { claimRender } from '../core/view-session.js';
+import { claimRender, isUserTypingIn } from '../core/view-session.js';
 
 import {
   Capacitor,
@@ -1103,6 +1103,138 @@ window.showNewFolderInput =
 
 // ====================== رندر اصلی ======================
 
+// ---------------------------------------------------------------------
+// Data loading + rendering
+//
+// Two entry points share one loader:
+//
+//   renderFiles()  forced fresh render (spinner -> network -> paint).
+//                  Used by everything that just changed something
+//                  (upload, delete, share, folder change, breadcrumb).
+//
+//   showFiles()    tab switch. If this view has been loaded before it
+//                  paints from the in-memory state *immediately* (no
+//                  spinner, no network) and revalidates in the
+//                  background, touching the DOM again only when the
+//                  server data actually differs. First visit behaves
+//                  exactly like renderFiles().
+//
+// The state kept here is the same folder/listing data this module
+// already held; it lives in memory only and is dropped on logout.
+// ---------------------------------------------------------------------
+
+let filesLoaded = false; // a complete listing has been painted at least once
+let filesSig = '';       // signature of the data that is currently painted
+
+window.addEventListener('wire:logout', () => {
+  currentFolderId = null;
+  currentSubpath = '';
+  currentFolders = [];
+  currentEntries = [];
+  currentCanWrite = false;
+  myFoldersById = new Map();
+  showFolderList = false;
+  filesLoaded = false;
+  filesSig = '';
+});
+
+function filesListUrl(folderId, subpath) {
+  return `/api/files/list/${folderId}?subpath=${encodeURIComponent(subpath)}`;
+}
+
+// Fetches everything the Files view needs and commits it to the module
+// state in one step (so a failed request can never leave folders from
+// one response next to entries from another). Resolves to
+// { folders, data, sig }, or null when a newer render superseded this one.
+async function loadFilesData(isCurrent) {
+  // The listing request only depends on the folders response to
+  // *validate* the remembered folder. When a folder is already known,
+  // start its listing in parallel with folders/share instead of
+  // waiting for them (one round trip instead of two). If the folder
+  // turns out to be gone we discard the guess and fall back.
+  const guessId = currentFolderId;
+  const guessSubpath = currentSubpath;
+  const guess =
+    guessId
+      ? api(filesListUrl(guessId, guessSubpath))
+      : null;
+
+  if (guess) {
+    guess.catch(() => {}); // a discarded guess must not surface as an unhandled rejection
+  }
+
+  const [folders, mineResponse] = await Promise.all([
+    api('/api/files/folders'),
+    api('/api/share/mine')
+  ]);
+
+  if (!isCurrent()) {
+    return null;
+  }
+
+  const mineFolders =
+    Array.isArray(mineResponse)
+      ? mineResponse
+      : (mineResponse.folders || []);
+
+  let folderId = null;
+  let subpath = '';
+  let data = { entries: [], can_write: false };
+
+  if (folders.length > 0) {
+    const stillValid =
+      guessId &&
+      folders.find(f => f.id == guessId);
+
+    if (stillValid) {
+      folderId = guessId;
+      subpath = guessSubpath;
+    } else {
+      folderId = folders[0].id;
+      subpath = '';
+    }
+
+    data =
+      stillValid && guess
+        ? await guess
+        : await api(filesListUrl(folderId, subpath));
+
+    if (!isCurrent()) {
+      return null;
+    }
+  }
+
+  const sig = JSON.stringify([
+    folders,
+    mineFolders,
+    folderId,
+    subpath,
+    data.entries || [],
+    !!data.can_write
+  ]);
+
+  currentFolders = folders;
+  myFoldersById = new Map(mineFolders.map(f => [f.id, f]));
+  currentFolderId = folderId;
+  currentSubpath = subpath;
+  currentEntries = data.entries || [];
+  currentCanWrite = data.can_write || false;
+
+  return { folders, data, sig };
+}
+
+function filesErrorHtml(e) {
+  return `<div class="card">${
+    emptyState(
+      ICONS.empty,
+      'Something went wrong',
+      escapeHtml(
+        e.message
+      )
+    )
+  }</div>`;
+}
+
 export async function renderFiles() {
   // #content-area is shared by every view: only write to it while this
   // render still owns it (see core/view-session.js).
@@ -1124,107 +1256,22 @@ export async function renderFiles() {
     loadingState();
 
   try {
-    const [
-      folders,
-      mineResponse
-    ] = await Promise.all([
-      api(
-        '/api/files/folders'
-      ),
-      api(
-        '/api/share/mine'
-      )
-    ]);
-
-    if (!isCurrent()) {
-      return;
-    }
-
-    currentFolders =
-      folders;
-
-    const mineFolders =
-      Array.isArray(
-        mineResponse
-      )
-        ? mineResponse
-        : (
-            mineResponse.folders ||
-            []
-          );
-
-    myFoldersById =
-      new Map(
-        mineFolders.map(
-          f => [
-            f.id,
-            f
-          ]
-        )
+    const result =
+      await loadFilesData(
+        isCurrent
       );
 
-    if (
-      folders.length === 0
-    ) {
-      currentFolderId =
-        null;
-
-      currentSubpath =
-        '';
-
-      currentEntries =
-        [];
-
-      currentCanWrite =
-        false;
-
-      renderFileCard(
-        [],
-        {
-          entries: [],
-          can_write: false
-        }
-      );
-
+    if (!result) {
       return;
     }
-
-    if (
-      !currentFolderId ||
-      !folders.find(
-        f =>
-          f.id ==
-          currentFolderId
-      )
-    ) {
-      currentFolderId =
-        folders[0].id;
-
-      currentSubpath =
-        '';
-    }
-
-    const data =
-      await api(
-        `/api/files/list/${currentFolderId}?subpath=${encodeURIComponent(currentSubpath)}`
-      );
-
-    if (!isCurrent()) {
-      return;
-    }
-
-    currentEntries =
-      data.entries ||
-      [];
-
-    currentCanWrite =
-      data.can_write ||
-      false;
 
     renderFileCard(
-      folders,
-      data
+      result.folders,
+      result.data
     );
+
+    filesLoaded = true;
+    filesSig = result.sig;
 
   } catch (e) {
     if (!isCurrent()) {
@@ -1232,15 +1279,67 @@ export async function renderFiles() {
     }
 
     main.innerHTML =
-      `<div class="card">${
-        emptyState(
-          ICONS.empty,
-          'Something went wrong',
-          escapeHtml(
-            e.message
-          )
-        )
-      }</div>`;
+      filesErrorHtml(e);
+  }
+}
+
+export async function showFiles() {
+  if (!filesLoaded) {
+    return renderFiles();
+  }
+
+  const isCurrent =
+    claimRender(
+      'files'
+    );
+
+  if (!isCurrent()) {
+    return;
+  }
+
+  const main =
+    document.getElementById(
+      'content-area'
+    );
+
+  // 1. Local paint: everything needed is already in memory.
+  renderFileCard(
+    currentFolders,
+    {
+      entries: currentEntries,
+      can_write: currentCanWrite
+    }
+  );
+
+  // 2. Background revalidation. Nothing blocks on this.
+  try {
+    const result =
+      await loadFilesData(
+        isCurrent
+      );
+
+    if (
+      !result ||
+      result.sig === filesSig ||
+      isUserTypingIn(main)
+    ) {
+      return;
+    }
+
+    renderFileCard(
+      result.folders,
+      result.data
+    );
+
+    filesSig = result.sig;
+
+  } catch (e) {
+    // Keep showing what we have; a real failure surfaces on the next
+    // action (api() already handles an expired session itself).
+    console.warn(
+      '[Files] Background refresh failed:',
+      e
+    );
   }
 }
 

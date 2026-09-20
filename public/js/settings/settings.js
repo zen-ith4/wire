@@ -108,13 +108,21 @@ export async function showSettings() {
     return renderSettings();
   }
 
-  // Not awaited: the paint happens synchronously inside the call.
-  void renderSettings({
-    data: snap
-  });
-
+  // One claim covers both the local paint and the background refresh
+  // below. It must be taken here and handed to renderSettings(): if the
+  // paint took its own claim and this function then took another, the
+  // second would supersede the first (latest wins, see
+  // core/view-session.js) and the paint would be discarded whenever it
+  // has to await before writing — as it does in Electron, where the
+  // hardware-acceleration setting is read over IPC first.
   const isCurrent =
     claimRender('settings');
+
+  // Not awaited: the refresh below must not wait for the paint.
+  void renderSettings({
+    data: snap,
+    isCurrent
+  });
 
   const main =
     document.getElementById('content-area');
@@ -149,6 +157,8 @@ export async function showSettings() {
 //
 // opts.data: paint from data we already have (no spinner, no
 // network). Without it, fetch fresh data first.
+// opts.isCurrent: a claim the caller already took for this render
+// (see showSettings). Without it, this render takes its own.
 // ============================================================
 
 export async function renderSettings(opts) {
@@ -157,6 +167,7 @@ export async function renderSettings(opts) {
    * this render still owns it (see core/view-session.js).
    */
   const isCurrent =
+    (opts && opts.isCurrent) ||
     claimRender('settings');
 
   const main =

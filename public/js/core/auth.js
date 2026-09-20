@@ -77,8 +77,7 @@ export function logout() {
    *
    * Fire-and-forget: logout() has always been synchronous and
    * existing callers (api.js on a real 401, the Settings sign-out
-   * button before window.location.reload()) call it without
-   * awaiting.
+   * button before window.location.reload()) call it without awaiting.
    */
   clearPersistedUnlockKey(signedOutUser).catch(err => {
     console.error(
@@ -128,7 +127,6 @@ async function changeNativeServer(rawAddress, errorElement = null) {
     return newEndpoint;
 
   } catch (error) {
-
     console.error(
       '[Server] Failed to change server:',
       error
@@ -203,20 +201,16 @@ async function persistUnlockKey(
   }
 
   try {
-
     const storageOrigin =
       getIdentityStorageOrigin();
 
     if (isElectron()) {
-
       await window.electronAPI.storeIdentityUnlockKey(
         storageOrigin,
         user.id,
         unlockKey
       );
-
     } else {
-
       await idbStoreUnlockKey(
         storageOrigin,
         user.id,
@@ -225,12 +219,10 @@ async function persistUnlockKey(
     }
 
   } catch (err) {
-
     console.error(
       '[Identity] Failed to persist unlock key:',
       err
     );
-
   }
 }
 
@@ -240,19 +232,15 @@ export async function clearPersistedUnlockKey(user) {
   }
 
   try {
-
     const storageOrigin =
       getIdentityStorageOrigin();
 
     if (isElectron()) {
-
       await window.electronAPI.clearIdentityUnlockKey(
         storageOrigin,
         user.id
       );
-
     } else {
-
       await idbClearUnlockKey(
         storageOrigin,
         user.id
@@ -260,12 +248,10 @@ export async function clearPersistedUnlockKey(user) {
     }
 
   } catch (err) {
-
     console.error(
       '[Identity] Failed to clear unlock key:',
       err
     );
-
   }
 }
 
@@ -287,7 +273,6 @@ export async function attemptAutoUnlock(
   let cached;
 
   try {
-
     const storageOrigin =
       getIdentityStorageOrigin();
 
@@ -303,7 +288,6 @@ export async function attemptAutoUnlock(
           );
 
   } catch (err) {
-
     console.error(
       '[Identity] Failed to read unlock key:',
       err
@@ -320,7 +304,6 @@ export async function attemptAutoUnlock(
   }
 
   try {
-
     await restoreIdentityWithUnlockKey(
       unlockKey,
       currentToken
@@ -329,7 +312,6 @@ export async function attemptAutoUnlock(
     return true;
 
   } catch (err) {
-
     console.warn(
       '[Identity] Auto-unlock failed, falling back to password:',
       err
@@ -389,7 +371,6 @@ export async function initializeIdentity(
   let result;
 
   if (!identity.exists) {
-
     console.log(
       '[Identity] Creating identity...'
     );
@@ -404,7 +385,6 @@ export async function initializeIdentity(
     );
 
   } else {
-
     console.log(
       '[Identity] Restoring identity...'
     );
@@ -420,14 +400,12 @@ export async function initializeIdentity(
   }
 
   if (rememberMe === true) {
-
     await persistUnlockKey(
       result?.unlockKey,
       currentUser
     );
 
   } else if (rememberMe === false) {
-
     await clearPersistedUnlockKey(
       currentUser
     );
@@ -623,7 +601,6 @@ export async function register(
   }
 
   if (data.requiresEmailVerification === true) {
-
     if (!data.email) {
       throw new Error(
         'Invalid registration response'
@@ -759,7 +736,6 @@ function renderVerification(
   verification,
   onSuccess
 ) {
-
   const wrap =
     document.getElementById(
       'login-wrap'
@@ -872,16 +848,13 @@ function renderVerification(
     );
 
   if (form) {
-
     form.onsubmit = async (event) => {
-
       event.preventDefault();
 
       const code =
         codeInput?.value.trim() || '';
 
       if (!/^\d{6}$/.test(code)) {
-
         if (errorEl) {
           errorEl.textContent =
             'Enter the 6-digit verification code';
@@ -906,7 +879,6 @@ function renderVerification(
       }
 
       try {
-
         await verifyEmail(
           verification.userId,
           code
@@ -937,7 +909,6 @@ function renderVerification(
         }
 
       } catch (error) {
-
         console.error(
           'Email verification failed:',
           error
@@ -962,9 +933,7 @@ function renderVerification(
   }
 
   if (resendButton) {
-
     resendButton.onclick = async () => {
-
       resendButton.disabled = true;
 
       if (errorEl) {
@@ -972,7 +941,6 @@ function renderVerification(
       }
 
       try {
-
         await resendVerification(
           verification.userId
         );
@@ -983,7 +951,6 @@ function renderVerification(
         }
 
       } catch (error) {
-
         console.error(
           'Failed to resend verification code:',
           error
@@ -996,7 +963,6 @@ function renderVerification(
         }
 
       } finally {
-
         setTimeout(() => {
           resendButton.disabled = false;
         }, 1000);
@@ -1005,11 +971,8 @@ function renderVerification(
   }
 
   if (backButton) {
-
     backButton.onclick = () => {
-
       pendingVerification = null;
-
       renderLogin(onSuccess);
     };
   }
@@ -1026,7 +989,6 @@ function renderTwoFactor(
   password,
   onSuccess
 ) {
-
   const wrap =
     document.getElementById(
       'login-wrap'
@@ -1121,16 +1083,13 @@ function renderTwoFactor(
     );
 
   if (form) {
-
     form.onsubmit = async (event) => {
-
       event.preventDefault();
 
       const code =
         codeInput?.value.trim() || '';
 
       if (!/^\d{6}$/.test(code)) {
-
         if (errorEl) {
           errorEl.textContent =
             'Enter the 6-digit verification code';
@@ -1155,7 +1114,6 @@ function renderTwoFactor(
       }
 
       try {
-
         await verifyTwoFactor(
           twoFactor.id,
           twoFactor.challengeId,
@@ -1165,7 +1123,6 @@ function renderTwoFactor(
         await initializeIdentity(
           password,
           async () => {
-
             if (
               typeof onSuccess === 'function'
             ) {
@@ -1177,7 +1134,6 @@ function renderTwoFactor(
         pendingVerification = null;
 
       } catch (error) {
-
         console.error(
           'Two-factor authentication failed:',
           error
@@ -1202,11 +1158,8 @@ function renderTwoFactor(
   }
 
   if (backButton) {
-
     backButton.onclick = () => {
-
       pendingVerification = null;
-
       renderLogin(onSuccess);
     };
   }
@@ -1222,7 +1175,6 @@ function renderAuthCard(
   mode,
   onSuccess
 ) {
-
   const wrap =
     document.getElementById(
       'login-wrap'
@@ -1242,6 +1194,9 @@ function renderAuthCard(
 
   const nativeApp =
     isNativeApp();
+
+  const electronApp =
+    isElectron();
 
   wrap.innerHTML = `
 <div class="card login-card">
@@ -1477,13 +1432,32 @@ function renderAuthCard(
   }
 
   ${
-    !isRegister && isElectron()
+    !isRegister && electronApp
       ? `
-        <div class="auth-server-row" id="auth-server-row">
+        <div
+          class="auth-server-row"
+          id="auth-server-row"
+          style="
+            margin-top:16px;
+            display:flex;
+            align-items:center;
+            gap:10px;
+          "
+        >
+
           <span>Server:</span>
 
-          <span class="auth-server-value">
-            ${escapeHtml(window.location.host)}
+          <span
+            class="auth-server-value"
+            style="
+              overflow:hidden;
+              text-overflow:ellipsis;
+              white-space:nowrap;
+              flex:1;
+              opacity:.75;
+            "
+          >
+            ${escapeHtml(getServerEndpoint())}
           </span>
 
           <button
@@ -1493,6 +1467,7 @@ function renderAuthCard(
           >
             Change
           </button>
+
         </div>
       `
       : ''
@@ -1512,9 +1487,7 @@ function renderAuthCard(
     );
 
   if (switchButton) {
-
     switchButton.onclick = () => {
-
       if (isRegister) {
         renderLogin(onSuccess);
       } else {
@@ -1528,7 +1501,6 @@ function renderAuthCard(
    * --------------------------------------------------------- */
 
   if (nativeApp) {
-
     const changeButton =
       document.getElementById(
         'auth-server-change'
@@ -1560,16 +1532,12 @@ function renderAuthCard(
       );
 
     if (changeButton) {
-
       changeButton.onclick = () => {
-
         if (editor) {
           editor.style.display = 'block';
         }
 
-        if (changeButton) {
-          changeButton.style.display = 'none';
-        }
+        changeButton.style.display = 'none';
 
         input?.focus();
         input?.select();
@@ -1577,9 +1545,7 @@ function renderAuthCard(
     }
 
     if (cancelButton) {
-
       cancelButton.onclick = () => {
-
         if (editor) {
           editor.style.display = 'none';
         }
@@ -1600,9 +1566,7 @@ function renderAuthCard(
     }
 
     if (connectButton) {
-
       connectButton.onclick = async () => {
-
         if (errorEl) {
           errorEl.textContent = '';
         }
@@ -1614,19 +1578,62 @@ function renderAuthCard(
         connectButton.disabled = true;
 
         try {
-
           await changeNativeServer(
             input?.value || '',
             errorEl
           );
 
         } catch {
-
           if (input) {
             input.disabled = false;
           }
 
           connectButton.disabled = false;
+        }
+      };
+    }
+  }
+
+  /* ---------------------------------------------------------
+   * Electron server selector
+   *
+   * Electron has a separate native connect screen handled by
+   * the main process. Do not use changeNativeServer() here:
+   * that function is intentionally restricted to Capacitor.
+   * --------------------------------------------------------- */
+
+  if (
+    electronApp &&
+    !isRegister
+  ) {
+    const changeButton =
+      document.getElementById(
+        'auth-server-change'
+      );
+
+    if (changeButton) {
+      changeButton.onclick = async () => {
+        changeButton.disabled = true;
+
+        try {
+          if (
+            !window.electronAPI ||
+            typeof window.electronAPI.showConnectScreen !== 'function'
+          ) {
+            throw new Error(
+              'Electron server configuration is unavailable'
+            );
+          }
+
+          await window.electronAPI.showConnectScreen();
+
+        } catch (error) {
+          console.error(
+            '[Server] Failed to open Electron connect screen:',
+            error
+          );
+
+          changeButton.disabled = false;
         }
       };
     }
@@ -1641,7 +1648,6 @@ function renderAuthCard(
    * --------------------------------------------------------- */
 
   form.onsubmit = async (event) => {
-
     event.preventDefault();
 
     const usernameInput =
@@ -1695,13 +1701,11 @@ function renderAuthCard(
     }
 
     try {
-
       /* -----------------------------------------------------
        * Registration
        * ----------------------------------------------------- */
 
       if (isRegister) {
-
         if (
           password !== confirmPassword
         ) {
@@ -1720,7 +1724,6 @@ function renderAuthCard(
         if (
           registerData.requiresEmailVerification === true
         ) {
-
           renderVerification(
             pendingVerification,
             onSuccess
@@ -1732,7 +1735,6 @@ function renderAuthCard(
         await initializeIdentity(
           password,
           async () => {
-
             if (
               typeof onSuccess === 'function'
             ) {
@@ -1766,7 +1768,6 @@ function renderAuthCard(
         data.email &&
         !data.email_verified
       ) {
-
         pendingVerification = {
           userId: data.id,
           username: data.username,
@@ -1792,7 +1793,6 @@ function renderAuthCard(
       if (
         data.requiresTwoFactor === true
       ) {
-
         pendingVerification = {
           userId: data.id,
           username: data.username,
@@ -1824,7 +1824,6 @@ function renderAuthCard(
       await initializeIdentity(
         password,
         async () => {
-
           if (
             typeof onSuccess === 'function'
           ) {
@@ -1847,7 +1846,6 @@ function renderAuthCard(
       }
 
     } catch (error) {
-
       console.error(
         isRegister
           ? 'Registration failed:'
@@ -1856,7 +1854,6 @@ function renderAuthCard(
       );
 
       if (errorEl) {
-
         errorEl.textContent =
           error?.message ||
           (
@@ -1917,14 +1914,12 @@ export function renderUnlock(
   user,
   onSuccess = null
 ) {
-
   const wrap =
     document.getElementById(
       'login-wrap'
     );
 
   if (!wrap) {
-
     console.error(
       'Login container not found'
     );
@@ -2126,7 +2121,6 @@ export function renderUnlock(
    * --------------------------------------------------------- */
 
   if (nativeApp) {
-
     const changeButton =
       document.getElementById(
         'unlock-server-change'
@@ -2158,9 +2152,7 @@ export function renderUnlock(
       );
 
     if (changeButton) {
-
       changeButton.onclick = () => {
-
         if (editor) {
           editor.style.display = 'block';
         }
@@ -2173,9 +2165,7 @@ export function renderUnlock(
     }
 
     if (cancelButton) {
-
       cancelButton.onclick = () => {
-
         if (editor) {
           editor.style.display = 'none';
         }
@@ -2194,9 +2184,7 @@ export function renderUnlock(
     }
 
     if (connectButton) {
-
       connectButton.onclick = async () => {
-
         if (serverError) {
           serverError.textContent = '';
         }
@@ -2208,14 +2196,12 @@ export function renderUnlock(
         connectButton.disabled = true;
 
         try {
-
           await changeNativeServer(
             input?.value || '',
             serverError
           );
 
         } catch {
-
           if (input) {
             input.disabled = false;
           }
@@ -2227,16 +2213,13 @@ export function renderUnlock(
   }
 
   if (form) {
-
     form.onsubmit = async (event) => {
-
       event.preventDefault();
 
       const password =
         passwordInput?.value || '';
 
       if (!password) {
-
         if (errorEl) {
           errorEl.textContent =
             'Enter your password';
@@ -2259,7 +2242,6 @@ export function renderUnlock(
       }
 
       try {
-
         const rememberMeInput =
           document.getElementById(
             'unlock-remember-me'
@@ -2276,7 +2258,6 @@ export function renderUnlock(
         );
 
       } catch (error) {
-
         console.error(
           'Identity unlock failed:',
           error
@@ -2301,11 +2282,8 @@ export function renderUnlock(
   }
 
   if (signOutButton) {
-
     signOutButton.onclick = () => {
-
       logout();
-
       renderLogin(onSuccess);
     };
   }

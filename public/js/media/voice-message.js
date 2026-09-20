@@ -1,17 +1,16 @@
 // ============================================================
 // Voice message player
 // ------------------------------------------------------------
-// Deliberately a SEPARATE component from audio-player.js (the
-// generic uploaded-audio-file player). Voice messages share the
-// message/attachment/upload/streaming infrastructure with normal
-// audio attachments (see attachments.js) but get their own compact,
-// native-chat-app-style UI here — a single row with a play button,
-// a lightweight generated waveform doubling as the seek bar,
-// current/total time, and a playback-speed toggle.
+// Separate compact player for voice messages.
+//
+// Waveform:
+// - Deterministic per-message bars.
+// - Rendered to a canvas instead of dozens of DOM elements.
+// - Does not block the player from appearing while the media URL
+//   is being resolved.
 // ============================================================
 
 import { ICONS } from '../icons.js';
-import { escapeAttr } from '../core/utils.js';
 import { getMediaSrcUrl } from './mediaToken.js';
 import { resolveServerUrl } from '../core/server.js';
 
@@ -67,7 +66,7 @@ function setActivePlayer(audio) {
     try {
       activeAudioEl.pause();
     } catch {
-      // The previous element may already have been detached.
+      // Previous element may already be detached.
     }
   }
 
@@ -118,41 +117,422 @@ function seededBars(seed, count) {
   return bars;
 }
 
-function barsHtml(bars) {
-  return bars
-    .map(
-      (height) =>
-        `<span class="voice-wave-bar" style="height:${height}%"></span>`
+function drawWaveform(
+  canvas,
+  bars,
+  progress = 0,
+  colors = null
+) {
+  if (
+    !canvas ||
+    !Array.isArray(bars) ||
+    bars.length === 0
+  ) {
+    return;
+  }
+
+  const rect = canvas.getBoundingClientRect();
+
+  if (
+    !rect ||
+    rect.width <= 0 ||
+    rect.height <= 0
+  ) {
+    return;
+  }
+
+  const dpr = Math.max(
+    1,
+    Math.min(
+      3,
+      window.devicePixelRatio || 1
     )
-    .join('');
+  );
+
+  const width = Math.max(
+    1,
+    Math.round(rect.width * dpr)
+  );
+
+  const height = Math.max(
+    1,
+    Math.round(rect.height * dpr)
+  );
+
+  if (
+    canvas.width !== width ||
+    canvas.height !== height
+  ) {
+    canvas.width = width;
+    canvas.height = height;
+  }
+
+  const ctx = canvas.getContext('2d');
+
+  if (!ctx) {
+    return;
+  }
+
+  ctx.clearRect(0, 0, width, height);
+
+  const inactiveColor =
+    colors?.inactive ||
+    'rgba(255,255,255,.35)';
+
+  const activeColor =
+    colors?.active ||
+    'rgb(99,102,241)';
+
+  const normalizedProgress = Math.min(
+    1,
+    Math.max(
+      0,
+      Number(progress) || 0
+    )
+  );
+
+  /*
+   * Do not force a 2px minimum width here.
+   *
+   * On narrow phones, 32 bars + gaps may simply not fit.
+   * Let the bars shrink instead of overflowing/clipping.
+   */
+  const gapCss = Math.min(
+    2,
+    Math.max(
+      0.75,
+      rect.width / bars.length * 0.12
+    )
+  );
+
+  const totalGapCss =
+    gapCss * Math.max(
+      0,
+      bars.length - 1
+    );
+
+  const barWidthCss = Math.max(
+    1,
+    (
+      rect.width -
+      totalGapCss
+    ) / bars.length
+  );
+
+  const radiusCss = Math.min(
+    2,
+    barWidthCss / 2
+  );
+
+  for (let i = 0; i < bars.length; i++) {
+    const xCss =
+      i * (
+        barWidthCss +
+        gapCss
+      );
+
+    const normalizedHeight =
+      Math.min(
+        100,
+        Math.max(
+          0,
+          Number(bars[i]) || 0
+        )
+      ) / 100;
+
+    const barHeightCss = Math.max(
+      2,
+      rect.height *
+        normalizedHeight
+    );
+
+    const yCss =
+      (rect.height -
+        barHeightCss) / 2;
+
+    /*
+     * Use the center of the bar for progress.
+     * This prevents the last partially active bar from
+     * looking randomly clipped.
+     */
+    const barCenter =
+      (
+        xCss +
+        barWidthCss / 2
+      ) / rect.width;
+
+    const active =
+      normalizedProgress > 0 &&
+      barCenter <= normalizedProgress;
+
+    const x = xCss * dpr;
+    const y = yCss * dpr;
+
+    const w = Math.max(
+      1,
+      barWidthCss * dpr
+    );
+
+    const h = Math.max(
+      1,
+      barHeightCss * dpr
+    );
+
+    const r = Math.max(
+      0,
+      radiusCss * dpr
+    );
+
+    ctx.fillStyle = active
+      ? activeColor
+      : inactiveColor;
+
+    if (
+      typeof ctx.roundRect === 'function'
+    ) {
+      ctx.beginPath();
+
+      ctx.roundRect(
+        x,
+        y,
+        w,
+        h,
+        r
+      );
+
+      ctx.fill();
+    } else {
+      ctx.fillRect(
+        x,
+        y,
+        w,
+        h
+      );
+    }
+  }
+}
+
+function setupWaveformCanvas(
+  canvas,
+  bars
+) {
+  if (!canvas) {
+    return {
+      setProgress: () => {},
+      redraw: () => {},
+      destroy: () => {},
+    };
+  }
+
+  const waveEl =
+    canvas.closest(
+      '.voice-message-wave'
+    ) || canvas;
+
+  const playerEl =
+    canvas.closest(
+      '.voice-message'
+    );
+
+  let progress = 0;
+  let resizeFrame = null;
+
+  const getWaveColors = () => {
+    let inactiveColor = '';
+    let activeColor = '';
+
+    try {
+      /*
+       * Inactive/unplayed waveform color comes from:
+       *
+       * .voice-message-wave {
+       *   color: var(--muted2);
+       * }
+       *
+       * getComputedStyle() resolves the actual final CSS color.
+       */
+      inactiveColor =
+        getComputedStyle(
+          waveEl
+        ).color.trim();
+    } catch {
+      inactiveColor = '';
+    }
+
+    try {
+      /*
+       * The play button already uses:
+       *
+       * background:
+       *   var(--message-accent, rgb(var(--indigo)));
+       *
+       * Reading its computed background-color gives us the
+       * actual resolved accent color without duplicating the
+       * accent value in JavaScript.
+       */
+      const playButton =
+        playerEl?.querySelector(
+          '.voice-message-play'
+        );
+
+      if (playButton) {
+        activeColor =
+          getComputedStyle(
+            playButton
+          ).backgroundColor.trim();
+      }
+    } catch {
+      activeColor = '';
+    }
+
+    /*
+     * These fallbacks are only defensive. Under the current CSS,
+     * both values are resolved from the stylesheet.
+     */
+    return {
+      active:
+        activeColor ||
+        inactiveColor ||
+        'transparent',
+
+      inactive:
+        inactiveColor ||
+        'transparent',
+    };
+  };
+
+  const redraw = () => {
+    const colors =
+      getWaveColors();
+
+    drawWaveform(
+      canvas,
+      bars,
+      progress,
+      colors
+    );
+  };
+
+  const setProgress = (value) => {
+    progress = Math.min(
+      1,
+      Math.max(
+        0,
+        Number(value) || 0
+      )
+    );
+
+    redraw();
+  };
+
+  const scheduleResizeRedraw = () => {
+    if (resizeFrame !== null) {
+      return;
+    }
+
+    resizeFrame =
+      requestAnimationFrame(() => {
+        resizeFrame = null;
+        redraw();
+      });
+  };
+
+  let resizeObserver = null;
+
+  if (
+    typeof ResizeObserver ===
+    'function'
+  ) {
+    resizeObserver =
+      new ResizeObserver(
+        scheduleResizeRedraw
+      );
+
+    resizeObserver.observe(canvas);
+  } else {
+    window.addEventListener(
+      'resize',
+      scheduleResizeRedraw
+    );
+  }
+
+  requestAnimationFrame(
+    redraw
+  );
+
+  return {
+    setProgress,
+
+    redraw,
+
+    destroy() {
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+        resizeObserver = null;
+      } else {
+        window.removeEventListener(
+          'resize',
+          scheduleResizeRedraw
+        );
+      }
+
+      if (resizeFrame !== null) {
+        cancelAnimationFrame(
+          resizeFrame
+        );
+
+        resizeFrame = null;
+      }
+    },
+  };
 }
 
 // ======================================================
 // PLAYBACK SPEED
 // ======================================================
 
-const SPEED_STEPS = [1, 1.25, 1.5, 2];
+const SPEED_STEPS = [
+  1,
+  1.25,
+  1.5,
+  2,
+];
 
 function nextSpeed(current) {
-  const normalized = Number(current);
+  const normalized =
+    Number(current);
 
-  const idx = SPEED_STEPS.indexOf(normalized);
+  const idx =
+    SPEED_STEPS.indexOf(
+      normalized
+    );
 
   if (idx === -1) {
     return 1;
   }
 
-  return SPEED_STEPS[(idx + 1) % SPEED_STEPS.length];
+  return SPEED_STEPS[
+    (idx + 1) %
+      SPEED_STEPS.length
+  ];
 }
 
 function formatSpeed(rate) {
-  const value = Number(rate);
+  const value =
+    Number(rate);
 
-  if (!Number.isFinite(value) || value <= 0) {
+  if (
+    !Number.isFinite(value) ||
+    value <= 0
+  ) {
     return '1x';
   }
 
-  return `${value % 1 === 0 ? value.toFixed(0) : value}x`;
+  return `${
+    value % 1 === 0
+      ? value.toFixed(0)
+      : value
+  }x`;
 }
 
 // ======================================================
@@ -160,32 +540,59 @@ function formatSpeed(rate) {
 // ======================================================
 
 function formatTime(seconds) {
-  if (!Number.isFinite(seconds) || seconds < 0) {
+  if (
+    !Number.isFinite(seconds) ||
+    seconds < 0
+  ) {
     seconds = 0;
   }
 
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = Math.floor(seconds % 60);
+  const hours =
+    Math.floor(
+      seconds / 3600
+    );
+
+  const minutes =
+    Math.floor(
+      (seconds % 3600) / 60
+    );
+
+  const secs =
+    Math.floor(
+      seconds % 60
+    );
 
   if (hours > 0) {
-    return `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    return `${hours}:${String(
+      minutes
+    ).padStart(2, '0')}:${String(
+      secs
+    ).padStart(2, '0')}`;
   }
 
-  return `${minutes}:${String(secs).padStart(2, '0')}`;
+  return `${minutes}:${String(
+    secs
+  ).padStart(2, '0')}`;
 }
 
 // ======================================================
 // PLAYER
 // ======================================================
 
-export async function renderVoiceMessage(msg, scope, containerEl) {
-  const messageId = String(msg.id);
+export async function renderVoiceMessage(
+  msg,
+  scope,
+  containerEl
+) {
+  const messageId =
+    String(msg.id);
 
   const container =
     containerEl ||
     document.querySelector(
-      `.chat-msg[data-msg-id="${CSS.escape(messageId)}"]`
+      `.chat-msg[data-msg-id="${CSS.escape(
+        messageId
+      )}"]`
     );
 
   if (!container) {
@@ -196,9 +603,9 @@ export async function renderVoiceMessage(msg, scope, containerEl) {
     return;
   }
 
-  const playerId = `vplayer-${messageId}`;
+  const playerId =
+    `vplayer-${messageId}`;
 
-  // Prevent duplicate players.
   if (
     container.querySelector(
       `#${CSS.escape(playerId)}`
@@ -207,69 +614,28 @@ export async function renderVoiceMessage(msg, scope, containerEl) {
     return;
   }
 
-  let attachmentUrl;
-
-  try {
-    /*
-     * IMPORTANT:
-     *
-     * getMediaSrcUrl() may return a relative API path such as:
-     *
-     *   /api/dm/attachments/19?token=...
-     *
-     * In Capacitor's WebView the page origin is:
-     *
-     *   https://localhost
-     *
-     * Therefore assigning that relative URL directly to <audio>
-     * makes WebView try to load:
-     *
-     *   https://localhost/api/dm/attachments/19?token=...
-     *
-     * which is a local Capacitor asset URL and not our backend.
-     *
-     * Always resolve the final media URL against the configured
-     * server endpoint before giving it to the native <audio>
-     * element.
-     */
-    const mediaUrl = await getMediaSrcUrl(
-      scope,
-      msg.id
+  const bars =
+    seededBars(
+      msg.id,
+      BAR_COUNT
     );
-
-    attachmentUrl = resolveServerUrl(
-      mediaUrl
-    );
-  } catch (error) {
-    console.error(
-      'Failed to resolve voice attachment URL:',
-      error
-    );
-    return;
-  }
-
-  // The container may have been removed while awaiting the token.
-  if (
-    !document.body.contains(container) ||
-    container.querySelector(
-      `#${CSS.escape(playerId)}`
-    )
-  ) {
-    return;
-  }
-
-  const bars = seededBars(msg.id, BAR_COUNT);
-  const barsMarkup = barsHtml(bars);
 
   const template = `
-    <div class="voice-message loading" id="${playerId}">
+    <div
+      class="voice-message loading"
+      id="${playerId}"
+    >
       <button
         type="button"
         class="voice-message-play"
         aria-label="Play voice message"
       >
         <span class="icon-play">${ICONS.play}</span>
-        <span class="icon-pause" style="display:none">${ICONS.pause}</span>
+
+        <span
+          class="icon-pause"
+          style="display:none"
+        >${ICONS.pause}</span>
       </button>
 
       <div
@@ -281,11 +647,15 @@ export async function renderVoiceMessage(msg, scope, containerEl) {
         aria-valuemax="100"
         aria-valuenow="0"
       >
-        <div class="voice-wave-track">${barsMarkup}</div>
-        <div class="voice-wave-fill" style="width:0%">${barsMarkup}</div>
+        <canvas
+          class="voice-wave-canvas"
+          aria-hidden="true"
+        ></canvas>
       </div>
 
-      <span class="voice-message-time">0:00</span>
+      <span class="voice-message-time">
+        0:00
+      </span>
 
       <button
         type="button"
@@ -300,8 +670,14 @@ export async function renderVoiceMessage(msg, scope, containerEl) {
           aria-label="Show volume control"
           aria-expanded="false"
         >
-          <span class="icon-volume">${ICONS.volume}</span>
-          <span class="icon-volume-mute" style="display:none">${ICONS.volumeMute}</span>
+          <span class="icon-volume">
+            ${ICONS.volume}
+          </span>
+
+          <span
+            class="icon-volume-mute"
+            style="display:none"
+          >${ICONS.volumeMute}</span>
         </button>
 
         <div class="voice-message-volume-slider-wrap">
@@ -317,34 +693,41 @@ export async function renderVoiceMessage(msg, scope, containerEl) {
         </div>
       </div>
 
-      <div class="voice-message-error" aria-live="polite">
+      <div
+        class="voice-message-error"
+        aria-live="polite"
+      >
         ${ICONS.alert}
+
         <span class="voice-message-error-text">
           Failed to load voice message
         </span>
       </div>
 
       <audio
-        id="vaudio-${escapeAttr(messageId)}"
+        id="vaudio-${messageId}"
         preload="metadata"
-        src="${escapeAttr(attachmentUrl)}"
       ></audio>
     </div>
   `;
 
   const contentWrapper =
-    container.querySelector('.chat-msg-content') ||
-    container;
+    container.querySelector(
+      '.chat-msg-content'
+    ) || container;
 
   contentWrapper.insertAdjacentHTML(
     'beforeend',
     template
   );
 
-  const playerEl = contentWrapper.lastElementChild;
-  const audio = playerEl
-    ? playerEl.querySelector('audio')
-    : null;
+  const playerEl =
+    contentWrapper.lastElementChild;
+
+  const audio =
+    playerEl?.querySelector(
+      'audio'
+    );
 
   if (!playerEl || !audio) {
     console.error(
@@ -354,84 +737,153 @@ export async function renderVoiceMessage(msg, scope, containerEl) {
     return;
   }
 
-  const playBtn = playerEl.querySelector(
-    '.voice-message-play'
-  );
+  const playBtn =
+    playerEl.querySelector(
+      '.voice-message-play'
+    );
 
-  const iconPlay = playerEl.querySelector(
-    '.icon-play'
-  );
+  const iconPlay =
+    playerEl.querySelector(
+      '.icon-play'
+    );
 
-  const iconPause = playerEl.querySelector(
-    '.icon-pause'
-  );
+  const iconPause =
+    playerEl.querySelector(
+      '.icon-pause'
+    );
 
-  const waveEl = playerEl.querySelector(
-    '.voice-message-wave'
-  );
+  const waveEl =
+    playerEl.querySelector(
+      '.voice-message-wave'
+    );
 
-  const fillEl = playerEl.querySelector(
-    '.voice-wave-fill'
-  );
+  const waveCanvas =
+    playerEl.querySelector(
+      '.voice-wave-canvas'
+    );
 
-  const timeEl = playerEl.querySelector(
-    '.voice-message-time'
-  );
+  const timeEl =
+    playerEl.querySelector(
+      '.voice-message-time'
+    );
 
-  const speedBtn = playerEl.querySelector(
-    '.voice-message-speed'
-  );
+  const speedBtn =
+    playerEl.querySelector(
+      '.voice-message-speed'
+    );
 
-  const volumeControlEl = playerEl.querySelector(
-    '.voice-message-volume-control'
-  );
+  const volumeControlEl =
+    playerEl.querySelector(
+      '.voice-message-volume-control'
+    );
 
-  const volumeBtn = playerEl.querySelector(
-    '.voice-message-volume'
-  );
+  const volumeBtn =
+    playerEl.querySelector(
+      '.voice-message-volume'
+    );
 
-  const iconVolume = playerEl.querySelector(
-    '.icon-volume'
-  );
+  const iconVolume =
+    playerEl.querySelector(
+      '.icon-volume'
+    );
 
-  const iconVolumeMute = playerEl.querySelector(
-    '.icon-volume-mute'
-  );
+  const iconVolumeMute =
+    playerEl.querySelector(
+      '.icon-volume-mute'
+    );
 
-  const volumeSlider = playerEl.querySelector(
-    '.voice-message-volume-slider'
-  );
+  const volumeSlider =
+    playerEl.querySelector(
+      '.voice-message-volume-slider'
+    );
 
-  const errorEl = playerEl.querySelector(
-    '.voice-message-error'
-  );
+  const errorEl =
+    playerEl.querySelector(
+      '.voice-message-error'
+    );
 
-  const errorTextEl = playerEl.querySelector(
-    '.voice-message-error-text'
-  );
+  const errorTextEl =
+    playerEl.querySelector(
+      '.voice-message-error-text'
+    );
+
+  if (
+    !playBtn ||
+    !iconPlay ||
+    !iconPause ||
+    !waveEl ||
+    !waveCanvas ||
+    !timeEl ||
+    !speedBtn ||
+    !volumeControlEl ||
+    !volumeBtn ||
+    !iconVolume ||
+    !iconVolumeMute ||
+    !volumeSlider ||
+    !errorEl ||
+    !errorTextEl
+  ) {
+    console.error(
+      'Voice message player controls are incomplete:',
+      msg.id
+    );
+
+    playerEl.remove();
+    return;
+  }
+
+  // ====================================================
+  // MEDIA URL STATE
+  // ====================================================
+
+  /*
+   * Keep this separate from the DOM.
+   *
+   * The previous version referenced attachmentUrl before
+   * declaring it, which could make the diagnostic/error path
+   * throw another exception on top of the actual media error.
+   */
+  let attachmentUrl = '';
+
+  // ====================================================
+  // WAVEFORM
+  // ====================================================
+
+  const waveform =
+    setupWaveformCanvas(
+      waveCanvas,
+      bars
+    );
 
   // ====================================================
   // HELPERS
   // ====================================================
 
-  const setLoading = (isLoading) => {
-    playerEl.classList.toggle(
-      'loading',
-      !!isLoading
-    );
-  };
+  const setLoading =
+    (isLoading) => {
+      playerEl.classList.toggle(
+        'loading',
+        !!isLoading
+      );
+    };
 
   function setPlayerState(state) {
-    playerEl.dataset.state = state;
+    playerEl.dataset.state =
+      state;
 
-    setLoading(state === 'loading');
+    setLoading(
+      state === 'loading'
+    );
 
     if (state !== 'error') {
-      errorEl.style.display = 'none';
+      errorEl.style.display =
+        'none';
     }
   }
 
-  setPlayerState('idle');
+  setPlayerState(
+    'loading'
+  );
 
   // ====================================================
   // PROGRESS
@@ -446,7 +898,9 @@ export async function renderVoiceMessage(msg, scope, containerEl) {
 
     const tick = () => {
       if (
-        !document.body.contains(playerEl) ||
+        !document.body.contains(
+          playerEl
+        ) ||
         audio.paused ||
         audio.ended
       ) {
@@ -457,185 +911,277 @@ export async function renderVoiceMessage(msg, scope, containerEl) {
       updateProgress();
       updateTimeLabel();
 
-      rafId = requestAnimationFrame(tick);
+      rafId =
+        requestAnimationFrame(
+          tick
+        );
     };
 
-    rafId = requestAnimationFrame(tick);
+    rafId =
+      requestAnimationFrame(
+        tick
+      );
   }
 
   function stopProgressLoop() {
     if (rafId !== null) {
-      cancelAnimationFrame(rafId);
+      cancelAnimationFrame(
+        rafId
+      );
+
       rafId = null;
     }
   }
 
-  const updateProgress = () => {
-    const duration = audio.duration;
-    const currentTime = Number.isFinite(audio.currentTime)
-      ? Math.max(0, audio.currentTime)
-      : 0;
+  const updateProgress =
+    () => {
+      const duration =
+        audio.duration;
 
-    const pct =
-      Number.isFinite(duration) &&
-      duration > 0
-        ? Math.min(
-            100,
+      const currentTime =
+        Number.isFinite(
+          audio.currentTime
+        )
+          ? Math.max(
+              0,
+              audio.currentTime
+            )
+          : 0;
+
+      const pct =
+        Number.isFinite(duration) &&
+        duration > 0
+          ? Math.min(
+              100,
+              Math.max(
+                0,
+                (
+                  currentTime /
+                  duration
+                ) * 100
+              )
+            )
+          : 0;
+
+      waveform.setProgress(
+        pct / 100
+      );
+
+      waveEl.setAttribute(
+        'aria-valuenow',
+        String(
+          Math.round(pct)
+        )
+      );
+    };
+
+  const updateTimeLabel =
+    () => {
+      const duration =
+        audio.duration;
+
+      const currentTime =
+        Number.isFinite(
+          audio.currentTime
+        )
+          ? Math.max(
+              0,
+              audio.currentTime
+            )
+          : 0;
+
+      if (
+        currentTime > 0 ||
+        !Number.isFinite(duration) ||
+        duration <= 0
+      ) {
+        timeEl.textContent =
+          formatTime(
+            currentTime
+          );
+      } else {
+        timeEl.textContent =
+          formatTime(
+            duration
+          );
+      }
+    };
+
+  const updateVolumeIcon =
+    () => {
+      const isMuted =
+        audio.muted ||
+        audio.volume === 0;
+
+      iconVolume.style.display =
+        isMuted
+          ? 'none'
+          : 'block';
+
+      iconVolumeMute.style.display =
+        isMuted
+          ? 'block'
+          : 'none';
+    };
+
+  const updateVolumeSliderFill =
+    () => {
+      const rawValue =
+        Number(
+          volumeSlider.value
+        );
+
+      const pct =
+        Math.round(
+          Math.min(
+            1,
             Math.max(
               0,
-              (currentTime / duration) * 100
+              rawValue
             )
-          )
-        : 0;
+          ) * 100
+        );
 
-    fillEl.style.width = `${pct}%`;
-
-    waveEl.setAttribute(
-      'aria-valuenow',
-      String(Math.round(pct))
-    );
-  };
-
-  const updateTimeLabel = () => {
-    const duration = audio.duration;
-    const currentTime = Number.isFinite(audio.currentTime)
-      ? Math.max(0, audio.currentTime)
-      : 0;
-
-    if (
-      currentTime > 0 ||
-      !Number.isFinite(duration) ||
-      duration <= 0
-    ) {
-      timeEl.textContent = formatTime(currentTime);
-    } else {
-      timeEl.textContent = formatTime(duration);
-    }
-  };
-
-  const updateVolumeIcon = () => {
-    const isMuted =
-      audio.muted ||
-      audio.volume === 0;
-
-    iconVolume.style.display = isMuted
-      ? 'none'
-      : 'block';
-
-    iconVolumeMute.style.display = isMuted
-      ? 'block'
-      : 'none';
-  };
-
-  const updateVolumeSliderFill = () => {
-    const rawValue = Number(
-      volumeSlider.value
-    );
-
-    const pct = Math.round(
-      Math.min(1, Math.max(0, rawValue)) * 100
-    );
-
-    volumeSlider.style.background =
-      `linear-gradient(to right, ` +
-      `var(--message-accent, rgb(var(--indigo))) 0%, ` +
-      `var(--message-accent, rgb(var(--indigo))) ${pct}%, ` +
-      `var(--border-soft) ${pct}%, ` +
-      `var(--border-soft) 100%)`;
-  };
+      volumeSlider.style.background =
+        `linear-gradient(to right, ` +
+        `var(--message-accent, rgb(var(--indigo))) 0%, ` +
+        `var(--message-accent, rgb(var(--indigo))) ${pct}%, ` +
+        `var(--border-soft) ${pct}%, ` +
+        `var(--border-soft) 100%)`;
+    };
 
   // ====================================================
   // PLAYBACK STATE
   // ====================================================
 
-  let intendedPlaying = false;
+  let intendedPlaying =
+    false;
 
-  const seekToRatio = (ratio) => {
-    const duration = audio.duration;
+  const seekToRatio =
+    (ratio) => {
+      const duration =
+        audio.duration;
 
-    if (
-      !Number.isFinite(duration) ||
-      duration <= 0
-    ) {
-      return;
-    }
+      if (
+        !Number.isFinite(duration) ||
+        duration <= 0
+      ) {
+        return;
+      }
 
-    const normalizedRatio = Math.min(
-      1,
-      Math.max(0, Number(ratio) || 0)
-    );
+      const normalizedRatio =
+        Math.min(
+          1,
+          Math.max(
+            0,
+            Number(ratio) || 0
+          )
+        );
 
-    const targetTime =
-      normalizedRatio * duration;
+      const targetTime =
+        normalizedRatio *
+        duration;
 
-    if (!Number.isFinite(targetTime)) {
-      return;
-    }
+      if (
+        !Number.isFinite(
+          targetTime
+        )
+      ) {
+        return;
+      }
 
-    try {
-      audio.currentTime = targetTime;
-    } catch (error) {
-      console.warn(
-        'Voice message seek failed:',
-        error
+      try {
+        audio.currentTime =
+          targetTime;
+      } catch (error) {
+        console.warn(
+          'Voice message seek failed:',
+          error
+        );
+
+        return;
+      }
+
+      updateProgress();
+      updateTimeLabel();
+
+      saveVoiceState(
+        messageId,
+        audio,
+        intendedPlaying,
+        audio.playbackRate
       );
-      return;
-    }
+    };
 
-    updateProgress();
-    updateTimeLabel();
+  const seekToClientX =
+    (clientX) => {
+      const rect =
+        waveEl.getBoundingClientRect();
 
-    saveVoiceState(
-      messageId,
-      audio,
-      intendedPlaying,
-      audio.playbackRate
-    );
-  };
+      if (
+        !rect ||
+        rect.width <= 0 ||
+        !Number.isFinite(clientX)
+      ) {
+        return;
+      }
 
-  const seekToClientX = (clientX) => {
-    const rect =
-      waveEl.getBoundingClientRect();
+      seekToRatio(
+        (
+          clientX -
+          rect.left
+        ) / rect.width
+      );
+    };
 
-    if (
-      !rect ||
-      rect.width <= 0 ||
-      !Number.isFinite(clientX)
-    ) {
-      return;
-    }
+  // ====================================================
+  // INITIAL AUDIO STATE
+  // ====================================================
 
-    seekToRatio(
-      (clientX - rect.left) /
-        rect.width
-    );
-  };
+  audio.playbackRate = 1;
+  audio.volume = 1;
+  audio.muted = false;
 
-  // Initial volume UI.
   updateVolumeSliderFill();
   updateVolumeIcon();
 
+  // ====================================================
+  // PLAY / PAUSE
+  // ====================================================
+
   function play() {
-    setActivePlayer(audio);
+    setActivePlayer(
+      audio
+    );
 
-    intendedPlaying = true;
+    intendedPlaying =
+      true;
 
-    const promise = audio.play();
+    const promise =
+      audio.play();
 
-    if (promise && typeof promise.catch === 'function') {
-      promise.catch((error) => {
-        intendedPlaying = false;
+    if (
+      promise &&
+      typeof promise.catch ===
+        'function'
+    ) {
+      promise.catch(
+        (error) => {
+          intendedPlaying =
+            false;
 
-        console.error(
-          'Voice message playback failed:',
-          error
-        );
-      });
+          console.error(
+            'Voice message playback failed:',
+            error
+          );
+        }
+      );
     }
   }
 
   function pause() {
-    intendedPlaying = false;
+    intendedPlaying =
+      false;
 
     try {
       audio.pause();
@@ -647,350 +1193,409 @@ export async function renderVoiceMessage(msg, scope, containerEl) {
     }
   }
 
-  // ====================================================
-  // PLAY / PAUSE EVENTS
-  // ====================================================
-
-  playBtn.addEventListener('click', () => {
-    if (audio.paused) {
-      play();
-    } else {
-      pause();
-    }
-  });
-
-  audio.addEventListener('play', () => {
-    iconPlay.style.display = 'none';
-    iconPause.style.display = 'block';
-
-    playBtn.setAttribute(
-      'aria-label',
-      'Pause voice message'
-    );
-
-    saveVoiceState(
-      messageId,
-      audio,
-      intendedPlaying,
-      audio.playbackRate
-    );
-  });
-
-  audio.addEventListener('playing', () => {
-    setPlayerState('playing');
-
-    startProgressLoop();
-
-    networkRetryCount = 0;
-  });
-
-  audio.addEventListener('waiting', () => {
-    if (intendedPlaying) {
-      setPlayerState('loading');
-    }
-
-    stopProgressLoop();
-  });
-
-  audio.addEventListener('pause', () => {
-    iconPlay.style.display = 'block';
-    iconPause.style.display = 'none';
-
-    playBtn.setAttribute(
-      'aria-label',
-      'Play voice message'
-    );
-
-    stopProgressLoop();
-
-    if (!audio.ended) {
-      setPlayerState('paused');
-    }
-
-    updateProgress();
-    updateTimeLabel();
-
-    saveVoiceState(
-      messageId,
-      audio,
-      intendedPlaying,
-      audio.playbackRate
-    );
-
-    if (activeAudioEl === audio) {
-      activeAudioEl = null;
-    }
-  });
-
-  // ====================================================
-  // KEYBOARD SEEK
-  // ====================================================
-
-  waveEl.addEventListener('keydown', (event) => {
-    const duration = audio.duration;
-
-    if (
-      !Number.isFinite(duration) ||
-      duration <= 0
-    ) {
-      return;
-    }
-
-    const step = 5 / duration;
-
-    if (
-      event.key === 'ArrowRight' ||
-      event.key === 'ArrowUp'
-    ) {
-      event.preventDefault();
-
-      seekToRatio(
-        audio.currentTime / duration +
-          step
-      );
-    } else if (
-      event.key === 'ArrowLeft' ||
-      event.key === 'ArrowDown'
-    ) {
-      event.preventDefault();
-
-      seekToRatio(
-        audio.currentTime / duration -
-          step
-      );
-    } else if (
-      event.key === ' ' ||
-      event.key === 'Enter'
-    ) {
-      event.preventDefault();
-
+  playBtn.addEventListener(
+    'click',
+    () => {
       if (audio.paused) {
         play();
       } else {
         pause();
       }
     }
-  });
+  );
+
+  // ====================================================
+  // PLAYBACK EVENTS
+  // ====================================================
+
+  audio.addEventListener(
+    'play',
+    () => {
+      iconPlay.style.display =
+        'none';
+
+      iconPause.style.display =
+        'block';
+
+      playBtn.setAttribute(
+        'aria-label',
+        'Pause voice message'
+      );
+
+      saveVoiceState(
+        messageId,
+        audio,
+        intendedPlaying,
+        audio.playbackRate
+      );
+    }
+  );
+
+  audio.addEventListener(
+    'playing',
+    () => {
+      setPlayerState(
+        'playing'
+      );
+
+      startProgressLoop();
+
+      networkRetryCount = 0;
+    }
+  );
+
+  audio.addEventListener(
+    'waiting',
+    () => {
+      if (intendedPlaying) {
+        setPlayerState(
+          'loading'
+        );
+      }
+
+      stopProgressLoop();
+    }
+  );
+
+  audio.addEventListener(
+    'pause',
+    () => {
+      iconPlay.style.display =
+        'block';
+
+      iconPause.style.display =
+        'none';
+
+      playBtn.setAttribute(
+        'aria-label',
+        'Play voice message'
+      );
+
+      stopProgressLoop();
+
+      if (!audio.ended) {
+        setPlayerState(
+          'paused'
+        );
+      }
+
+      updateProgress();
+      updateTimeLabel();
+
+      saveVoiceState(
+        messageId,
+        audio,
+        intendedPlaying,
+        audio.playbackRate
+      );
+
+      if (
+        activeAudioEl === audio
+      ) {
+        activeAudioEl =
+          null;
+      }
+    }
+  );
+
+  // ====================================================
+  // KEYBOARD SEEK
+  // ====================================================
+
+  waveEl.addEventListener(
+    'keydown',
+    (event) => {
+      const duration =
+        audio.duration;
+
+      if (
+        !Number.isFinite(duration) ||
+        duration <= 0
+      ) {
+        return;
+      }
+
+      const step =
+        5 / duration;
+
+      if (
+        event.key === 'ArrowRight' ||
+        event.key === 'ArrowUp'
+      ) {
+        event.preventDefault();
+
+        seekToRatio(
+          audio.currentTime /
+            duration +
+            step
+        );
+      } else if (
+        event.key === 'ArrowLeft' ||
+        event.key === 'ArrowDown'
+      ) {
+        event.preventDefault();
+
+        seekToRatio(
+          audio.currentTime /
+            duration -
+            step
+        );
+      } else if (
+        event.key === ' ' ||
+        event.key === 'Enter'
+      ) {
+        event.preventDefault();
+
+        if (audio.paused) {
+          play();
+        } else {
+          pause();
+        }
+      }
+    }
+  );
 
   // ====================================================
   // LOADING / METADATA
   // ====================================================
 
-  setPlayerState('loading');
-
   const savedState =
-    voicePlaybackState.get(messageId);
+    voicePlaybackState.get(
+      messageId
+    );
 
-  /*
-   * IMPORTANT ANDROID WEBVIEW FIX
-   *
-   * MediaRecorder voice messages can be WebM/Opus files whose
-   * container does not contain a final duration.
-   *
-   * Chromium may initially expose:
-   *
-   *     audio.duration === Infinity
-   *
-   * The old implementation attempted to force duration
-   * resolution with:
-   *
-   *     audio.currentTime = 1e101;
-   *
-   * That is not safe on Android WebView and can throw a
-   * DOMException.
-   *
-   * We deliberately never assign an absurd/non-finite seek
-   * position. Instead we wait for durationchange and give the
-   * browser a short amount of time to resolve the metadata.
-   *
-   * If the browser still cannot determine the duration, we
-   * gracefully continue without crashing. Playback itself can
-   * still work, and the duration will be updated later if the
-   * browser discovers it during playback.
-   */
-
-  function resolveRealDuration(done) {
-    if (Number.isFinite(audio.duration)) {
+  function resolveRealDuration(
+    done
+  ) {
+    if (
+      Number.isFinite(
+        audio.duration
+      )
+    ) {
       done(true);
       return;
     }
 
-    let finished = false;
+    let finished =
+      false;
 
-    const finish = (resolved) => {
-      if (finished) {
-        return;
-      }
+    let timeoutId =
+      null;
 
-      finished = true;
+    const finish =
+      (resolved) => {
+        if (finished) {
+          return;
+        }
 
-      audio.removeEventListener(
-        'durationchange',
-        onDurationChange
-      );
+        finished = true;
 
-      clearTimeout(timeoutId);
+        audio.removeEventListener(
+          'durationchange',
+          onDurationChange
+        );
 
-      done(resolved);
-    };
+        if (timeoutId !== null) {
+          clearTimeout(
+            timeoutId
+          );
 
-    const onDurationChange = () => {
-      if (Number.isFinite(audio.duration)) {
-        finish(true);
-      }
-    };
+          timeoutId = null;
+        }
+
+        done(resolved);
+      };
+
+    const onDurationChange =
+      () => {
+        if (
+          Number.isFinite(
+            audio.duration
+          )
+        ) {
+          finish(true);
+        }
+      };
 
     audio.addEventListener(
       'durationchange',
       onDurationChange
     );
 
-    const timeoutId = setTimeout(() => {
-      finish(
-        Number.isFinite(audio.duration)
+    timeoutId =
+      setTimeout(
+        () => {
+          finish(
+            Number.isFinite(
+              audio.duration
+            )
+          );
+        },
+        1500
       );
-    }, 1500);
   }
 
   audio.addEventListener(
     'loadedmetadata',
     () => {
-      resolveRealDuration(() => {
-        if (!document.body.contains(playerEl)) {
-          return;
-        }
-
-        setPlayerState('idle');
-
-        if (savedState) {
-          const duration = audio.duration;
-
-          let restoreTime =
-            Number.isFinite(
-              savedState.currentTime
-            )
-              ? Math.max(
-                  0,
-                  savedState.currentTime
-                )
-              : 0;
-
-          // Only seek when the duration is actually known.
-          // Never assign currentTime using Infinity/NaN.
+      resolveRealDuration(
+        () => {
           if (
-            Number.isFinite(duration) &&
-            duration > 0
+            !document.body.contains(
+              playerEl
+            )
           ) {
-            restoreTime = Math.min(
-              restoreTime,
-              duration
-            );
-
-            try {
-              audio.currentTime =
-                restoreTime;
-            } catch (error) {
-              console.warn(
-                'Failed to restore voice message position:',
-                error
-              );
-            }
+            return;
           }
 
-          const savedRate =
-            Number.isFinite(
-              savedState.rate
-            ) &&
-            savedState.rate > 0
-              ? savedState.rate
-              : 1;
+          setPlayerState(
+            'idle'
+          );
 
-          audio.playbackRate =
-            SPEED_STEPS.includes(
-              savedRate
-            )
-              ? savedRate
-              : 1;
+          if (savedState) {
+            const duration =
+              audio.duration;
 
-          speedBtn.textContent =
-            formatSpeed(
-              audio.playbackRate
-            );
-
-          audio.muted =
-            !!savedState.muted;
-
-          audio.volume =
-            typeof savedState.volume ===
-              'number' &&
-            Number.isFinite(
-              savedState.volume
-            )
-              ? Math.min(
-                  1,
-                  Math.max(
+            let restoreTime =
+              Number.isFinite(
+                savedState.currentTime
+              )
+                ? Math.max(
                     0,
-                    savedState.volume
+                    savedState.currentTime
                   )
-                )
-              : 1;
-
-          volumeSlider.value =
-            audio.muted
-              ? '0'
-              : String(audio.volume);
-
-          updateVolumeSliderFill();
-          updateVolumeIcon();
-
-          if (savedState.playing) {
-            setActivePlayer(audio);
-
-            intendedPlaying = true;
-
-            const promise =
-              audio.play();
+                : 0;
 
             if (
-              promise &&
-              typeof promise.catch ===
-                'function'
+              Number.isFinite(
+                duration
+              ) &&
+              duration > 0
             ) {
-              promise.catch((error) => {
-                intendedPlaying = false;
+              restoreTime =
+                Math.min(
+                  restoreTime,
+                  duration
+                );
 
-                console.error(
-                  'Voice message resume failed:',
+              try {
+                audio.currentTime =
+                  restoreTime;
+              } catch (error) {
+                console.warn(
+                  'Failed to restore voice message position:',
                   error
                 );
-              });
+              }
+            }
+
+            const savedRate =
+              Number.isFinite(
+                savedState.rate
+              ) &&
+              savedState.rate > 0
+                ? savedState.rate
+                : 1;
+
+            audio.playbackRate =
+              SPEED_STEPS.includes(
+                savedRate
+              )
+                ? savedRate
+                : 1;
+
+            speedBtn.textContent =
+              formatSpeed(
+                audio.playbackRate
+              );
+
+            audio.muted =
+              !!savedState.muted;
+
+            audio.volume =
+              typeof savedState.volume ===
+                'number' &&
+              Number.isFinite(
+                savedState.volume
+              )
+                ? Math.min(
+                    1,
+                    Math.max(
+                      0,
+                      savedState.volume
+                    )
+                  )
+                : 1;
+
+            volumeSlider.value =
+              audio.muted
+                ? '0'
+                : String(
+                    audio.volume
+                  );
+
+            updateVolumeSliderFill();
+            updateVolumeIcon();
+
+            if (
+              savedState.playing
+            ) {
+              setActivePlayer(
+                audio
+              );
+
+              intendedPlaying =
+                true;
+
+              const promise =
+                audio.play();
+
+              if (
+                promise &&
+                typeof promise.catch ===
+                  'function'
+              ) {
+                promise.catch(
+                  (error) => {
+                    intendedPlaying =
+                      false;
+
+                    console.error(
+                      'Voice message resume failed:',
+                      error
+                    );
+                  }
+                );
+              }
             }
           }
-        }
 
-        updateProgress();
-        updateTimeLabel();
-      });
+          updateProgress();
+          updateTimeLabel();
+        }
+      );
     }
   );
 
-  // If metadata is still unresolved, canplay is a useful fallback
-  // for browsers/WebViews that provide enough information to play
-  // even while duration remains Infinity.
-  audio.addEventListener('canplay', () => {
-    if (
-      playerEl.dataset.state ===
-      'loading'
-    ) {
-      setPlayerState('idle');
-    }
+  audio.addEventListener(
+    'canplay',
+    () => {
+      if (
+        playerEl.dataset.state ===
+        'loading'
+      ) {
+        setPlayerState(
+          'idle'
+        );
+      }
 
-    updateProgress();
-    updateTimeLabel();
-  });
+      updateProgress();
+      updateTimeLabel();
+    }
+  );
 
   // ====================================================
-  // PROGRESS
+  // PROGRESS EVENTS
   // ====================================================
 
   audio.addEventListener(
@@ -1008,65 +1613,94 @@ export async function renderVoiceMessage(msg, scope, containerEl) {
     }
   );
 
-  audio.addEventListener('durationchange', () => {
-    updateProgress();
-    updateTimeLabel();
-  });
-
-  audio.addEventListener('ended', () => {
-    intendedPlaying = false;
-
-    stopProgressLoop();
-
-    setPlayerState('ended');
-
-    // A naturally completed message should start from zero next time.
-    voicePlaybackState.delete(messageId);
-
-    try {
-      audio.currentTime = 0;
-    } catch {
-      // Some media implementations can reject seeking immediately
-      // after ended. The UI is still reset below.
+  audio.addEventListener(
+    'durationchange',
+    () => {
+      updateProgress();
+      updateTimeLabel();
     }
+  );
 
-    updateProgress();
-    updateTimeLabel();
+  audio.addEventListener(
+    'ended',
+    () => {
+      intendedPlaying =
+        false;
 
-    iconPlay.style.display = 'block';
-    iconPause.style.display = 'none';
+      stopProgressLoop();
 
-    playBtn.setAttribute(
-      'aria-label',
-      'Play voice message'
-    );
+      setPlayerState(
+        'ended'
+      );
 
-    if (activeAudioEl === audio) {
-      activeAudioEl = null;
+      voicePlaybackState.delete(
+        messageId
+      );
+
+      try {
+        audio.currentTime = 0;
+      } catch {
+        // Ignore implementations that reject immediate seeking.
+      }
+
+      updateProgress();
+      updateTimeLabel();
+
+      iconPlay.style.display =
+        'block';
+
+      iconPause.style.display =
+        'none';
+
+      playBtn.setAttribute(
+        'aria-label',
+        'Play voice message'
+      );
+
+      if (
+        activeAudioEl === audio
+      ) {
+        activeAudioEl =
+          null;
+      }
     }
-  });
+  );
 
   // ====================================================
   // SEEK
   // ====================================================
 
-  let scrubbing = false;
+  let scrubbing =
+    false;
 
-  function onWindowMouseMove(event) {
+  function onWindowMouseMove(
+    event
+  ) {
     if (!scrubbing) {
       return;
     }
 
-    seekToClientX(event.clientX);
+    seekToClientX(
+      event.clientX
+    );
   }
 
-  function onWindowMouseUp(event) {
+  function onWindowMouseUp(
+    event
+  ) {
     if (!scrubbing) {
       return;
     }
 
-    if (event && Number.isFinite(event.clientX)) {
-      seekToClientX(event.clientX);
+    if (
+      event &&
+      Number.isFinite(
+        event.clientX
+      )
+    ) {
+      seekToClientX(
+        event.clientX
+      );
     }
 
     scrubbing = false;
@@ -1089,9 +1723,12 @@ export async function renderVoiceMessage(msg, scope, containerEl) {
         return;
       }
 
-      scrubbing = true;
+      scrubbing =
+        true;
 
-      seekToClientX(event.clientX);
+      seekToClientX(
+        event.clientX
+      );
 
       window.addEventListener(
         'mousemove',
@@ -1108,9 +1745,9 @@ export async function renderVoiceMessage(msg, scope, containerEl) {
   waveEl.addEventListener(
     'click',
     (event) => {
-      // A click following a mouse drag is harmless because
-      // seekToClientX simply applies the same final position.
-      seekToClientX(event.clientX);
+      seekToClientX(
+        event.clientX
+      );
     }
   );
 
@@ -1126,7 +1763,9 @@ export async function renderVoiceMessage(msg, scope, containerEl) {
         );
       }
     },
-    { passive: true }
+    {
+      passive: true,
+    }
   );
 
   // ====================================================
@@ -1227,11 +1866,14 @@ export async function renderVoiceMessage(msg, scope, containerEl) {
       closeOpenVolumePanel ===
       closeThisPanel
     ) {
-      closeOpenVolumePanel = null;
+      closeOpenVolumePanel =
+        null;
     }
   }
 
-  function onOutsideClick(event) {
+  function onOutsideClick(
+    event
+  ) {
     if (
       !volumeControlEl.contains(
         event.target
@@ -1273,18 +1915,25 @@ export async function renderVoiceMessage(msg, scope, containerEl) {
   volumeSlider.addEventListener(
     'input',
     () => {
-      const volume = Number(
-        volumeSlider.value
-      );
+      const volume =
+        Number(
+          volumeSlider.value
+        );
 
-      if (!Number.isFinite(volume)) {
+      if (
+        !Number.isFinite(volume)
+      ) {
         return;
       }
 
-      audio.volume = Math.min(
-        1,
-        Math.max(0, volume)
-      );
+      audio.volume =
+        Math.min(
+          1,
+          Math.max(
+            0,
+            volume
+          )
+        );
 
       audio.muted =
         audio.volume === 0;
@@ -1304,7 +1953,9 @@ export async function renderVoiceMessage(msg, scope, containerEl) {
   volumeSlider.addEventListener(
     'keydown',
     (event) => {
-      if (event.key === 'Escape') {
+      if (
+        event.key === 'Escape'
+      ) {
         closeThisPanel();
       }
     }
@@ -1316,7 +1967,9 @@ export async function renderVoiceMessage(msg, scope, containerEl) {
 
   function stripToken(url) {
     try {
-      return String(url).split('?')[0];
+      return String(
+        url || ''
+      ).split('?')[0];
     } catch {
       return '';
     }
@@ -1325,11 +1978,15 @@ export async function renderVoiceMessage(msg, scope, containerEl) {
   async function diagnoseAndShowError(
     mediaError
   ) {
-    const code = mediaError?.code;
+    const code =
+      mediaError?.code;
 
     const diagnostics = {
       messageId,
-      mediaErrorCode: code,
+
+      mediaErrorCode:
+        code,
+
       mediaErrorName:
         {
           1: 'MEDIA_ERR_ABORTED',
@@ -1337,10 +1994,15 @@ export async function renderVoiceMessage(msg, scope, containerEl) {
           3: 'MEDIA_ERR_DECODE',
           4: 'MEDIA_ERR_SRC_NOT_SUPPORTED',
         }[code] || 'unknown',
-      url: stripToken(
-        attachmentUrl
-      ),
+
+      url:
+        stripToken(
+          attachmentUrl
+        ),
+
       hadAuthToken:
+        typeof attachmentUrl ===
+          'string' &&
         attachmentUrl.includes(
           'token='
         ),
@@ -1349,17 +2011,34 @@ export async function renderVoiceMessage(msg, scope, containerEl) {
     let userMessage =
       'Failed to load voice message';
 
-    try {
-      const resp = await fetch(
-        resolveServerUrl(
-          attachmentUrl
-        ),
-        {
-          headers: {
-            Range: 'bytes=0-1',
-          },
-        }
+    if (!attachmentUrl) {
+      diagnostics.reason =
+        'No attachment URL was resolved';
+
+      console.error(
+        'Voice message playback failed:',
+        diagnostics
       );
+
+      errorTextEl.textContent =
+        userMessage;
+
+      errorEl.style.display =
+        'flex';
+
+      return;
+    }
+
+    try {
+      const resp =
+        await fetch(
+          attachmentUrl,
+          {
+            headers: {
+              Range: 'bytes=0-1',
+            },
+          }
+        );
 
       diagnostics.httpStatus =
         resp.status;
@@ -1369,16 +2048,24 @@ export async function renderVoiceMessage(msg, scope, containerEl) {
           'content-type'
         );
 
-      if (resp.status === 401) {
+      if (
+        resp.status === 401
+      ) {
         userMessage =
           'Your session has expired — refresh the page and sign in again';
-      } else if (resp.status === 403) {
+      } else if (
+        resp.status === 403
+      ) {
         userMessage =
           "You don't have permission to view this voice message";
-      } else if (resp.status === 404) {
+      } else if (
+        resp.status === 404
+      ) {
         userMessage =
           'This voice message is no longer available';
-      } else if (resp.status >= 500) {
+      } else if (
+        resp.status >= 500
+      ) {
         userMessage =
           'The server had a problem loading this voice message';
       } else if (
@@ -1390,17 +2077,25 @@ export async function renderVoiceMessage(msg, scope, containerEl) {
       ) {
         userMessage =
           'This voice message could not be loaded (unexpected file type)';
-      } else if (code === 4) {
+      } else if (
+        code === 4
+      ) {
         userMessage =
           "This voice message's audio format isn't supported in this browser";
-      } else if (code === 3) {
+      } else if (
+        code === 3
+      ) {
         userMessage =
           "This voice message's audio data could not be decoded";
-      } else if (code === 2) {
+      } else if (
+        code === 2
+      ) {
         userMessage =
           'Network error while loading this voice message';
       }
-    } catch (fetchError) {
+    } catch (
+      fetchError
+    ) {
       diagnostics.diagnosticFetchError =
         fetchError?.message;
 
@@ -1424,162 +2119,257 @@ export async function renderVoiceMessage(msg, scope, containerEl) {
     errorTextEl.textContent =
       userMessage;
 
-    errorEl.style.display = 'flex';
+    errorEl.style.display =
+      'flex';
   }
 
   // ====================================================
   // TRANSIENT NETWORK ERROR RETRY
   // ====================================================
 
-  const MAX_NETWORK_RETRIES = 2;
+  const MAX_NETWORK_RETRIES =
+    2;
 
-  let networkRetryCount = 0;
-  let networkRetryTimer = null;
+  let networkRetryCount =
+    0;
 
-  audio.addEventListener('error', () => {
-    stopProgressLoop();
+  let networkRetryTimer =
+    null;
 
-    const mediaError =
-      audio.error;
+  audio.addEventListener(
+    'error',
+    () => {
+      stopProgressLoop();
 
-    if (
-      mediaError?.code === 2 &&
-      networkRetryCount <
-        MAX_NETWORK_RETRIES
-    ) {
-      networkRetryCount += 1;
+      const mediaError =
+        audio.error;
 
-      const rawCurrentTime =
-        audio.currentTime;
+      if (
+        mediaError?.code === 2 &&
+        networkRetryCount <
+          MAX_NETWORK_RETRIES
+      ) {
+        networkRetryCount += 1;
 
-      const resumeAt =
-        Number.isFinite(
-          rawCurrentTime
-        )
-          ? Math.max(
-              0,
-              rawCurrentTime
-            )
-          : 0;
+        const rawCurrentTime =
+          audio.currentTime;
 
-      const wasPlaying =
-        intendedPlaying;
+        const resumeAt =
+          Number.isFinite(
+            rawCurrentTime
+          )
+            ? Math.max(
+                0,
+                rawCurrentTime
+              )
+            : 0;
 
-      setPlayerState('loading');
+        const wasPlaying =
+          intendedPlaying;
 
-      if (networkRetryTimer !== null) {
-        clearTimeout(
-          networkRetryTimer
+        setPlayerState(
+          'loading'
         );
-      }
 
-      networkRetryTimer =
-        setTimeout(() => {
-          networkRetryTimer = null;
+        if (
+          networkRetryTimer !==
+          null
+        ) {
+          clearTimeout(
+            networkRetryTimer
+          );
+        }
 
-          if (
-            !document.body.contains(
-              playerEl
-            )
-          ) {
-            return;
-          }
-
-          /*
-           * Register loadedmetadata BEFORE load().
-           *
-           * This avoids a race where WebView manages to emit
-           * loadedmetadata synchronously/very quickly after load()
-           * and our listener would otherwise miss it.
-           */
-          const onRetryMetadata =
+        networkRetryTimer =
+          setTimeout(
             () => {
-              const duration =
-                audio.duration;
+              networkRetryTimer =
+                null;
 
               if (
-                Number.isFinite(
-                  resumeAt
-                ) &&
-                Number.isFinite(
-                  duration
-                ) &&
-                duration > 0
+                !document.body.contains(
+                  playerEl
+                )
               ) {
-                const target =
-                  Math.min(
-                    resumeAt,
-                    duration
-                  );
+                return;
+              }
 
-                try {
-                  audio.currentTime =
-                    target;
-                } catch (error) {
-                  console.warn(
-                    'Failed to restore voice message position after retry:',
-                    error
-                  );
+              const onRetryMetadata =
+                () => {
+                  const duration =
+                    audio.duration;
+
+                  if (
+                    Number.isFinite(
+                      resumeAt
+                    ) &&
+                    Number.isFinite(
+                      duration
+                    ) &&
+                    duration > 0
+                  ) {
+                    const target =
+                      Math.min(
+                        resumeAt,
+                        duration
+                      );
+
+                    try {
+                      audio.currentTime =
+                        target;
+                    } catch (error) {
+                      console.warn(
+                        'Failed to restore voice message position after retry:',
+                        error
+                      );
+                    }
+                  }
+
+                  if (
+                    wasPlaying
+                  ) {
+                    play();
+                  } else {
+                    updateProgress();
+                    updateTimeLabel();
+                  }
+                };
+
+              audio.addEventListener(
+                'loadedmetadata',
+                onRetryMetadata,
+                {
+                  once: true,
                 }
-              }
+              );
 
-              if (wasPlaying) {
-                play();
-              } else {
-                updateProgress();
-                updateTimeLabel();
-              }
-            };
+              /*
+               * Keep retry behavior unchanged.
+               * Here load() is intentional because we are explicitly
+               * restarting a failed media request.
+               */
+              try {
+                audio.load();
+              } catch (error) {
+                console.error(
+                  'Voice message retry load failed:',
+                  error
+                );
 
-          audio.addEventListener(
-            'loadedmetadata',
-            onRetryMetadata,
-            { once: true }
+                audio.removeEventListener(
+                  'loadedmetadata',
+                  onRetryMetadata
+                );
+
+                setPlayerState(
+                  'error'
+                );
+
+                diagnoseAndShowError(
+                  audio.error
+                );
+              }
+            },
+            800 *
+              networkRetryCount
           );
 
-          try {
-            audio.load();
-          } catch (error) {
-            console.error(
-              'Voice message retry load failed:',
-              error
-            );
+        return;
+      }
 
-            audio.removeEventListener(
-              'loadedmetadata',
-              onRetryMetadata
-            );
+      setPlayerState(
+        'error'
+      );
 
-            setPlayerState(
-              'error'
-            );
-
-            diagnoseAndShowError(
-              audio.error
-            );
-          }
-        }, 800 * networkRetryCount);
-
-      return;
+      diagnoseAndShowError(
+        mediaError
+      );
     }
-
-    setPlayerState('error');
-
-    diagnoseAndShowError(
-      mediaError
-    );
-  });
+  );
 
   // ====================================================
-  // INITIAL AUDIO STATE
+  // FIRST UI STATE
   // ====================================================
-
-  audio.playbackRate = 1;
-  audio.volume = 1;
-  audio.muted = false;
 
   updateVolumeSliderFill();
   updateVolumeIcon();
   updateProgress();
   updateTimeLabel();
+
+  // ====================================================
+  // RESOLVE MEDIA URL
+  // ====================================================
+
+  /*
+   * The visual player already exists at this point.
+   *
+   * getMediaSrcUrl() can therefore run without blocking the
+   * initial waveform render.
+   */
+  try {
+    const mediaUrl =
+      await getMediaSrcUrl(
+        scope,
+        msg.id
+      );
+
+    const resolvedUrl =
+      resolveServerUrl(
+        mediaUrl
+      );
+
+    if (
+      !resolvedUrl ||
+      typeof resolvedUrl !==
+        'string'
+    ) {
+      throw new Error(
+        'Resolved voice attachment URL is empty'
+      );
+    }
+
+    if (
+      !document.body.contains(
+        playerEl
+      )
+    ) {
+      waveform.destroy();
+      return;
+    }
+
+    attachmentUrl =
+      resolvedUrl;
+
+    /*
+     * IMPORTANT:
+     *
+     * Do not call audio.load() here.
+     *
+     * Assigning src is enough to select the media resource.
+     * load() is reserved for explicit retry/reload operations.
+     *
+     * This also avoids resetting the media element immediately
+     * after assigning the newly resolved URL.
+     */
+    audio.src =
+      resolvedUrl;
+
+  } catch (error) {
+    console.error(
+      'Failed to resolve voice attachment URL:',
+      error
+    );
+
+    waveform.destroy();
+
+    setPlayerState(
+      'error'
+    );
+
+    errorTextEl.textContent =
+      'Failed to load voice message';
+
+    errorEl.style.display =
+      'flex';
+  }
 }

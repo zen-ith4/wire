@@ -38,7 +38,25 @@
   font-size:15px;font-weight:550;color:var(--text);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px;
 }
-.image-viewer-actions{display:flex;align-items:center;gap:4px;flex-shrink:0;}
+.image-viewer-actions{
+  display:flex;
+  align-items:center;
+  gap:4px;
+  flex-shrink:0;
+}
+
+.image-viewer-actions .icon-btn{
+  color:var(--text, #fff);
+}
+
+.image-viewer-close:hover{
+  background:rgba(var(--red),.16);
+  color:#D6A3A3;
+}
+.image-viewer-actions .icon-btn svg,
+.image-viewer-actions .icon-btn svg * {
+  stroke: currentColor !important;
+}
 
 /* Close button: flat like the rest, just turns red on hover.[cite: 1] */
 .image-viewer-close:hover{background:rgba(var(--red),.16);color:#D6A3A3;}

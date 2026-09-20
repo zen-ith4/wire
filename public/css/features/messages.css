@@ -12,9 +12,17 @@
   width:100%;
   flex:1;
   min-height:0;
+  font-family:var(--wire-font-family, inherit);
 }
 
-.dm-sidebar {
+.dm-layout button,
+.dm-layout input,
+.dm-layout textarea,
+.dm-layout select{
+  font-family:inherit;
+}
+
+.dm-sidebar{
   width:var(--conv-panel-width);
   min-width:var(--conv-panel-width);
   height:100%;
@@ -22,13 +30,6 @@
   display:flex;
   flex-direction:column;
   min-height:0;
-  /* Flat translucent glass — no local gradient patch. The single
-     global ambient layer (base.css/#ambient-underlay) shows through
-     instead, so this panel doesn't look like its own separately-lit
-     "bubble" next to .dm-thread. */
-  /* Translucent enough for the ambient glow (base.css) to read
-     through, instead of the near-opaque fill this used to be — that
-     opacity was blocking almost all of the glow on chat/DM pages. */
   background:rgba(var(--ink-rgb), .62);
   backdrop-filter:blur(12px);
   -webkit-backdrop-filter:blur(12px);
@@ -109,8 +110,6 @@ input.conv-search-input:focus{
   display:flex;
   flex-direction:column;
   gap:1px;
-  /* independent scroll region — see .content in layout/content.css
-     for why `contain` matters here */
   overscroll-behavior:contain;
   -webkit-overflow-scrolling:touch;
 }
@@ -200,38 +199,30 @@ input.conv-search-input:focus{
   transition:background var(--ease-smooth);
 }
 
-/* ---------- Chat ---------- */
+
+/* ================================================================
+   CHAT
+   ================================================================ */
 
 .dm-thread,
-.chat-panel {
+.chat-panel{
   flex:1;
   display:flex;
   flex-direction:column;
   min-width:0;
   min-height:0;
   height:100%;
-  position:relative; /* anchors the floating .chat-top-bar (below) so it
-                         overlaps .chat-messages instead of sitting in
-                         normal flow above it */
-  /* Same reasoning as .dm-sidebar above — flat glass, no local
-     gradient of its own, and translucent enough to actually let the
-     ambient glow through (this panel covers almost the whole
-     viewport on chat/DM pages, so its opacity dominates whether the
-     glow reads as visible at all). */
+  position:relative;
   background:rgba(var(--void-rgb), .55);
   backdrop-filter:blur(12px);
   -webkit-backdrop-filter:blur(12px);
 }
 
-/* Plain in-flow bar. Still used as-is by the Files breadcrumb view
-   (files.js, reuses .dm-thread + .chat-top-bar for its folder-path
-   header — unrelated to chat) and by the "New message" picker screen
-   (.dm-thread-header, dm.js/openNewDmPicker). Neither of those has a
-   .chat-messages stream under it, so this base rule stays a normal
-   non-floating row; only the DM peer header (dm.js) opts into the
-   floating glass treatment below via the extra .chat-header-glass
-   class — group chat keeps this plain in-flow bar too, since its
-   header has no other-user profile to give the treatment to. */
+
+/* ================================================================
+   CHAT HEADER
+   ================================================================ */
+
 .dm-thread-header,
 .chat-top-bar{
   display:flex;
@@ -243,17 +234,9 @@ input.conv-search-input:focus{
   background:transparent;
 }
 
-/* ---------- Liquid-glass floating header (open DM / chat only) ----------
-   Applied via the extra .chat-header-glass class (see dm.js)
-   so the plain .chat-top-bar rule above is left alone for its other,
-   non-chat reuse (Files breadcrumb bar). This turns the bar into ONE
-   floating glass surface anchored to .dm-thread/.chat-panel via
-   position:absolute, sitting OVER .chat-messages rather than above it
-   in normal flow. Because .chat-messages is no longer pushed down by
-   an in-flow header, the message stream starts at the very top of the
-   scroll container and visibly scrolls in behind/underneath this
-   glass as the thread scrolls — the glass's own rounded edge + blur
-   is what reads as the boundary, not a hard divider line. */
+
+/* ---------- Liquid-glass floating header ---------- */
+
 .chat-top-bar.chat-header-glass{
   position:absolute;
   top:14px;
@@ -267,21 +250,23 @@ input.conv-search-input:focus{
   border-radius:20px;
   border-bottom:none;
   background:
-    linear-gradient(180deg, rgba(0, 0, 0, 0.06) 0%, rgba(255,255,255,.012) 60%),
-    rgba(var(--ink2-rgb), .40);
-  border:1px solid rgba(0, 0, 0, 0.08);
+    linear-gradient(
+      180deg,
+      rgba(0,0,0,.06) 0%,
+      rgba(255,255,255,.012) 60%
+    ),
+    rgba(var(--ink2-rgb),.40);
+  border:1px solid rgba(0,0,0,.08);
   box-shadow:
-    inset 0 1px 0 rgba(0, 0, 0, 0.05),
+    inset 0 1px 0 rgba(0,0,0,.05),
     0 6px 18px rgba(0,0,0,.18);
   backdrop-filter:blur(20px) saturate(1.4);
   -webkit-backdrop-filter:blur(20px) saturate(1.4);
-  transition:background var(--ease-fast),border-color var(--ease-fast);
+  transition:
+    background var(--ease-fast),
+    border-color var(--ease-fast);
 }
 
-/* The other person's avatar + name + status, grouped as ONE unit
-   inside the glass bar above (not a separate glass surface of its
-   own — see sidebar.css/.sidebar-profile for the deliberately-plain
-   "my profile" entry, which never gets this treatment). */
 .dm-peer-profile{
   display:flex;
   align-items:center;
@@ -340,11 +325,10 @@ input.conv-search-input:focus{
   flex-shrink:0;
 }
 
-/* ---------- "New message" recipient picker ----------
-   Reuses .dm-thread-header/.dm-thread above (see the comment on that
-   rule) rather than a separate modal — it takes over the same panel
-   the open conversation would occupy, so it inherits the same
-   mobile show/hide behavior (responsive.css) for free. */
+
+/* ================================================================
+   NEW MESSAGE RECIPIENT PICKER
+   ================================================================ */
 
 .dm-thread-header .card-title{
   flex:1;
@@ -356,7 +340,9 @@ input.conv-search-input:focus{
 }
 
 @media (max-width:760px){
-  .dm-picker-close{display:none;}
+  .dm-picker-close{
+    display:none;
+  }
 }
 
 .dm-picker-body{
@@ -463,6 +449,11 @@ input.conv-search-input:focus{
   background:rgb(var(--green));
 }
 
+
+/* ================================================================
+   MESSAGES
+   ================================================================ */
+
 .chat-messages{
   flex:1;
   overflow-y:auto;
@@ -472,22 +463,10 @@ input.conv-search-input:focus{
   gap:4px;
   margin-bottom:0;
   max-height:none;
-  /* The scrollable area for the whole page (see core/reset.css) —
-     `contain` stops a fast flick past the top/bottom edge from
-     chaining into scrolling the document behind it. */
   overscroll-behavior:contain;
   -webkit-overflow-scrolling:touch;
 }
 
-/* Only when the floating glass header (above) is present: top padding
-   clears it at rest (14px offset + ~46px glass height + 16px
-   breathing room ≈ 76px). The stream still starts at the very top of
-   the scroll container (see .dm-thread/.chat-panel position:relative
-   above), so once scrolled, earlier messages travel up behind/
-   underneath the glass instead of stopping short of it. Scoped to
-   this sibling combinator, not the base rule, so the group chat's
-   plain in-flow header (chat.js, no .chat-header-glass) doesn't get
-   pushed down by phantom space it doesn't need. */
 .chat-top-bar.chat-header-glass + .chat-messages{
   padding-top:76px;
 }
@@ -499,23 +478,16 @@ input.conv-search-input:focus{
   align-items:flex-start;
 }
 
-/* New message entrance — added only by addChatMessage()/addDmMessage()
-   in chat.js/dm.js for a message that just arrived or was just sent,
-   never by the initial history load, so a long scrollback never
-   animates in all at once. No-op (0ms) when Animations is off. */
 .chat-msg.msg-enter{
-  animation: motion-rise-in var(--motion-base) var(--motion-ease);
+  animation:motion-rise-in var(--motion-base) var(--motion-ease);
 }
 
-/* Exit — added right before removal by the animateRemoval() helper
-   in core/utils.js, which waits for this transition (or a fallback
-   timeout) before detaching the element. When Animations is off the
-   helper skips the transition and removes the element synchronously,
-   exactly as before this feature existed. */
 .chat-msg.msg-exit{
-  transition: opacity var(--motion-fast) var(--motion-ease), transform var(--motion-fast) var(--motion-ease);
-  opacity: 0;
-  transform: translateY(-4px) scale(.98);
+  transition:
+    opacity var(--motion-fast) var(--motion-ease),
+    transform var(--motion-fast) var(--motion-ease);
+  opacity:0;
+  transform:translateY(-4px) scale(.98);
 }
 
 .chat-msg.own{
@@ -523,13 +495,6 @@ input.conv-search-input:focus{
   flex-direction:row-reverse;
   align-items:flex-start;
 }
-
-/* Holds meta/text/attachment for a message, stacked vertically below
-   one another (sender+time, then text, then any media player) - this
-   is what keeps the video/audio player under the message content
-   instead of beside the avatar. min-width:0 lets it shrink below its
-   children's intrinsic width so wide attachments (e.g. the 480px
-   video player) don't force the row to overflow horizontally. */
 
 .chat-msg-content{
   display:flex;
@@ -601,87 +566,279 @@ input.conv-search-input:focus{
   background:rgb(var(--green));
 }
 
-/* ---------- Message bubble ---------- */
+
+/* ================================================================
+   MESSAGE BUBBLE STYLES
+   ================================================================
+
+   settings-appearance.js sets:
+
+     document.documentElement.dataset.bubbleStyle
+
+   Supported values:
+
+     filled
+     soft
+     outline
+     clean
+
+   filled  = solid sender-colored bubble
+   soft    = tinted/translucent sender-colored bubble
+   outline = transparent bubble with sender-colored border
+   clean   = frameless bubble with a subtle sender accent rail
+
+   Sender-specific:
+     --message-accent
+     --message-accent-contrast
+
+   remain the source of truth for sender colors.
+   ================================================================ */
 
 .chat-bubble{
-  /* Resolved per-message from the sender's own stored accent color
-     (see js/chat/message-accent.js) — --message-accent/-contrast are
-     set as an inline custom property on each .chat-msg element
-     independently, never read from the viewer's global --accent*
-     vars. The var(...) fallback only covers the instant before JS
-     has painted the element. */
-  background:var(--message-accent, var(--ink2));
-  border:1px solid var(--border);
-  color:var(--message-accent-contrast, var(--text));
-  border-radius:var(--radius-lg) var(--radius-lg) var(--radius-lg) 3px;
-  padding:6px 12px;
+  /*
+   * Base/fallback = filled.
+   *
+   * JS paints --message-accent and --message-accent-contrast on the
+   * message row. The fallback values below are only for the brief
+   * period before that paint happens.
+   */
+  --bubble-background:var(--message-accent, var(--ink2));
+  --bubble-border:1px solid var(--border);
+  --bubble-color:var(--message-accent-contrast, var(--text));
+  --bubble-radius:var(--radius-lg) var(--radius-lg) var(--radius-lg) 3px;
+  --bubble-shadow:none;
+  --bubble-padding:6px 12px;
+
+  background:var(--bubble-background);
+  border:var(--bubble-border);
+  color:var(--bubble-color);
+  border-radius:var(--bubble-radius);
+  box-shadow:var(--bubble-shadow);
+  padding:var(--bubble-padding);
+
   font-size:13.5px;
   line-height:1.45;
   letter-spacing:-0.01em;
   font-weight:440;
-  /* Preserve real newlines (Shift+Enter) exactly as the user typed
-     them, while still letting long runs of text wrap normally. */
+
   white-space:pre-wrap;
-  /* overflow-wrap (standard) instead of the legacy word-break:break-word
-     alias: only breaks a word when it genuinely can't fit, without
-     forcing a break at every opportunity. */
   overflow-wrap:break-word;
   word-break:normal;
-  /*
-   * NOTE: deliberately NOT using width:fit-content here.
-   * .chat-bubble is a flex item of `.chat-msg.own` (flex-direction:
-   * row-reverse). Combining width:fit-content with a wrapping
-   * property (word-break/overflow-wrap) on a flex item inside a
-   * *reversed* flex container hits a real, reproducible Chromium
-   * layout bug: the browser's fit-content/intrinsic-size pass
-   * collapses toward min-content, so short messages like "hi there"
-   * or "salam khobi" would render one word per line even though
-   * the bubble had plenty of room. `flex:0 0 auto` below already gives
-   * this item its natural (shrink-to-fit) width without invoking
-   * that broken code path — confirmed via isolated repro before/after.
-   *
-   * ALSO deliberately not capping max-width here with a percentage.
-   * .chat-bubble's containing block (.chat-msg-content) is itself
-   * shrink-to-fit (auto width, no stretch) all the way up to
-   * `.chat-msg`, which is ALSO shrink-to-fit (own messages use
-   * align-self:flex-end, not stretch). A percentage max-width here
-   * would resolve against that indeterminate/circular chain, and
-   * Chromium mis-resolves it badly for short text (reproducibly
-   * clamps to ~50-100px regardless of available space — same
-   * underlying bug family as above). `.chat-msg{max-width:75%}` a few
-   * rules above already caps the *whole row* against `.chat-messages`
-   * — a proper definite-width ancestor — so it alone is what actually
-   * limits how wide a message gets; this element doesn't need its own
-   * (broken) copy of that constraint.
-   */
-  /*
-   * max-width:100% (not a smaller percentage like the old 70%):
-   * resolves against this element's own immediate parent
-   * (.chat-msg-content) without walking further up an indeterminate
-   * shrink-to-fit chain — see the width:fit-content note above for
-   * why a smaller percentage caused Chromium to mis-resolve this
-   * badly (reproducibly clamped short messages to ~50-100px). 100%
-   * still does real work: it's what makes very long unbroken text
-   * (e.g. a URL with no spaces) actually wrap/shrink to fit instead
-   * of overflowing past the message column, while `.chat-msg{max-width:75%}`
-   * (relative to `.chat-messages`, a proper definite-width ancestor)
-   * is what caps how wide the row gets in the first place.
-   */
+
   max-width:100%;
   flex:0 0 auto;
-  align-self: flex-start;
-  width: fit-content;
+  align-self:flex-start;
+  width:fit-content;
+
+  transition:
+    background var(--ease-fast),
+    border-color var(--ease-fast),
+    color var(--ease-fast),
+    box-shadow var(--ease-fast),
+    border-radius var(--ease-fast),
+    padding var(--ease-fast);
 }
 
-/* Auto-linked URLs inside a message bubble (see linkifyHtml() in
-   js/core/utils.js). Scoped under .chat-bubble so it only affects
-   message content, not any other link elsewhere in the UI. */
+
+/* ================================================================
+   FILLED
+   ================================================================ */
+
+:root[data-bubble-style="filled"] .chat-bubble,
+:root:not([data-bubble-style]) .chat-bubble{
+  --bubble-background:var(--message-accent, var(--ink2));
+  --bubble-border:1px solid var(--border);
+  --bubble-color:var(--message-accent-contrast, var(--text));
+  --bubble-radius:var(--radius-lg) var(--radius-lg) var(--radius-lg) 3px;
+  --bubble-shadow:none;
+  --bubble-padding:6px 12px;
+}
+
+
+/* ================================================================
+   SOFT
+   ================================================================
+
+   Soft keeps the sender's accent but lowers its visual weight.
+   This is intentionally not a transparent/ghost bubble.
+
+   color-mix() lets us derive the tint directly from the actual
+   sender accent without requiring a separate --accent-rgb token.
+   ================================================================ */
+
+:root[data-bubble-style="soft"] .chat-bubble{
+  --bubble-background:
+    color-mix(
+      in srgb,
+      var(--message-accent, var(--accent)) 16%,
+      var(--ink2)
+    );
+
+  --bubble-border:
+    1px solid color-mix(
+      in srgb,
+      var(--message-accent, var(--accent)) 30%,
+      var(--border)
+    );
+
+  --bubble-color:var(--text);
+  --bubble-radius:var(--radius-lg) var(--radius-lg) var(--radius-lg) 4px;
+  --bubble-shadow:
+    0 1px 2px rgba(0,0,0,.08);
+  --bubble-padding:7px 12px;
+}
+
+
+/* Own soft bubble */
+
+:root[data-bubble-style="soft"] .chat-msg.own .chat-bubble{
+  --bubble-background:
+    color-mix(
+      in srgb,
+      var(--message-accent, var(--accent)) 20%,
+      var(--ink2)
+    );
+
+  --bubble-border:
+    1px solid color-mix(
+      in srgb,
+      var(--message-accent, var(--accent)) 34%,
+      var(--border)
+    );
+
+  --bubble-radius:var(--radius-lg) var(--radius-lg) 4px var(--radius-lg);
+}
+
+
+/* ================================================================
+   OUTLINE
+   ================================================================ */
+
+:root[data-bubble-style="outline"] .chat-bubble{
+  --bubble-background:transparent;
+  --bubble-border:
+    1px solid var(--message-accent, var(--border));
+  --bubble-color:var(--text);
+  --bubble-radius:var(--radius-lg) var(--radius-lg) var(--radius-lg) 3px;
+  --bubble-shadow:none;
+  --bubble-padding:6px 12px;
+}
+
+
+/* ================================================================
+   CLEAN
+   ================================================================
+
+   Clean is deliberately different from Soft.
+
+   It does not look like a box with a different background.
+   The message itself sits directly on the chat surface, while
+   a narrow accent rail identifies the sender.
+
+   This gives the setting an actual fourth visual language instead
+   of another barely-different rectangle.
+   ================================================================ */
+
+:root[data-bubble-style="clean"] .chat-bubble{
+  --bubble-background:transparent;
+  --bubble-border:1px solid transparent;
+  --bubble-color:var(--text);
+  --bubble-radius:8px;
+  --bubble-shadow:none;
+  --bubble-padding:5px 8px 5px 11px;
+
+  position:relative;
+}
+
+
+/* Accent rail */
+
+:root[data-bubble-style="clean"] .chat-bubble::before{
+  content:'';
+  position:absolute;
+  left:0;
+  top:6px;
+  bottom:6px;
+  width:2px;
+  border-radius:999px;
+  background:var(--message-accent, var(--accent));
+  opacity:.8;
+  pointer-events:none;
+}
+
+
+/* Own messages use the rail on the opposite side */
+
+:root[data-bubble-style="clean"] .chat-msg.own .chat-bubble{
+  padding-left:8px;
+  padding-right:11px;
+}
+
+:root[data-bubble-style="clean"] .chat-msg.own .chat-bubble::before{
+  left:auto;
+  right:0;
+}
+
+
+/* Subtle hover surface */
+
+:root[data-bubble-style="clean"] .chat-bubble:hover{
+  background:
+    color-mix(
+      in srgb,
+      var(--message-accent, var(--accent)) 6%,
+      transparent
+    );
+}
+
+
+/* ================================================================
+   OWN MESSAGE SHAPE
+   ================================================================ */
+
+.chat-msg.own .chat-bubble{
+  border-radius:
+    var(--radius-lg)
+    var(--radius-lg)
+    3px
+    var(--radius-lg);
+
+  align-self:flex-end;
+}
+
+
+/* Filled/outline keep the normal directional corner. */
+
+:root[data-bubble-style="filled"] .chat-msg.own .chat-bubble,
+:root[data-bubble-style="outline"] .chat-msg.own .chat-bubble{
+  border-radius:
+    var(--radius-lg)
+    var(--radius-lg)
+    3px
+    var(--radius-lg);
+}
+
+
+/* Clean has no speech-bubble tail. */
+
+:root[data-bubble-style="clean"] .chat-msg .chat-bubble,
+:root[data-bubble-style="clean"] .chat-msg.own .chat-bubble{
+  border-radius:8px;
+}
+
+
+/* ================================================================
+   AUTO-LINKED URLS
+   ================================================================ */
+
 .chat-bubble .chat-link{
   color:#3b82f6;
   text-decoration:underline;
   text-decoration-color:transparent;
   word-break:break-word;
-  transition:color .12s ease, text-decoration-color .12s ease;
+  transition:
+    color .12s ease,
+    text-decoration-color .12s ease;
 }
 
 .chat-bubble .chat-link:hover,
@@ -690,21 +847,10 @@ input.conv-search-input:focus{
   text-decoration-color:currentColor;
 }
 
-.chat-msg.own .chat-bubble{
-  /* Fill/text color come from .chat-bubble's --message-accent /
-     --message-accent-contrast above — for an own message that
-     resolves to the viewer's own accent (since they're the sender),
-     so no separate background/color override is needed here. This
-     rule only handles the "own" bubble's shape and alignment. */
-  border-radius:var(--radius-lg) var(--radius-lg) 3px var(--radius-lg);
-  align-self: flex-end;
-}
 
-/* line-height:1 here (rather than inheriting body's 1.5) is what
-   actually closes the gap above the bubble: at 12px/10.5px this
-   row's text glyphs are much shorter than a 1.5 line box, so the
-   leftover leading was rendering as visible dead space before the
-   bubble, on every message, everywhere this row appears. */
+/* ================================================================
+   CHAT METADATA
+   ================================================================ */
 
 .chat-meta{
   display:flex;
@@ -724,6 +870,11 @@ input.conv-search-input:focus{
   font-size:10.5px;
   color:var(--muted2);
 }
+
+
+/* ================================================================
+   MESSAGE ACTIONS
+   ================================================================ */
 
 .chat-msg-delete{
   width:20px;
@@ -758,6 +909,7 @@ input.conv-search-input:focus{
   background:rgba(var(--red),.15);
   color:#D6A3A3;
 }
+
 
 /* ---------- Reply ---------- */
 
@@ -795,11 +947,8 @@ input.conv-search-input:focus{
   color:var(--text);
 }
 
-/* ---------- Image attachment download ----------
-   Sits in the meta row next to Reply/Delete (rather than floating
-   on top of the image itself, which used to cover a big chunk of
-   small images) — same reveal-on-hover icon-button treatment as
-   .chat-msg-reply above. */
+
+/* ---------- Image attachment download ---------- */
 
 .chat-msg-download{
   width:20px;
@@ -835,12 +984,11 @@ input.conv-search-input:focus{
   color:var(--text);
 }
 
-/* Quoted original message rendered inside a reply's own bubble,
-   right above its content/attachment. Kept as a sibling of
-   .chat-bubble (not nested inside it) so it lines up the same way
-   whether the message is text, an attachment, or both — same
-   shrink-to-fit reasoning as .chat-bubble itself (see the long note
-   above it): no width:fit-content trap, no percentage max-width. */
+
+/* ================================================================
+   REPLY QUOTE
+   ================================================================ */
+
 .reply-quote{
   display:flex;
   gap:8px;
@@ -907,10 +1055,6 @@ input.conv-search-input:focus{
   margin-left:auto;
 }
 
-/* Briefly pulses the original message when its reply-quote is
-   clicked (see js/chat/reply.js/scrollToRepliedMessage). Applied to
-   .chat-msg itself so it frames the whole row (avatar + bubble),
-   not just the bubble. */
 .chat-msg.reply-highlight .chat-bubble,
 .chat-msg.reply-highlight .chat-attachment,
 .chat-msg.reply-highlight .chat-attachment-image{
@@ -918,12 +1062,23 @@ input.conv-search-input:focus{
 }
 
 @keyframes replyHighlightPulse{
-  0%{box-shadow:0 0 0 2px var(--accent-ring);}
-  70%{box-shadow:0 0 0 2px var(--accent-ring);}
-  100%{box-shadow:0 0 0 0 transparent;}
+  0%{
+    box-shadow:0 0 0 2px var(--accent-ring);
+  }
+
+  70%{
+    box-shadow:0 0 0 2px var(--accent-ring);
+  }
+
+  100%{
+    box-shadow:0 0 0 0 transparent;
+  }
 }
 
-/* ---------- Reply preview bar (composer, above the input) ---------- */
+
+/* ================================================================
+   REPLY PREVIEW BAR
+   ================================================================ */
 
 .reply-preview-bar{
   display:none;
@@ -989,7 +1144,9 @@ input.conv-search-input:focus{
   color:var(--muted2);
   cursor:pointer;
   flex-shrink:0;
-  transition:background .15s, color .15s;
+  transition:
+    background .15s,
+    color .15s;
 }
 
 .reply-preview-close:hover{
@@ -997,23 +1154,10 @@ input.conv-search-input:focus{
   color:#D6A3A3;
 }
 
-.chat-msg.own .chat-bubble {
-  /* Same fix/reasoning as the other .chat-msg.own .chat-bubble rule
-     above (this file defines the selector twice for different
-     layout contexts) — fill/text color already come from
-     .chat-bubble's --message-accent / --message-accent-contrast. */
-  border-radius:var(--radius-lg) var(--radius-lg) 3px var(--radius-lg);
-  margin-left:auto;
-}
 
-/* ---------- Reactions ---------- */
-
-/*
-   Important:
-   The reactions row stays after the message content, but it no longer
-   stretches to the full width of .chat-msg-content. This prevents the
-   reaction controls from affecting the text bubble's layout.
-*/
+/* ================================================================
+   REACTIONS
+   ================================================================ */
 
 .reactions-row{
   display:flex;
@@ -1022,11 +1166,7 @@ input.conv-search-input:focus{
   gap:4px;
   margin-top:3px;
   min-height:24px;
-
-  /* keep reactions below everything else */
   order:99;
-
-  /* IMPORTANT: don't stretch across the whole message content */
   align-self:flex-start;
   width:fit-content;
   max-width:100%;
@@ -1045,12 +1185,7 @@ input.conv-search-input:focus{
   transition:
     background var(--ease-fast),
     border-color var(--ease-fast);
-  /* New, toggle-gated: pills pop in whenever the reactions row is
-     (re-)rendered — the row is always small (a handful of pills at
-     most), so re-playing this on every reaction change rather than
-     diffing is intentional, not "animating a large amount of
-     content". No-op at 0ms when Animations is off. */
-  animation: motion-pop-in var(--motion-fast) var(--motion-ease);
+  animation:motion-pop-in var(--motion-fast) var(--motion-ease);
 }
 
 .reaction-pill:hover{
@@ -1118,8 +1253,6 @@ input.conv-search-input:focus{
   color:var(--text);
 }
 
-/* Own messages: reactions align to the right */
-
 .chat-msg.own .reactions-row{
   justify-content:flex-end;
   align-self:flex-end;
@@ -1134,7 +1267,10 @@ input.conv-search-input:focus{
   letter-spacing:.01em;
 }
 
-/* ---------- Typing ---------- */
+
+/* ================================================================
+   TYPING
+   ================================================================ */
 
 .typing-indicator{
   font-size:12px;
@@ -1153,14 +1289,13 @@ input.conv-search-input:focus{
   padding-top:2px;
 }
 
-/* ---------- Composer wrapper (holds staging + input area as one surface) ---------- */
+
+/* ================================================================
+   COMPOSER WRAPPER
+   ================================================================ */
 
 .composer-wrapper{
   margin:0 20px 20px;
-  /* Themed instead of a hardcoded dark fill: this used to stay
-     black in light mode while the typed text followed the global
-     (now dark-in-light-mode) --text color, so anything you typed
-     was invisible — dark text on a black box. */
   background:var(--ink2);
   border:1px solid var(--border);
   border-radius:var(--radius-lg);
@@ -1174,7 +1309,10 @@ input.conv-search-input:focus{
   border-color:var(--accent-border);
 }
 
-/* ---------- Chat input ---------- */
+
+/* ================================================================
+   CHAT INPUT
+   ================================================================ */
 
 .chat-input-area{
   padding:10px 16px;
@@ -1202,9 +1340,6 @@ input.conv-search-input:focus{
 }
 
 .chat-input-area textarea{
-  /* Auto-grow is handled in JS (composer.js) by setting an explicit
-     height up to a max, so the resize handle would be redundant and
-     the textarea starts at a single input-like line. */
   resize:none;
   max-height:140px;
   min-height:41px;
@@ -1231,7 +1366,10 @@ input.conv-search-input:focus{
   flex-shrink:0;
 }
 
-/* ---------- Attachment staging (files picked/dropped/pasted but not yet sent) ---------- */
+
+/* ================================================================
+   ATTACHMENT STAGING
+   ================================================================ */
 
 .attach-staging{
   display:flex;
@@ -1314,7 +1452,9 @@ input.conv-search-input:focus{
   border:none;
   color:var(--muted2);
   cursor:pointer;
-  transition:background .15s, color .15s;
+  transition:
+    background .15s,
+    color .15s;
 }
 
 .attach-chip-remove:hover{
@@ -1347,7 +1487,10 @@ input.conv-search-input:focus{
   transition:width .12s ease;
 }
 
-/* ---------- Empty state ---------- */
+
+/* ================================================================
+   EMPTY STATE
+   ================================================================ */
 
 .chat-empty-state{
   flex:1;
@@ -1393,7 +1536,10 @@ input.conv-search-input:focus{
   font-weight:430;
 }
 
-/* ---------- Attachments ---------- */
+
+/* ================================================================
+   ATTACHMENTS
+   ================================================================ */
 
 .chat-attachment{
   display:flex;
@@ -1436,12 +1582,6 @@ input.conv-search-input:focus{
   margin-top:4px;
   border-radius:var(--radius-lg);
   overflow:hidden;
-  /* Width basis so the `aspect-ratio` set inline per-message (real
-     dimensions when known, a stable fallback otherwise — see
-     imageAspectRatio() in attachments.js) actually reserves a
-     concrete height, computed *before* the image itself has loaded.
-     This is what prevents the rest of the message list from
-     jumping around as images finish loading. */
   width:220px;
   max-width:100%;
   max-height:320px;
@@ -1454,8 +1594,6 @@ input.conv-search-input:focus{
   display:block;
   cursor:pointer;
   border-radius:var(--radius-lg);
-  /* Fade in once loaded (see loadChatImage) instead of popping in
-     the instant the network request resolves. */
   opacity:0;
   transition:opacity .18s ease;
 }
@@ -1464,11 +1602,6 @@ input.conv-search-input:focus{
   opacity:1;
 }
 
-/* Lightweight skeleton for the not-yet-loaded state — fills the
-   reserved box exactly (unlike the generic .loading-state, which
-   carries page-level padding meant for full-panel loading) and
-   avoids a spinning icon, which reads as more "unstable" inside a
-   small thumbnail than a plain muted fill. */
 .chat-attachment-image .loading-state{
   width:100%;
   height:100%;
@@ -1485,17 +1618,6 @@ input.conv-search-input:focus{
   position:relative;
   display:inline-block;
   margin-top:4px;
-
-  /*
-   * .chat-msg-content is a column flexbox with the default
-   * align-items:stretch, so - despite this being display:inline-block -
-   * as a flex item it gets blockified and stretched to the FULL width
-   * of the message column (same trap .chat-bubble and .reactions-row
-   * avoid elsewhere in this file via width:fit-content/align-self).
-   * Kept shrink-to-fit here too so this wrap's edges always match the
-   * image's actual rendered edges, in case anything else ever anchors
-   * to them.
-   */
   align-self:flex-start;
   width:fit-content;
   max-width:100%;
@@ -1505,7 +1627,10 @@ input.conv-search-input:focus{
   margin-top:0;
 }
 
-/* ---------- Own message alignment ---------- */
+
+/* ================================================================
+   OWN MESSAGE ALIGNMENT
+   ================================================================ */
 
 .chat-msg.own .chat-meta{
   justify-content:flex-end;
@@ -1515,14 +1640,10 @@ input.conv-search-input:focus{
   margin-left:auto;
 }
 
-/* The image attachment wrap needs the same "push to the right on own
-   messages" treatment as .chat-attachment above, or it's left
-   stranded on the left edge of .chat-msg-content while the rest of
-   the (row-reversed) own message visually sits on the right. */
-
 .chat-msg.own .chat-attachment-image-wrap{
   margin-left:auto;
 }
+
 
 .load-more-row{
   text-align:center;

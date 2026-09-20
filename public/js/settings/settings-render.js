@@ -22,6 +22,7 @@ import {
   getBackgroundPreviewCss
 } from './theme.js';
 
+
 // ============================================================
 // Background configuration
 // ============================================================
@@ -402,7 +403,6 @@ function renderAppearance({
           </div>
         </div>
 
-
         <div
           class="bg-swatches bg-swatches-featured"
           id="bg-swatches-featured">
@@ -410,7 +410,6 @@ function renderAppearance({
           ${featuredBackgroundsHtml}
 
         </div>
-
 
         ${
           hasMoreBackgrounds
@@ -451,7 +450,6 @@ function renderAppearance({
 
                 </button>
 
-
                 <div
                   class="bg-swatches bg-swatches-more${
                     moreBackgroundsOpen
@@ -468,6 +466,164 @@ function renderAppearance({
             `
             : ''
         }
+
+      </div>
+
+
+      <!-- Message bubble style -->
+
+      <div
+        class="settings-row settings-row-column">
+
+        <div>
+          <div class="settings-row-label">
+            Message bubbles
+          </div>
+
+          <div class="settings-row-sublabel">
+            Choose how chat messages are displayed
+          </div>
+        </div>
+
+        <div
+          class="bubble-style-options"
+          id="message-bubble-style">
+
+          <!-- Filled -->
+
+          <button
+            type="button"
+            class="bubble-style-option"
+            data-style="filled"
+            aria-pressed="false">
+
+            <span
+              class="bubble-style-preview bubble-style-preview-filled">
+
+              <span class="bubble-style-preview-bubble">
+                Hello
+              </span>
+
+            </span>
+
+            <span class="bubble-style-option-label">
+              Filled
+            </span>
+
+          </button>
+
+
+          <!-- Soft -->
+
+          <button
+            type="button"
+            class="bubble-style-option"
+            data-style="soft"
+            aria-pressed="false">
+
+            <span
+              class="bubble-style-preview bubble-style-preview-soft">
+
+              <span class="bubble-style-preview-bubble">
+                Hello
+              </span>
+
+            </span>
+
+            <span class="bubble-style-option-label">
+              Soft
+            </span>
+
+          </button>
+
+
+          <!-- Outline -->
+
+          <button
+            type="button"
+            class="bubble-style-option"
+            data-style="outline"
+            aria-pressed="false">
+
+            <span
+              class="bubble-style-preview bubble-style-preview-outline">
+
+              <span class="bubble-style-preview-bubble">
+                Hello
+              </span>
+
+            </span>
+
+            <span class="bubble-style-option-label">
+              Outline
+            </span>
+
+          </button>
+
+
+          <!-- Clean -->
+
+          <button
+            type="button"
+            class="bubble-style-option"
+            data-style="clean"
+            aria-pressed="false">
+
+            <span
+              class="bubble-style-preview bubble-style-preview-clean">
+
+              <span class="bubble-style-preview-bubble">
+                Hello
+              </span>
+
+            </span>
+
+            <span class="bubble-style-option-label">
+              Clean
+            </span>
+
+          </button>
+
+        </div>
+
+      </div>
+
+
+      <!-- Interface font -->
+
+      <div class="settings-row">
+
+        <div>
+          <div class="settings-row-label">
+            Interface font
+          </div>
+
+          <div class="settings-row-sublabel">
+            Choose the font used throughout Wire
+          </div>
+        </div>
+
+        <select
+          id="font-family-select"
+          aria-label="Interface font">
+
+          <option value="system">
+            System
+          </option>
+
+          <option value="inter">
+            Inter
+          </option>
+
+          <option value="noto-sans">
+            Noto Sans
+          </option>
+
+          <option value="monospace">
+            Monospace
+          </option>
+
+        </select>
 
       </div>
 
@@ -1114,7 +1270,8 @@ function renderAccount() {
 
 export function renderSettingsHtml({
   me,
-  security
+  security,
+  hardwareAccelerationEnabled
 }) {
   const isElectronApp =
     Boolean(
@@ -1124,11 +1281,11 @@ export function renderSettingsHtml({
 
   /*
    * Hardware acceleration is supplied asynchronously by the
-   * caller, so the default here is only used as a fallback.
+   * caller. Keep true as the fallback for existing callers
+   * that do not provide the value.
    */
-  const hardwareAccelerationEnabled =
-    arguments[0]
-      ?.hardwareAccelerationEnabled ??
+  const resolvedHardwareAcceleration =
+    hardwareAccelerationEnabled ??
     true;
 
   return `
@@ -1137,7 +1294,8 @@ export function renderSettingsHtml({
       ${renderAppearance({
         me,
         isElectronApp,
-        hardwareAccelerationEnabled
+        hardwareAccelerationEnabled:
+          resolvedHardwareAcceleration
       })}
 
       ${renderBanner(me)}

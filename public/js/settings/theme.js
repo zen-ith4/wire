@@ -102,6 +102,7 @@ const ACCENT_STORAGE_KEY = 'wire-accent';
 const AMBIENT_STORAGE_KEY = 'wire-ambient-level';
 const THEME_STORAGE_KEY = 'wire-theme';
 const BUBBLE_ACCENT_STORAGE_KEY = 'wire-bubble-accent';
+const BUBBLE_STYLE_STORAGE_KEY = 'wire-message-bubble-style';
 const BACKGROUND_STORAGE_KEY = 'wire-background-theme';
 const ANIMATIONS_STORAGE_KEY = 'wire-animations';
 const FONT_STORAGE_KEY = 'wire-font-family';
@@ -2080,6 +2081,75 @@ export function applyUseAccentForBubbles(
   }
 
   return value;
+}
+
+
+// ============================================================
+// Message bubble style
+// ------------------------------------------------------------
+// Same contract as the other appearance settings in this file:
+// the preference lives in localStorage, is applied to <html> as
+// data-bubble-style (css/features/messages.css keys every
+// .chat-bubble variant off it), and is (re)applied at startup by
+// initMessageBubbleStyle() from app.js bootstrap(). The Settings
+// screen only *changes* it (applyMessageBubbleStyle) and reflects
+// it in its buttons — it is never what makes it take effect.
+// ============================================================
+
+export const BUBBLE_STYLES = [
+  'filled',
+  'soft',
+  'outline',
+  'clean'
+];
+
+export const DEFAULT_BUBBLE_STYLE = 'filled';
+
+export function getMessageBubbleStyle() {
+  const saved =
+    safeGetStorage(
+      BUBBLE_STYLE_STORAGE_KEY
+    );
+
+  return BUBBLE_STYLES.includes(saved)
+    ? saved
+    : DEFAULT_BUBBLE_STYLE;
+}
+
+
+export function applyMessageBubbleStyle(
+  style,
+  { persist = true } = {}
+) {
+  const value =
+    BUBBLE_STYLES.includes(style)
+      ? style
+      : DEFAULT_BUBBLE_STYLE;
+
+  document.documentElement.dataset
+    .bubbleStyle = value;
+
+  if (persist) {
+    safeSetStorage(
+      BUBBLE_STYLE_STORAGE_KEY,
+      value
+    );
+  }
+
+  return value;
+}
+
+
+export function initMessageBubbleStyle() {
+  const style =
+    getMessageBubbleStyle();
+
+  applyMessageBubbleStyle(
+    style,
+    { persist: false }
+  );
+
+  return style;
 }
 
 

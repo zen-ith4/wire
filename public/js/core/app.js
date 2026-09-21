@@ -31,7 +31,8 @@ import {
   initTheme,
   initBackgroundTheme,
   initAnimations,
-  initFontFamily
+  initFontFamily,
+  initMessageBubbleStyle
 } from '../settings/theme.js';
 
 import { initSidebarResize } from '../ui/sidebar-resize.js';
@@ -350,6 +351,8 @@ async function bootstrap() {
   initAnimations();
 
   initFontFamily();
+
+  initMessageBubbleStyle();
 
 
   /*

@@ -570,7 +570,8 @@ input.conv-search-input:focus{
    MESSAGE BUBBLE STYLES
    ================================================================
 
-   settings-appearance.js sets:
+   settings/theme.js sets (initMessageBubbleStyle() at app startup,
+   applyMessageBubbleStyle() when changed from Settings):
 
      document.documentElement.dataset.bubbleStyle
 

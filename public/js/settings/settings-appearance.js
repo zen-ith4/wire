@@ -18,7 +18,10 @@ import {
   applyAnimationsEnabled,
   applyBackgroundTheme,
   getFontFamily,
-  applyFontFamily
+  applyFontFamily,
+  BUBBLE_STYLES,
+  getMessageBubbleStyle,
+  applyMessageBubbleStyle
 } from './theme.js';
 
 import {
@@ -34,68 +37,14 @@ import {
 } from '../ui/confirm.js';
 
 // ============================================================
-// Appearance customization
-// ============================================================
-
-const BUBBLE_STYLE_STORAGE_KEY =
-  'wire-message-bubble-style';
-
-const BUBBLE_STYLES = [
-  'filled',
-  'soft',
-  'outline',
-  'clean'
-];
-
-// ============================================================
-// Safe localStorage helpers
-// ============================================================
-
-function safeGetStorage(key) {
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
-function safeSetStorage(key, value) {
-  try {
-    localStorage.setItem(key, value);
-  } catch {}
-}
-
-// ============================================================
 // Message bubble style
+//
+// The state itself (storage key, allowed values, get/apply/init)
+// lives in theme.js next to every other appearance setting and
+// is applied at startup from app.js. This section is only the
+// Settings-screen control: it reflects the current value and
+// changes it on click.
 // ============================================================
-
-function getMessageBubbleStyle() {
-  const stored =
-    safeGetStorage(
-      BUBBLE_STYLE_STORAGE_KEY
-    );
-
-  return BUBBLE_STYLES.includes(stored)
-    ? stored
-    : 'filled';
-}
-
-function applyMessageBubbleStyle(style) {
-  const normalized =
-    BUBBLE_STYLES.includes(style)
-      ? style
-      : 'filled';
-
-  document.documentElement.dataset
-    .bubbleStyle = normalized;
-
-  safeSetStorage(
-    BUBBLE_STYLE_STORAGE_KEY,
-    normalized
-  );
-
-  return normalized;
-}
 
 function syncBubbleStyleButtons(
   container,
@@ -130,14 +79,12 @@ function bindMessageBubbleStyle() {
 
   if (!container) return;
 
-  const currentStyle =
-    applyMessageBubbleStyle(
-      getMessageBubbleStyle()
-    );
-
+  // The style was already applied at startup
+  // (initMessageBubbleStyle in app.js); this only syncs the
+  // control.
   syncBubbleStyleButtons(
     container,
-    currentStyle
+    getMessageBubbleStyle()
   );
 
   container.addEventListener(

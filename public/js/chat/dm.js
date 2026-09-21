@@ -921,11 +921,11 @@ function bindDmThreadBackground() {
 }
 
 // ---------- DM open / back-button motion ----------
-// Reference: the tab transition (.view-enter in core/motion.css). The same
-// opacity + 6px rise and the same tokens are applied to the conversation
-// layer itself — never to messages — through .dm-layout--opening. Only
-// animation, no permanent transform. Plays nothing when the global
-// Animations setting is off (and is 0ms under reduced motion).
+// The conversation layer (never the messages) gets its own short sideways
+// entrance — see motion-thread-in in core/motion.css; deliberately not the
+// tab transition — through .dm-layout--opening. Only animation, no permanent
+// transform. Plays nothing when the global Animations setting is off (and
+// is 0ms under reduced motion).
 let dmEnterTimer = 0;
 
 function playDmThreadEnter() {

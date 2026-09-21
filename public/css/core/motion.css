@@ -78,15 +78,17 @@ html[data-animations="on"] {
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-/* DM thread entry: exactly motion-rise-in (same opacity, same 6px, same
-   token timing as the tab transition), but on the individual
-   `translate` property instead of `transform`. The swipe-back gesture
-   (chat/dm.js) drives .dm-thread through an inline `transform`, and a
-   keyframed `transform` would override it while this runs; `translate`
-   composes with it instead. Nothing is left behind afterwards. */
+/* DM thread entry — deliberately NOT the vertical tab/view rise: a view
+   change rises in place, entering a conversation moves *sideways into*
+   it (12px from the list side, a hair of scale, fade). It runs on the
+   individual `translate` / `scale` properties instead of `transform`:
+   the swipe-back gesture (chat/dm.js) drives .dm-thread through an
+   inline `transform`, and a keyframed `transform` would override it
+   while this runs; these compose with it instead. Nothing is left
+   behind afterwards. Uses --motion-fast (a quicker beat than views). */
 @keyframes motion-thread-in {
-  from { opacity: 0; translate: 0 6px; }
-  to { opacity: 1; translate: 0 0; }
+  from { opacity: 0; translate: 12px 0; scale: .992; }
+  to { opacity: 1; translate: 0 0; scale: 1; }
 }
 
 /* While the phone thread fades in, the conversation list underneath is
@@ -102,11 +104,12 @@ html[data-animations="on"] {
    .dm-layout--opening (playDmThreadEnter) on the layout for one
    animation; desktop and phone both use it. */
 .dm-layout--opening .dm-thread {
-  animation: motion-thread-in var(--motion-base) var(--motion-ease);
+  transform-origin: left center;
+  animation: motion-thread-in var(--motion-fast) var(--motion-ease);
 }
 @media (max-width: 760px) {
   .dm-layout--opening .dm-sidebar {
-    animation: motion-hold-hidden var(--motion-base) linear;
+    animation: motion-hold-hidden var(--motion-fast) linear;
   }
 }
 

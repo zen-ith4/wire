@@ -1655,3 +1655,73 @@ input.conv-search-input:focus{
 .dm-thread .chat-messages {
   touch-action: pan-y;
 }
+
+/* ---------- Swipe to reply (touch) — chat/swipe-reply.js ----------
+   touch-action: the browser may pan vertically (scrolling) and pinch,
+   but never horizontally over a message, so a sideways drag is
+   delivered to the gesture instead of being claimed (and cancelled) by
+   the browser. Same policy .dm-thread .chat-messages already has. */
+.chat-msg{
+  touch-action:pan-y pinch-zoom;
+}
+
+/* Only while a swipe is in progress (classes added/removed by the
+   gesture, nothing permanent): the row needs to be a positioning
+   context for the indicator, and the list must not grow a horizontal
+   scroll area from the indicator sitting just outside the row. */
+.chat-messages.is-swiping-reply{
+  overflow-x:hidden;
+}
+
+.chat-msg.swipe-reply-active{
+  position:relative;
+  will-change:transform;
+}
+
+/* Same look as the avatar chip next to it (surface, hairline border,
+   muted glyph); it only adds an accent-tinted border once the swipe is
+   far enough that releasing will reply. Opacity/scale are driven by the
+   finger, so they are deliberately not transitioned here. */
+.swipe-reply-indicator{
+  position:absolute;
+  width:28px;
+  height:28px;
+  margin-top:-14px;
+  border-radius:50%;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:var(--ink2);
+  border:1px solid var(--border);
+  color:var(--muted);
+  opacity:0;
+  transform:scale(.6);
+  pointer-events:none;
+  transition:
+    color var(--ease-fast),
+    border-color var(--ease-fast),
+    background var(--ease-fast);
+}
+
+.swipe-reply-indicator svg{
+  width:14px;
+  height:14px;
+  flex-shrink:0;
+}
+
+.swipe-reply-indicator.is-armed{
+  background:var(--hover);
+  border-color:var(--accent-border);
+  color:var(--text);
+}
+
+/* The row moves away from this side, uncovering the indicator. */
+.swipe-reply-indicator--right{
+  left:100%;
+  margin-left:8px;
+}
+
+.swipe-reply-indicator--left{
+  right:100%;
+  margin-right:8px;
+}

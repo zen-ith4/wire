@@ -17,6 +17,7 @@ import { showConfirm } from '../ui/confirm.js';
 import { openEmojiPicker } from '../ui/emoji-picker.js';
 import { renderReactionsRow, updateMessageReactions, onReactionsUpdated } from './reactions.js';
 import { buildReplyQuoteHtml, buildReplyPreview } from './reply.js';
+import { bindSwipeToReply } from './swipe-reply.js';
 import { createTypingEmitter, createTypingIndicator, wireTypingInput } from './typing.js';
 import { getSocket } from '../core/socket.js';
 import { createComposer } from './composer.js';
@@ -161,6 +162,12 @@ export async function renderChat(opts) {
       </div>
     </div>
   `;
+  // Touch swipe-to-reply on this fresh #chat-messages element. The
+  // listeners live on the element itself, so they go away with it on the
+  // next render; the reply itself is the existing Reply button's action.
+  bindSwipeToReply(document.getElementById('chat-messages'), {
+    onReply: (id) => window.replyToChatMessage(id),
+  });
   if (!fromCache) {
     chatOldest = null;
     chatHasMore = true;

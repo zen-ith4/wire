@@ -29,6 +29,7 @@ import {
   buildReplyQuoteHtml,
   buildReplyPreview
 } from './reply.js';
+import { bindSwipeToReply } from './swipe-reply.js';
 import {
   createTypingEmitter,
   createTypingIndicator,
@@ -977,14 +978,19 @@ window.backFromDmThread = function () {
 };
 
 // ---------- Mobile DM swipe-back ----------
+// Shared with the swipe-to-reply gesture below so the two can never
+// disagree about where swipe-back owns the touch.
+const DM_SWIPE_BACK_EDGE_PX = 48;
+const DM_MOBILE_BREAKPOINT = 900;
+
 function bindDmMobileSwipeBack(root) {
   if (!root || root.dataset.dmSwipeBackBound === '1') return;
   root.dataset.dmSwipeBackBound = '1';
 
-  const EDGE_START_PX = 48;
+  const EDGE_START_PX = DM_SWIPE_BACK_EDGE_PX;
   const ACTIVATION_DISTANCE_PX = 6;
   const COMMIT_DISTANCE_PX = 50;
-  const MOBILE_BREAKPOINT = 900;
+  const MOBILE_BREAKPOINT = DM_MOBILE_BREAKPOINT;
   const ANIMATION_MS = 180;
 
   let pointerId = null;
@@ -1310,6 +1316,19 @@ thread.innerHTML = `
   wireTypingInput('dm-input', dmTypingEmitter);
 
   const container = document.getElementById('dm-messages');
+
+  // Touch swipe-to-reply on this fresh #dm-messages element (its
+  // listeners go away with it the next time the thread is rebuilt). On
+  // the phone layout a rightward swipe that starts in the left edge
+  // strip belongs to swipe-back, so it is not started here.
+  bindSwipeToReply(container, {
+    onReply: (id) => window.replyToDmMessage(id),
+    shouldIgnoreStart: (e, dir) =>
+      dir > 0 &&
+      window.innerWidth <= DM_MOBILE_BREAKPOINT &&
+      e.clientX <= DM_SWIPE_BACK_EDGE_PX,
+  });
+
   container.addEventListener(
     'scroll',
     () => {

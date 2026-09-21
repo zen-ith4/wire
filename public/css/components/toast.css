@@ -6,8 +6,8 @@
 background:rgba(var(--ink2-rgb),.92);
   backdrop-filter:blur(12px);
   border:1px solid var(--border);
-  animation:toastIn .2s ease;
+  animation:toastIn var(--motion-fast) var(--motion-ease);
 }
 .toast.error{border-color:rgba(var(--red),.4);color:#D6A3A3;}
 .toast.success{border-color:rgba(var(--green),.4);color:#A9C7B4;}
-@keyframes toastIn{from{opacity:0;transform:translate(-50%,-8px);}to{opacity:1;transform:translate(-50%,0);}}
+@keyframes toastIn{from{opacity:0;transform:translate(-50%,-6px);}to{opacity:1;transform:translate(-50%,0);}}

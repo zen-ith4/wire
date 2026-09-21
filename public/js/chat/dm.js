@@ -689,6 +689,7 @@ let dmPickerUsers = null;
 
 window.openNewDmPicker = async function () {
   document.querySelector('.dm-layout')?.classList.add('showing-thread');
+  playDmThreadEnter();
   document.querySelectorAll('.dm-conv').forEach((el) => el.classList.remove('active'));
 
   const thread = document.getElementById('dm-thread');
@@ -918,6 +919,62 @@ function bindDmThreadBackground() {
     window.visualViewport?.addEventListener('resize', syncDmThreadBackground);
   }
 }
+
+// ---------- DM open / back-button motion ----------
+// Reference: the tab transition (.view-enter in core/motion.css). The same
+// opacity + 6px rise and the same tokens are applied to the conversation
+// layer itself — never to messages — through .dm-layout--opening. Only
+// animation, no permanent transform. Plays nothing when the global
+// Animations setting is off (and is 0ms under reduced motion).
+let dmEnterTimer = 0;
+
+function playDmThreadEnter() {
+  if (!document.documentElement.hasAttribute('data-animations')) return;
+
+  const layout = document.querySelector('.dm-layout');
+  if (!layout) return;
+
+  clearTimeout(dmEnterTimer);
+  layout.classList.remove('dm-layout--opening');
+  void layout.offsetWidth; // restart the animation on 2nd+ opens
+  layout.classList.add('dm-layout--opening');
+
+  // Not left on: otherwise a later display:none -> flex of the thread
+  // (phone) would replay it without the list being held hidden.
+  dmEnterTimer = setTimeout(() => {
+    layout.classList.remove('dm-layout--opening');
+  }, 400);
+}
+
+function motionMs(name) {
+  const raw = getComputedStyle(document.documentElement)
+    .getPropertyValue(name);
+  const ms = Number.parseFloat(raw);
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+// Back button on the phone: slide the thread away exactly like a committed
+// swipe-back (inline transform over the untouched list underneath), then run
+// the unchanged closeDmThreadMobile(). With animations off, or reduced
+// motion, it is just closeDmThreadMobile() immediately.
+window.backFromDmThread = function () {
+  const thread = document.getElementById('dm-thread');
+  const ms = motionMs('--motion-base');
+
+  if (!thread || !ms || thread.dataset.dmClosing === '1') {
+    window.closeDmThreadMobile();
+    return;
+  }
+
+  thread.dataset.dmClosing = '1';
+  thread.style.transition = `transform ${ms}ms var(--motion-ease)`;
+  thread.style.transform = 'translate3d(100%, 0, 0)';
+
+  window.setTimeout(() => {
+    delete thread.dataset.dmClosing;
+    window.closeDmThreadMobile();
+  }, ms);
+};
 
 // ---------- Mobile DM swipe-back ----------
 function bindDmMobileSwipeBack(root) {
@@ -1161,9 +1218,11 @@ window.openDmConversation = async function (peerId, username) {
     thread.style.transition = 'none';
     thread.style.transform = '';
 
+playDmThreadEnter();
+
 thread.innerHTML = `
     <div class="chat-top-bar chat-header-glass">
-      <button class="icon-btn dm-back-btn" title="Back" onclick="window.closeDmThreadMobile()">${ICONS.arrowLeft}</button>
+      <button class="icon-btn dm-back-btn" title="Back" onclick="window.backFromDmThread()">${ICONS.arrowLeft}</button>
       <div class="dm-peer-profile" title="View ${escapeAttr(username)}'s profile" onclick="window.openProfileCard(${peerId})">
         ${avatarHtml(peerId, username, 'chat-top-avatar', false)}
         <div class="dm-peer-meta">

@@ -301,7 +301,7 @@
   .files-dialog--modal .files-dialog-panel{
     max-height:92vh;max-height:92dvh;
     border-radius:18px 18px 0 0;border-bottom:0;
-    animation:files-sheet-in .22s ease;
+    animation:files-sheet-in var(--motion-base) var(--motion-ease);
   }
   .files-dialog--modal .files-dialog-panel::before{
     content:"";display:block;flex-shrink:0;width:38px;height:4px;margin:8px auto 0;

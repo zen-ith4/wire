@@ -111,12 +111,56 @@ export function initRouter() {
   });
 }
 
+// Loading -> content (new, toggle-gated; see core/motion.css). Most views
+// paint a spinner and later swap the real content in with innerHTML, which
+// otherwise pops in. When — and only when — a .loading-state is what got
+// replaced, the newly added top-level nodes get the shared fade-in. Later
+// refreshes/re-renders of already-visible content are deliberately left
+// alone (replaying a fade on every refresh would read as flicker), and so is
+// the message list (.chat-messages), which keeps its own rendering.
+let contentSwapMotionBound = false;
+
+function bindContentSwapMotion() {
+  if (contentSwapMotionBound) return;
+
+  const root = document.getElementById('content-area');
+  if (!root || typeof MutationObserver !== 'function') return;
+
+  contentSwapMotionBound = true;
+
+  new MutationObserver((records) => {
+    if (!document.documentElement.hasAttribute('data-animations')) return;
+
+    for (const rec of records) {
+      const target = rec.target;
+      if (!(target instanceof Element) || target.closest('.chat-messages')) {
+        continue;
+      }
+
+      const replacedLoading = Array.from(rec.removedNodes).some(
+        (n) =>
+          n.nodeType === 1 &&
+          (n.matches('.loading-state') || n.querySelector('.loading-state'))
+      );
+      if (!replacedLoading) continue;
+
+      rec.addedNodes.forEach((n) => {
+        if (n.nodeType === 1 && !n.matches('.loading-state')) {
+          n.classList.add('motion-fade-in');
+        }
+      });
+    }
+  }).observe(root, { childList: true, subtree: true });
+}
+
 export function navigate(view, params) {
   const user = getCurrentUser();
 
   if (!user) {
     return;
   }
+
+  bindContentSwapMotion();
 
   perfNavStart(view);
 

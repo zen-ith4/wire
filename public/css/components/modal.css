@@ -1,9 +1,18 @@
 /* ---------- Modal ---------- */
 .modal{display:none;position:fixed;inset:0;background:rgba(var(--scrim-rgb),.72);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);z-index:200;align-items:center;justify-content:center;padding:20px;}
-/* Backdrop fade — new, toggle-gated (0ms/no-op when Animations is
-   off, matching the backdrop's previous instant show). The existing
-   .modal-content's own modalIn animation just below is untouched. */
-.modal.active{display:flex;animation:motion-fade-in var(--motion-fast) var(--motion-ease);}
+/* Open: the backdrop fades in (keyframes) and .modal-content scales in
+   just below. Close: purely visual and CSS-only — .active is still
+   removed synchronously by the JS, the modal just stays *rendered*
+   for one --motion-fast while it fades out (display is transitioned
+   discretely), with pointer-events off so it never blocks input during
+   that time. Engines without transition-behavior/allow-discrete drop
+   the whole declaration and simply hide instantly, as before. Both
+   halves are 0ms when Animations is off / reduced motion is on. */
+.modal{
+  opacity:0;pointer-events:none;
+  transition:opacity var(--motion-fast) var(--motion-ease),display var(--motion-fast) allow-discrete;
+}
+.modal.active{display:flex;opacity:1;pointer-events:auto;animation:motion-fade-in var(--motion-fast) var(--motion-ease);}
 .modal-content {
   background:rgba(var(--ink2-rgb),.92);
   backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
@@ -11,9 +20,8 @@
   border-radius:var(--radius-lg);
   padding:26px;width:100%;max-width:900px;
   position:relative;max-height:88vh;max-height:88dvh;overflow:auto;
-  animation:modalIn .16s ease;
+  animation:motion-scale-in var(--motion-fast) var(--motion-ease);
 }
-@keyframes modalIn{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:translateY(0);}}
 .modal-close{position:absolute;top:16px;right:16px;}
 
 .confirm-modal-content{max-width:380px;padding:24px;}

@@ -13,11 +13,9 @@
   position:fixed;inset:0;z-index:250;
   background:rgba(var(--scrim-rgb),.92);
   flex-direction:column;
-  animation:imageViewerFadeIn var(--ease-smooth);
+  animation:motion-fade-in var(--motion-fast) var(--motion-ease);
 }
 .image-viewer.active{display:flex;}
-
-@keyframes imageViewerFadeIn{from{opacity:0;}to{opacity:1;}}
 
 /* Bar sits in its own stacking context above the image stage so a
    zoomed/panned image can never visually cover the controls.

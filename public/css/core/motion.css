@@ -16,13 +16,16 @@
      level, so it wins over the app setting no matter which component
      reads the variable — robust by construction rather than by
      remembering to check it in every place motion happens.
-   - This file does NOT touch any animation/transition that already
-     existed (modal/toast entrance, hover color transitions using
-     --ease-fast/--ease-smooth, the
-     loading spinner, the voice message waveform, ...). Those keep
-     their own hard-coded durations and keep running the same
-     regardless of this setting, so the app's default appearance is
-     unchanged whether Animations is on or off.
+   - Hover/press color transitions (--ease-fast/--ease-smooth), the
+     loading spinner, the voice-message waveform and other purely
+     functional indicators are not entrance motion and keep running
+     regardless of this setting.
+   - Entrance/exit motion of surfaces (view changes, modals, popovers,
+     toasts, sheets, the mobile DM thread) all draw from the small
+     vocabulary below. Rule of thumb: --motion-fast (140ms) for small
+     surfaces, --motion-base (220ms) for whole views/sheets; opacity
+     and transform only, distances of 2–4px (10px for the DM thread),
+     scale no lower than .98, never a permanent transform.
    ================================================================ */
 
 html[data-animations="on"] {
@@ -61,6 +64,50 @@ html[data-animations="on"] {
 @keyframes motion-pop-in {
   from { opacity: 0; transform: scale(.85); }
   to { opacity: 1; transform: scale(1); }
+}
+
+/* Dialogs: fade with an almost imperceptible scale. */
+@keyframes motion-scale-in {
+  from { opacity: 0; transform: scale(.98); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* Menus / popovers hanging off a trigger. */
+@keyframes motion-menu-in {
+  from { opacity: 0; transform: translateY(-2px) scale(.99); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* DM thread entry: exactly motion-rise-in (same opacity, same 6px, same
+   token timing as the tab transition), but on the individual
+   `translate` property instead of `transform`. The swipe-back gesture
+   (chat/dm.js) drives .dm-thread through an inline `transform`, and a
+   keyframed `transform` would override it while this runs; `translate`
+   composes with it instead. Nothing is left behind afterwards. */
+@keyframes motion-thread-in {
+  from { opacity: 0; translate: 0 6px; }
+  to { opacity: 1; translate: 0 0; }
+}
+
+/* While the phone thread fades in, the conversation list underneath is
+   hidden for the same duration so it can never show through the
+   fading layer (the list is otherwise only ever revealed by the thread
+   physically moving away). The thread's own background copy equals the
+   site background, so over the bare page background the fade reads as
+   pure content fade. */
+@keyframes motion-hold-hidden {
+  from, to { visibility: hidden; }
+}
+/* Opening a DM conversation / the new-message picker. dm.js toggles
+   .dm-layout--opening (playDmThreadEnter) on the layout for one
+   animation; desktop and phone both use it. */
+.dm-layout--opening .dm-thread {
+  animation: motion-thread-in var(--motion-base) var(--motion-ease);
+}
+@media (max-width: 760px) {
+  .dm-layout--opening .dm-sidebar {
+    animation: motion-hold-hidden var(--motion-base) linear;
+  }
 }
 
 /* Generic utility for containers whose content is swapped in (empty

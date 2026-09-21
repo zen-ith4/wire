@@ -15,5 +15,4 @@
 .profile-card-meta-item{display:flex;flex-direction:column;gap:2px;font-size:13px;}
 .profile-card-meta-label{font-size:10.5px;color:var(--muted2);text-transform:uppercase;letter-spacing:.04em;}
 .profile-card-message-btn{width:100%;justify-content:center;}
-@keyframes profileCardIn{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
-#profile-card-modal.active .modal-content{animation:profileCardIn .18s ease;}
+/* Entrance comes from the shared .modal-content animation (modal.css). */

@@ -36,7 +36,7 @@
   border:1px solid var(--border);border-radius:var(--radius-lg);
   box-shadow:0 24px 60px rgba(0,0,0,.45);
   overflow:hidden;
-  animation:modalIn .16s ease;
+  animation:motion-scale-in var(--motion-fast) var(--motion-ease);
 }
 
 /* ---------- Header / body / footer ---------- */

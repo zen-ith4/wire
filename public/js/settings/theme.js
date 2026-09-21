@@ -356,9 +356,36 @@ function backgroundFactor(
     return peak;
   }
 
+  let factor =
+    peak * lightScale;
+
+  // Light mode:
+  // Level 3 is slightly reduced.
+  // Level 4 is reduced more and has its own ceiling,
+  // so it can never collapse into Level 5.
+  // Level 5 keeps the maximum light-mode intensity.
+
+  if (peak === AMBIENT_LEVELS[2]) {
+    factor *= 0.84;
+
+    return Math.min(
+      0.48,
+      factor
+    );
+  }
+
+  if (peak === AMBIENT_LEVELS[3]) {
+    factor *= 0.78;
+
+    return Math.min(
+      0.58,
+      factor
+    );
+  }
+
   return Math.min(
     0.68,
-    peak * lightScale
+    factor
   );
 }
 

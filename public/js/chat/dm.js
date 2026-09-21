@@ -516,6 +516,8 @@ export async function renderDm(openPeerId, opts) {
     </div>
   `;
 
+  bindDmThreadBackground();
+
   const list = document.getElementById('dm-conv-list');
   list.addEventListener('click', (e) => {
     const item = e.target.closest('.dm-conv');
@@ -867,6 +869,55 @@ window.closeNewDmPicker = function () {
     );
   }
 };
+
+// ---------- Mobile DM thread background ----------
+// On phones .dm-thread is an opaque layer that paints its own copy of
+// the site background (responsive.css: .dm-thread::before, fed by the
+// --ambient-bg variable theme.js publishes). To look exactly like the
+// real background, that copy must be the same size as the fixed
+// #ambient-underlay and sit at the same screen position — otherwise its
+// gradients would be laid out against the thread's own smaller box and
+// visibly break against the topbar/bottom bar. So: measure where the
+// (never transformed) .dm-layout sits relative to the underlay and
+// expose that as CSS variables. Layout only; nothing here touches
+// messages.
+let dmBgObserver = null;
+let dmBgWindowBound = false;
+
+function syncDmThreadBackground() {
+  const layout = document.querySelector('.dm-layout');
+  const underlay = document.getElementById('ambient-underlay');
+  if (!layout || !underlay) return;
+
+  const l = layout.getBoundingClientRect();
+  const u = underlay.getBoundingClientRect();
+
+  layout.style.setProperty('--dm-bg-x', `${l.left - u.left}px`);
+  layout.style.setProperty('--dm-bg-y', `${l.top - u.top}px`);
+  layout.style.setProperty('--dm-bg-w', `${u.width}px`);
+  layout.style.setProperty('--dm-bg-h', `${u.height}px`);
+}
+
+function bindDmThreadBackground() {
+  const layout = document.querySelector('.dm-layout');
+  if (!layout) return;
+
+  syncDmThreadBackground();
+
+  // Keyboard open/close (bottom bar hides), rotation, safe-area changes…
+  // all resize the layout box.
+  if (dmBgObserver) dmBgObserver.disconnect();
+  if (typeof ResizeObserver === 'function') {
+    dmBgObserver = new ResizeObserver(syncDmThreadBackground);
+    dmBgObserver.observe(layout);
+  }
+
+  if (!dmBgWindowBound) {
+    dmBgWindowBound = true;
+    window.addEventListener('resize', syncDmThreadBackground);
+    window.visualViewport?.addEventListener('resize', syncDmThreadBackground);
+  }
+}
 
 // ---------- Mobile DM swipe-back ----------
 function bindDmMobileSwipeBack(root) {

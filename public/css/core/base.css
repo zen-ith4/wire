@@ -21,14 +21,17 @@
 .bg{position:fixed;inset:0;z-index:0;pointer-events:none;background:transparent;}
 .bg-blob{display:none;}
 .bg-grid{display:none;}
+/* Blur radius shared by #ambient-underlay and the mobile .dm-thread
+   background copy (responsive.css) so the two can never drift apart. */
+:root{--ambient-blur:40px;}
+@media (max-width:720px){
+  :root{--ambient-blur:24px;}
+}
 #ambient-underlay {
   position:fixed;inset:0;z-index:0;pointer-events:none;
-  filter:blur(40px);
+  filter:blur(var(--ambient-blur));
   background:
     radial-gradient(ellipse 110% 65% at 50% 0%, rgba(var(--indigo), var(--ambient-strength)) 0%, rgba(var(--indigo), calc(var(--ambient-strength) * 0.45)) 45%, transparent 85%),
     radial-gradient(ellipse 110% 65% at 50% 100%, rgba(var(--indigo-2), var(--ambient-strength)) 0%, rgba(var(--indigo-2), calc(var(--ambient-strength) * 0.45)) 45%, transparent 85%),
     var(--void);
-}
-@media (max-width:720px){
-  #ambient-underlay{filter:blur(24px);}
 }

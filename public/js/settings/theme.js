@@ -1703,6 +1703,24 @@ function paintUnderlay() {
     peak
   );
 
+  const dark =
+    getCurrentTheme() === 'dark';
+
+  const backgroundCss =
+    buildBackgroundCss(
+      currentBackgroundId,
+      { peak, dark }
+    );
+
+  // Also published as a CSS variable so any surface that needs its own
+  // copy of the site background (currently the mobile .dm-thread layer,
+  // see responsive.css) paints the exact same layers instead of
+  // re-deriving them.
+  document.documentElement.style.setProperty(
+    '--ambient-bg',
+    backgroundCss
+  );
+
   const underlay =
     document.getElementById('ambient-underlay');
 
@@ -1710,14 +1728,8 @@ function paintUnderlay() {
     return;
   }
 
-  const dark =
-    getCurrentTheme() === 'dark';
-
   underlay.style.background =
-    buildBackgroundCss(
-      currentBackgroundId,
-      { peak, dark }
-    );
+    backgroundCss;
 }
 
 

@@ -20,7 +20,45 @@
   .dm-sidebar{border-right:none;}
   .dm-back-btn{display:inline-flex;}
   .dm-layout:not(.showing-thread) .dm-thread{display:none;}
-  .dm-layout.showing-thread .dm-sidebar{display:none;}
+
+  /* Two stacked layers instead of two swapped panes: the conversation
+     list is always rendered underneath, and an open conversation is a
+     separate opaque layer on top of it. The list stays put (no more
+     display:none), so dragging the thread aside in the swipe-back
+     gesture (dm.js sets an inline transform on .dm-thread) uncovers the
+     already-rendered list instead of an empty gap. */
+  .dm-layout{position:relative;overflow:hidden;}
+  .dm-sidebar{position:absolute;inset:0;z-index:1;}
+  .dm-thread{
+    position:absolute;inset:0;z-index:2;
+    /* Crops the oversized background layer below to the thread's own
+       box. No transform/contain here on purpose: at rest that would turn
+       .dm-thread into the containing block for position:fixed children. */
+    overflow:hidden;
+    /* Opaque, same as <body>: what #ambient-underlay's blurred edges
+       fade into on the real page. No see-through, no glass over the
+       list underneath. */
+    background:var(--void);
+    backdrop-filter:none;-webkit-backdrop-filter:none;
+  }
+
+  /* The thread's own copy of the site background: the very same layers
+     theme.js paints on #ambient-underlay (--ambient-bg), the same blur,
+     and the same size and screen position as that fixed layer
+     (--dm-bg-* are measured by dm.js). Because it is a child of the
+     thread it travels with it during the swipe, and because it lines up
+     with the real underlay the thread is indistinguishable from the
+     page background around it (topbar / bottom bar). */
+  .dm-thread::before{
+    content:"";
+    position:absolute;z-index:-1;pointer-events:none;
+    left:calc(-1 * var(--dm-bg-x, 0px));
+    top:calc(-1 * var(--dm-bg-y, 0px));
+    width:var(--dm-bg-w, 100vw);
+    height:var(--dm-bg-h, 100vh);
+    background:var(--ambient-bg, var(--void));
+    filter:blur(var(--ambient-blur));
+  }
 }
 
 /* ---- Settings (features/settings.css) ---- */

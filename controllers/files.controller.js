@@ -4,10 +4,15 @@ const path = require('path');
 
 const { findFolderById } = require('../services/file.service');
 const { getUserFolders, getFolderAccess } = require('../services/share.service');
-const { safeSubPath } = require('../utils/safePath');
+const { safeSubPath, resolveRegularFile } = require('../utils/safePath');
 const { moveFileSafe } = require('../utils/file');
 const { detectMimeFromBytes } = require('../utils/detectFileType');
 const { isInlineSafeMime } = require('../utils/inlineSafeMime');
+const { describeMedia, sendInlineMedia } = require('../utils/streamMedia');
+const {
+  signFileMediaToken,
+  FILE_MEDIA_TOKEN_TTL_SECONDS,
+} = require('../utils/jwt');
 
 function validateFolderId(value) {
   const id = Number(value);
@@ -273,10 +278,95 @@ async function previewFile(req, res) {
   return res.sendFile(resolved);
 }
 
+// ============ Media preview (image / video / audio) ============
+//
+// <video>/<audio>/<img> can't send an Authorization header, so the My
+// Files viewer works in two steps:
+//
+//   1. GET /api/files/media-token/:folderId?subpath&file   (normal
+//      Bearer auth) -> a short-lived token bound to exactly this
+//      file, plus the file's sniffed type/size for the viewer's UI.
+//   2. GET /api/files/stream/:folderId?subpath&file&token=...
+//      (folderFileMediaAuth) -> the bytes, inline, with Range support.
+//
+// Nothing is downloaded into JS memory to preview; the browser streams
+// it natively. Folder access is re-checked on both steps, so removing
+// someone's access stops streaming immediately.
+
+async function resolveFolderFile(req, res) {
+  const folderId = validateFolderId(req.params.folderId);
+  if (!folderId) {
+    res.status(400).json({ error: 'Invalid folder id' });
+    return null;
+  }
+
+  const result = getFolderAndAccess(req.user.id, folderId);
+  if (result.error) {
+    res.status(403).json({ error: result.error });
+    return null;
+  }
+
+  const subpath = typeof req.query.subpath === 'string' ? req.query.subpath : '';
+  const file = typeof req.query.file === 'string' ? req.query.file : '';
+
+  const target = await resolveRegularFile(result.folder.path, subpath, file);
+  if (!target.ok) {
+    res.status(404).json({ error: 'File not found' });
+    return null;
+  }
+
+  return { folderId, subpath, file, target };
+}
+
+async function getFileMediaToken(req, res) {
+  const resolved = await resolveFolderFile(req, res);
+  if (!resolved) return;
+
+  const media = await describeMedia(resolved.target);
+  if (!media) {
+    return res.status(415).json({
+      error: "This file type can't be previewed",
+    });
+  }
+
+  const token = signFileMediaToken(req.user, {
+    type: 'file',
+    id: resolved.folderId,
+    sp: resolved.subpath,
+    f: resolved.file,
+  });
+
+  res.set('Cache-Control', 'private, no-store');
+  res.json({
+    token,
+    expiresIn: FILE_MEDIA_TOKEN_TTL_SECONDS,
+    kind: media.kind,
+    mime: media.mime,
+    size: resolved.target.size,
+    modified: resolved.target.modified,
+  });
+}
+
+async function streamFile(req, res) {
+  const resolved = await resolveFolderFile(req, res);
+  if (!resolved) return;
+
+  const media = await describeMedia(resolved.target);
+  if (!media) {
+    return res.status(415).json({
+      error: "This file type can't be previewed",
+    });
+  }
+
+  sendInlineMedia(res, resolved.target, media);
+}
+
 module.exports = {
   getFolders,
   listFiles,
   downloadFile,
   previewFile,
   uploadFile,
+  getFileMediaToken,
+  streamFile,
 };

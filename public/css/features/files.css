@@ -1,15 +1,272 @@
-/* ---------- File pane body (scrolls under the breadcrumb bar) ---------- */
-.files-body{flex:1;overflow-y:auto;padding:16px 24px;}
+/* ================================================================
+   MY FILES  (js/files/files.js)
 
-/* ---------- File table ---------- */
-/* Wrapper the table (and the same-shaped peer/user admin tables,
-   which reuse this class — see wireguard.js/admin.js) renders
-   inside of. On a narrow phone, 4 columns of real content (name,
-   size, date, actions) don't fit without either crushing every
-   column unreadably thin or overflowing the page — this scopes any
-   overflow to a horizontal scroll on the table itself instead,
-   which is the actual right fix rather than a blanket
-   overflow:hidden that would just clip the extra columns. */
+   Two panes like Messages — folder list on the left, the current
+   folder on the right — built from Files-only classes (.files-*) so
+   nothing here can affect Messages. Phone rules (<=760px: one pane at
+   a time, larger tap targets, no column headers) live in
+   responsive.css with the rest of the app's breakpoints.
+
+   Rules for every control in this file:
+     - real <button>s, min 36px (44px on phones), no hover-only UI
+     - names truncate with an ellipsis, never force a sideways scroll
+   ================================================================ */
+
+.sr-only{
+  position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+  clip:rect(0,0,0,0);white-space:nowrap;border:0;
+}
+
+/* `display` on a component class would otherwise beat the [hidden] attribute */
+.files-layout [hidden]{display:none !important;}
+
+.files-layout{
+  --files-sidebar-width:300px;
+  display:flex;width:100%;flex:1;min-height:0;
+  font-family:var(--wire-font-family, inherit);
+}
+.files-layout button,
+.files-layout input,
+.files-layout select{font-family:inherit;}
+
+/* ---------- Icon tiles (folder / file-type badges) ---------- */
+.files-tile{
+  --tile-bg:rgba(154,154,163,.10);--tile-border:rgba(154,154,163,.16);
+  width:36px;height:36px;border-radius:10px;flex-shrink:0;
+  display:inline-flex;align-items:center;justify-content:center;
+  background:var(--tile-bg);border:1px solid var(--tile-border);
+}
+.files-tile svg{width:17px;height:17px;flex-shrink:0;}
+.files-tile--folder{--tile-bg:rgba(234,179,8,.10);--tile-border:rgba(234,179,8,.20);}
+.files-tile--image {--tile-bg:rgba(96,165,250,.10);--tile-border:rgba(96,165,250,.20);}
+.files-tile--video {--tile-bg:rgba(244,114,182,.10);--tile-border:rgba(244,114,182,.20);}
+.files-tile--audio {--tile-bg:rgba(52,211,153,.10);--tile-border:rgba(52,211,153,.20);}
+.files-tile--xl{width:64px;height:64px;border-radius:18px;}
+.files-tile--xl svg{width:28px;height:28px;}
+
+/* ---------- Icon buttons ---------- */
+.files-action{
+  width:36px;height:36px;flex-shrink:0;
+  display:inline-flex;align-items:center;justify-content:center;
+  background:transparent;border:0;border-radius:var(--radius);
+  color:var(--muted);cursor:pointer;
+  transition:background var(--ease-fast),color var(--ease-fast);
+}
+.files-action svg{width:16px;height:16px;}
+.files-action:hover{background:var(--hover);color:var(--text);}
+.files-action:active{background:var(--accent-hover-bg);}
+.files-action--danger:hover{background:rgba(var(--red),.14);color:#D6A3A3;}
+
+/* ================================================================
+   SIDEBAR
+   ================================================================ */
+.files-sidebar{
+  width:var(--files-sidebar-width);min-width:var(--files-sidebar-width);height:100%;
+  display:flex;flex-direction:column;min-height:0;
+  border-right:1px solid var(--border);
+  background:rgba(var(--ink-rgb),.62);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+}
+.files-sidebar-head{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:14px 16px 12px;border-bottom:1px solid var(--border);flex-shrink:0;
+}
+.files-sidebar-title{margin:0;font-size:13px;font-weight:550;letter-spacing:-.01em;color:var(--text);}
+
+.files-newbtn{
+  display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:0 12px;
+  border-radius:var(--radius);border:1px solid var(--border);background:transparent;
+  color:var(--muted);font-size:12px;font-weight:500;letter-spacing:-.01em;cursor:pointer;
+  transition:background var(--ease-fast),border-color var(--ease-fast),color var(--ease-fast);
+}
+.files-newbtn svg{width:14px;height:14px;}
+.files-newbtn:hover,
+.files-newbtn[aria-expanded="true"]{background:var(--accent-bg);border-color:var(--accent-border);color:var(--text);}
+
+.files-newfolder{padding:12px 16px;border-bottom:1px solid var(--border);flex-shrink:0;}
+.files-newfolder-row{display:flex;gap:8px;align-items:center;}
+.files-newfolder-row .files-input{flex:1;min-width:0;min-height:36px;}
+.files-btn-sm{min-height:36px;padding:0 12px;justify-content:center;font-size:12.5px;}
+.files-newfolder-error{margin:8px 0 0;min-height:0;font-size:12px;line-height:1.4;color:#D6A3A3;}
+.files-newfolder-error:empty{display:none;}
+
+.files-folder-scroll{flex:1;min-height:0;overflow-y:auto;padding:8px;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;}
+.files-group{
+  margin:12px 10px 6px;font-size:11px;font-weight:550;letter-spacing:.05em;
+  text-transform:uppercase;color:var(--muted2);
+}
+.files-group:first-child{margin-top:4px;}
+.files-folder-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px;}
+
+.files-folder{
+  position:relative;display:flex;align-items:center;border-radius:var(--radius);
+  transition:background var(--ease-fast);
+}
+.files-folder:hover{background:var(--hover);}
+.files-folder.is-active{background:var(--accent-bg);}
+.files-folder.is-active::before{
+  content:"";position:absolute;left:0;top:12px;bottom:12px;width:3px;
+  border-radius:0 3px 3px 0;background:rgb(var(--indigo));
+}
+.files-folder-main{
+  flex:1;min-width:0;min-height:56px;padding:10px;
+  display:flex;align-items:center;gap:12px;text-align:left;
+  background:none;border:0;border-radius:var(--radius);color:inherit;cursor:pointer;
+}
+.files-folder-text{display:flex;flex-direction:column;gap:2px;min-width:0;}
+.files-folder-name{
+  font-size:13.5px;font-weight:500;letter-spacing:-.01em;color:var(--text);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.files-folder-sub{
+  font-size:12px;font-weight:430;color:var(--muted);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.files-folder-actions{display:flex;gap:0;padding-right:4px;flex-shrink:0;}
+.files-side-empty .empty-state{padding:40px 12px;}
+
+/* ================================================================
+   MAIN PANE
+   ================================================================ */
+.files-main{
+  flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;height:100%;position:relative;
+  background:rgba(var(--void-rgb),.55);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+}
+
+.files-header{
+  display:flex;align-items:center;gap:10px;min-height:56px;padding:8px 20px;
+  border-bottom:1px solid var(--border);flex-shrink:0;
+}
+.files-back{
+  display:none;width:44px;height:44px;flex-shrink:0;align-items:center;justify-content:center;
+  background:transparent;border:0;border-radius:var(--radius);color:var(--muted);cursor:pointer;
+}
+.files-back:hover{background:var(--hover);color:var(--text);}
+
+/* Breadcrumbs: one non-wrapping line. Ancestors shrink (with an
+   ellipsis) long before the current folder does, so a deep path can
+   never push the header wider than the screen. */
+.files-crumbs{flex:1 1 auto;min-width:0;}
+.files-crumb-list{
+  display:flex;flex-wrap:nowrap;align-items:center;min-width:0;
+  list-style:none;margin:0;padding:0;overflow:hidden;
+}
+.files-crumb{display:flex;align-items:center;min-width:0;flex:0 1000 auto;}
+.files-crumb.is-current{flex:0 1 auto;}
+.files-crumb + .files-crumb::before{
+  content:"/";flex-shrink:0;margin:0 2px;color:var(--muted2);font-size:14px;
+}
+.files-crumb-btn,
+.files-crumb-text{
+  min-width:0;max-width:100%;padding:6px 8px;border-radius:6px;
+  font-size:14px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.files-crumb-btn{
+  min-height:34px;background:none;border:0;color:var(--muted);font-weight:450;cursor:pointer;
+  transition:background var(--ease-fast),color var(--ease-fast);
+}
+.files-crumb-btn:hover{background:var(--hover);color:var(--text);}
+.files-crumb.is-root .files-crumb-btn,
+.files-crumb.is-root .files-crumb-text{max-width:24ch;}
+.files-crumb-text{color:var(--text);font-weight:600;}
+
+.files-count{flex-shrink:0;font-size:12px;color:var(--muted);white-space:nowrap;}
+.files-upload{flex-shrink:0;min-height:36px;padding:0 14px;}
+.files-upload svg{width:15px;height:15px;}
+
+.files-main > .upload-progress{margin:12px 20px 0;}
+
+/* Sort bar: phones only (desktop sorts from the column headers). */
+.files-toolbar{display:none;align-items:center;gap:8px;padding:8px 12px 0;flex-shrink:0;}
+.files-sort-select{flex:1;min-width:0;min-height:44px;}
+.files-sort-dir{
+  min-height:44px;padding:0 14px;border-radius:var(--radius);border:1px solid var(--border);
+  background:var(--ink2);color:var(--text);font-size:12.5px;font-weight:500;cursor:pointer;white-space:nowrap;
+}
+.files-sort-dir:hover{background:var(--accent-bg);border-color:var(--accent-border);}
+
+.files-body{
+  flex:1;min-height:0;overflow-y:auto;padding:0 20px 24px;outline:none;
+  overscroll-behavior:contain;-webkit-overflow-scrolling:touch;
+}
+
+/* ---------- List ---------- */
+.files-list-head,
+.files-row{
+  display:grid;grid-template-columns:minmax(0,1fr) 92px 150px 84px;
+  align-items:center;column-gap:12px;
+}
+.files-list-head{
+  position:sticky;top:0;z-index:2;padding:10px 12px 6px;
+  background:rgba(var(--void-rgb),.94);border-bottom:1px solid var(--border-soft);
+}
+.files-th.is-right{text-align:right;}
+.files-th.is-right .files-sort{justify-content:flex-end;}
+.files-sort{
+  display:inline-flex;align-items:center;gap:4px;min-height:32px;padding:4px 6px;margin-left:-6px;
+  background:none;border:0;border-radius:6px;cursor:pointer;
+  font-size:11px;font-weight:550;letter-spacing:.05em;text-transform:uppercase;color:var(--muted2);
+}
+.files-th.is-right .files-sort{margin-left:0;margin-right:-6px;}
+.files-sort:hover,
+.files-sort.is-active{color:var(--text);}
+.files-sort-caret{display:inline-block;min-width:.8em;}
+
+.files-list{list-style:none;margin:6px 0 0;padding:0;}
+.files-row{
+  position:relative;min-height:56px;padding:4px 12px;border-radius:var(--radius);
+  transition:background var(--ease-fast);
+}
+.files-row:hover{background:var(--hover);}
+
+/* The name button is stretched over the whole row (::after), so the
+   entire row is one big tap target — the actions sit above it. */
+.files-row-main{
+  display:flex;align-items:center;gap:12px;min-width:0;padding:6px 0;
+  background:none;border:0;color:inherit;text-align:left;cursor:pointer;
+}
+.files-row-main::after{content:"";position:absolute;inset:0;border-radius:var(--radius);}
+.files-row-main:focus-visible{outline:none;}
+.files-row-main:focus-visible::after{outline:2px solid var(--accent-ring);outline-offset:-2px;}
+
+.files-row-text{display:flex;flex-direction:column;gap:2px;min-width:0;}
+.files-row-name{
+  font-size:13.5px;font-weight:500;color:var(--text);letter-spacing:-.01em;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.files-row-meta{display:none;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.files-row-size,
+.files-row-date{
+  font-size:12.5px;color:var(--muted);text-align:right;white-space:nowrap;
+  font-variant-numeric:tabular-nums;
+}
+.files-row-actions{position:relative;z-index:1;display:flex;justify-content:flex-end;gap:4px;}
+.files-row-chevron{display:inline-flex;align-items:center;padding-right:10px;color:var(--muted2);}
+.files-row-chevron svg{width:16px;height:16px;}
+
+/* ---------- Empty / loading ---------- */
+.files-empty{display:flex;flex-direction:column;align-items:center;gap:14px;padding:24px 0;}
+.files-empty .empty-state{padding:56px 20px 4px;}
+.files-empty-cta{min-height:40px;justify-content:center;}
+.files-only-phone{display:none;}
+
+.files-skel{display:flex;align-items:center;gap:12px;padding:10px 12px;min-height:56px;}
+.files-skel-tile{width:36px;height:36px;border-radius:10px;background:var(--ink2);flex-shrink:0;}
+.files-skel-line{height:12px;flex:1;max-width:46%;border-radius:6px;background:var(--ink2);}
+.files-skel:nth-child(3n) .files-skel-line{max-width:60%;}
+.files-skel:nth-child(4n) .files-skel-line{max-width:34%;}
+.files-list--skeleton{margin-top:8px;}
+@media (prefers-reduced-motion:no-preference){
+  .files-skel{animation:files-pulse 1.3s ease-in-out infinite;}
+  @keyframes files-pulse{0%,100%{opacity:1;}50%{opacity:.45;}}
+}
+
+/* ================================================================
+   Generic tables — still used by the admin and WireGuard views
+   (js/settings/admin.js, js/wireguard/wireguard.js). Not Files-tab
+   styles; kept here because that is where they have always lived.
+   ================================================================ */
 .table-scroll{width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;}
 @media (max-width:700px){
   .table-scroll .file-table{min-width:520px;}

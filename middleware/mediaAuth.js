@@ -1,4 +1,8 @@
-const { verifySessionToken, verifyMediaToken } = require('../utils/jwt');
+const {
+  verifySessionToken,
+  verifyMediaToken,
+  verifyFileMediaToken,
+} = require('../utils/jwt');
 const { getDb } = require('../config/database');
 
 /*
@@ -97,6 +101,132 @@ function mediaAuth(req, res, next) {
   });
 }
 
+/*
+ * ------------------------------------------------------------------
+ * My Files media (image/video/audio preview) and share-link media
+ * ------------------------------------------------------------------
+ *
+ * Same model as above — a <video>/<audio>/<img> can't send an
+ * Authorization header, so it authenticates with a short-lived,
+ * single-resource `?token=` — but scoped to a file instead of a
+ * chat/DM message id (see signFileMediaToken in utils/jwt.js):
+ *
+ *   folderFileMediaAuth   /api/files/stream/:folderId?subpath&file&token
+ *                         token bound to (folderId, subpath, file)
+ *   shareLinkMediaAuth    /api/share/links/stream/:linkId?token
+ *                         token bound to the link id
+ *
+ * Unlike loadUserAndContinue() above these also refuse deactivated
+ * accounts, matching middleware/authenticate.js. Neither middleware
+ * grants any access by itself: controllers still check folder
+ * permissions / link validity on EVERY request, so revoking access
+ * takes effect immediately, not when the token expires.
+ */
+
+function loadActiveUser(userId) {
+  const user = getDb()
+    .prepare(`
+      SELECT
+        id,
+        username,
+        is_admin,
+        is_active
+      FROM users
+      WHERE id = ?
+    `)
+    .get(userId);
+
+  if (!user || user.is_active === 0) {
+    return null;
+  }
+
+  return {
+    id: user.id,
+    username: user.username,
+    is_admin: Boolean(user.is_admin)
+  };
+}
+
+function queryString(value) {
+  return typeof value === 'string' ? value : '';
+}
+
+function folderFileMediaAuth(req, res, next) {
+  const header = req.headers.authorization;
+
+  try {
+    let user = null;
+
+    if (header && header.startsWith('Bearer ')) {
+      const payload = verifySessionToken(header.slice(7).trim());
+      user = loadActiveUser(payload.sub || payload.id);
+
+    } else if (typeof req.query.token === 'string' && req.query.token) {
+      const payload = verifyFileMediaToken(req.query.token.trim(), {
+        type: 'file',
+        id: Number(req.params.folderId),
+        sp: queryString(req.query.subpath),
+        f: queryString(req.query.file),
+      });
+
+      user = loadActiveUser(payload.sub);
+
+    } else {
+      return res.status(401).json({
+        error: 'Unauthorized'
+      });
+    }
+
+    if (!user) {
+      return res.status(401).json({
+        error: 'Unauthorized'
+      });
+    }
+
+    req.user = user;
+    return next();
+
+  } catch (err) {
+    return res.status(401).json({
+      error: 'Invalid token'
+    });
+  }
+}
+
+function shareLinkMediaAuth(req, res, next) {
+  try {
+    if (typeof req.query.token !== 'string' || !req.query.token) {
+      return res.status(401).json({
+        error: 'Unauthorized'
+      });
+    }
+
+    const payload = verifyFileMediaToken(req.query.token.trim(), {
+      type: 'sharelink',
+      id: Number(req.params.linkId),
+    });
+
+    const user = loadActiveUser(payload.sub);
+
+    if (!user) {
+      return res.status(401).json({
+        error: 'Unauthorized'
+      });
+    }
+
+    req.user = user;
+    return next();
+
+  } catch (err) {
+    return res.status(401).json({
+      error: 'Invalid token'
+    });
+  }
+}
+
 module.exports = {
-  mediaAuth
+  mediaAuth,
+  folderFileMediaAuth,
+  shareLinkMediaAuth
 };
+

@@ -5,5 +5,6 @@ module.exports = [
   require('./directMessages.tabels'),
   require('./userFolders.tabels'),
   require('./wireguard.tabels'),
-  require('./messageReactions.tabels')
+  require('./messageReactions.tabels'),
+  require('./shareLinks.tabels')
 ];

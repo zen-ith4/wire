@@ -1,12 +1,29 @@
+// ============================================================
+// Files tab ("My Files")
+//
+// Architecture (unchanged): app-router -> showFiles()/renderFiles(),
+// data from /api/files/* and /api/share/*, view-ownership through
+// core/view-session.js claimRender(), stale-while-revalidate on tab
+// switches, uploads through files/upload.js, downloads through
+// files/download.js (native Capacitor vs browser/Electron).
+//
+// What changed:
+//   - The layout is mounted ONCE (#files-root). Navigating folders,
+//     sorting, uploading and sharing repaint only the region that
+//     changed (sidebar / header / list) instead of replacing the whole
+//     view and showing a full-screen spinner.
+//   - No inline event attributes and no window.* globals. All input is
+//     handled by ONE delegated listener that looks rows up by index or
+//     numeric id, so file/folder names are never interpolated into
+//     JavaScript (the old onclick="previewFile('<name>')" pattern was
+//     injectable through a crafted filename).
+//   - Clicking a file opens the Files viewer for image/video/audio and
+//     downloads everything else.
+// ============================================================
+
 import { api } from '../core/api.js';
-import { getToken, logout } from '../core/auth.js';
 import { resolveServerUrl } from '../core/server.js';
 import { claimRender, isUserTypingIn } from '../core/view-session.js';
-
-import {
-  Capacitor,
-  FileTransfer
-} from '../vendor/capacitor.js';
 
 import { ICONS, fileIcon } from '../icons.js';
 import {
@@ -15,8 +32,6 @@ import {
   emptyState,
   formatBytes,
   formatDate,
-  escapeHtml,
-  escapeAttr
 } from '../core/utils.js';
 
 import {
@@ -24,1107 +39,46 @@ import {
   showUploadProgress,
   updateUploadProgress,
   hideUploadProgress,
-  xhrUpload
+  xhrUpload,
 } from './upload.js';
 
-import { openPreview } from '../media/preview.js';
-import { escapeJsString } from './share.js';
+import { esc } from './html.js';
+import { previewKind, tileKind } from './kinds.js';
+import { downloadFromSource, folderFileSource } from './download.js';
+import { openViewer } from './viewer.js';
+import { openLinkDialog } from './links.js';
+import {
+  openShareDialog,
+  createShareFolder,
+  deleteShareFolder,
+  validateFolderName,
+} from './share.js';
+
+// ------------------------------------------------------------
+// State (memory only; dropped on logout)
+// ------------------------------------------------------------
 
 let currentFolderId = null;
 let currentSubpath = '';
 let currentFolders = [];
 let currentEntries = [];
 let currentCanWrite = false;
+let myFoldersById = new Map();
 let sortState = { key: 'name', dir: 1 };
 
-let myFoldersById = new Map();
-
 // Phones (<=760px, see responsive.css): the folder list and the file
-// listing are two full-screen panes, like Messages. Every navigation in
-// this view re-renders the whole layout, so which pane is showing has to
-// live here rather than in the DOM. Files come first (like desktop, which
-// opens the first folder); the header's back arrow reveals the folder list
-// and picking a folder brings the files back. No effect on desktop.
+// listing are two full-screen panes. Which one shows has to live here
+// because the layout can be repainted at any time. Desktop ignores it.
 let showFolderList = false;
 
-// ====================== داخلی ======================
-
-function sortEntries() {
-  const { key, dir } =
-    sortState;
-
-  currentEntries.sort(
-    (a, b) => {
-      if (
-        a.type !== b.type
-      ) {
-        return a.type === 'dir'
-          ? -1
-          : 1;
-      }
-
-      let cmp = 0;
-
-      if (
-        key === 'name'
-      ) {
-        cmp =
-          a.name.localeCompare(
-            b.name,
-            undefined,
-            {
-              sensitivity: 'base',
-              numeric: true
-            }
-          );
-
-      } else if (
-        key === 'size'
-      ) {
-        cmp =
-          a.size - b.size;
-
-      } else if (
-        key === 'modified'
-      ) {
-        cmp =
-          new Date(a.modified) -
-          new Date(b.modified);
-      }
-
-      return cmp * dir;
-    }
-  );
-}
-
-// ====================== عمومی برای onclick ======================
-
-window.goToPath =
-  function(path) {
-    currentSubpath =
-      path || '';
-
-    renderFiles();
-  };
-
-window.changeFolder =
-  function(id) {
-    currentFolderId =
-      Number(id);
-
-    currentSubpath =
-      '';
-
-    showFolderList =
-      false;
-
-    renderFiles();
-  };
-
-window.openFolderListMobile =
-  function() {
-    showFolderList =
-      true;
-
-    document
-      .querySelector('.dm-layout')
-      ?.classList.remove(
-        'showing-thread'
-      );
-  };
-
-window.enterFolder =
-  function(name) {
-    currentSubpath =
-      currentSubpath
-        ? `${currentSubpath}/${name}`
-        : name;
-
-    renderFiles();
-  };
-
-window.previewFile =
-  async function(file) {
-    const ext =
-      file
-        .split('.')
-        .pop()
-        .toLowerCase();
-
-    if (
-      [
-        'jpg',
-        'jpeg',
-        'png',
-        'gif',
-        'webp'
-      ].includes(ext)
-    ) {
-      openPreview(
-        'image',
-        currentFolderId,
-        currentSubpath,
-        file
-      );
-
-    } else if (
-      [
-        'mp4',
-        'webm',
-        'mov'
-      ].includes(ext)
-    ) {
-      openPreview(
-        'video',
-        currentFolderId,
-        currentSubpath,
-        file
-      );
-
-    } else if (
-      [
-        'mp3',
-        'wav',
-        'flac',
-        'ogg'
-      ].includes(ext)
-    ) {
-      openPreview(
-        'audio',
-        currentFolderId,
-        currentSubpath,
-        file
-      );
-
-    } else {
-      window.downloadFile(
-        file
-      );
-    }
-  };
-
-/* =========================================================
- * DOWNLOAD HELPERS
- * ========================================================= */
-
-function isNativeCapacitor() {
-  try {
-    return Capacitor.isNativePlatform();
-  } catch {
-    return false;
-  }
-}
-
-function sanitizeFilename(
-  name
-) {
-  const original =
-    typeof name === 'string'
-      ? name.trim()
-      : '';
-
-  const cleaned =
-    original
-      .replace(
-        /[\/\\?%*:|"<>]/g,
-        '_'
-      )
-      .replace(
-        /[\u0000-\u001F\u007F]/g,
-        '_'
-      )
-      .replace(
-        /\s+/g,
-        ' '
-      )
-      .trim();
-
-  return cleaned ||
-    'download';
-}
-
-function createDownloadId(
-  file
-) {
-  return (
-    `files-${currentFolderId}-${Date.now()}-${Math.random()
-      .toString(36)
-      .slice(2)}`
-  );
-}
-
-function handleNativeDownloadAuthError(
-  error
-) {
-  const status =
-    Number(
-      error?.data?.httpStatus ??
-      error?.httpStatus ??
-      0
-    );
-
-  if (
-    status !== 401
-  ) {
-    return false;
-  }
-
-  try {
-    logout();
-
-  } catch (logoutError) {
-    console.error(
-      '[Files] Logout failed:',
-      logoutError
-    );
-  }
-
-  return true;
-}
-
-/**
- * Native Android download.
- *
- * Files are written directly to:
- *
- * /storage/emulated/0/Download/
- *
- * The server still receives the normal Wire Bearer token.
- *
- * Progress is handled by the shared Wire download progress manager:
- *
- * window.__wireDownloadProgress
- */
-async function downloadFileNative(
-  file,
-  downloadId
-) {
-  const token =
-    getToken();
-
-  if (!token) {
-    throw new Error(
-      'Authentication required'
-    );
-  }
-
-  const safeName =
-    sanitizeFilename(
-      file
-    );
-
-  const relativeSubpath =
-    currentSubpath || '';
-
-  const url =
-    `/api/files/download/${currentFolderId}` +
-    `?subpath=${encodeURIComponent(relativeSubpath)}` +
-    `&file=${encodeURIComponent(file)}`;
-
-  const resolvedUrl =
-    resolveServerUrl(
-      url
-    );
-
-  console.log(
-    '[Files Download] Native download:',
-    {
-      folderId:
-        currentFolderId,
-
-      subpath:
-        relativeSubpath,
-
-      file:
-        safeName,
-
-      url:
-        resolvedUrl,
-
-      downloadId
-    }
-  );
-
-  const destinationUri =
-    `file:///storage/emulated/0/Download/${safeName}`;
-
-  console.log(
-    '[Files Download] Destination:',
-    destinationUri
-  );
-
-  let progressListener =
-    null;
-
-  try {
-    window.__wireDownloadProgress?.start(
-      downloadId,
-      safeName
-    );
-
-    progressListener =
-      await FileTransfer.addListener(
-        'progress',
-        progress => {
-          if (!progress) {
-            return;
-          }
-
-          const bytes =
-            Number(
-              progress.bytes
-            ) || 0;
-
-          const contentLength =
-            Number(
-              progress.contentLength
-            ) || 0;
-
-          console.log(
-            '[Files Download] Progress:',
-            {
-              bytes,
-              contentLength,
-              downloadId
-            }
-          );
-
-          window.__wireDownloadProgress?.progress(
-            downloadId,
-            {
-              bytes,
-              contentLength
-            }
-          );
-        }
-      );
-
-    console.log(
-      '[Files Download] Starting native transfer...'
-    );
-
-    const result =
-      await FileTransfer.downloadFile({
-        url:
-          resolvedUrl,
-
-        path:
-          destinationUri,
-
-        headers: {
-          Authorization:
-            `Bearer ${token}`
-        },
-
-        progress:
-          true,
-
-        connectTimeout:
-          60_000,
-
-        readTimeout:
-          60_000
-      });
-
-    console.log(
-      '[Files Download] Native transfer complete:',
-      result
-    );
-
-    window.__wireDownloadProgress?.finish(
-      downloadId
-    );
-
-    return {
-      ...result,
-
-      uri:
-        destinationUri,
-
-      filename:
-        safeName
-    };
-
-  } catch (error) {
-    console.error(
-      '[Files Download] Native transfer failed:',
-      error
-    );
-
-    window.__wireDownloadProgress?.fail(
-      downloadId
-    );
-
-    if (
-      handleNativeDownloadAuthError(
-        error
-      )
-    ) {
-      throw new Error(
-        'Session expired'
-      );
-    }
-
-    const status =
-      error?.data?.httpStatus ??
-      error?.httpStatus;
-
-    const serverBody =
-      error?.data?.body;
-
-    if (status) {
-      throw new Error(
-        `Download failed (${status})${
-          serverBody
-            ? `: ${serverBody}`
-            : ''
-        }`
-      );
-    }
-
-    throw error;
-
-  } finally {
-    if (
-      progressListener
-    ) {
-      try {
-        await progressListener.remove();
-
-      } catch (error) {
-        console.warn(
-          '[Files Download] Failed to remove progress listener:',
-          error
-        );
-      }
-    }
-  }
-}
-
-/**
- * Browser/Electron download.
- *
- * Uses XMLHttpRequest instead of fetchBlob() so the shared download
- * progress UI receives real download progress events.
- */
-async function downloadFileWeb(
-  file,
-  downloadId
-) {
-  const token =
-    getToken();
-
-  if (!token) {
-    throw new Error(
-      'Authentication required'
-    );
-  }
-
-  const url =
-    `/api/files/download/${currentFolderId}` +
-    `?subpath=${encodeURIComponent(currentSubpath)}` +
-    `&file=${encodeURIComponent(file)}`;
-
-  console.log(
-    '[Files Download] Web download:',
-    {
-      file,
-      url,
-      downloadId
-    }
-  );
-
-  const blob =
-    await new Promise(
-      (
-        resolve,
-        reject
-      ) => {
-        const xhr =
-          new XMLHttpRequest();
-
-        xhr.open(
-          'GET',
-          url,
-          true
-        );
-
-        xhr.responseType =
-          'blob';
-
-        xhr.timeout =
-          120_000;
-
-        xhr.setRequestHeader(
-          'Authorization',
-          `Bearer ${token}`
-        );
-
-        xhr.addEventListener(
-          'progress',
-          event => {
-            const bytes =
-              Number(
-                event.loaded
-              ) || 0;
-
-            const contentLength =
-              event.lengthComputable
-                ? Number(
-                    event.total
-                  ) || 0
-                : 0;
-
-            window.__wireDownloadProgress?.progress(
-              downloadId,
-              {
-                bytes,
-                contentLength
-              }
-            );
-          }
-        );
-
-        xhr.addEventListener(
-          'load',
-          () => {
-            if (
-              xhr.status >= 200 &&
-              xhr.status < 300
-            ) {
-              resolve(
-                xhr.response
-              );
-
-              return;
-            }
-
-            if (
-              xhr.status === 401
-            ) {
-              try {
-                logout();
-
-              } catch (logoutError) {
-                console.error(
-                  '[Files Download] Logout failed:',
-                  logoutError
-                );
-              }
-
-              reject(
-                new Error(
-                  'Session expired'
-                )
-              );
-
-              return;
-            }
-
-            let message =
-              `Download failed (${xhr.status})`;
-
-            if (
-              xhr.response instanceof Blob &&
-              xhr.response.size > 0 &&
-              xhr.status >= 400
-            ) {
-              xhr.response
-                .text()
-                .then(
-                  body => {
-                    reject(
-                      new Error(
-                        body
-                          ? `${message}: ${body}`
-                          : message
-                      )
-                    );
-                  }
-                )
-                .catch(
-                  () => {
-                    reject(
-                      new Error(
-                        message
-                      )
-                    );
-                  }
-                );
-
-              return;
-            }
-
-            reject(
-              new Error(
-                message
-              )
-            );
-          }
-        );
-
-        xhr.addEventListener(
-          'error',
-          () => {
-            reject(
-              new Error(
-                'Network error'
-              )
-            );
-          }
-        );
-
-        xhr.addEventListener(
-          'abort',
-          () => {
-            reject(
-              new Error(
-                'Download cancelled'
-              )
-            );
-          }
-        );
-
-        xhr.addEventListener(
-          'timeout',
-          () => {
-            reject(
-              new Error(
-                'Download timed out'
-              )
-            );
-          }
-        );
-
-        xhr.send();
-      }
-    );
-
-  console.log(
-    '[Files Download] Blob received:',
-    {
-      size:
-        blob?.size,
-
-      type:
-        blob?.type
-    }
-  );
-
-  if (
-    !(blob instanceof Blob)
-  ) {
-    throw new Error(
-      'Invalid download response'
-    );
-  }
-
-  const objectURL =
-    URL.createObjectURL(
-      blob
-    );
-
-  try {
-    const a =
-      document.createElement(
-        'a'
-      );
-
-    a.href =
-      objectURL;
-
-    a.download =
-      sanitizeFilename(
-        file
-      );
-
-    document.body.appendChild(
-      a
-    );
-
-    a.click();
-
-    document.body.removeChild(
-      a
-    );
-
-  } finally {
-    setTimeout(
-      () => {
-        URL.revokeObjectURL(
-          objectURL
-        );
-      },
-      1000
-    );
-  }
-}
-
-/**
- * Download a file from the Wire Drive.
- *
- * Native Capacitor:
- *   FileTransfer
- *   -> Android Download/
- *   -> shared Wire download progress UI
- *
- * Browser/Electron:
- *   XMLHttpRequest
- *   -> Blob
- *   -> <a download>
- *   -> shared Wire download progress UI
- */
-async function downloadFile(
-  file
-) {
-  try {
-    const filename =
-      sanitizeFilename(
-        file
-      );
-
-    const downloadId =
-      createDownloadId(
-        file
-      );
-
-    console.log(
-      '[Files Download] Requested:',
-      {
-        folderId:
-          currentFolderId,
-
-        subpath:
-          currentSubpath,
-
-        file:
-          filename,
-
-        native:
-          isNativeCapacitor(),
-
-        downloadId
-      }
-    );
-
-    if (
-      isNativeCapacitor()
-    ) {
-      await downloadFileNative(
-        file,
-        downloadId
-      );
-
-      showToast(
-        `Downloaded: ${filename}`,
-        'success'
-      );
-
-      return;
-    }
-
-    /*
-     * Browser/Electron use the shared progress UI.
-     *
-     * downloadFileWeb() only performs the XHR transfer, while this
-     * wrapper owns start/finish/fail for the complete transfer.
-     */
-    window.__wireDownloadProgress?.start(
-      downloadId,
-      filename
-    );
-
-    try {
-      await downloadFileWeb(
-        file,
-        downloadId
-      );
-
-      window.__wireDownloadProgress?.finish(
-        downloadId
-      );
-
-      showToast(
-        `Downloaded: ${filename}`,
-        'success'
-      );
-
-    } catch (error) {
-      window.__wireDownloadProgress?.fail(
-        downloadId
-      );
-
-      throw error;
-    }
-
-  } catch (e) {
-    console.error(
-      '[Files Download] Failed:',
-      e
-    );
-
-    showToast(
-      'Download failed: ' +
-        (
-          e?.message ||
-          'Unknown error'
-        ),
-      'error'
-    );
-  }
-}
-
-window.downloadFile =
-  downloadFile;
-
-// ====================== لینک ======================
-
-window.copyLink =
-  function(file) {
-    const url =
-      location.origin +
-      `/api/files/download/${currentFolderId}` +
-      `?subpath=${encodeURIComponent(currentSubpath)}` +
-      `&file=${encodeURIComponent(file)}`;
-
-    navigator.clipboard
-      ?.writeText(url)
-      .then(
-        () =>
-          showToast(
-            'Link copied',
-            'success'
-          ),
-
-        () =>
-          showToast(
-            'Could not copy link',
-            'error'
-          )
-      );
-  };
-
-window.toggleSort =
-  function(key) {
-    if (
-      sortState.key === key
-    ) {
-      sortState.dir *=
-        -1;
-
-    } else {
-      sortState.key =
-        key;
-
-      sortState.dir =
-        1;
-    }
-
-    renderFileCard(
-      currentFolders,
-      {
-        entries:
-          currentEntries,
-
-        can_write:
-          currentCanWrite
-      }
-    );
-  };
-
-// ====================== UPLOAD ======================
-
-async function uploadOneDriveFile(
-  file,
-  progressLabel
-) {
-  const form =
-    new FormData();
-
-  form.append(
-    'file',
-    file
-  );
-
-  form.append(
-    'subpath',
-    currentSubpath
-  );
-
-  showUploadProgress(
-    'file-upload-progress',
-    progressLabel ||
-      file.name
-  );
-
-  try {
-    await xhrUpload(
-      `/api/files/upload/${currentFolderId}`,
-      form,
-      pct =>
-        updateUploadProgress(
-          'file-upload-progress',
-          pct
-        )
-    );
-
-    return true;
-
-  } catch (e) {
-    showToast(
-      `${file.name}: ${e.message}`,
-      'error'
-    );
-
-    return false;
-
-  } finally {
-    hideUploadProgress(
-      'file-upload-progress'
-    );
-  }
-}
-
-window.uploadFile =
-  async function() {
-    const input =
-      document.getElementById(
-        'upload-input'
-      );
-
-    const file =
-      input.files[0];
-
-    if (!file) {
-      return;
-    }
-
-    const ok =
-      await uploadOneDriveFile(
-        file
-      );
-
-    if (ok) {
-      input.value =
-        '';
-
-      renderFiles();
-
-      showToast(
-        'Uploaded successfully',
-        'success'
-      );
-    }
-  };
-
-export async function uploadFilesMultiple(
-  fileList
-) {
-  if (
-    !currentCanWrite
-  ) {
-    showToast(
-      "You don't have write access to this folder",
-      'error'
-    );
-
-    return;
-  }
-
-  const files =
-    Array.from(
-      fileList
-    );
-
-  let succeeded =
-    0;
-
-  for (
-    let i = 0;
-    i < files.length;
-    i++
-  ) {
-    const label =
-      files.length > 1
-        ? `${files[i].name} (${i + 1}/${files.length})`
-        : files[i].name;
-
-    if (
-      await uploadOneDriveFile(
-        files[i],
-        label
-      )
-    ) {
-      succeeded++;
-    }
-  }
-
-  if (
-    succeeded > 0
-  ) {
-    renderFiles();
-
-    showToast(
-      succeeded === files.length
-        ? `Uploaded ${succeeded} file${succeeded === 1 ? '' : 's'}`
-        : `Uploaded ${succeeded}/${files.length} files`,
-      succeeded === files.length
-        ? 'success'
-        : 'error'
-    );
-  }
-}
-
-export function canUploadToCurrentFolder() {
-  return currentCanWrite;
-}
-
-window.showNewFolderInput =
-  function() {
-    const row =
-      document.getElementById(
-        'new-folder-row'
-      );
-
-    if (!row) {
-      return;
-    }
-
-    row.classList.remove(
-      'hidden'
-    );
-
-    document
-      .getElementById(
-        'new-folder-name'
-      )
-      ?.focus();
-  };
-
-// ====================== رندر اصلی ======================
-
-// ---------------------------------------------------------------------
-// Data loading + rendering
-//
-// Two entry points share one loader:
-//
-//   renderFiles()  forced fresh render (spinner -> network -> paint).
-//                  Used by everything that just changed something
-//                  (upload, delete, share, folder change, breadcrumb).
-//
-//   showFiles()    tab switch. If this view has been loaded before it
-//                  paints from the in-memory state *immediately* (no
-//                  spinner, no network) and revalidates in the
-//                  background, touching the DOM again only when the
-//                  server data actually differs. First visit behaves
-//                  exactly like renderFiles().
-//
-// The state kept here is the same folder/listing data this module
-// already held; it lives in memory only and is dropped on logout.
-// ---------------------------------------------------------------------
+// 'ready' | 'loading' | 'error' — state of the file LIST only.
+let listingState = 'ready';
+let listingError = '';
 
 let filesLoaded = false; // a complete listing has been painted at least once
-let filesSig = '';       // signature of the data that is currently painted
+let filesSig = '';       // signature of the data currently painted
+
+let listingSeq = 0;      // latest listing request wins
 
 window.addEventListener('wire:logout', () => {
   currentFolderId = null;
@@ -1134,57 +88,467 @@ window.addEventListener('wire:logout', () => {
   currentCanWrite = false;
   myFoldersById = new Map();
   showFolderList = false;
+  listingState = 'ready';
+  listingError = '';
   filesLoaded = false;
   filesSig = '';
+  listingSeq++;
 });
+
+// ------------------------------------------------------------
+// Small helpers
+// ------------------------------------------------------------
+
+const $root = () => document.getElementById('files-root');
+const $ = (sel) => $root()?.querySelector(sel);
+
+const isOwner = (folderId) => myFoldersById.has(Number(folderId));
 
 function filesListUrl(folderId, subpath) {
   return `/api/files/list/${folderId}?subpath=${encodeURIComponent(subpath)}`;
 }
 
-// Fetches everything the Files view needs and commits it to the module
-// state in one step (so a failed request can never leave folders from
-// one response next to entries from another). Resolves to
-// { folders, data, sig }, or null when a newer render superseded this one.
+function sortEntries() {
+  const { key, dir } = sortState;
+
+  currentEntries.sort((a, b) => {
+    // Folders always first, whatever the sort.
+    if (a.type !== b.type) return a.type === 'dir' ? -1 : 1;
+
+    let cmp = 0;
+
+    if (key === 'name') {
+      cmp = a.name.localeCompare(b.name, undefined, {
+        sensitivity: 'base',
+        numeric: true,
+      });
+    } else if (key === 'size') {
+      cmp = a.size - b.size;
+    } else if (key === 'modified') {
+      cmp = new Date(a.modified) - new Date(b.modified);
+    }
+
+    return cmp * dir;
+  });
+}
+
+function announce(text) {
+  const live = $('.files-live');
+  if (live) live.textContent = text;
+}
+
+// ------------------------------------------------------------
+// Shell (mounted once) + region painters
+// ------------------------------------------------------------
+
+function mountShell() {
+  const main = document.getElementById('content-area');
+
+  main.innerHTML = `
+    <div class="files-layout" id="files-root">
+      <aside class="files-sidebar" aria-label="Folders">
+        <div class="files-sidebar-head">
+          <h2 class="files-sidebar-title">Folders</h2>
+          <button type="button" class="files-newbtn" data-act="new-folder" aria-expanded="false" aria-controls="files-newfolder">
+            ${ICONS.plus}<span>New</span>
+          </button>
+        </div>
+
+        <form class="files-newfolder" id="files-newfolder" data-form="new-folder" hidden novalidate>
+          <label class="sr-only" for="new-folder-name">New folder name</label>
+          <div class="files-newfolder-row">
+            <input
+              type="text"
+              id="new-folder-name"
+              class="files-input"
+              placeholder="Folder name"
+              maxlength="60"
+              autocomplete="off"
+              autocapitalize="off"
+              spellcheck="false"
+            >
+            <button type="submit" class="btn btn-primary files-btn-sm">Create</button>
+            <button type="button" class="btn files-btn-sm" data-act="new-folder-cancel">Cancel</button>
+          </div>
+          <p class="files-newfolder-error" role="alert"></p>
+        </form>
+
+        <div class="files-folder-scroll">
+          <div id="files-folder-list"></div>
+        </div>
+      </aside>
+
+      <section class="files-main" aria-label="Files">
+        <header class="files-header">
+          <button type="button" class="files-back" data-act="back" aria-label="Back to folders">
+            ${ICONS.arrowLeft}
+          </button>
+          <nav class="files-crumbs" aria-label="Breadcrumb"></nav>
+          <span class="files-count" aria-hidden="true"></span>
+          <button type="button" class="btn btn-primary files-upload" data-act="upload" aria-label="Upload files" hidden>
+            ${ICONS.upload}<span>Upload</span>
+          </button>
+        </header>
+
+        ${progressBarHtml('file-upload-progress')}
+
+        <div class="files-toolbar">
+          <label class="sr-only" for="files-sort-key">Sort by</label>
+          <select id="files-sort-key" class="files-sort-select" data-change="sort-key">
+            <option value="name">Name</option>
+            <option value="modified">Date modified</option>
+            <option value="size">Size</option>
+          </select>
+          <button type="button" class="files-sort-dir" data-act="sort-dir"></button>
+        </div>
+
+        <div class="files-body" id="files-body" tabindex="-1"></div>
+        <p class="sr-only files-live" role="status" aria-live="polite"></p>
+      </section>
+
+      <input type="file" id="upload-input" class="hidden" multiple>
+    </div>
+  `;
+
+  const root = $root();
+
+  root.addEventListener('click', onClick);
+  root.addEventListener('submit', onSubmit);
+  root.addEventListener('change', onChange);
+}
+
+function paintAll() {
+  paintSidebar();
+  paintHeader();
+  paintList();
+  syncPane();
+}
+
+function syncPane() {
+  const root = $root();
+  if (!root) return;
+
+  // Phones: show the folder pane only when asked to (or when there is
+  // nothing else to show). Desktop CSS shows both panes regardless.
+  root.classList.toggle('is-list', showFolderList || currentFolders.length === 0);
+}
+
+// ---- sidebar ----
+
+function folderSubtitle(folder, mine) {
+  if (mine) {
+    return mine.shared_with_count > 0
+      ? `Shared with ${mine.shared_with_count}`
+      : 'Only you';
+  }
+
+  return folder.can_write ? 'Shared with you · Can edit' : 'Shared with you · View only';
+}
+
+function folderRowHtml(folder) {
+  const id = Number(folder.id);
+  const active = id === Number(currentFolderId);
+  const mine = myFoldersById.get(id);
+  const name = esc(folder.display_name);
+
+  return `
+    <li class="files-folder${active ? ' is-active' : ''}" data-folder="${id}">
+      <button type="button" class="files-folder-main" data-act="folder" data-folder="${id}"${active ? ' aria-current="true"' : ''}>
+        <span class="files-tile files-tile--folder" aria-hidden="true">${ICONS.folder}</span>
+        <span class="files-folder-text">
+          <span class="files-folder-name">${name}</span>
+          <span class="files-folder-sub">${esc(folderSubtitle(folder, mine))}</span>
+        </span>
+      </button>
+      ${mine ? `
+        <span class="files-folder-actions">
+          <button type="button" class="files-action" data-act="folder-share" data-folder="${id}"
+            aria-label="Share folder ${name}" title="Share">${ICONS.userPlus}</button>
+          <button type="button" class="files-action files-action--danger" data-act="folder-delete" data-folder="${id}"
+            aria-label="Delete folder ${name}" title="Delete">${ICONS.trash}</button>
+        </span>
+      ` : ''}
+    </li>
+  `;
+}
+
+function paintSidebar() {
+  const host = $('#files-folder-list');
+  if (!host) return;
+
+  if (currentFolders.length === 0) {
+    host.innerHTML = `
+      <div class="files-side-empty">
+        ${emptyState(
+          ICONS.folders,
+          'No folders yet',
+          'Create one with “New”, or ask an admin to grant you access.'
+        )}
+      </div>
+    `;
+    return;
+  }
+
+  const mine = currentFolders.filter((f) => myFoldersById.has(Number(f.id)));
+  const shared = currentFolders.filter((f) => !myFoldersById.has(Number(f.id)));
+
+  const group = (label, list) => list.length ? `
+    ${label ? `<h3 class="files-group">${label}</h3>` : ''}
+    <ul class="files-folder-list">${list.map(folderRowHtml).join('')}</ul>
+  ` : '';
+
+  const labelled = mine.length > 0 && shared.length > 0;
+
+  host.innerHTML =
+    group(labelled ? 'Your folders' : '', mine) +
+    group(labelled ? 'Shared with you' : '', shared);
+}
+
+// ---- header ----
+
+function paintHeader() {
+  const root = $root();
+  if (!root) return;
+
+  const hasFolders = currentFolders.length > 0;
+  const rootName =
+    currentFolders.find((f) => Number(f.id) === Number(currentFolderId))?.display_name ||
+    'Files';
+
+  const segments = currentSubpath ? currentSubpath.split('/') : [];
+
+  // Every crumb is a <button> looked up by depth (0 = folder root), so
+  // no path text is ever put in an attribute.
+  const items = [
+    { label: rootName, depth: 0, last: segments.length === 0 },
+    ...segments.map((label, i) => ({
+      label,
+      depth: i + 1,
+      last: i === segments.length - 1,
+    })),
+  ];
+
+  const crumbs = $('.files-crumbs');
+
+  crumbs.hidden = !hasFolders;
+  crumbs.innerHTML = hasFolders ? `
+    <ol class="files-crumb-list">
+      ${items.map((c) => `
+        <li class="files-crumb${c.last ? ' is-current' : ''}${c.depth === 0 ? ' is-root' : ''}">
+          ${c.last
+            ? `<span class="files-crumb-text" aria-current="page" title="${esc(c.label)}">${esc(c.label)}</span>`
+            : `<button type="button" class="files-crumb-btn" data-act="crumb" data-depth="${c.depth}" title="${esc(c.label)}">${esc(c.label)}</button>`}
+        </li>
+      `).join('')}
+    </ol>
+  ` : '';
+
+  const count = currentEntries.length;
+  const countEl = $('.files-count');
+
+  countEl.textContent =
+    hasFolders && listingState === 'ready'
+      ? `${count} item${count === 1 ? '' : 's'}`
+      : '';
+
+  const upload = $('.files-upload');
+  upload.hidden = !(hasFolders && currentCanWrite);
+
+  // Back button: in a sub-folder it goes up one level; at the folder
+  // root it reveals the folder list. Only visible on phones.
+  const back = $('.files-back');
+  const inSub = currentSubpath !== '';
+
+  back.setAttribute('aria-label', inSub ? 'Up one level' : 'Back to folders');
+  back.title = inSub ? 'Up one level' : 'Folders';
+
+  // Sort controls (phone toolbar; desktop uses the column headers)
+  const keySelect = $('#files-sort-key');
+  if (keySelect) keySelect.value = sortState.key;
+
+  const dirBtn = $('.files-sort-dir');
+  if (dirBtn) {
+    const asc = sortState.dir === 1;
+    dirBtn.textContent = asc ? 'A → Z' : 'Z → A';
+    dirBtn.setAttribute('aria-label', asc ? 'Ascending. Switch to descending' : 'Descending. Switch to ascending');
+  }
+
+  $root().classList.toggle('has-folders', hasFolders);
+}
+
+// ---- list ----
+
+function skeletonHtml() {
+  return `
+    <ul class="files-list files-list--skeleton" aria-hidden="true">
+      ${Array.from({ length: 7 }, () => `
+        <li class="files-skel"><span class="files-skel-tile"></span><span class="files-skel-line"></span></li>
+      `).join('')}
+    </ul>
+  `;
+}
+
+function sortHeadHtml() {
+  const th = (key, label, cls = '') => {
+    const active = sortState.key === key;
+    const state = active
+      ? (sortState.dir === 1 ? ', sorted ascending' : ', sorted descending')
+      : '';
+
+    return `
+      <span class="files-th ${cls}">
+        <button type="button" class="files-sort${active ? ' is-active' : ''}" data-act="sort" data-key="${key}"
+          aria-label="Sort by ${label}${state}">
+          ${label}<span class="files-sort-caret" aria-hidden="true">${active ? (sortState.dir === 1 ? '↑' : '↓') : ''}</span>
+        </button>
+      </span>
+    `;
+  };
+
+  return `
+    <div class="files-list-head">
+      ${th('name', 'Name')}
+      ${th('size', 'Size', 'is-right')}
+      ${th('modified', 'Modified', 'is-right')}
+      <span class="files-th files-th--actions" aria-hidden="true"></span>
+    </div>
+  `;
+}
+
+function entryRowHtml(entry, index) {
+  const isDir = entry.type === 'dir';
+  const name = esc(entry.name);
+  const size = isDir ? '' : formatBytes(entry.size);
+  const date = formatDate(entry.modified);
+  const kind = previewKind(entry.name);
+
+  const meta = [size, date].filter(Boolean).join(' · ');
+  const openLabel = isDir
+    ? `Open folder ${entry.name}`
+    : kind ? `Preview ${entry.name}` : `Download ${entry.name}`;
+
+  return `
+    <li class="files-row${isDir ? ' is-dir' : ''}">
+      <button type="button" class="files-row-main" data-act="open" data-i="${index}" aria-label="${esc(openLabel)}">
+        <span class="files-tile files-tile--${tileKind(entry.name, entry.type)}" aria-hidden="true">${fileIcon(entry.name, entry.type)}</span>
+        <span class="files-row-text">
+          <span class="files-row-name" title="${name}">${name}</span>
+          <span class="files-row-meta">${esc(meta)}</span>
+        </span>
+      </button>
+      <span class="files-row-size">${isDir ? '—' : esc(size)}</span>
+      <span class="files-row-date">${esc(date)}</span>
+      <span class="files-row-actions">
+        ${isDir ? `<span class="files-row-chevron" aria-hidden="true">${ICONS.chevronRight}</span>` : `
+          <button type="button" class="files-action" data-act="download" data-i="${index}"
+            aria-label="Download ${name}" title="Download">${ICONS.download}</button>
+          ${isOwner(currentFolderId) ? `
+            <button type="button" class="files-action" data-act="link" data-i="${index}"
+              aria-label="Create share link for ${name}" title="Share link">${ICONS.link}</button>
+          ` : ''}
+        `}
+      </span>
+    </li>
+  `;
+}
+
+function paintList() {
+  const body = $('#files-body');
+  if (!body) return;
+
+  body.setAttribute('aria-busy', listingState === 'loading' ? 'true' : 'false');
+
+  if (currentFolders.length === 0) {
+    body.innerHTML = `
+      <div class="files-empty">
+        ${emptyState(
+          ICONS.folders,
+          'No folders yet',
+          'Create one from the Folders list, or ask an admin to grant you access.'
+        )}
+        <button type="button" class="btn btn-primary files-empty-cta files-only-phone" data-act="show-folders">Open folders</button>
+      </div>
+    `;
+    return;
+  }
+
+  if (listingState === 'loading') {
+    body.innerHTML = skeletonHtml();
+    return;
+  }
+
+  if (listingState === 'error') {
+    body.innerHTML = `
+      <div class="files-empty" role="alert">
+        ${emptyState(ICONS.empty, 'Couldn’t load this folder', esc(listingError))}
+        <button type="button" class="btn files-empty-cta" data-act="retry">Try again</button>
+      </div>
+    `;
+    return;
+  }
+
+  if (currentEntries.length === 0) {
+    body.innerHTML = `
+      <div class="files-empty">
+        ${emptyState(
+          ICONS.folder,
+          'This folder is empty',
+          currentCanWrite
+            ? 'Upload files, or drop them anywhere in this window.'
+            : 'Nothing has been added yet.'
+        )}
+        ${currentCanWrite ? `<button type="button" class="btn btn-primary files-empty-cta" data-act="upload">${ICONS.upload}<span>Upload files</span></button>` : ''}
+      </div>
+    `;
+    return;
+  }
+
+  sortEntries();
+
+  body.innerHTML = `
+    <div class="files-table">
+      ${sortHeadHtml()}
+      <ul class="files-list" aria-label="Files and folders">
+        ${currentEntries.map(entryRowHtml).join('')}
+      </ul>
+    </div>
+  `;
+}
+
+// ------------------------------------------------------------
+// Data loading
+// ------------------------------------------------------------
+
+// Fetches everything the view needs and commits it in one step (a
+// failed request never leaves folders from one response next to
+// entries from another). Resolves to { folders, data, sig }, or null
+// when a newer render superseded this one.
 async function loadFilesData(isCurrent) {
-  // The listing request only depends on the folders response to
-  // *validate* the remembered folder. When a folder is already known,
-  // start its listing in parallel with folders/share instead of
-  // waiting for them (one round trip instead of two). If the folder
-  // turns out to be gone we discard the guess and fall back.
+  // The listing only depends on the folders response to *validate* the
+  // remembered folder, so start it in parallel when one is known.
   const guessId = currentFolderId;
   const guessSubpath = currentSubpath;
-  const guess =
-    guessId
-      ? api(filesListUrl(guessId, guessSubpath))
-      : null;
+  const guess = guessId ? api(filesListUrl(guessId, guessSubpath)) : null;
 
-  if (guess) {
-    guess.catch(() => {}); // a discarded guess must not surface as an unhandled rejection
-  }
+  if (guess) guess.catch(() => {}); // a discarded guess must not be unhandled
 
   const [folders, mineResponse] = await Promise.all([
     api('/api/files/folders'),
-    api('/api/share/mine')
+    api('/api/share/mine'),
   ]);
 
-  if (!isCurrent()) {
-    return null;
-  }
+  if (!isCurrent()) return null;
 
-  const mineFolders =
-    Array.isArray(mineResponse)
-      ? mineResponse
-      : (mineResponse.folders || []);
+  const mineFolders = Array.isArray(mineResponse)
+    ? mineResponse
+    : (mineResponse.folders || []);
 
   let folderId = null;
   let subpath = '';
   let data = { entries: [], can_write: false };
 
   if (folders.length > 0) {
-    const stillValid =
-      guessId &&
-      folders.find(f => f.id == guessId);
+    const stillValid = guessId && folders.find((f) => f.id == guessId);
 
     if (stillValid) {
       folderId = guessId;
@@ -1194,14 +558,11 @@ async function loadFilesData(isCurrent) {
       subpath = '';
     }
 
-    data =
-      stillValid && guess
-        ? await guess
-        : await api(filesListUrl(folderId, subpath));
+    data = stillValid && guess
+      ? await guess
+      : await api(filesListUrl(folderId, subpath));
 
-    if (!isCurrent()) {
-      return null;
-    }
+    if (!isCurrent()) return null;
   }
 
   const sig = JSON.stringify([
@@ -1210,571 +571,490 @@ async function loadFilesData(isCurrent) {
     folderId,
     subpath,
     data.entries || [],
-    !!data.can_write
+    !!data.can_write,
   ]);
 
   currentFolders = folders;
-  myFoldersById = new Map(mineFolders.map(f => [f.id, f]));
+  myFoldersById = new Map(mineFolders.map((f) => [Number(f.id), f]));
   currentFolderId = folderId;
   currentSubpath = subpath;
   currentEntries = data.entries || [];
   currentCanWrite = data.can_write || false;
+  listingState = 'ready';
+  listingError = '';
 
   return { folders, data, sig };
 }
 
 function filesErrorHtml(e) {
-  return `<div class="card">${
-    emptyState(
-      ICONS.empty,
-      'Something went wrong',
-      escapeHtml(
-        e.message
-      )
-    )
-  }</div>`;
+  return `<div class="card">${emptyState(ICONS.empty, 'Something went wrong', esc(e.message))}</div>`;
 }
 
+/** Forced fresh load of everything (first visit, folder created/deleted). */
 export async function renderFiles() {
   // #content-area is shared by every view: only write to it while this
   // render still owns it (see core/view-session.js).
-  const isCurrent =
-    claimRender(
-      'files'
-    );
+  const isCurrent = claimRender('files');
+  if (!isCurrent()) return;
 
-  if (!isCurrent()) {
-    return;
+  const main = document.getElementById('content-area');
+  const mounted = !!$root();
+
+  // A repaint of an already-mounted view keeps the layout and only
+  // shows the skeleton in the list; a first load shows the spinner.
+  if (mounted) {
+    listingState = 'loading';
+    paintList();
+  } else {
+    main.innerHTML = loadingState();
   }
 
-  const main =
-    document.getElementById(
-      'content-area'
-    );
-
-  main.innerHTML =
-    loadingState();
-
   try {
-    const result =
-      await loadFilesData(
-        isCurrent
-      );
+    const result = await loadFilesData(isCurrent);
+    if (!result) return;
 
-    if (!result) {
-      return;
-    }
+    if (!$root()) mountShell();
 
-    renderFileCard(
-      result.folders,
-      result.data
-    );
+    paintAll();
 
     filesLoaded = true;
     filesSig = result.sig;
 
   } catch (e) {
-    if (!isCurrent()) {
-      return;
-    }
+    if (!isCurrent()) return;
 
-    main.innerHTML =
-      filesErrorHtml(e);
+    if (mounted && $root()) {
+      listingState = 'error';
+      listingError = e.message;
+      paintList();
+    } else {
+      main.innerHTML = filesErrorHtml(e);
+    }
   }
 }
 
+/** Tab switch: paint from memory instantly, revalidate in the background. */
 export async function showFiles() {
-  if (!filesLoaded) {
-    return renderFiles();
-  }
+  if (!filesLoaded) return renderFiles();
 
-  const isCurrent =
-    claimRender(
-      'files'
-    );
+  const isCurrent = claimRender('files');
+  if (!isCurrent()) return;
 
-  if (!isCurrent()) {
-    return;
-  }
-
-  const main =
-    document.getElementById(
-      'content-area'
-    );
+  const main = document.getElementById('content-area');
 
   // 1. Local paint: everything needed is already in memory.
-  renderFileCard(
-    currentFolders,
-    {
-      entries: currentEntries,
-      can_write: currentCanWrite
-    }
-  );
+  mountShell();
+  listingState = 'ready';
+  paintAll();
 
   // 2. Background revalidation. Nothing blocks on this.
   try {
-    const result =
-      await loadFilesData(
-        isCurrent
-      );
+    const result = await loadFilesData(isCurrent);
 
-    if (
-      !result ||
-      result.sig === filesSig ||
-      isUserTypingIn(main)
-    ) {
-      return;
-    }
+    if (!result || result.sig === filesSig || isUserTypingIn(main)) return;
 
-    renderFileCard(
-      result.folders,
-      result.data
-    );
-
+    paintAll();
     filesSig = result.sig;
 
   } catch (e) {
     // Keep showing what we have; a real failure surfaces on the next
     // action (api() already handles an expired session itself).
-    console.warn(
-      '[Files] Background refresh failed:',
-      e
-    );
+    console.warn('[Files] Background refresh failed:', e);
   }
 }
 
-function folderRowHtml(
-  folder
-) {
-  const active =
-    folder.id ==
-    currentFolderId;
+// ------------------------------------------------------------
+// Navigation inside the view (partial repaints)
+// ------------------------------------------------------------
 
-  const mine =
-    myFoldersById.get(
-      folder.id
-    );
+async function loadListing({ folderId = currentFolderId, subpath = currentSubpath, focusBody = false } = {}) {
+  const isCurrent = claimRender('files');
+  const seq = ++listingSeq;
 
-  const preview =
-    mine
-      ? (
-          mine.shared_with_count > 0
-            ? `Shared with ${mine.shared_with_count}`
-            : 'Only you'
-        )
-      : (
-          folder.can_write
-            ? 'Shared with you · Can edit'
-            : 'Shared with you · Read only'
-        );
+  currentFolderId = folderId;
+  currentSubpath = subpath;
+  listingState = 'loading';
 
-  return `
-    <div
-      class="dm-conv${active ? ' active' : ''}"
-      data-folder="${folder.id}"
-      onclick="window.changeFolder(${folder.id})"
-    >
-      <div class="chat-avatar">
-        ${ICONS.folder}
-      </div>
+  paintSidebar();
+  paintHeader();
+  paintList();
+  syncPane();
 
-      <div class="conv-info">
-        <div class="dm-conv-name">
-          ${escapeHtml(
-            folder.display_name
-          )}
-        </div>
+  try {
+    const data = await api(filesListUrl(folderId, subpath));
 
-        <div class="dm-conv-preview">
-          ${escapeHtml(
-            preview
-          )}
-        </div>
-      </div>
+    if (!isCurrent() || seq !== listingSeq) return;
 
-      ${
-        mine
-          ? `
-        <button
-          class="icon-btn"
-          title="Share"
-          onclick="event.stopPropagation(); window.openShareModal(${folder.id}, '${escapeJsString(folder.display_name)}')"
-        >
-          ${ICONS.userPlus}
-        </button>
+    currentEntries = data.entries || [];
+    currentCanWrite = data.can_write || false;
+    listingState = 'ready';
+    listingError = '';
 
-        <button
-          class="icon-btn"
-          title="Delete"
-          onclick="event.stopPropagation(); window.deleteMyShareFolder(${folder.id}, '${escapeJsString(folder.display_name)}')"
-        >
-          ${ICONS.trash}
-        </button>
-      `
-          : ''
-      }
-    </div>
-  `;
+    filesSig = ''; // force the next tab-switch revalidation to repaint
+
+    paintHeader();
+    paintList();
+
+    const label = currentSubpath ? currentSubpath.split('/').pop() : $('.files-crumb.is-root')?.textContent?.trim();
+    announce(`${label || 'Folder'}, ${currentEntries.length} item${currentEntries.length === 1 ? '' : 's'}`);
+
+    if (focusBody) $('#files-body')?.focus({ preventScroll: true });
+
+  } catch (e) {
+    if (!isCurrent() || seq !== listingSeq) return;
+
+    listingState = 'error';
+    listingError = e.message;
+    paintHeader();
+    paintList();
+  }
 }
 
-function renderFileCard(
-  folders,
-  data
-) {
-  const main =
-    document.getElementById(
-      'content-area'
-    );
+function selectFolder(id) {
+  showFolderList = false;
+  loadListing({ folderId: Number(id), subpath: '', focusBody: true });
+}
 
-  const crumbs =
-    currentSubpath
-      ? currentSubpath.split('/')
-      : [];
+function goToDepth(depth) {
+  const parts = currentSubpath ? currentSubpath.split('/') : [];
 
-  let rootName =
-    'No folders';
+  loadListing({ subpath: parts.slice(0, depth).join('/'), focusBody: true });
+}
 
-  if (
-    folders.length > 0
-  ) {
-    rootName =
-      folders.find(
-        f =>
-          f.id ==
-          currentFolderId
-      )?.display_name ||
-      'Root';
+function enterFolder(name) {
+  loadListing({
+    subpath: currentSubpath ? `${currentSubpath}/${name}` : name,
+    focusBody: true,
+  });
+}
+
+// ------------------------------------------------------------
+// Opening files
+// ------------------------------------------------------------
+
+function mediaTokenFor(folderId, subpath, file) {
+  const query = `subpath=${encodeURIComponent(subpath)}&file=${encodeURIComponent(file)}`;
+
+  return async () => {
+    const media = await api(`/api/files/media-token/${folderId}?${query}`);
+
+    return {
+      url: resolveServerUrl(
+        `/api/files/stream/${folderId}?${query}&token=${encodeURIComponent(media.token)}`
+      ),
+      mime: media.mime,
+      size: media.size,
+      modified: media.modified,
+    };
+  };
+}
+
+function viewerItem(folderId, subpath, entry) {
+  return {
+    name: entry.name,
+    kind: previewKind(entry.name),
+    size: entry.size,
+    modified: entry.modified,
+    getMedia: mediaTokenFor(folderId, subpath, entry.name),
+    download: () => downloadFromSource(folderFileSource(folderId, subpath, entry.name)),
+  };
+}
+
+function downloadEntry(entry) {
+  return downloadFromSource(
+    folderFileSource(currentFolderId, currentSubpath, entry.name)
+  );
+}
+
+function openEntry(entry) {
+  if (entry.type === 'dir') {
+    enterFolder(entry.name);
+    return;
   }
 
-  let breadcrumbHtml =
-    `<div class="breadcrumb">
-      <a onclick="goToPath('')">
-        ${escapeHtml(
-          rootName
-        )}
-      </a>`;
+  if (!previewKind(entry.name)) {
+    // Not something the viewer can show: a click means "get the file".
+    downloadEntry(entry);
+    return;
+  }
 
-  crumbs.forEach(
-    (c, i) => {
-      const pathTo =
-        crumbs
-          .slice(
-            0,
-            i + 1
-          )
-          .join('/');
+  // Everything previewable in this folder, in the order it is shown,
+  // so the viewer can step through it. Capture folder/subpath now: the
+  // viewer must not follow later navigation.
+  const folderId = currentFolderId;
+  const subpath = currentSubpath;
 
-      breadcrumbHtml +=
-        `<span class="sep">/</span>`;
-
-      breadcrumbHtml +=
-        i ===
-        crumbs.length - 1
-          ? `
-            <span class="current">
-              ${escapeHtml(c)}
-            </span>
-          `
-          : `
-            <a onclick="goToPath('${escapeAttr(pathTo)}')">
-              ${escapeHtml(c)}
-            </a>
-          `;
-    }
+  const playable = currentEntries.filter(
+    (e) => e.type !== 'dir' && previewKind(e.name)
   );
 
-  breadcrumbHtml +=
-    `</div>`;
+  openViewer({
+    items: playable.map((e) => viewerItem(folderId, subpath, e)),
+    index: Math.max(0, playable.indexOf(entry)),
+  });
+}
 
-  let mainThreadContent =
-    '';
+// ------------------------------------------------------------
+// Uploads
+// ------------------------------------------------------------
 
-  if (
-    folders.length === 0
-  ) {
-    mainThreadContent = `
-      <div
-        style="
-          display:flex;
-          justify-content:center;
-          align-items:center;
-          height:100%;
-        "
-      >
-        ${
-          emptyState(
-            ICONS.folders,
-            'No folders yet',
-            'Create one from the sidebar, or ask an admin to grant you access.'
-          )
-        }
-      </div>
-    `;
+async function uploadOneDriveFile(file, progressLabel, folderId, subpath) {
+  const form = new FormData();
 
-  } else {
-    let rowsHtml =
-      '';
+  form.append('file', file);
+  form.append('subpath', subpath);
 
-    if (
-      data.entries.length === 0
-    ) {
-      rowsHtml =
-        `<tr>
-          <td colspan="4">
-            ${
-              emptyState(
-                ICONS.folder,
-                'This folder is empty',
-                'Upload something to see it here.'
-              )
-            }
-          </td>
-        </tr>`;
+  showUploadProgress('file-upload-progress', progressLabel || file.name);
 
-    } else {
-      sortEntries();
+  try {
+    await xhrUpload(
+      `/api/files/upload/${folderId}`,
+      form,
+      (pct) => updateUploadProgress('file-upload-progress', pct)
+    );
 
-      currentEntries.forEach(
-        entry => {
-          const isDir =
-            entry.type ===
-            'dir';
+    return true;
 
-          rowsHtml += `
-            <tr class="file-row">
-              <td
-                onclick="${
-                  isDir
-                    ? `enterFolder('${escapeAttr(entry.name)}')`
-                    : `previewFile('${escapeAttr(entry.name)}')`
-                }"
-              >
-                <div class="file-name">
-                  ${
-                    fileIcon(
-                      entry.name,
-                      entry.type
-                    )
-                  }
+  } catch (e) {
+    showToast(`${file.name}: ${e.message}`, 'error');
+    return false;
 
-                  <span>
-                    ${escapeHtml(
-                      entry.name
-                    )}
-                  </span>
-                </div>
-              </td>
+  } finally {
+    hideUploadProgress('file-upload-progress');
+  }
+}
 
-              <td class="col-right">
-                ${
-                  isDir
-                    ? '—'
-                    : formatBytes(
-                        entry.size
-                      )
-                }
-              </td>
-
-              <td class="col-right">
-                ${
-                  formatDate(
-                    entry.modified
-                  )
-                }
-              </td>
-
-              <td>
-                <div class="row-actions">
-                  ${
-                    !isDir
-                      ? `
-                        <button
-                          class="icon-btn"
-                          title="Download"
-                          onclick="event.stopPropagation(); downloadFile('${escapeAttr(entry.name)}')"
-                        >
-                          ${ICONS.download}
-                        </button>
-
-                        <button
-                          class="icon-btn"
-                          title="Copy link"
-                          onclick="event.stopPropagation(); copyLink('${escapeAttr(entry.name)}')"
-                        >
-                          ${ICONS.link}
-                        </button>
-                      `
-                      : ''
-                  }
-                </div>
-              </td>
-            </tr>
-          `;
-        }
-      );
-    }
-
-    mainThreadContent = `
-      ${progressBarHtml(
-        'file-upload-progress'
-      )}
-
-      <div class="table-scroll">
-        <table class="file-table">
-          <thead>
-            <tr>
-              <th
-                onclick="toggleSort('name')"
-              >
-                Name
-              </th>
-
-              <th
-                class="col-right"
-                onclick="toggleSort('size')"
-              >
-                Size
-              </th>
-
-              <th
-                class="col-right"
-                onclick="toggleSort('modified')"
-              >
-                Modified
-              </th>
-
-              <th></th>
-            </tr>
-          </thead>
-
-          <tbody>
-            ${rowsHtml}
-          </tbody>
-        </table>
-      </div>
-    `;
+export async function uploadFilesMultiple(fileList) {
+  if (!currentCanWrite) {
+    showToast("You don't have write access to this folder", 'error');
+    return;
   }
 
-  const topBarControls =
-    folders.length > 0
-      ? `
-        <div style="flex:1;"></div>
+  const files = Array.from(fileList);
 
-        <span
-          class="text-muted"
-          style="
-            font-size:12px;
-            flex-shrink:0;
-          "
-        >
-          ${
-            data.entries.length
-          }
-          item${
-            data.entries.length === 1
-              ? ''
-              : 's'
-          }
-        </span>
+  // The destination is fixed when the upload starts, even if the user
+  // opens another folder while a big file is still going up.
+  const folderId = currentFolderId;
+  const subpath = currentSubpath;
 
-        ${
-          currentCanWrite
-            ? `
-              <button
-                class="btn btn-primary btn-sm"
-                onclick="document.getElementById('upload-input').click()"
-              >
-                ${ICONS.upload}
-                Upload
-              </button>
-            `
-            : ''
-        }
-      `
-      : `
-        <div style="flex:1;"></div>
-      `;
+  let succeeded = 0;
 
-  main.innerHTML = `
-    <div
-      class="dm-layout${
-        folders.length > 0 &&
-        !showFolderList
-          ? ' showing-thread'
-          : ''
-      }"
-    >
-      <div class="dm-sidebar">
-        <div class="conv-header">
-          <div class="conv-header-row">
-            <span class="conv-header-label">
-              Folders
-            </span>
+  for (let i = 0; i < files.length; i++) {
+    const label = files.length > 1
+      ? `${files[i].name} (${i + 1}/${files.length})`
+      : files[i].name;
 
-            <button
-              class="btn-new-message"
-              onclick="window.showNewFolderInput()"
-            >
-              ${ICONS.plus}
-              New
-            </button>
-          </div>
+    if (await uploadOneDriveFile(files[i], label, folderId, subpath)) {
+      succeeded++;
+    }
+  }
 
-          <div
-            class="conv-search-wrap hidden"
-            id="new-folder-row"
-          >
-            <input
-              type="text"
-              id="new-folder-name"
-              placeholder="Folder name (e.g. Photos)"
-              class="conv-search-input"
-              style="padding-left:12px;"
-              onkeypress="if(event.key==='Enter') window.addMyShareFolder()"
-            >
-          </div>
-        </div>
+  if (succeeded > 0) {
+    // Repaint the listing only if the user is still looking at the
+    // folder that received the files.
+    if ($root() && folderId === currentFolderId && subpath === currentSubpath) {
+      loadListing({ folderId, subpath });
+    }
 
-        <div
-          id="files-folder-list"
-          class="dm-conv-list"
-        >
-          ${
-            folders
-              .map(
-                folderRowHtml
-              )
-              .join('')
-          }
-        </div>
-      </div>
+    showToast(
+      succeeded === files.length
+        ? `Uploaded ${succeeded} file${succeeded === 1 ? '' : 's'}`
+        : `Uploaded ${succeeded}/${files.length} files`,
+      succeeded === files.length ? 'success' : 'error'
+    );
+  }
+}
 
-      <div class="dm-thread">
-        <div class="chat-top-bar">
-          <button
-            class="icon-btn dm-back-btn"
-            title="Folders"
-            onclick="window.openFolderListMobile()"
-          >
-            ${ICONS.arrowLeft}
-          </button>
+export function canUploadToCurrentFolder() {
+  return currentCanWrite;
+}
 
-          ${breadcrumbHtml}
+// ------------------------------------------------------------
+// Event handling (one delegated listener per mount)
+// ------------------------------------------------------------
 
-          ${topBarControls}
-        </div>
+function entryFrom(target) {
+  const i = Number(target.closest('[data-i]')?.dataset.i);
 
-        <div class="files-body">
-          ${mainThreadContent}
-        </div>
-      </div>
-    </div>
+  return Number.isInteger(i) ? currentEntries[i] : undefined;
+}
 
-    <input
-      type="file"
-      id="upload-input"
-      class="hidden"
-      onchange="uploadFile()"
-    >
-  `;
+function toggleNewFolder(open) {
+  const form = $('#files-newfolder');
+  const btn = $('[data-act="new-folder"]');
+  if (!form) return;
+
+  form.hidden = !open;
+  btn.setAttribute('aria-expanded', String(open));
+
+  if (open) {
+    $('#new-folder-name').focus();
+  } else {
+    $('#new-folder-name').value = '';
+    $('.files-newfolder-error').textContent = '';
+    btn.focus({ preventScroll: true });
+  }
+}
+
+async function refreshEverything() {
+  filesLoaded = false;
+  await renderFiles();
+}
+
+function onClick(event) {
+  const el = event.target.closest('[data-act]');
+  if (!el || !$root()?.contains(el)) return;
+
+  const act = el.dataset.act;
+
+  switch (act) {
+    case 'folder': selectFolder(el.dataset.folder); break;
+
+    case 'folder-share': {
+      const id = Number(el.dataset.folder);
+      const folder = currentFolders.find((f) => Number(f.id) === id);
+      if (!folder) break;
+
+      openShareDialog({
+        folderId: id,
+        folderName: folder.display_name,
+        onChanged: (count) => {
+          const mine = myFoldersById.get(id);
+          if (mine) mine.shared_with_count = count;
+          filesSig = '';
+          paintSidebar();
+        },
+      });
+      break;
+    }
+
+    case 'folder-delete': {
+      const id = Number(el.dataset.folder);
+      const folder = currentFolders.find((f) => Number(f.id) === id);
+      if (!folder) break;
+
+      deleteShareFolder(id, folder.display_name).then((deleted) => {
+        if (deleted) refreshEverything();
+      });
+      break;
+    }
+
+    case 'new-folder': toggleNewFolder(true); break;
+    case 'new-folder-cancel': toggleNewFolder(false); break;
+
+    case 'back':
+      if (currentSubpath) {
+        const parts = currentSubpath.split('/');
+        loadListing({ subpath: parts.slice(0, -1).join('/'), focusBody: true });
+      } else {
+        showFolderList = true;
+        syncPane();
+      }
+      break;
+
+    case 'show-folders': showFolderList = true; syncPane(); break;
+
+    case 'crumb': goToDepth(Number(el.dataset.depth)); break;
+
+    case 'sort': {
+      const key = el.dataset.key;
+
+      sortState = sortState.key === key
+        ? { key, dir: -sortState.dir }
+        : { key, dir: 1 };
+
+      paintHeader();
+      paintList();
+      break;
+    }
+
+    case 'sort-dir':
+      sortState = { ...sortState, dir: -sortState.dir };
+      paintHeader();
+      paintList();
+      break;
+
+    case 'open': {
+      const entry = entryFrom(el);
+      if (entry) openEntry(entry);
+      break;
+    }
+
+    case 'download': {
+      const entry = entryFrom(el);
+      if (entry) downloadEntry(entry);
+      break;
+    }
+
+    case 'link': {
+      const entry = entryFrom(el);
+      if (entry) {
+        openLinkDialog({
+          folderId: currentFolderId,
+          subpath: currentSubpath,
+          file: entry.name,
+        });
+      }
+      break;
+    }
+
+    case 'upload': $('#upload-input')?.click(); break;
+
+    case 'retry': loadListing(); break;
+
+    default: break;
+  }
+}
+
+async function onSubmit(event) {
+  const form = event.target.closest('[data-form="new-folder"]');
+  if (!form) return;
+
+  event.preventDefault();
+
+  const input = $('#new-folder-name');
+  const errorEl = $('.files-newfolder-error');
+  const problem = validateFolderName(input.value);
+
+  errorEl.textContent = problem;
+  if (problem) {
+    input.focus();
+    return;
+  }
+
+  const submit = form.querySelector('[type="submit"]');
+  submit.disabled = true;
+
+  try {
+    await createShareFolder(input.value);
+    toggleNewFolder(false);
+    await refreshEverything();
+    showToast('Folder created', 'success');
+
+  } catch (e) {
+    errorEl.textContent = e.message;
+
+  } finally {
+    submit.disabled = false;
+  }
+}
+
+function onChange(event) {
+  const target = event.target;
+
+  if (target.id === 'upload-input') {
+    const files = Array.from(target.files || []);
+
+    // Reset first so choosing the same file again still fires 'change'.
+    target.value = '';
+
+    if (files.length) uploadFilesMultiple(files);
+    return;
+  }
+
+  if (target.dataset.change === 'sort-key') {
+    sortState = { key: target.value, dir: 1 };
+    paintHeader();
+    paintList();
+  }
 }

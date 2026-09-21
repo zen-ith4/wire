@@ -6,6 +6,7 @@ import { perfNavStart } from './perf.js';
 // view that has been loaded before paints from memory immediately and
 // revalidates in the background; the first visit loads normally.
 import { showFiles } from '../files/files.js';
+import { renderSharedFile } from '../files/share-view.js';
 import { showChat, destroyChatComposer } from '../chat/chat.js';
 import { showDm, destroyDmComposer } from '../chat/dm.js';
 import { showSettings } from '../settings/settings.js';
@@ -42,6 +43,13 @@ const routes = {
     render: showSettings,
   },
 
+  // Opened by a file share link (#share/<token>, see files/links.js). Not
+  // a tab: navigate() maps the whole "share/<token>" hash onto this route.
+  'share-link': {
+    title: 'Shared file',
+    render: renderSharedFile,
+  },
+
   'admin-users': {
     title: 'Users',
     render: renderAdminUsers,
@@ -62,6 +70,16 @@ const routes = {
     render: renderWireguard,
   },
 };
+
+// "share/<token>" -> "<token>"; null for every other view name. The token
+// only ever lives in the URL fragment, so it is never sent to the server.
+const SHARE_PREFIX = 'share/';
+
+function shareTokenFrom(view) {
+  return typeof view === 'string' && view.startsWith(SHARE_PREFIX)
+    ? view.slice(SHARE_PREFIX.length)
+    : null;
+}
 
 // The view navigate() last mounted (the raw name it was called with).
 let currentView = null;
@@ -102,14 +120,19 @@ export function navigate(view, params) {
 
   perfNavStart(view);
 
-  const route = routes[view] || routes.files;
+  const shareToken = shareTokenFrom(view);
+  const isShareLink = shareToken !== null;
+
+  const route = isShareLink
+    ? routes['share-link']
+    : routes[view] || routes.files;
 
   // Record what is being mounted and tell the view-ownership tracker
   // (core/view-session.js) BEFORE rendering, so that renders still in
   // flight for the previously mounted view know they are stale and stop
   // writing into #content-area.
   currentView = view;
-  enterView(routes[view] ? view : 'files');
+  enterView(isShareLink ? 'share-link' : routes[view] ? view : 'files');
 
   // Release any in-progress voice recording before switching views —
   // see destroyChatComposer()/destroyDmComposer() for why this can't
@@ -125,7 +148,8 @@ export function navigate(view, params) {
   document
     .querySelectorAll('.nav-link, .bottom-nav-item, .more-menu-item')
     .forEach((link) => {
-      const isActive = link.dataset.view === view;
+      // A shared file belongs to "My Files" as far as the nav is concerned.
+      const isActive = link.dataset.view === (isShareLink ? 'files' : view);
 
       link.classList.toggle('active', isActive);
 
@@ -152,7 +176,7 @@ export function navigate(view, params) {
     content.classList.toggle('content--flush', !!route.flush);
   }
 
-  route.render(params);
+  route.render(isShareLink ? { token: shareToken } : params);
 
   // Page/view transition (new, toggle-gated — see core/motion.css /
   // .view-enter). #content-area is a single persistent DOM node that

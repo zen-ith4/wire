@@ -105,32 +105,8 @@
   <!-- ===== Login Page ===== -->
   <div class="login-wrap" id="login-wrap"></div>
 
-  <!-- ===== Share Modal ===== -->
-  <div class="modal" id="share-modal" onclick="closeShareModal()">
-    <div class="modal-content" style="max-width:440px;" onclick="event.stopPropagation()">
-      <button onclick="closeShareModal()" class="btn btn-icon modal-close">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <line x1="18" y1="6" x2="6" y2="18" />
-          <line x1="6" y1="6" x2="18" y2="18" />
-        </svg>
-      </button>
-      <h3 id="share-modal-title" style="font-size:15.5px;margin:0 0 16px;padding-right:20px;">Share</h3>
-      <div id="share-modal-body"></div>
-    </div>
-  </div>
-
-  <!-- ===== Preview Modal ===== -->
-  <div class="modal" id="preview-modal">
-    <div class="modal-content" onclick="event.stopPropagation()">
-      <button onclick="closePreview()" class="btn btn-icon modal-close">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <line x1="18" y1="6" x2="6" y2="18" />
-          <line x1="6" y1="6" x2="18" y2="18" />
-        </svg>
-      </button>
-      <div id="preview-content" class="media-container"></div>
-    </div>
-  </div>
+  <!-- The Files tab's share, share-link and media-preview dialogs are native
+       <dialog>s created on demand by js/files/ (dialog.js) — no markup here. -->
 
   <!-- ===== Image Viewer / Lightbox =====
        Opens when a chat/DM image attachment is clicked

@@ -99,6 +99,61 @@ function verifyMediaToken(token, resource) {
   return payload;
 }
 
+// ======================================================
+// FILE MEDIA TOKENS (My Files preview + share links)
+//
+// Same idea and same guarantees as the media tokens above (short-lived,
+// `typ: 'media'` so they are rejected as session tokens by
+// verifySessionToken()), but scoped to a FILE rather than a numeric
+// chat/DM message id:
+//
+//   type 'file'       -> id = folderId, sp = subpath, f = file name
+//   type 'sharelink'  -> id = share_links.id
+//
+// The token is bound to every one of those values, so a token minted
+// for one file cannot be replayed against another file, another folder
+// or a chat/DM attachment (their resType is 'chat'/'dm').
+//
+// TTL is longer than the 90 s chat tokens because a <video> element
+// issues new Range requests (with the same URL) every time the user
+// seeks; the client re-mints on a 401 and resumes (see files/viewer.js).
+// ======================================================
+
+const FILE_MEDIA_TOKEN_TTL_SECONDS = 300;
+
+function signFileMediaToken(user, resource) {
+  return jwt.sign(
+    {
+      sub: user.id,
+      typ: 'media',
+      resType: resource.type,
+      resId: resource.id,
+      sp: resource.sp || '',
+      f: resource.f || '',
+    },
+    constants.JWT_SECRET,
+    { expiresIn: FILE_MEDIA_TOKEN_TTL_SECONDS }
+  );
+}
+
+function verifyFileMediaToken(token, resource) {
+  const payload = jwt.verify(token, constants.JWT_SECRET);
+
+  if (
+    payload.typ !== 'media' ||
+    payload.resType !== resource.type ||
+    Number(payload.resId) !== Number(resource.id) ||
+    (payload.sp || '') !== (resource.sp || '') ||
+    (payload.f || '') !== (resource.f || '')
+  ) {
+    const err = new Error('Media token scope mismatch');
+    err.code = 'MEDIA_SCOPE_MISMATCH';
+    throw err;
+  }
+
+  return payload;
+}
+
 module.exports = {
   signToken,
   verifyToken,
@@ -106,4 +161,7 @@ module.exports = {
   signMediaToken,
   verifyMediaToken,
   MEDIA_TOKEN_TTL_SECONDS,
+  signFileMediaToken,
+  verifyFileMediaToken,
+  FILE_MEDIA_TOKEN_TTL_SECONDS,
 };

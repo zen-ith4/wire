@@ -228,6 +228,11 @@ export function showToast(msg, type = 'info') {
   const div = document.createElement('div');
   div.className = 'toast' + (type === 'error' ? ' error' : type === 'success' ? ' success' : '');
   div.textContent = msg;
-  document.body.appendChild(div);
+  // A native modal <dialog> lives in the browser's top layer, above any
+  // z-index. Attach the toast inside the topmost open one so it stays
+  // visible while a Files dialog/viewer is open.
+  const openDialogs = document.querySelectorAll('dialog[open]');
+  const host = openDialogs.length ? openDialogs[openDialogs.length - 1] : document.body;
+  host.appendChild(div);
   setTimeout(() => div.remove(), 3000);
 }

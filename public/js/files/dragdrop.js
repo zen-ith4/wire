@@ -38,7 +38,7 @@ function resetOverlay() {
 function getDropContext() {
   const hasDmView = !!document.getElementById('dm-messages');
   const hasChatView = !!document.getElementById('chat-messages');
-  const hasFilesView = !!document.getElementById('folder-select');
+  const hasFilesView = !!document.getElementById('files-root');
   const hasDmList = !!document.getElementById('dm-conv-list');
 
   if (hasDmView && getDmActivePeer()) {

@@ -543,6 +543,31 @@ const verifyTwoFactorRateLimiter =
   });
 
 
+// ---------------------------------------------------------------
+// Share-link resolution
+//
+// The tokens themselves are 256-bit random values and cannot be
+// guessed, so this is not what protects them. It only keeps the
+// resolve/media-token endpoints from being used as a cheap
+// enumeration/DoS surface by a logged-in account.
+// ---------------------------------------------------------------
+const shareLinkLimiter =
+  createRateLimiter({
+
+    windowMs:
+      5 * 60 * 1000,
+
+    max:
+      60,
+
+    keyFn: req =>
+      userOrIpKey(req),
+
+    message:
+      'Too many link requests, please try again later'
+  });
+
+
 module.exports = {
   loginRateLimiter,
   registerRateLimiter,
@@ -552,5 +577,6 @@ module.exports = {
   clearLoginAttempts,
   apiLimiter,
   chatWriteLimiter,
-  uploadLimiter
+  uploadLimiter,
+  shareLinkLimiter
 };

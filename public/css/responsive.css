@@ -16,9 +16,7 @@
   .dm-sidebar{width:280px;min-width:280px;}
 }
 @media (max-width:760px){
-  .dm-sidebar, .dm-thread{width:100%;min-width:0;
-  touch-action: pan-y;
-}
+  .dm-sidebar, .dm-thread{width:100%;min-width:0;}
   .dm-sidebar{border-right:none;}
   .dm-back-btn{display:inline-flex;}
   .dm-layout:not(.showing-thread) .dm-thread{display:none;}
@@ -208,26 +206,109 @@
 }
 
 /* ---- My Files on phones (features/files.css, js/files/files.js) ----
-   Same two-pane master/detail as Messages (the <=760px rules above show
-   one pane at a time). Within the file pane the table becomes a compact
-   name / size / actions list: long names truncate instead of forcing a
-   sideways scroll, and Modified drops out (least essential). */
+   Master/detail like Messages: ONE pane at a time (the folder list, or
+   the current folder), toggled by .is-list on #files-root. Inside the
+   file pane the desktop table becomes a two-line list — name over
+   "size · date" — so nothing is cramped and nothing scrolls sideways.
+   Column headers are replaced by the sort bar. Every control is at
+   least 44px and nothing depends on hover. */
 @media (max-width:760px){
-  .files-body{padding:12px;}
-  .files-body .table-scroll .file-table{min-width:0;table-layout:fixed;}
-  .files-body .file-table th,
-  .files-body .file-table td{padding-left:8px;padding-right:8px;}
-  .files-body .file-table th:nth-child(2){width:76px;}
-  .files-body .file-table th:last-child{width:84px;}
-  .files-body .file-table th:nth-child(3),
-  .files-body .file-table td:nth-child(3){display:none;}
-  .files-body .file-table td:first-child{overflow:hidden;}
-  .files-body .file-name{min-width:0;}
-  .files-body .file-name span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-  .chat-top-bar .breadcrumb{flex:1 1 auto;min-width:0;margin-bottom:0;overflow-wrap:anywhere;}
+  .files-sidebar{width:100%;min-width:0;border-right:0;}
+  .files-main{width:100%;}
+
+  .files-layout:not(.is-list) .files-sidebar{display:none;}
+  .files-layout.is-list .files-main{display:none;}
+  .files-layout:not(.has-folders) .files-main{display:none;}
+  .files-layout:not(.has-folders) .files-sidebar{display:flex;}
+
+  .files-back{display:inline-flex;}
+  .files-header{gap:4px;padding:6px 8px 6px 4px;min-height:56px;}
+  .files-crumb-btn,
+  .files-crumb-text{font-size:14px;padding:6px;}
+  .files-crumb-btn{min-height:40px;}
+  .files-crumb.is-root .files-crumb-btn,
+  .files-crumb.is-root .files-crumb-text{max-width:12ch;}
+  .files-upload{min-height:44px;padding:0 14px;}
+  .files-main > .upload-progress{margin:10px 12px 0;}
+
+  .files-newbtn{min-height:44px;padding:0 14px;}
+  .files-newfolder-row .files-input,
+  .files-btn-sm{min-height:44px;}
+  .files-folder-scroll{padding:8px 8px calc(8px + env(safe-area-inset-bottom, 0px));}
+  .files-folder-main{min-height:64px;}
+  .files-action{width:44px;height:44px;}
+
+  .files-toolbar{display:flex;}
+  .files-body{padding:4px 8px calc(16px + env(safe-area-inset-bottom, 0px));}
+  .files-list-head{display:none;}
+  .files-list{margin-top:4px;}
+  .files-row{grid-template-columns:minmax(0,1fr) auto;min-height:64px;padding:2px 0 2px 8px;column-gap:4px;}
+  .files-row-size,
+  .files-row-date{display:none;}
+  .files-row-meta{display:block;}
+  .files-row-chevron{padding-right:14px;}
+  .files-only-phone{display:inline-flex;}
 }
 @media (max-width:480px){
-  .chat-top-bar > .text-muted{display:none;} /* "N items" — the header is out of room */
+  .files-count{display:none;} /* "N items" — the header is out of room */
+  .files-upload span{display:none;} /* icon-only; the button keeps its aria-label */
+  .files-upload{width:44px;padding:0;justify-content:center;}
+}
+
+/* ---- Files dialogs as bottom sheets (features/sharing.css) ----
+   Same native <dialog> as desktop; it just docks to the bottom edge,
+   full width, with a grab handle and rounded top corners. */
+@media (max-width:760px){
+  .files-dialog--modal{width:100%;max-width:100%;margin:auto 0 0;}
+  .files-dialog--modal .files-dialog-panel{
+    max-height:92vh;max-height:92dvh;
+    border-radius:18px 18px 0 0;border-bottom:0;
+    animation:files-sheet-in .22s ease;
+  }
+  .files-dialog--modal .files-dialog-panel::before{
+    content:"";display:block;flex-shrink:0;width:38px;height:4px;margin:8px auto 0;
+    border-radius:99px;background:var(--border);
+  }
+  .fd-head{padding-top:8px;}
+  .fd-body{padding:14px 16px;}
+  .fd-foot{padding:10px 16px;padding-bottom:calc(10px + env(safe-area-inset-bottom, 0px));}
+  .fd-foot .fd-btn{flex:1;}
+
+  /* people rows: name on top, controls on their own full-width line */
+  .fs-controls{flex:1 1 100%;margin-left:0;}
+  .fs-controls .fd-select{flex:1;width:auto;min-width:0;}
+  .fs-add{grid-template-columns:1fr;}
+  .fl-create-row{flex-direction:column;}
+  .fl-create-row .fd-btn{width:100%;}
+  .fl-url-row{flex-direction:column;}
+  .fl-url-row .fd-btn{width:100%;}
+  .fl-item .fd-btn{flex:1 1 100%;}
+  .fs-confirm .fd-btn,
+  .fl-confirm .fd-btn{flex:1;}
+}
+@keyframes files-sheet-in{from{transform:translateY(24px);opacity:.6;}to{transform:translateY(0);opacity:1;}}
+
+/* ---- Files viewer + share-link page on phones ---- */
+@media (max-width:760px){
+  .fv-bar{gap:2px;padding-left:calc(4px + env(safe-area-inset-left, 0px));padding-right:calc(4px + env(safe-area-inset-right, 0px));}
+  .fv-stage{padding:8px calc(8px + env(safe-area-inset-right, 0px)) calc(8px + env(safe-area-inset-bottom, 0px)) calc(8px + env(safe-area-inset-left, 0px));}
+  .fv-nav{width:44px;height:44px;}
+  .fv-prev{left:calc(6px + env(safe-area-inset-left, 0px));}
+  .fv-next{right:calc(6px + env(safe-area-inset-right, 0px));}
+  .fa{padding:22px 16px 18px;gap:16px;}
+  .fa-art{width:80px;height:80px;border-radius:20px;}
+  .sv-wrap{padding:20px 12px;}
+  .sv-actions .sv-btn{flex:1 1 100%;}
+}
+/* Landscape phones: little vertical room — drop the artwork and tighten. */
+@media (max-height:480px) and (orientation:landscape){
+  .fa-art{display:none;}
+  .fa{padding:14px 16px;gap:10px;}
+  .fa-play{width:56px;height:56px;}
+  .fa-skip{width:44px;height:44px;}
+  .fv-bar{padding-top:calc(4px + env(safe-area-inset-top, 0px));padding-bottom:4px;}
+  .files-header{min-height:48px;}
+  .files-dialog--modal .files-dialog-panel{max-height:100vh;max-height:100dvh;}
 }
 
 /* ---- File / peer / user tables (features/files.css) ----

@@ -5,6 +5,7 @@ const { authenticate } = require('../middleware/authenticate');
 const { fileUpload } = require('../config/multer');
 const { uploadLimiter } = require('../middleware/rateLimiter');
 const { asyncHandler } = require('../middleware/asyncHandler');
+const { folderFileMediaAuth } = require('../middleware/mediaAuth');
 
 const {
   getFolders,
@@ -12,6 +13,8 @@ const {
   downloadFile,
   previewFile,
   uploadFile,
+  getFileMediaToken,
+  streamFile,
 } = require('../controllers/files.controller');
 
 
@@ -44,6 +47,23 @@ router.get(
   '/preview/:folderId',
   authenticate,
   asyncHandler(previewFile)
+);
+
+
+// Mint a short-lived token for previewing ONE media file (the
+// <video>/<audio>/<img> elements can't send an Authorization header)
+router.get(
+  '/media-token/:folderId',
+  authenticate,
+  asyncHandler(getFileMediaToken)
+);
+
+
+// Stream a media file inline with Range support (seekable playback)
+router.get(
+  '/stream/:folderId',
+  folderFileMediaAuth,
+  asyncHandler(streamFile)
 );
 
 

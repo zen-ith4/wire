@@ -79,6 +79,25 @@ function ensureDownloadProgressStyle() {
   );
 }
 
+// Native modal <dialog>s (My Files viewer/share dialogs) render in the
+// top layer, above any z-index, so the progress bar has to live inside
+// the topmost open one while it is showing. Moves the existing element
+// (appendChild re-parents) and falls back to <body>.
+function hostDownloadProgressUI() {
+  const el = downloadProgressState.element;
+
+  if (!el) {
+    return;
+  }
+
+  const dialogs = document.querySelectorAll('dialog[open]');
+  const host = dialogs.length ? dialogs[dialogs.length - 1] : document.body;
+
+  if (el.parentNode !== host) {
+    host.appendChild(el);
+  }
+}
+
 function ensureDownloadProgressUI() {
   if (
     downloadProgressState.element &&
@@ -86,6 +105,7 @@ function ensureDownloadProgressUI() {
       downloadProgressState.element
     )
   ) {
+    hostDownloadProgressUI();
     return;
   }
 

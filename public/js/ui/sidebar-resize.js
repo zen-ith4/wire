@@ -35,7 +35,7 @@ const MAX_WIDTH = 420;
 //
 // This is intentionally large enough to prevent labels such as
 // "Shared Folders" from being left partially visible.
-const COLLAPSE_THRESHOLD = 150;
+const COLLAPSE_THRESHOLD = 170;
 
 // Final width of icon-only mode.
 const COLLAPSED_WIDTH = 64;

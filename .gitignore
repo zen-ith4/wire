@@ -9,6 +9,8 @@ capacitor.config.json
 android/
 user-data/
 resources/
+perf-harness/
+benchmark/
 
 # Environment / secrets
 .env

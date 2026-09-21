@@ -16,7 +16,9 @@ getUseAccentForBubbles,
 applyUseAccentForBubbles,
 getAnimationsEnabled,
 applyAnimationsEnabled,
-applyBackgroundTheme
+applyBackgroundTheme,
+getFontFamily,
+applyFontFamily
 } from './theme.js';
 
 import {
@@ -44,23 +46,6 @@ const BUBBLE_STYLES = [
 'outline',
 'clean'
 ];
-
-const FONT_STORAGE_KEY =
-'wire-font-family';
-
-const FONT_OPTIONS = {
-system:
-'system-ui, sans-serif',
-
-inter:
-'"Inter", system-ui, sans-serif',
-
-'noto-sans':
-'"Noto Sans", system-ui, sans-serif',
-
-monospace:
-'ui-monospace, "JetBrains Mono", monospace'
-};
 
 // ============================================================
 // Safe localStorage helpers
@@ -193,46 +178,6 @@ event.target.closest(
 // Font
 // ============================================================
 
-function getFontFamily() {
-const stored =
-safeGetStorage(
-FONT_STORAGE_KEY
-);
-
-return Object.hasOwn(
-FONT_OPTIONS,
-stored
-)
-? stored
-: 'system';
-}
-
-function applyFontFamily(font) {
-const normalized =
-Object.hasOwn(
-FONT_OPTIONS,
-font
-)
-? font
-: 'system';
-
-document.documentElement.style
-.setProperty(
-'--wire-font-family',
-FONT_OPTIONS[normalized]
-);
-
-document.documentElement.dataset
-.font = normalized;
-
-safeSetStorage(
-FONT_STORAGE_KEY,
-normalized
-);
-
-return normalized;
-}
-
 function bindFont() {
 const select =
 document.getElementById(
@@ -241,12 +186,9 @@ document.getElementById(
 
 if (!select) return;
 
-const currentFont =
-applyFontFamily(
-getFontFamily()
-);
-
-select.value = currentFont;
+// The font itself was already applied at startup
+// (initFontFamily in app.js); this only syncs the control.
+select.value = getFontFamily();
 
 select.addEventListener(
 'change',

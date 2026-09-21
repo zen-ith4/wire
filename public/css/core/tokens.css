@@ -1,4 +1,14 @@
 :root{
+  /* ---- Interface font ----
+     The one global font variable. css/core/reset.css applies it to
+     html/body and everything else inherits it. This value is only
+     the starting point (Wire's default font, the same stack as
+     FONT_OPTIONS.inter in settings/theme.js) so the page is never
+     without a font before JS runs; initFontFamily() then sets the
+     user's saved choice as an inline style on <html>, which wins
+     over this declaration. */
+  --wire-font-family:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+
   /* ---- Tokens copied 1:1 from the provided reference ---- */
   --void:#09090B;
   --ink:#0D0D11;

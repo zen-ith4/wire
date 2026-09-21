@@ -30,7 +30,8 @@ import {
   initAccent,
   initTheme,
   initBackgroundTheme,
-  initAnimations
+  initAnimations,
+  initFontFamily
 } from '../settings/theme.js';
 
 import { initSidebarResize } from '../ui/sidebar-resize.js';
@@ -347,6 +348,8 @@ async function bootstrap() {
   initBackgroundTheme();
 
   initAnimations();
+
+  initFontFamily();
 
 
   /*

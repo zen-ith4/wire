@@ -104,6 +104,7 @@ const THEME_STORAGE_KEY = 'wire-theme';
 const BUBBLE_ACCENT_STORAGE_KEY = 'wire-bubble-accent';
 const BACKGROUND_STORAGE_KEY = 'wire-background-theme';
 const ANIMATIONS_STORAGE_KEY = 'wire-animations';
+const FONT_STORAGE_KEY = 'wire-font-family';
 
 
 // ============================================================
@@ -2106,4 +2107,99 @@ export function initAnimations() {
   );
 
   return enabled;
+}
+
+
+// ============================================================
+// Interface font
+// ============================================================
+//
+// One authoritative source: the --wire-font-family custom
+// property on <html>. css/core/reset.css points html/body at it
+// and everything else inherits, so this module only has to
+// (1) read + validate the stored id, (2) persist it and
+// (3) update that one property. Nothing here touches individual
+// elements, and nothing needs to run again for content rendered
+// later.
+//
+// The default (DEFAULT_FONT_ID) is the font Wire has always
+// shipped with. Keep its stack in sync with the fallback
+// declared for --wire-font-family in css/core/tokens.css, which
+// is what the page uses until this module has run.
+
+export const DEFAULT_FONT_ID = 'inter';
+
+export const FONT_OPTIONS = {
+  system:
+    'system-ui, sans-serif',
+
+  inter:
+    '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif',
+
+  'noto-sans':
+    '"Noto Sans", system-ui, sans-serif',
+
+  monospace:
+    'ui-monospace, "JetBrains Mono", monospace'
+};
+
+
+export function getFontFamily() {
+  const saved =
+    safeGetStorage(
+      FONT_STORAGE_KEY
+    );
+
+  return Object.hasOwn(
+    FONT_OPTIONS,
+    saved
+  )
+    ? saved
+    : DEFAULT_FONT_ID;
+}
+
+
+export function applyFontFamily(
+  font,
+  { persist = true } = {}
+) {
+  const value =
+    Object.hasOwn(
+      FONT_OPTIONS,
+      font
+    )
+      ? font
+      : DEFAULT_FONT_ID;
+
+  const root =
+    document.documentElement;
+
+  root.style.setProperty(
+    '--wire-font-family',
+    FONT_OPTIONS[value]
+  );
+
+  root.dataset.font = value;
+
+  if (persist) {
+    safeSetStorage(
+      FONT_STORAGE_KEY,
+      value
+    );
+  }
+
+  return value;
+}
+
+
+export function initFontFamily() {
+  const font =
+    getFontFamily();
+
+  applyFontFamily(
+    font,
+    { persist: false }
+  );
+
+  return font;
 }

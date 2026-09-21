@@ -1,5 +1,12 @@
 *{box-sizing:border-box;}
-html,body{height:100%;}
+html,body{
+  height:100%;
+  /* The single place the global UI font is applied. Every element
+     that doesn't declare its own font-family inherits it, including
+     content rendered later. The value comes from --wire-font-family
+     (tokens.css default, user choice set by settings/theme.js). */
+  font-family:var(--wire-font-family);
+}
 html{
   /* Locks the *document* itself from ever becoming the scrollable
      element. .app is sized to exactly the visual viewport height
@@ -18,7 +25,6 @@ body{
   height:100%;
   overflow:hidden;
   overscroll-behavior:none;
-  font-family:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
   font-weight:450;
   background:var(--void);
   color:var(--text);
@@ -34,6 +40,11 @@ body{
   -webkit-tap-highlight-color:transparent;
   touch-action:manipulation;
 }
+/* Native form controls get their own UA font (system UI / Arial) and
+   ignore the inherited one, so opt them back in. Deliberately this
+   short list rather than a universal selector: code-like fields that
+   declare their own font (e.g. .custom-accent-hex-input) keep it. */
+button,input,select,textarea,optgroup{font-family:inherit;}
 ::-webkit-scrollbar{width:5px;height:5px;}
 ::-webkit-scrollbar-track{background:transparent;}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:10px;}

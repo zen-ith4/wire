@@ -7,18 +7,31 @@
 //     of uploading them immediately, so the user can see, caption,
 //     and remove attachments before anything is sent
 //   - sending: text-only, files-only, or files+caption, uploading
-//     any staged files concurrently and independently (one file
-//     failing doesn't stop or block the others)
+//     any staged files concurrently and independently
 //
-// Implemented once here instead of duplicating this logic in both
-// chat.js and dm.js (which already share the typing-indicator engine
-// the same way — see typing.js).
+// Keyboard behavior:
+//   - Enter sends
+//   - Shift+Enter creates a newline
+//   - Sending does NOT explicitly focus/blur/show/hide the keyboard
+//
+// Android behavior:
+//   - Do NOT use enterkeyhint="send"
+//   - Send button uses pointerdown.preventDefault() so tapping it
+//     does not steal focus from the textarea and close the keyboard.
 // ============================================================
 
 import { ICONS } from '../icons.js';
-import { escapeHtml, formatBytes, showToast } from '../core/utils.js';
+
+import {
+  escapeHtml,
+  formatBytes,
+  showToast
+} from '../core/utils.js';
+
 import { xhrUpload } from '../files/upload.js';
+
 import { api } from '../core/api.js';
+
 import {
   createVoiceRecorder,
   isVoiceRecordingSupported
@@ -28,12 +41,161 @@ const MAX_TEXTAREA_HEIGHT = 140;
 
 let chipSeq = 0;
 
-function iconForFile(file) {
-  const type = file.type || '';
+// ============================================================
+// DEBUG
+// ============================================================
 
-  if (type.startsWith('image/')) return ICONS.image;
-  if (type.startsWith('video/')) return ICONS.video;
-  if (type.startsWith('audio/')) return ICONS.audio;
+const DEBUG = true;
+
+function debug(
+  label,
+  data = null
+) {
+  if (!DEBUG) return;
+
+  let suffix = '';
+
+  if (
+    data !== null &&
+    data !== undefined
+  ) {
+    try {
+      suffix =
+        ` ${JSON.stringify(data)}`;
+    } catch {
+      suffix = '';
+    }
+  }
+
+  console.log(
+    `[composer] ${label}${suffix}`
+  );
+}
+
+function debugText(
+  message
+) {
+  if (!DEBUG) return;
+
+  console.log(
+    `[composer] ${message}`
+  );
+}
+
+function getDebugInput(
+  inputId
+) {
+  return document.getElementById(
+    inputId
+  );
+}
+
+function describeElement(
+  el
+) {
+  if (!el) {
+    return 'null';
+  }
+
+  return [
+    `tag=${el.tagName || '?'}`,
+    `id=${el.id || ''}`,
+    `class=${
+      typeof el.className === 'string'
+        ? el.className
+        : ''
+    }`
+  ].join(' ');
+}
+
+function debugInputState(
+  inputId,
+  label,
+  extra = {}
+) {
+  if (!DEBUG) return;
+
+  const input =
+    getDebugInput(
+      inputId
+    );
+
+  const active =
+    document.activeElement;
+
+  debugText(
+    `${label} | ` +
+    `active=${describeElement(active)} | ` +
+    `input=${describeElement(input)} | ` +
+    `activeIsInput=${!!input && active === input} | ` +
+    `connected=${!!input && input.isConnected} | ` +
+    `valueLength=${input?.value?.length ?? 0}` +
+    (
+      Object.keys(extra).length
+        ? ` | ${Object.entries(extra)
+            .map(
+              ([key, value]) =>
+                `${key}=${String(value)}`
+            )
+            .join(' | ')}`
+        : ''
+    )
+  );
+}
+
+function debugInputLifecycle(
+  inputId,
+  label
+) {
+  if (!DEBUG) return;
+
+  const input =
+    getDebugInput(
+      inputId
+    );
+
+  debugText(
+    `${label}: node | ` +
+    `exists=${!!input} | ` +
+    `connected=${!!input && input.isConnected} | ` +
+    `active=${describeElement(document.activeElement)}`
+  );
+}
+
+// ============================================================
+// FILE ICON
+// ============================================================
+
+function iconForFile(
+  file
+) {
+  const type =
+    file.type ||
+    '';
+
+  if (
+    type.startsWith(
+      'image/'
+    )
+  ) {
+    return ICONS.image;
+  }
+
+  if (
+    type.startsWith(
+      'video/'
+    )
+  ) {
+    return ICONS.video;
+  }
+
+  if (
+    type.startsWith(
+      'audio/'
+    )
+  ) {
+    return ICONS.audio;
+  }
 
   return ICONS.file;
 }
@@ -58,7 +220,9 @@ function iconForFile(file) {
  * @param {string} [config.recordingCancelId]
  * @param {string} [config.recordingStopId]
  */
-export function createComposer(config) {
+export function createComposer(
+  config
+) {
   const {
     inputId,
     fileInputId,
@@ -79,37 +243,316 @@ export function createComposer(config) {
     recordingStopId,
   } = config;
 
-  // Each entry:
-  // { key, file, status: 'pending'|'uploading'|'error', progress, error }
   let staged = [];
 
-  // Message currently being replied to.
-  let currentReply = null;
+  let currentReply =
+    null;
+
+  // Prevent one Enter action from triggering both keydown
+  // and beforeinput.
+  let sendInProgress =
+    false;
+
+  // ==========================================================
+  // INPUT
+  // ==========================================================
 
   function getInput() {
-    return document.getElementById(inputId);
+    return document.getElementById(
+      inputId
+    );
   }
 
   function getStagingEl() {
-    return document.getElementById(stagingId);
+    return document.getElementById(
+      stagingId
+    );
   }
 
-  // ---------- Staging UI ----------
+  // ==========================================================
+  // INPUT DEBUG LISTENERS
+  // ==========================================================
 
-  function renderStaging() {
-    const el = getStagingEl();
+  function wireInputDebug() {
+    const input =
+      getInput();
 
-    if (!el) return;
+    if (!input) {
+      debug(
+        'wireInputDebug: input NOT FOUND',
+        {
+          inputId
+        }
+      );
 
-    if (staged.length === 0) {
-      el.innerHTML = '';
-      el.classList.remove('active');
       return;
     }
 
-    el.classList.add('active');
+    if (
+      input.__composerDebugWired
+    ) {
+      debug(
+        'wireInputDebug: already attached',
+        {
+          inputId
+        }
+      );
 
-    el.innerHTML = staged.map(item => `
+      return;
+    }
+
+    input.__composerDebugWired =
+      true;
+
+    debugText(
+      `wireInputDebug: attached | input=${describeElement(input)}`
+    );
+
+    input.addEventListener(
+      'focus',
+      () => {
+        debugInputState(
+          inputId,
+          'EVENT focus'
+        );
+      }
+    );
+
+    input.addEventListener(
+      'blur',
+      e => {
+        const related =
+          e.relatedTarget;
+
+        debugText(
+          `EVENT blur | ` +
+          `related=${describeElement(related)} | ` +
+          `activeAfterBlur=${describeElement(document.activeElement)}`
+        );
+      }
+    );
+
+    input.addEventListener(
+      'keydown',
+      e => {
+        debugText(
+          `EVENT keydown | ` +
+          `key=${JSON.stringify(e.key)} | ` +
+          `code=${JSON.stringify(e.code)} | ` +
+          `keyCode=${e.keyCode} | ` +
+          `which=${e.which} | ` +
+          `shift=${e.shiftKey} | ` +
+          `ctrl=${e.ctrlKey} | ` +
+          `alt=${e.altKey} | ` +
+          `meta=${e.metaKey} | ` +
+          `composing=${e.isComposing} | ` +
+          `repeat=${e.repeat} | ` +
+          `defaultPrevented=${e.defaultPrevented}`
+        );
+      },
+      true
+    );
+
+    input.addEventListener(
+      'keyup',
+      e => {
+        debugText(
+          `EVENT keyup | ` +
+          `key=${JSON.stringify(e.key)} | ` +
+          `code=${JSON.stringify(e.code)} | ` +
+          `keyCode=${e.keyCode} | ` +
+          `which=${e.which} | ` +
+          `shift=${e.shiftKey} | ` +
+          `composing=${e.isComposing} | ` +
+          `defaultPrevented=${e.defaultPrevented}`
+        );
+      },
+      true
+    );
+
+    input.addEventListener(
+      'beforeinput',
+      e => {
+        debugText(
+          `EVENT beforeinput | ` +
+          `type=${JSON.stringify(e.inputType)} | ` +
+          `data=${JSON.stringify(e.data)} | ` +
+          `shift=${e.shiftKey} | ` +
+          `defaultPrevented=${e.defaultPrevented}`
+        );
+      },
+      true
+    );
+
+    input.addEventListener(
+      'input',
+      () => {
+        debugInputState(
+          inputId,
+          'EVENT input'
+        );
+      }
+    );
+
+    input.addEventListener(
+      'compositionstart',
+      () => {
+        debugText(
+          'EVENT compositionstart'
+        );
+      }
+    );
+
+    input.addEventListener(
+      'compositionend',
+      () => {
+        debugText(
+          'EVENT compositionend'
+        );
+      }
+    );
+  }
+
+  // ==========================================================
+  // SEND BUTTON
+  // ==========================================================
+  //
+  // IMPORTANT:
+  //
+  // A normal button tap causes the browser/WebView to focus the
+  // button before firing click.
+  //
+  // That causes:
+  //
+  //   textarea
+  //       ↓
+  //   blur
+  //       ↓
+  //   button focus
+  //       ↓
+  //   keyboard closes
+  //       ↓
+  //   click
+  //
+  // We prevent the default pointerdown action instead.
+  //
+  // This keeps the textarea focused while the click event still
+  // fires normally and the existing send handler continues to work.
+  // ==========================================================
+
+  function wireSendButton() {
+    const buttons =
+      document.querySelectorAll(
+        '.btn-send'
+      );
+
+    if (
+      buttons.length === 0
+    ) {
+      debugText(
+        'SEND BUTTON: no .btn-send found'
+      );
+
+      return;
+    }
+
+    buttons.forEach(
+      button => {
+        if (
+          button.__composerSendButtonWired
+        ) {
+          return;
+        }
+
+        button.__composerSendButtonWired =
+          true;
+
+        button.addEventListener(
+          'pointerdown',
+          e => {
+            debugText(
+              `SEND BUTTON pointerdown | ` +
+              `pointerType=${e.pointerType} | ` +
+              `button=${e.button} | ` +
+              `activeBefore=${describeElement(document.activeElement)}`
+            );
+
+            /*
+             * Critical fix:
+             *
+             * Prevent the button from becoming focused.
+             * Do NOT prevent click.
+             */
+            e.preventDefault();
+
+            debugText(
+              `SEND BUTTON pointerdown prevented | ` +
+              `defaultPrevented=${e.defaultPrevented} | ` +
+              `activeAfter=${describeElement(document.activeElement)}`
+            );
+          }
+        );
+
+        button.addEventListener(
+          'focus',
+          () => {
+            debugText(
+              `SEND BUTTON FOCUS | button=${describeElement(button)}`
+            );
+          },
+          true
+        );
+
+        button.addEventListener(
+          'click',
+          e => {
+            debugText(
+              `SEND BUTTON CLICK | ` +
+              `detail=${e.detail} | ` +
+              `trusted=${e.isTrusted} | ` +
+              `active=${describeElement(document.activeElement)}`
+            );
+          },
+          true
+        );
+      }
+    );
+
+    debugText(
+      `SEND BUTTON: wired | count=${buttons.length}`
+    );
+  }
+
+  // ==========================================================
+  // STAGING UI
+  // ==========================================================
+
+  function renderStaging() {
+    const el =
+      getStagingEl();
+
+    if (!el) return;
+
+    if (
+      staged.length === 0
+    ) {
+      el.innerHTML = '';
+
+      el.classList.remove(
+        'active'
+      );
+
+      return;
+    }
+
+    el.classList.add(
+      'active'
+    );
+
+    el.innerHTML =
+      staged
+        .map(
+          item => `
       <div
         class="attach-chip${item.status === 'error' ? ' error' : ''}${item.status === 'uploading' ? ' uploading' : ''}"
         id="attach-chip-${item.key}"
@@ -129,8 +572,13 @@ export function createComposer(config) {
           <span class="attach-chip-meta">
             ${
               item.status === 'error'
-                ? escapeHtml(item.error || 'Failed')
-                : formatBytes(item.file.size)
+                ? escapeHtml(
+                    item.error ||
+                      'Failed'
+                  )
+                : formatBytes(
+                    item.file.size
+                  )
             }
           </span>
         </div>
@@ -167,10 +615,15 @@ export function createComposer(config) {
             `
         }
       </div>
-    `).join('');
+    `
+        )
+        .join('');
   }
 
-  function setChipProgress(key, percent) {
+  function setChipProgress(
+    key,
+    percent
+  ) {
     const chip =
       document.getElementById(
         `attach-chip-${key}`
@@ -184,53 +637,87 @@ export function createComposer(config) {
       );
 
     if (fill) {
-      fill.style.width = `${percent}%`;
+      fill.style.width =
+        `${percent}%`;
     }
   }
 
-  function addFiles(fileList) {
+  function addFiles(
+    fileList
+  ) {
     const files =
-      Array.from(fileList || []);
+      Array.from(
+        fileList || []
+      );
 
-    if (files.length === 0) return;
+    if (
+      files.length === 0
+    ) {
+      return;
+    }
 
-    files.forEach(file => {
-      staged.push({
-        key: String(++chipSeq),
-        file,
-        status: 'pending',
-        progress: 0,
-        error: null
-      });
-    });
+    files.forEach(
+      file => {
+        staged.push({
+          key:
+            String(
+              ++chipSeq
+            ),
+
+          file,
+
+          status:
+            'pending',
+
+          progress:
+            0,
+
+          error:
+            null
+        });
+      }
+    );
 
     renderStaging();
   }
 
-  function removeFile(key) {
+  function removeFile(
+    key
+  ) {
     staged =
       staged.filter(
-        item => item.key !== key
+        item =>
+          item.key !==
+          key
       );
 
     renderStaging();
   }
 
-  window[`__composerRemove_${stagingId}`] =
-    removeFile;
+  window[
+    `__composerRemove_${stagingId}`
+  ] = removeFile;
 
-  // Cancels one in-flight upload without touching any other staged
-  // item. Aborts the underlying XHR (see item.cancel, set in
-  // uploadStagedFile) so the request itself stops, not just its UI.
-  function cancelUpload(key) {
+  function cancelUpload(
+    key
+  ) {
     const item =
       staged.find(
-        i => i.key === key
+        i =>
+          i.key ===
+          key
       );
 
-    if (!item || item.status !== 'uploading') return;
+    if (
+      !item ||
+      item.status !==
+        'uploading'
+    ) {
+      return;
+    }
 
-    item.cancelledByUser = true;
+    item.cancelledByUser =
+      true;
 
     if (item.cancel) {
       item.cancel();
@@ -238,52 +725,73 @@ export function createComposer(config) {
 
     staged =
       staged.filter(
-        i => i.key !== key
+        i =>
+          i.key !==
+          key
       );
 
     renderStaging();
   }
 
-  window[`__composerCancelUpload_${stagingId}`] =
-    cancelUpload;
+  window[
+    `__composerCancelUpload_${stagingId}`
+  ] = cancelUpload;
 
   function clearStaged() {
     staged = [];
+
     renderStaging();
   }
 
-  // ---------- Reply preview ----------
+  // ==========================================================
+  // REPLY PREVIEW
+  // ==========================================================
 
   function getReplyPreviewEl() {
     return replyPreviewId
-      ? document.getElementById(replyPreviewId)
+      ? document.getElementById(
+          replyPreviewId
+        )
       : null;
   }
 
-  function replyPreviewText(reply) {
+  function replyPreviewText(
+    reply
+  ) {
     if (reply.content) {
-      return escapeHtml(reply.content);
+      return escapeHtml(
+        reply.content
+      );
     }
 
     if (reply.hasAttachment) {
       const mime =
-        reply.attachmentMime || '';
+        reply.attachmentMime ||
+        '';
 
       const kind =
         reply.isVoiceMessage
           ? 'Voice message'
-          : mime.startsWith('image/')
+          : mime.startsWith(
+              'image/'
+            )
             ? 'Photo'
-            : mime.startsWith('video/')
+            : mime.startsWith(
+                'video/'
+              )
               ? 'Video'
-              : mime.startsWith('audio/')
+              : mime.startsWith(
+                  'audio/'
+                )
                 ? 'Audio'
                 : (
                     reply.attachmentName ||
                     'Attachment'
                   );
 
-      return escapeHtml(kind);
+      return escapeHtml(
+        kind
+      );
     }
 
     return '';
@@ -297,11 +805,17 @@ export function createComposer(config) {
 
     if (!currentReply) {
       el.innerHTML = '';
-      el.classList.remove('active');
+
+      el.classList.remove(
+        'active'
+      );
+
       return;
     }
 
-    el.classList.add('active');
+    el.classList.add(
+      'active'
+    );
 
     el.innerHTML = `
       <div class="reply-preview-icon">
@@ -310,11 +824,15 @@ export function createComposer(config) {
 
       <div class="reply-preview-body">
         <div class="reply-preview-name">
-          Replying to ${escapeHtml(currentReply.username)}
+          Replying to ${escapeHtml(
+            currentReply.username
+          )}
         </div>
 
         <div class="reply-preview-text">
-          ${replyPreviewText(currentReply)}
+          ${replyPreviewText(
+            currentReply
+          )}
         </div>
       </div>
 
@@ -329,34 +847,60 @@ export function createComposer(config) {
     `;
   }
 
-  function setReplyTo(replyPreview) {
-    currentReply = replyPreview;
+  function setReplyTo(
+    replyPreview
+  ) {
+    debug(
+      'setReplyTo',
+      {
+        replyId:
+          replyPreview?.id
+      }
+    );
+
+    currentReply =
+      replyPreview;
 
     renderReplyPreview();
 
-    const input = getInput();
+    const input =
+      getInput();
 
     if (input) {
-      input.focus();
+      input.focus({
+        preventScroll:
+          true
+      });
     }
   }
 
   function clearReply() {
-    currentReply = null;
+    debug(
+      'clearReply'
+    );
+
+    currentReply =
+      null;
+
     renderReplyPreview();
   }
 
-  window[`__composerCancelReply_${stagingId}`] =
-    clearReply;
+  window[
+    `__composerCancelReply_${stagingId}`
+  ] = clearReply;
 
-  // ---------- Textarea ----------
+  // ==========================================================
+  // TEXTAREA
+  // ==========================================================
 
   function autoGrow() {
-    const el = getInput();
+    const el =
+      getInput();
 
     if (!el) return;
 
-    el.style.height = 'auto';
+    el.style.height =
+      'auto';
 
     const next =
       Math.min(
@@ -364,56 +908,226 @@ export function createComposer(config) {
         MAX_TEXTAREA_HEIGHT
       );
 
-    el.style.height = `${next}px`;
+    el.style.height =
+      `${next}px`;
 
     el.style.overflowY =
-      el.scrollHeight > MAX_TEXTAREA_HEIGHT
+      el.scrollHeight >
+      MAX_TEXTAREA_HEIGHT
         ? 'auto'
         : 'hidden';
   }
 
   function resetTextareaHeight() {
-    const el = getInput();
+    const el =
+      getInput();
 
     if (!el) return;
 
-    el.style.height = 'auto';
-    el.style.overflowY = 'hidden';
+    el.style.height =
+      'auto';
+
+    el.style.overflowY =
+      'hidden';
+  }
+
+  function beginSendFromInput(
+    source
+  ) {
+    debugInputState(
+      inputId,
+      `BEGIN SEND source=${source}`,
+      {
+        active:
+          document.activeElement ===
+          getInput()
+      }
+    );
+
+    if (sendInProgress) {
+      debugText(
+        `SEND IGNORED duplicate | source=${source}`
+      );
+
+      return;
+    }
+
+    sendInProgress =
+      true;
+
+    void send()
+      .finally(() => {
+        sendInProgress =
+          false;
+
+        debugInputState(
+          inputId,
+          `SEND FINISHED source=${source}`
+        );
+      });
   }
 
   function wireTextarea() {
-    const el = getInput();
+    const el =
+      getInput();
 
-    if (!el) return;
+    if (!el) {
+      debug(
+        'wireTextarea: INPUT NOT FOUND',
+        {
+          inputId
+        }
+      );
+
+      return;
+    }
+
+    if (
+      el.__composerTextareaWired
+    ) {
+      debugText(
+        'wireTextarea: already attached'
+      );
+
+      return;
+    }
+
+    el.__composerTextareaWired =
+      true;
+
+    debugText(
+      `wireTextarea: attached | input=${describeElement(el)}`
+    );
+
+    el.removeAttribute(
+      'enterkeyhint'
+    );
+
+    el.setAttribute(
+      'inputmode',
+      'text'
+    );
+
+    // --------------------------------------------------------
+    // KEYDOWN
+    // --------------------------------------------------------
 
     el.addEventListener(
       'keydown',
-      (e) => {
-        if (
-          e.key === 'Enter' &&
-          !e.shiftKey &&
-          !e.isComposing
-        ) {
-          e.preventDefault();
-          send();
+      e => {
+        const isEnter =
+          e.key === 'Enter' ||
+          e.code === 'Enter' ||
+          e.keyCode === 13 ||
+          e.which === 13;
+
+        if (!isEnter) {
+          return;
         }
-      }
+
+        if (
+          e.shiftKey
+        ) {
+          return;
+        }
+
+        debugText(
+          `SEND TRIGGER keydown | ` +
+          `key=${JSON.stringify(e.key)} | ` +
+          `code=${JSON.stringify(e.code)} | ` +
+          `keyCode=${e.keyCode} | ` +
+          `which=${e.which} | ` +
+          `shift=${e.shiftKey} | ` +
+          `composing=${e.isComposing} | ` +
+          `activeBefore=${describeElement(document.activeElement)}`
+        );
+
+        e.preventDefault();
+
+        e.stopPropagation();
+
+        e.stopImmediatePropagation();
+
+        debugText(
+          `SEND TRIGGER keydown prevented | ` +
+          `defaultPrevented=${e.defaultPrevented} | ` +
+          `activeAfterPrevent=${describeElement(document.activeElement)}`
+        );
+
+        beginSendFromInput(
+          'keydown'
+        );
+      },
+      true
+    );
+
+    // --------------------------------------------------------
+    // BEFOREINPUT
+    // --------------------------------------------------------
+
+    el.addEventListener(
+      'beforeinput',
+      e => {
+        if (
+          e.inputType !==
+            'insertLineBreak' &&
+          e.inputType !==
+            'insertParagraph'
+        ) {
+          return;
+        }
+
+        if (
+          e.shiftKey
+        ) {
+          return;
+        }
+
+        debugText(
+          `SEND TRIGGER beforeinput | ` +
+          `type=${JSON.stringify(e.inputType)} | ` +
+          `data=${JSON.stringify(e.data)} | ` +
+          `activeBefore=${describeElement(document.activeElement)}`
+        );
+
+        e.preventDefault();
+
+        e.stopPropagation();
+
+        e.stopImmediatePropagation();
+
+        debugText(
+          `SEND TRIGGER beforeinput prevented | ` +
+          `defaultPrevented=${e.defaultPrevented} | ` +
+          `activeAfterPrevent=${describeElement(document.activeElement)}`
+        );
+
+        beginSendFromInput(
+          'beforeinput'
+        );
+      },
+      true
     );
 
     el.addEventListener(
       'input',
       autoGrow
     );
+
+    wireInputDebug();
   }
 
-  // ---------- Sending ----------
+  // ==========================================================
+  // SENDING
+  // ==========================================================
 
   async function uploadStagedFile(
     item,
     caption,
     replyToId
   ) {
-    item.progress = 0;
+    item.progress =
+      0;
 
     try {
       const form =
@@ -447,8 +1161,10 @@ export function createComposer(config) {
         xhrUpload(
           uploadUrl,
           form,
-          (pct) => {
-            item.progress = pct;
+          pct => {
+            item.progress =
+              pct;
+
             setChipProgress(
               item.key,
               pct
@@ -456,34 +1172,57 @@ export function createComposer(config) {
           }
         );
 
-      // Exposed so the cancel button (see cancelUpload) can abort
-      // this specific request without affecting any other upload.
-      item.cancel = () =>
-        uploadPromise.cancel();
+      item.cancel =
+        () =>
+          uploadPromise.cancel();
 
       const message =
         await uploadPromise;
 
-      onMessage(message);
+      debugText(
+        `uploadStagedFile: onMessage BEFORE | key=${item.key}`
+      );
+
+      debugInputState(
+        inputId,
+        'upload: before onMessage'
+      );
+
+      onMessage(
+        message
+      );
+
+      debugInputState(
+        inputId,
+        'upload: after onMessage'
+      );
 
       return {
-        ok: true,
-        key: item.key
+        ok:
+          true,
+
+        key:
+          item.key
       };
 
     } catch (e) {
-      // The user already removed this chip from `staged` and
-      // aborted the request themselves (see cancelUpload) — nothing
-      // left to clean up or surface as an error.
-      if (item.cancelledByUser) {
+      if (
+        item.cancelledByUser
+      ) {
         return {
-          ok: false,
-          key: item.key,
-          cancelled: true
+          ok:
+            false,
+
+          key:
+            item.key,
+
+          cancelled:
+            true
         };
       }
 
-      item.status = 'error';
+      item.status =
+        'error';
 
       item.error =
         e.message ||
@@ -495,25 +1234,36 @@ export function createComposer(config) {
       );
 
       return {
-        ok: false,
-        key: item.key
+        ok:
+          false,
+
+        key:
+          item.key
       };
     }
   }
 
   async function send() {
-    if (!canSend()) return;
+    debugInputState(
+      inputId,
+      'SEND START'
+    );
+
+    debugInputLifecycle(
+      inputId,
+      'SEND START'
+    );
+
+    if (!canSend()) {
+      debugText(
+        'SEND ABORT | canSend=false'
+      );
+
+      return;
+    }
 
     const input =
       getInput();
-
-    // Remember whether the user was actively typing before
-    // sending. Android/Capacitor may cause the WebView textarea
-    // to lose focus while async work is running. Only restore
-    // focus when it was already focused before the send.
-    const shouldRefocus =
-      !!input &&
-      document.activeElement === input;
 
     const content =
       input
@@ -523,13 +1273,28 @@ export function createComposer(config) {
     const filesToSend =
       staged.filter(
         item =>
-          item.status !== 'uploading'
+          item.status !==
+          'uploading'
       );
 
+    debugText(
+      `SEND STATE | ` +
+      `hasInput=${!!input} | ` +
+      `contentLength=${content.length} | ` +
+      `stagedCount=${staged.length} | ` +
+      `filesToSend=${filesToSend.length} | ` +
+      `replyId=${currentReply?.id ?? 'null'}`
+    );
+
     if (
-      filesToSend.length === 0 &&
+      filesToSend.length ===
+        0 &&
       !content
     ) {
+      debugText(
+        'SEND ABORT | empty message'
+      );
+
       return;
     }
 
@@ -540,57 +1305,124 @@ export function createComposer(config) {
         ? currentReply.id
         : null;
 
-    // ---------- Text-only message ----------
-
-    if (filesToSend.length === 0) {
+    if (
+      filesToSend.length ===
+      0
+    ) {
       try {
-        /*
-         * buildTextBody may now be async.
-         *
-         * This is important for E2EE because encryption
-         * uses Web Crypto and therefore returns a Promise.
-         */
-        const textBody = await buildTextBody(
-          content,
-          replyToId
+        debugInputState(
+          inputId,
+          'TEXT SEND: before buildTextBody'
         );
 
-        const message = await api(sendTextUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            ...textBody,
-            reply_to_id: replyToId
-          }),
-        });
+        const textBody =
+          await buildTextBody(
+            content,
+            replyToId
+          );
+
+        debugInputState(
+          inputId,
+          'TEXT SEND: after buildTextBody'
+        );
+
+        debugText(
+          'TEXT SEND: API START'
+        );
+
+        const message =
+          await api(
+            sendTextUrl,
+            {
+              method:
+                'POST',
+
+              headers: {
+                'Content-Type':
+                  'application/json'
+              },
+
+              body:
+                JSON.stringify({
+                  ...textBody,
+
+                  reply_to_id:
+                    replyToId
+                })
+            }
+          );
+
+        debugInputState(
+          inputId,
+          'TEXT SEND: API COMPLETE'
+        );
+
+        debugInputLifecycle(
+          inputId,
+          'TEXT SEND: after API'
+        );
+
+        const inputBeforeClear =
+          getInput();
+
+        debugText(
+          `TEXT SEND: clearing input | ` +
+          `sameNode=${inputBeforeClear === input} | ` +
+          `connected=${!!inputBeforeClear && inputBeforeClear.isConnected}`
+        );
 
         if (input) {
-          input.value = '';
+          input.value =
+            '';
+
           resetTextareaHeight();
         }
 
+        debugInputState(
+          inputId,
+          'TEXT SEND: after input clear'
+        );
+
         clearReply();
 
-        onMessage(message);
+        debugInputState(
+          inputId,
+          'TEXT SEND: before onMessage'
+        );
 
-        // Restore the keyboard only if the textarea had focus
-        // before sending. Use the current element in case the
-        // composer DOM was recreated during the async operation.
-        if (shouldRefocus) {
-          requestAnimationFrame(() => {
-            const currentInput = getInput();
+        const nodeBeforeMessage =
+          getInput();
 
-            if (currentInput) {
-              currentInput.focus({
-                preventScroll: true
-              });
-            }
-          });
-        }
+        onMessage(
+          message
+        );
+
+        const nodeAfterMessage =
+          getInput();
+
+        debugText(
+          `TEXT SEND: onMessage DOM comparison | ` +
+          `sameOriginal=${input === nodeAfterMessage} | ` +
+          `sameBeforeAfter=${nodeBeforeMessage === nodeAfterMessage} | ` +
+          `originalConnected=${!!input && input.isConnected} | ` +
+          `currentConnected=${!!nodeAfterMessage && nodeAfterMessage.isConnected}`
+        );
+
+        debugInputState(
+          inputId,
+          'TEXT SEND: after onMessage'
+        );
+
+        debugInputLifecycle(
+          inputId,
+          'TEXT SEND: COMPLETE'
+        );
 
       } catch (e) {
+        debugText(
+          `TEXT SEND: ERROR | ${e?.message || String(e)}`
+        );
+
         showToast(
           e.message,
           'error'
@@ -600,23 +1432,44 @@ export function createComposer(config) {
       return;
     }
 
-    // ---------- Attachments ----------
+    // ========================================================
+    // ATTACHMENTS
+    // ========================================================
+
+    debugInputState(
+      inputId,
+      'ATTACHMENT SEND: before clear'
+    );
 
     if (input) {
-      input.value = '';
+      input.value =
+        '';
+
       resetTextareaHeight();
     }
+
+    debugInputState(
+      inputId,
+      'ATTACHMENT SEND: after clear'
+    );
 
     clearReply();
 
     filesToSend.forEach(
       item => {
-        item.status = 'uploading';
-        item.progress = 0;
+        item.status =
+          'uploading';
+
+        item.progress =
+          0;
       }
     );
 
     renderStaging();
+
+    debugText(
+      `ATTACHMENT SEND: uploads START | count=${filesToSend.length}`
+    );
 
     const results =
       await Promise.allSettled(
@@ -624,9 +1477,11 @@ export function createComposer(config) {
           (item, i) =>
             uploadStagedFile(
               item,
+
               i === 0
                 ? content
                 : '',
+
               i === 0
                 ? replyToId
                 : null
@@ -634,10 +1489,16 @@ export function createComposer(config) {
         )
       );
 
+    debugInputState(
+      inputId,
+      'ATTACHMENT SEND: uploads COMPLETE'
+    );
+
     const batchKeys =
       new Set(
         filesToSend.map(
-          item => item.key
+          item =>
+            item.key
         )
       );
 
@@ -646,42 +1507,44 @@ export function createComposer(config) {
         results
           .map(
             r =>
-              r.status === 'fulfilled'
+              r.status ===
+              'fulfilled'
                 ? r.value
                 : null
           )
           .filter(
-            v => v && !v.ok
+            v =>
+              v &&
+              !v.ok
           )
           .map(
-            v => v.key
+            v =>
+              v.key
           )
       );
 
     staged =
       staged.filter(
         item =>
-          !batchKeys.has(item.key) ||
-          failedKeys.has(item.key)
+          !batchKeys.has(
+            item.key
+          ) ||
+          failedKeys.has(
+            item.key
+          )
       );
 
     renderStaging();
 
-    // Keep the keyboard open after attachment sending too.
-    if (shouldRefocus) {
-      requestAnimationFrame(() => {
-        const currentInput = getInput();
-
-        if (currentInput) {
-          currentInput.focus({
-            preventScroll: true
-          });
-        }
-      });
-    }
+    debugInputState(
+      inputId,
+      'ATTACHMENT SEND: COMPLETE'
+    );
   }
 
-  // ---------- File input ----------
+  // ==========================================================
+  // FILE INPUT
+  // ==========================================================
 
   function wireFileInput() {
     const fileInput =
@@ -698,14 +1561,18 @@ export function createComposer(config) {
           fileInput.files
         );
 
-        fileInput.value = '';
+        fileInput.value =
+          '';
       }
     );
   }
 
-  // ---------- Voice recording ----------
+  // ==========================================================
+  // VOICE RECORDING
+  // ==========================================================
 
-  let activeRecorder = null;
+  let activeRecorder =
+    null;
 
   function getRecordingEls() {
     return {
@@ -735,7 +1602,7 @@ export function createComposer(config) {
           ? document.getElementById(
               recordingTimeId
             )
-          : null,
+          : null
     };
   }
 
@@ -757,7 +1624,10 @@ export function createComposer(config) {
 
     return `${minutes}:${String(
       seconds
-    ).padStart(2, '0')}`;
+    ).padStart(
+      2,
+      '0'
+    )}`;
   }
 
   function setRecordingUiActive(
@@ -768,11 +1638,14 @@ export function createComposer(config) {
       bar,
       micBtn,
       timeEl
-    } = getRecordingEls();
+    } =
+      getRecordingEls();
 
     if (inputArea) {
       inputArea.style.display =
-        active ? 'none' : '';
+        active
+          ? 'none'
+          : '';
     }
 
     if (bar) {
@@ -799,9 +1672,13 @@ export function createComposer(config) {
   }
 
   async function startRecording() {
-    if (activeRecorder) return;
+    if (activeRecorder) {
+      return;
+    }
 
-    if (!isVoiceRecordingSupported()) {
+    if (
+      !isVoiceRecordingSupported()
+    ) {
       showToast(
         'Voice recording is not supported in this browser',
         'error'
@@ -812,27 +1689,30 @@ export function createComposer(config) {
 
     const recorder =
       createVoiceRecorder({
-        onTick: (elapsedMs) => {
-          const {
-            timeEl
-          } = getRecordingEls();
+        onTick:
+          elapsedMs => {
+            const {
+              timeEl
+            } =
+              getRecordingEls();
 
-          if (timeEl) {
-            timeEl.textContent =
-              formatRecordingTime(
-                elapsedMs
-              );
+            if (timeEl) {
+              timeEl.textContent =
+                formatRecordingTime(
+                  elapsedMs
+                );
+            }
+          },
+
+        onMaxDuration:
+          () => {
+            showToast(
+              'Reached the maximum voice message length',
+              'info'
+            );
+
+            finishRecording();
           }
-        },
-
-        onMaxDuration: () => {
-          showToast(
-            'Reached the maximum voice message length',
-            'info'
-          );
-
-          finishRecording();
-        }
       });
 
     try {
@@ -841,7 +1721,8 @@ export function createComposer(config) {
     } catch (e) {
       const message =
         e &&
-        e.name === 'NotAllowedError'
+        e.name ===
+          'NotAllowedError'
           ? 'Microphone permission was denied'
           : (
               e?.message ||
@@ -865,12 +1746,15 @@ export function createComposer(config) {
   }
 
   function cancelRecording() {
-    if (!activeRecorder) return;
+    if (!activeRecorder) {
+      return;
+    }
 
     const recorder =
       activeRecorder;
 
-    activeRecorder = null;
+    activeRecorder =
+      null;
 
     setRecordingUiActive(
       false
@@ -880,12 +1764,15 @@ export function createComposer(config) {
   }
 
   async function finishRecording() {
-    if (!activeRecorder) return;
+    if (!activeRecorder) {
+      return;
+    }
 
     const recorder =
       activeRecorder;
 
-    activeRecorder = null;
+    activeRecorder =
+      null;
 
     setRecordingUiActive(
       false
@@ -907,7 +1794,9 @@ export function createComposer(config) {
       return;
     }
 
-    if (!result) return;
+    if (!result) {
+      return;
+    }
 
     const {
       blob,
@@ -925,7 +1814,9 @@ export function createComposer(config) {
         }
       );
 
-    if (!canSend()) return;
+    if (!canSend()) {
+      return;
+    }
 
     const replyToId =
       currentReply
@@ -967,7 +1858,9 @@ export function createComposer(config) {
           () => {}
         );
 
-      onMessage(message);
+      onMessage(
+        message
+      );
 
     } catch (e) {
       showToast(
@@ -981,7 +1874,8 @@ export function createComposer(config) {
   function wireVoiceRecording() {
     const {
       micBtn
-    } = getRecordingEls();
+    } =
+      getRecordingEls();
 
     const cancelBtn =
       recordingCancelId
@@ -1019,12 +1913,21 @@ export function createComposer(config) {
     }
   }
 
+  // ==========================================================
+  // DESTROY
+  // ==========================================================
+
   function destroy() {
+    debug(
+      'DESTROY'
+    );
+
     if (activeRecorder) {
       const recorder =
         activeRecorder;
 
-      activeRecorder = null;
+      activeRecorder =
+        null;
 
       recorder.cancel();
     }
@@ -1035,18 +1938,39 @@ export function createComposer(config) {
     );
   }
 
-  // ---------- Initialize ----------
+  // ==========================================================
+  // INITIALIZE
+  // ==========================================================
+
+  debug(
+    'CREATE COMPOSER',
+    {
+      inputId,
+      fileInputId,
+      stagingId
+    }
+  );
 
   wireTextarea();
+
+  wireSendButton();
+
   wireFileInput();
+
   wireVoiceRecording();
 
   renderStaging();
+
   renderReplyPreview();
 
   window.addEventListener(
     'pagehide',
     destroy
+  );
+
+  debugInputState(
+    inputId,
+    'INITIAL STATE'
   );
 
   return {

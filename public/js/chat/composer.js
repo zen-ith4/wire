@@ -37,6 +37,11 @@ import {
   isVoiceRecordingSupported
 } from '../media/voice-recorder.js';
 
+import bidiFactory from '../vendor/bidi-js.js';
+
+const bidi =
+  bidiFactory();
+
 const MAX_TEXTAREA_HEIGHT = 140;
 
 let chipSeq = 0;
@@ -477,12 +482,6 @@ export function createComposer(
               `activeBefore=${describeElement(document.activeElement)}`
             );
 
-            /*
-             * Critical fix:
-             *
-             * Prevent the button from becoming focused.
-             * Do NOT prevent click.
-             */
             e.preventDefault();
 
             debugText(
@@ -829,7 +828,10 @@ export function createComposer(
           )}
         </div>
 
-        <div class="reply-preview-text">
+        <div
+          class="reply-preview-text"
+          dir="auto"
+        >
           ${replyPreviewText(
             currentReply
           )}
@@ -931,6 +933,876 @@ export function createComposer(
       'hidden';
   }
 
+  // ==========================================================
+  // BIDIRECTIONAL TEXT / CARET
+  // ==========================================================
+  //
+  // IMPORTANT:
+  //
+  // `dir="auto"` gives the textarea paragraph-aware bidi
+  // behavior, but it does NOT give JavaScript a visual caret
+  // navigation model.
+  //
+  // bidi-js gives us the Unicode Bidirectional Algorithm's
+  // resolved embedding levels and visual reorder segments.
+  //
+  // We use those to build:
+  //
+  //   visual caret position
+  //          ↓
+  //   logical selectionStart
+  //
+  // This means ArrowLeft / ArrowRight can follow the visual
+  // direction of mixed RTL/LTR text instead of blindly doing:
+  //
+  //   position - 1
+  //   position + 1
+  //
+  // The actual textarea value ALWAYS remains in logical order.
+  //
+  // Example:
+  //
+  //   hello سلام
+  //
+  // remains exactly:
+  //
+  //   h e l l o [space] س ل ا م
+  //
+  // while caret navigation follows the visual bidi runs.
+  //
+  // ==========================================================
+
+  /*
+   * The current visual caret slot.
+   *
+   * A logical caret position can occur more than once in a visual
+   * caret map because the two sides of an RTL/LTR run boundary
+   * can correspond to the same logical boundary.
+   *
+   * Keeping the visual slot lets us preserve that "affinity"
+   * between consecutive ArrowLeft / ArrowRight presses.
+   */
+  let bidiCaretState =
+    null;
+
+  function getBidiLevels(
+    text
+  ) {
+    if (!text) {
+      return null;
+    }
+
+    try {
+      return bidi.getEmbeddingLevels(
+        text,
+        'ltr'
+      );
+    } catch (e) {
+      debugText(
+        `BIDI: getEmbeddingLevels failed | ${e?.message || String(e)}`
+      );
+
+      return null;
+    }
+  }
+
+  function getDirectionAtPosition(
+    text,
+    position
+  ) {
+    if (!text) {
+      return 'ltr';
+    }
+
+    const result =
+      getBidiLevels(
+        text
+      );
+
+    if (
+      !result ||
+      !result.levels ||
+      result.levels.length === 0
+    ) {
+      return 'ltr';
+    }
+
+    const index =
+      Math.max(
+        0,
+        Math.min(
+          position,
+          result.levels.length - 1
+        )
+      );
+
+    const level =
+      result.levels[index];
+
+    return level % 2 === 1
+      ? 'rtl'
+      : 'ltr';
+  }
+
+  function getParagraphDirection(
+    text
+  ) {
+    if (!text) {
+      return 'ltr';
+    }
+
+    const result =
+      getBidiLevels(
+        text
+      );
+
+    if (
+      !result ||
+      !result.paragraphs ||
+      result.paragraphs.length === 0
+    ) {
+      return 'ltr';
+    }
+
+    return result.paragraphs[0].level % 2
+      ? 'rtl'
+      : 'ltr';
+  }
+
+  /**
+   * Reverse an array range in-place.
+   *
+   * bidi-js returns reorder segments as inclusive ranges.
+   */
+  function reverseArrayRange(
+    array,
+    start,
+    end
+  ) {
+    while (
+      start < end
+    ) {
+      const tmp =
+        array[start];
+
+      array[start] =
+        array[end];
+
+      array[end] =
+        tmp;
+
+      start++;
+      end--;
+    }
+  }
+
+  /**
+   * Build the visual order of logical character indices.
+   *
+   * Example:
+   *
+   * logical:
+   *
+   *   abc سلام
+   *
+   * visual indices become something like:
+   *
+   *   0 1 2 3 7 6 5 4
+   *
+   * The actual values depend on the resolved bidi levels.
+   */
+  function getVisualCharacterOrder(
+    text,
+    embeddingLevels
+  ) {
+    if (
+      !text ||
+      !embeddingLevels ||
+      !embeddingLevels.levels
+    ) {
+      return [];
+    }
+
+    const order =
+      Array.from(
+        {
+          length:
+            text.length
+        },
+        (_, index) =>
+          index
+      );
+
+    try {
+      const segments =
+        bidi.getReorderSegments(
+          text,
+          embeddingLevels
+        );
+
+      if (
+        Array.isArray(
+          segments
+        )
+      ) {
+        for (
+          const segment
+          of segments
+        ) {
+          if (
+            !Array.isArray(
+              segment
+            ) ||
+            segment.length < 2
+          ) {
+            continue;
+          }
+
+          const start =
+            Math.max(
+              0,
+              segment[0]
+            );
+
+          const end =
+            Math.min(
+              order.length - 1,
+              segment[1]
+            );
+
+          if (
+            start <= end
+          ) {
+            reverseArrayRange(
+              order,
+              start,
+              end
+            );
+          }
+        }
+      }
+
+      return order;
+
+    } catch (e) {
+      debugText(
+        `BIDI: getReorderSegments failed | ${e?.message || String(e)}`
+      );
+
+      /*
+       * Safe fallback:
+       *
+       * If bidi-js cannot calculate the visual order, return
+       * logical order so the textarea remains usable.
+       */
+      return order;
+    }
+  }
+
+  /**
+   * Build the visual sequence of logical caret positions.
+   *
+   * A character has two logical boundaries:
+   *
+   * LTR character at index i:
+   *
+   *   left = i
+   *   right = i + 1
+   *
+   * RTL character at index i:
+   *
+   *   left = i + 1
+   *   right = i
+   *
+   * Therefore the visual caret sequence can contain duplicate
+   * logical positions at bidi run boundaries. That is intentional.
+   */
+  function buildVisualCaretMap(
+    text
+  ) {
+    const empty =
+      {
+        positions: [],
+        visualCharacters: [],
+        embeddingLevels: null
+      };
+
+    if (!text) {
+      return empty;
+    }
+
+    const embeddingLevels =
+      getBidiLevels(
+        text
+      );
+
+    if (
+      !embeddingLevels ||
+      !embeddingLevels.levels
+    ) {
+      return empty;
+    }
+
+    const visualCharacters =
+      getVisualCharacterOrder(
+        text,
+        embeddingLevels
+      );
+
+    if (
+      visualCharacters.length ===
+      0
+    ) {
+      return {
+        positions:
+          [0],
+        visualCharacters,
+        embeddingLevels
+      };
+    }
+
+    const positions =
+      [];
+
+    for (
+      const logicalIndex
+      of visualCharacters
+    ) {
+      const level =
+        embeddingLevels.levels[
+          logicalIndex
+        ] ?? 0;
+
+      if (
+        level % 2 ===
+        1
+      ) {
+        /*
+         * RTL character:
+         *
+         * visual left side  = logical index + 1
+         * visual right side = logical index
+         */
+        positions.push(
+          logicalIndex + 1
+        );
+      } else {
+        /*
+         * LTR character:
+         *
+         * visual left side  = logical index
+         * visual right side = logical index + 1
+         */
+        positions.push(
+          logicalIndex
+        );
+      }
+    }
+
+    /*
+     * Add the final visual boundary.
+     *
+     * The right side of the final visual character is the last
+     * caret boundary in visual order.
+     */
+    const finalLogicalIndex =
+      visualCharacters[
+        visualCharacters.length - 1
+      ];
+
+    const finalLevel =
+      embeddingLevels.levels[
+        finalLogicalIndex
+      ] ?? 0;
+
+    positions.push(
+      finalLevel % 2 === 1
+        ? finalLogicalIndex
+        : finalLogicalIndex + 1
+    );
+
+    return {
+      positions,
+      visualCharacters,
+      embeddingLevels
+    };
+  }
+
+  /**
+   * Find all visual slots representing one logical caret position.
+   */
+  function findVisualCaretSlots(
+    positions,
+    logicalPosition
+  ) {
+    const slots =
+      [];
+
+    for (
+      let i = 0;
+      i < positions.length;
+      i++
+    ) {
+      if (
+        positions[i] ===
+        logicalPosition
+      ) {
+        slots.push(i);
+      }
+    }
+
+    return slots;
+  }
+
+  /**
+   * Find the most sensible visual slot for a logical caret
+   * when we don't have previous visual-affinity information.
+   *
+   * For an LTR paragraph we prefer the first occurrence.
+   * For an RTL paragraph we prefer the last occurrence.
+   *
+   * This only matters at bidi run boundaries where the same
+   * logical boundary can have two visual representations.
+   */
+  function findCanonicalVisualCaretSlot(
+    positions,
+    logicalPosition,
+    paragraphDirection
+  ) {
+    const slots =
+      findVisualCaretSlots(
+        positions,
+        logicalPosition
+      );
+
+    if (
+      slots.length === 0
+    ) {
+      return -1;
+    }
+
+    if (
+      paragraphDirection ===
+      'rtl'
+    ) {
+      return slots[
+        slots.length - 1
+      ];
+    }
+
+    return slots[0];
+  }
+
+  /**
+   * Find the visual caret slot matching the current textarea
+   * selection.
+   */
+  function resolveCurrentVisualCaretSlot(
+    text,
+    logicalPosition,
+    positions
+  ) {
+    if (
+      bidiCaretState &&
+      bidiCaretState.text ===
+        text &&
+      bidiCaretState.logicalPosition ===
+        logicalPosition &&
+      bidiCaretState.visualSlot >= 0 &&
+      bidiCaretState.visualSlot <
+        positions.length &&
+      positions[
+        bidiCaretState.visualSlot
+      ] === logicalPosition
+    ) {
+      return bidiCaretState.visualSlot;
+    }
+
+    return findCanonicalVisualCaretSlot(
+      positions,
+      logicalPosition,
+      getParagraphDirection(
+        text
+      )
+    );
+  }
+
+  /**
+   * Store caret affinity.
+   */
+  function setBidiCaretState(
+    text,
+    logicalPosition,
+    visualSlot
+  ) {
+    bidiCaretState = {
+      text,
+      logicalPosition,
+      visualSlot
+    };
+  }
+
+  /**
+   * Clear bidi caret affinity.
+   *
+   * Used when the user makes a mouse/touch selection or when
+   * the text node changes independently of our caret navigation.
+   */
+  function clearBidiCaretState() {
+    bidiCaretState =
+      null;
+  }
+
+  /**
+   * Move the caret according to the visual bidi order.
+   *
+   * IMPORTANT:
+   *
+   * This function does NOT modify the text.
+   * It only changes selectionStart/selectionEnd.
+   */
+  function moveCaretVisually(
+    direction
+  ) {
+    const el =
+      getInput();
+
+    if (!el) {
+      return false;
+    }
+
+    if (
+      el.selectionStart ===
+        null ||
+      el.selectionEnd ===
+        null
+    ) {
+      return false;
+    }
+
+    /*
+     * Never override normal selection movement.
+     *
+     * If something is selected, native browser behavior should
+     * handle ArrowLeft/ArrowRight.
+     */
+    if (
+      el.selectionStart !==
+      el.selectionEnd
+    ) {
+      clearBidiCaretState();
+
+      return false;
+    }
+
+    const text =
+      el.value;
+
+    /*
+     * Empty input has no bidi map.
+     */
+    if (!text) {
+      clearBidiCaretState();
+
+      return false;
+    }
+
+    const logicalPosition =
+      el.selectionStart;
+
+    const model =
+      buildVisualCaretMap(
+        text
+      );
+
+    const positions =
+      model.positions;
+
+    if (
+      positions.length ===
+      0
+    ) {
+      return false;
+    }
+
+    let currentSlot =
+      resolveCurrentVisualCaretSlot(
+        text,
+        logicalPosition,
+        positions
+      );
+
+    if (
+      currentSlot < 0
+    ) {
+      return false;
+    }
+
+    /*
+     * Visual movement:
+     *
+     * ArrowLeft  => previous visual caret slot
+     * ArrowRight => next visual caret slot
+     *
+     * This intentionally does NOT assume logicalPosition ± 1.
+     */
+    const nextSlot =
+      direction ===
+      'left'
+        ? currentSlot - 1
+        : currentSlot + 1;
+
+    if (
+      nextSlot < 0 ||
+      nextSlot >=
+        positions.length
+    ) {
+      return false;
+    }
+
+    const nextLogicalPosition =
+      positions[
+        nextSlot
+      ];
+
+    /*
+     * If moving one visual slot lands on the exact same logical
+     * position, continue through the visual map until we reach
+     * another logical position.
+     *
+     * This handles duplicated boundaries at bidi run edges.
+     */
+    let resolvedSlot =
+      nextSlot;
+
+    while (
+      resolvedSlot >= 0 &&
+      resolvedSlot <
+        positions.length &&
+      positions[
+        resolvedSlot
+      ] === logicalPosition
+    ) {
+      resolvedSlot +=
+        direction ===
+        'left'
+          ? -1
+          : 1;
+    }
+
+    if (
+      resolvedSlot < 0 ||
+      resolvedSlot >=
+        positions.length
+    ) {
+      return false;
+    }
+
+    const resolvedPosition =
+      positions[
+        resolvedSlot
+      ];
+
+    if (
+      resolvedPosition ===
+      logicalPosition
+    ) {
+      return false;
+    }
+
+    try {
+      el.setSelectionRange(
+        resolvedPosition,
+        resolvedPosition
+      );
+
+      setBidiCaretState(
+        text,
+        resolvedPosition,
+        resolvedSlot
+      );
+
+      debugText(
+        `BIDI CARET MOVE | ` +
+        `direction=${direction} | ` +
+        `logical=${logicalPosition} -> ${resolvedPosition} | ` +
+        `visualSlot=${currentSlot} -> ${resolvedSlot}`
+      );
+
+      return true;
+
+    } catch (e) {
+      debugText(
+        `BIDI CARET MOVE failed | ${e?.message || String(e)}`
+      );
+
+      return false;
+    }
+  }
+
+  /**
+   * Rebuild the bidi state after text input.
+   *
+   * We intentionally preserve the logical selection produced by
+   * the browser. The visual-affinity model is only used for the
+   * next ArrowLeft / ArrowRight operation.
+   */
+  function handleBidiInput() {
+    const el =
+      getInput();
+
+    if (!el) {
+      return;
+    }
+
+    const start =
+      el.selectionStart ?? 0;
+
+    const end =
+      el.selectionEnd ?? start;
+
+    const text =
+      el.value;
+
+    applyBidiState();
+
+    if (!text) {
+      clearBidiCaretState();
+
+      return;
+    }
+
+    const model =
+      buildVisualCaretMap(
+        text
+      );
+
+    if (
+      start === end &&
+      model.positions.length
+    ) {
+      const paragraphDirection =
+        getParagraphDirection(
+          text
+        );
+
+      const visualSlot =
+        findCanonicalVisualCaretSlot(
+          model.positions,
+          start,
+          paragraphDirection
+        );
+
+      if (
+        visualSlot >= 0
+      ) {
+        setBidiCaretState(
+          text,
+          start,
+          visualSlot
+        );
+      } else {
+        clearBidiCaretState();
+      }
+
+    } else {
+      clearBidiCaretState();
+    }
+
+    /*
+     * Keep the logical selection exactly where the browser placed
+     * it after the input event.
+     *
+     * We do this on the next frame because some mobile browsers
+     * finish their selection update after the input event.
+     */
+    requestAnimationFrame(
+      () => {
+        const current =
+          getInput();
+
+        if (!current) {
+          return;
+        }
+
+        try {
+          current.setSelectionRange(
+            start,
+            end
+          );
+        } catch {
+          // Ignore detached/replaced nodes.
+        }
+      }
+    );
+  }
+
+  /**
+   * Keep the textarea neutral from the application's point of
+   * view while explicitly requesting paragraph-aware bidi layout.
+   *
+   * `dir="auto"` on textarea is intended to use paragraph-aware
+   * bidi behavior. `unicode-bidi: plaintext` makes that behavior
+   * explicit instead of depending on surrounding CSS.
+   */
+  function applyBidiState() {
+    const el =
+      getInput();
+
+    if (!el) {
+      return;
+    }
+
+    el.setAttribute(
+      'dir',
+      'auto'
+    );
+
+    /*
+     * Explicitly request plaintext bidi behavior.
+     *
+     * This is particularly important if a global CSS rule or
+     * inherited unicode-bidi/direction value is interfering with
+     * the textarea.
+     */
+    el.style.unicodeBidi =
+      'plaintext';
+
+    /*
+     * Do NOT force direction here.
+     *
+     * `dir=auto` is responsible for determining the paragraph
+     * base direction.
+     */
+    el.style.textAlign =
+      'start';
+  }
+
+  function preserveCaret(
+    start,
+    end
+  ) {
+    const el =
+      getInput();
+
+    if (!el) {
+      return;
+    }
+
+    requestAnimationFrame(
+      () => {
+        try {
+          el.setSelectionRange(
+            start,
+            end
+          );
+        } catch {
+          // Ignore selection errors from detached/replaced nodes.
+        }
+      }
+    );
+  }
+
   function beginSendFromInput(
     source
   ) {
@@ -999,6 +1871,18 @@ export function createComposer(
       `wireTextarea: attached | input=${describeElement(el)}`
     );
 
+    // --------------------------------------------------------
+    // BIDI
+    // --------------------------------------------------------
+
+    applyBidiState();
+
+    clearBidiCaretState();
+
+    // --------------------------------------------------------
+    // MOBILE KEYBOARD
+    // --------------------------------------------------------
+
     el.removeAttribute(
       'enterkeyhint'
     );
@@ -1009,12 +1893,127 @@ export function createComposer(
     );
 
     // --------------------------------------------------------
+    // NEWLINE
+    // --------------------------------------------------------
+
+    function insertNewline() {
+      const value =
+        el.value;
+
+      const start =
+        el.selectionStart ?? value.length;
+
+      const end =
+        el.selectionEnd ?? start;
+
+      const nextValue =
+        value.slice(0, start) +
+        '\n' +
+        value.slice(end);
+
+      el.value =
+        nextValue;
+
+      const nextCaret =
+        start + 1;
+
+      el.setSelectionRange(
+        nextCaret,
+        nextCaret
+      );
+
+      autoGrow();
+
+      handleBidiInput();
+
+      /*
+       * Programmatic .value changes do not fire input
+       * automatically, so notify the rest of the composer.
+       */
+      try {
+        el.dispatchEvent(
+          new InputEvent(
+            'input',
+            {
+              bubbles: true,
+              inputType: 'insertLineBreak',
+              data: '\n'
+            }
+          )
+        );
+      } catch {
+        el.dispatchEvent(
+          new Event(
+            'input',
+            {
+              bubbles: true
+            }
+          )
+        );
+      }
+
+      debugText(
+        `ENTER -> NEWLINE | ` +
+        `start=${start} | ` +
+        `end=${end} | ` +
+        `caret=${nextCaret}`
+      );
+    }
+
+    // --------------------------------------------------------
     // KEYDOWN
     // --------------------------------------------------------
 
     el.addEventListener(
       'keydown',
       e => {
+        /*
+         * Never interfere with IME composition.
+         */
+        if (e.isComposing) {
+          return;
+        }
+
+        /*
+         * Modifier-assisted arrows belong to browser/OS.
+         */
+        if (
+          e.ctrlKey ||
+          e.altKey ||
+          e.metaKey
+        ) {
+          return;
+        }
+
+        /*
+         * ------------------------------------------------------
+         * VISUAL BIDI CARET NAVIGATION
+         * ------------------------------------------------------
+         */
+        if (
+          e.key === 'ArrowLeft' ||
+          e.key === 'ArrowRight'
+        ) {
+          const moved =
+            moveCaretVisually(
+              e.key === 'ArrowLeft'
+                ? 'left'
+                : 'right'
+            );
+
+          if (moved) {
+            e.preventDefault();
+            return;
+          }
+
+          return;
+        }
+
+        /*
+         * ------------------------------------------------------
+         * ENTER
+         * ------------------------------------------------------
+         */
         const isEnter =
           e.key === 'Enter' ||
           e.code === 'Enter' ||
@@ -1025,37 +2024,57 @@ export function createComposer(
           return;
         }
 
-        if (
-          e.shiftKey
-        ) {
+        /*
+         * ------------------------------------------------------
+         * SHIFT + ENTER
+         * ------------------------------------------------------
+         *
+         * Always newline.
+         */
+        if (e.shiftKey) {
+          e.preventDefault();
+
+          insertNewline();
+
           return;
         }
 
-        debugText(
-          `SEND TRIGGER keydown | ` +
-          `key=${JSON.stringify(e.key)} | ` +
-          `code=${JSON.stringify(e.code)} | ` +
-          `keyCode=${e.keyCode} | ` +
-          `which=${e.which} | ` +
-          `shift=${e.shiftKey} | ` +
-          `composing=${e.isComposing} | ` +
-          `activeBefore=${describeElement(document.activeElement)}`
-        );
+        /*
+         * ------------------------------------------------------
+         * MOBILE / VIRTUAL KEYBOARD
+         * ------------------------------------------------------
+         *
+         * Do NOT handle Enter from keydown as Send here.
+         *
+         * Mobile keyboards may emit keydown Enter for their
+         * action key as well. beforeinput handles that case.
+         *
+         * We identify physical keyboard Enter using the
+         * KeyboardEvent's physical-code information.
+         */
+        const isPhysicalEnter =
+          e.code === 'Enter' &&
+          e.location === KeyboardEvent.DOM_KEY_LOCATION_STANDARD;
 
+        if (!isPhysicalEnter) {
+          return;
+        }
+
+        /*
+         * Plain physical Enter -> SEND
+         */
         e.preventDefault();
 
-        e.stopPropagation();
-
-        e.stopImmediatePropagation();
-
         debugText(
-          `SEND TRIGGER keydown prevented | ` +
-          `defaultPrevented=${e.defaultPrevented} | ` +
-          `activeAfterPrevent=${describeElement(document.activeElement)}`
+          `ENTER -> SEND | ` +
+          `key=${JSON.stringify(e.key)} | ` +
+          `code=${JSON.stringify(e.code)} | ` +
+          `location=${e.location} | ` +
+          `shift=${e.shiftKey}`
         );
 
         beginSendFromInput(
-          'keydown'
+          'physical-enter'
         );
       },
       true
@@ -1069,53 +2088,99 @@ export function createComposer(
       'beforeinput',
       e => {
         if (
-          e.inputType !==
-            'insertLineBreak' &&
-          e.inputType !==
-            'insertParagraph'
+          e.inputType !== 'insertLineBreak' &&
+          e.inputType !== 'insertParagraph'
         ) {
           return;
         }
 
-        if (
-          e.shiftKey
-        ) {
-          return;
-        }
-
-        debugText(
-          `SEND TRIGGER beforeinput | ` +
-          `type=${JSON.stringify(e.inputType)} | ` +
-          `data=${JSON.stringify(e.data)} | ` +
-          `activeBefore=${describeElement(document.activeElement)}`
-        );
-
+        /*
+         * ------------------------------------------------------
+         * ANY BEFOREINPUT LINE BREAK
+         * ------------------------------------------------------
+         *
+         * This is primarily for mobile virtual keyboards.
+         *
+         * We always turn it into a newline instead of sending.
+         */
         e.preventDefault();
 
-        e.stopPropagation();
-
-        e.stopImmediatePropagation();
+        insertNewline();
 
         debugText(
-          `SEND TRIGGER beforeinput prevented | ` +
-          `defaultPrevented=${e.defaultPrevented} | ` +
-          `activeAfterPrevent=${describeElement(document.activeElement)}`
-        );
-
-        beginSendFromInput(
-          'beforeinput'
+          `ENTER -> NEWLINE beforeinput | ` +
+          `type=${JSON.stringify(e.inputType)} | ` +
+          `data=${JSON.stringify(e.data)} | ` +
+          `shift=${e.shiftKey}`
         );
       },
       true
     );
 
+    // --------------------------------------------------------
+    // INPUT
+    // --------------------------------------------------------
+
     el.addEventListener(
       'input',
-      autoGrow
+      () => {
+        autoGrow();
+
+        handleBidiInput();
+      }
+    );
+
+    // --------------------------------------------------------
+    // SELECTION
+    // --------------------------------------------------------
+
+    el.addEventListener(
+      'select',
+      () => {
+        if (!DEBUG) {
+          return;
+        }
+
+        const text =
+          el.value;
+
+        const start =
+          el.selectionStart ?? 0;
+
+        const end =
+          el.selectionEnd ?? start;
+
+        if (
+          start !== end
+        ) {
+          clearBidiCaretState();
+        }
+
+        const direction =
+          text
+            ? getDirectionAtPosition(
+                text,
+                Math.max(
+                  0,
+                  Math.min(
+                    start,
+                    text.length - 1
+                  )
+                )
+              )
+            : 'ltr';
+
+        debugText(
+          `BIDI selection | ` +
+          `start=${start} | ` +
+          `end=${end} | ` +
+          `direction=${direction}`
+        );
+      }
     );
 
     wireInputDebug();
-  }
+}
 
   // ==========================================================
   // SENDING
@@ -1375,6 +2440,8 @@ export function createComposer(
           input.value =
             '';
 
+          clearBidiCaretState();
+
           resetTextareaHeight();
         }
 
@@ -1444,6 +2511,8 @@ export function createComposer(
     if (input) {
       input.value =
         '';
+
+      clearBidiCaretState();
 
       resetTextareaHeight();
     }
@@ -1931,6 +3000,8 @@ export function createComposer(
 
       recorder.cancel();
     }
+
+    clearBidiCaretState();
 
     window.removeEventListener(
       'pagehide',

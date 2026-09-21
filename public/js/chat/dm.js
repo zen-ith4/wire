@@ -980,7 +980,7 @@ window.backFromDmThread = function () {
 // ---------- Mobile DM swipe-back ----------
 // Shared with the swipe-to-reply gesture below so the two can never
 // disagree about where swipe-back owns the touch.
-const DM_SWIPE_BACK_EDGE_PX = 48;
+const DM_SWIPE_BACK_EDGE_PX = 230;
 const DM_MOBILE_BREAKPOINT = 900;
 
 function bindDmMobileSwipeBack(root) {
@@ -989,7 +989,7 @@ function bindDmMobileSwipeBack(root) {
 
   const EDGE_START_PX = DM_SWIPE_BACK_EDGE_PX;
   const ACTIVATION_DISTANCE_PX = 6;
-  const COMMIT_DISTANCE_PX = 50;
+  const COMMIT_DISTANCE_PX = 85;
   const MOBILE_BREAKPOINT = DM_MOBILE_BREAKPOINT;
   const ANIMATION_MS = 180;
 
@@ -1612,7 +1612,7 @@ function buildDmMessageEl(msg, currentUser) {
       ${buildReplyQuoteHtml(msg, 'dm')}
       ${
         messageText
-          ? `<div class="chat-bubble">${linkifyHtml(messageText)}</div>`
+          ? `<div class="chat-bubble" dir="auto">${linkifyHtml(messageText)}</div>`
           : ''
       }
       ${msg.has_attachment ? renderAttachment(msg, 'dm') : ''}

@@ -150,13 +150,28 @@ input.fl-url{
 /* ================================================================
    LANDING PAGE FOR A SHARE LINK  (#share/<token>)
    ================================================================ */
-.sv-wrap{display:flex;justify-content:center;padding:40px 16px;}
+/* The route is "flush" (router.js), so this wrapper fills #content-area and
+   is the ONLY box that could ever scroll: the card is centred with
+   margin:auto (unlike justify/align-content:center, that never clips the
+   top when the card is taller than the box), and the wrapper only shows a
+   scrollbar if the card genuinely cannot fit — e.g. a tiny window or
+   large text size — never in the normal layouts. */
+.sv-wrap{
+  flex:1;min-height:0;display:flex;padding:24px 16px;
+  overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;
+}
 .sv-card{
+  margin:auto;
   width:100%;max-width:460px;display:flex;flex-direction:column;align-items:center;gap:10px;
   padding:32px 24px;text-align:center;
   background:rgba(var(--ink2-rgb),.92);border:1px solid var(--border);border-radius:var(--radius-lg);
 }
-.sv-title{margin:10px 0 0;max-width:100%;font-size:18px;font-weight:600;letter-spacing:-.01em;color:var(--text);overflow-wrap:anywhere;}
+.sv-title{
+  margin:10px 0 0;max-width:100%;font-size:18px;font-weight:600;letter-spacing:-.01em;color:var(--text);
+  overflow-wrap:anywhere;
+  /* a very long file name must not grow the card without bound (full name is in the title attribute) */
+  display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;
+}
 .sv-meta{margin:0;font-size:13px;color:var(--muted);}
 .sv-from{margin:0;font-size:12.5px;color:var(--muted);}
 .sv-from strong{color:var(--text);font-weight:550;}

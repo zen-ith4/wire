@@ -13,10 +13,12 @@
 //     changed (sidebar / header / list) instead of replacing the whole
 //     view and showing a full-screen spinner.
 //   - No inline event attributes and no window.* globals. All input is
-//     handled by ONE delegated listener that looks rows up by index or
-//     numeric id, so file/folder names are never interpolated into
-//     JavaScript (the old onclick="previewFile('<name>')" pattern was
-//     injectable through a crafted filename).
+//     handled by ONE delegated listener. A file action (open / download /
+//     share link) reads its target from the row it was clicked in — never
+//     from an array position or from module state — and names are only
+//     ever written through esc(), never into JavaScript (the old
+//     onclick="previewFile('<name>')" pattern was injectable through a
+//     crafted filename).
 //   - Clicking a file opens the Files viewer for image/video/audio and
 //     downloads everything else.
 // ============================================================
@@ -61,7 +63,14 @@ import {
 let currentFolderId = null;
 let currentSubpath = '';
 let currentFolders = [];
-let currentEntries = [];
+let currentEntries = [];   // raw server order — never sorted or mutated in place
+
+// The folder/subpath `currentEntries` were LISTED FOR. Deliberately separate
+// from currentFolderId/currentSubpath, which is where the user is heading:
+// loadListing() moves that immediately, while the entries only change when
+// the response arrives. Rows are stamped with the pair that produced them.
+let listedFolderId = null;
+let listedSubpath = '';
 let currentCanWrite = false;
 let myFoldersById = new Map();
 let sortState = { key: 'name', dir: 1 };
@@ -85,6 +94,8 @@ window.addEventListener('wire:logout', () => {
   currentSubpath = '';
   currentFolders = [];
   currentEntries = [];
+  listedFolderId = null;
+  listedSubpath = '';
   currentCanWrite = false;
   myFoldersById = new Map();
   showFolderList = false;
@@ -108,10 +119,13 @@ function filesListUrl(folderId, subpath) {
   return `/api/files/list/${folderId}?subpath=${encodeURIComponent(subpath)}`;
 }
 
-function sortEntries() {
+// Returns a sorted COPY. The old in-place sort reordered the very array
+// other code held (and that the change-detection signature was computed
+// from), so what was on screen and what a later lookup saw could differ.
+function sortedEntries() {
   const { key, dir } = sortState;
 
-  currentEntries.sort((a, b) => {
+  return [...currentEntries].sort((a, b) => {
     // Folders always first, whatever the sort.
     if (a.type !== b.type) return a.type === 'dir' ? -1 : 1;
 
@@ -415,7 +429,14 @@ function sortHeadHtml() {
   `;
 }
 
-function entryRowHtml(entry, index) {
+// Every row is SELF-DESCRIBING: the <li> carries the folder, sub-path and
+// name of the file it shows, and its buttons resolve their target from
+// that row alone (see rowTarget()). Nothing an action does depends on a
+// position in some array or on whatever the module state happens to be
+// when the click lands, so a row can never act on a different file than
+// the one it displays. Values go through esc(), which escapes quotes, so
+// a hostile file name can't break out of the attribute.
+function entryRowHtml(entry) {
   const isDir = entry.type === 'dir';
   const name = esc(entry.name);
   const size = isDir ? '' : formatBytes(entry.size);
@@ -428,8 +449,15 @@ function entryRowHtml(entry, index) {
     : kind ? `Preview ${entry.name}` : `Download ${entry.name}`;
 
   return `
-    <li class="files-row${isDir ? ' is-dir' : ''}">
-      <button type="button" class="files-row-main" data-act="open" data-i="${index}" aria-label="${esc(openLabel)}">
+    <li class="files-row${isDir ? ' is-dir' : ''}"
+        data-folder="${Number(listedFolderId)}"
+        data-subpath="${esc(listedSubpath)}"
+        data-name="${name}"
+        data-type="${isDir ? 'dir' : 'file'}"
+        data-kind="${kind || ''}"
+        data-size="${Number(entry.size) || 0}"
+        data-modified="${esc(entry.modified)}">
+      <button type="button" class="files-row-main" data-act="open" aria-label="${esc(openLabel)}">
         <span class="files-tile files-tile--${tileKind(entry.name, entry.type)}" aria-hidden="true">${fileIcon(entry.name, entry.type)}</span>
         <span class="files-row-text">
           <span class="files-row-name" title="${name}">${name}</span>
@@ -440,10 +468,10 @@ function entryRowHtml(entry, index) {
       <span class="files-row-date">${esc(date)}</span>
       <span class="files-row-actions">
         ${isDir ? `<span class="files-row-chevron" aria-hidden="true">${ICONS.chevronRight}</span>` : `
-          <button type="button" class="files-action" data-act="download" data-i="${index}"
+          <button type="button" class="files-action" data-act="download"
             aria-label="Download ${name}" title="Download">${ICONS.download}</button>
-          ${isOwner(currentFolderId) ? `
-            <button type="button" class="files-action" data-act="link" data-i="${index}"
+          ${isOwner(listedFolderId) ? `
+            <button type="button" class="files-action" data-act="link"
               aria-label="Create share link for ${name}" title="Share link">${ICONS.link}</button>
           ` : ''}
         `}
@@ -503,13 +531,11 @@ function paintList() {
     return;
   }
 
-  sortEntries();
-
   body.innerHTML = `
     <div class="files-table">
       ${sortHeadHtml()}
       <ul class="files-list" aria-label="Files and folders">
-        ${currentEntries.map(entryRowHtml).join('')}
+        ${sortedEntries().map(entryRowHtml).join('')}
       </ul>
     </div>
   `;
@@ -519,10 +545,18 @@ function paintList() {
 // Data loading
 // ------------------------------------------------------------
 
-// Fetches everything the view needs and commits it in one step (a
-// failed request never leaves folders from one response next to
-// entries from another). Resolves to { folders, data, sig }, or null
-// when a newer render superseded this one.
+// Fetches everything the view needs and RETURNS it as a snapshot — it does
+// not touch module state. Committing is applyFilesData()'s job, and it is
+// only called by a caller that is about to repaint the DOM from it.
+//
+// That split is the fix for the "wrong file" bug: this function used to
+// assign the fresh (raw server order) entries to module state itself. The
+// tab-switch revalidation then discarded the result when nothing had
+// changed and did not repaint — leaving the DOM (rows in the sorted order
+// the user sees) next to state in a different order. State and DOM now
+// always change together or not at all.
+//
+// Resolves to a snapshot, or null when a newer render superseded this one.
 async function loadFilesData(isCurrent) {
   // The listing only depends on the folders response to *validate* the
   // remembered folder, so start it in parallel when one is known.
@@ -574,16 +608,29 @@ async function loadFilesData(isCurrent) {
     !!data.can_write,
   ]);
 
+  return { folders, mineFolders, folderId, subpath, data, sig };
+}
+
+// Commits a snapshot from loadFilesData() to module state. Every field the
+// painters read is assigned here in one synchronous step; the caller
+// repaints straight after.
+function applyFilesData({ folders, mineFolders, folderId, subpath, data }) {
   currentFolders = folders;
   myFoldersById = new Map(mineFolders.map((f) => [Number(f.id), f]));
   currentFolderId = folderId;
   currentSubpath = subpath;
-  currentEntries = data.entries || [];
-  currentCanWrite = data.can_write || false;
+  setListing(folderId, subpath, data);
   listingState = 'ready';
   listingError = '';
+}
 
-  return { folders, data, sig };
+// The entries, the location they belong to and the write permission for
+// that location always change together.
+function setListing(folderId, subpath, data) {
+  listedFolderId = folderId;
+  listedSubpath = subpath;
+  currentEntries = data.entries || [];
+  currentCanWrite = data.can_write || false;
 }
 
 function filesErrorHtml(e) {
@@ -612,6 +659,8 @@ export async function renderFiles() {
   try {
     const result = await loadFilesData(isCurrent);
     if (!result) return;
+
+    applyFilesData(result);
 
     if (!$root()) mountShell();
 
@@ -642,6 +691,15 @@ export async function showFiles() {
 
   const main = document.getElementById('content-area');
 
+  // The remembered entries only describe the location the user is on if the
+  // last listing actually finished for it. If they left while a folder was
+  // still loading (or its load failed), memory holds the PREVIOUS folder's
+  // files — painting them under the new location would be exactly the
+  // mismatch this view must never show. Load it properly instead.
+  if (listedFolderId !== currentFolderId || listedSubpath !== currentSubpath) {
+    return renderFiles();
+  }
+
   // 1. Local paint: everything needed is already in memory.
   mountShell();
   listingState = 'ready';
@@ -651,8 +709,11 @@ export async function showFiles() {
   try {
     const result = await loadFilesData(isCurrent);
 
+    // Unchanged, or the user is typing: leave BOTH the DOM and the state
+    // exactly as they are (nothing was committed, so they still agree).
     if (!result || result.sig === filesSig || isUserTypingIn(main)) return;
 
+    applyFilesData(result);
     paintAll();
     filesSig = result.sig;
 
@@ -685,8 +746,7 @@ async function loadListing({ folderId = currentFolderId, subpath = currentSubpat
 
     if (!isCurrent() || seq !== listingSeq) return;
 
-    currentEntries = data.entries || [];
-    currentCanWrite = data.can_write || false;
+    setListing(folderId, subpath, data);
     listingState = 'ready';
     listingError = '';
 
@@ -721,9 +781,10 @@ function goToDepth(depth) {
   loadListing({ subpath: parts.slice(0, depth).join('/'), focusBody: true });
 }
 
-function enterFolder(name) {
+function enterFolder(target) {
   loadListing({
-    subpath: currentSubpath ? `${currentSubpath}/${name}` : name,
+    folderId: target.folderId,
+    subpath: target.subpath ? `${target.subpath}/${target.name}` : target.name,
     focusBody: true,
   });
 }
@@ -749,48 +810,73 @@ function mediaTokenFor(folderId, subpath, file) {
   };
 }
 
-function viewerItem(folderId, subpath, entry) {
+// What a row IS, read from the row itself (see entryRowHtml()). This is the
+// only way an action learns which file it belongs to.
+function targetFromRow(row) {
+  const d = row.dataset;
+
   return {
-    name: entry.name,
-    kind: previewKind(entry.name),
-    size: entry.size,
-    modified: entry.modified,
-    getMedia: mediaTokenFor(folderId, subpath, entry.name),
-    download: () => downloadFromSource(folderFileSource(folderId, subpath, entry.name)),
+    row,
+    folderId: Number(d.folder),
+    subpath: d.subpath,
+    name: d.name,
+    type: d.type,
+    kind: d.kind || null,
+    size: Number(d.size),
+    modified: d.modified,
   };
 }
 
-function downloadEntry(entry) {
+/** The row a click landed in, as a target — or null. */
+function rowTarget(el) {
+  const row = el.closest('.files-row');
+
+  return row ? targetFromRow(row) : null;
+}
+
+function viewerItem(target) {
+  return {
+    name: target.name,
+    kind: target.kind,
+    size: target.size,
+    modified: target.modified,
+    getMedia: mediaTokenFor(target.folderId, target.subpath, target.name),
+    download: () => downloadTarget(target),
+  };
+}
+
+function downloadTarget(target) {
   return downloadFromSource(
-    folderFileSource(currentFolderId, currentSubpath, entry.name)
+    folderFileSource(target.folderId, target.subpath, target.name)
   );
 }
 
-function openEntry(entry) {
-  if (entry.type === 'dir') {
-    enterFolder(entry.name);
+function openTarget(target) {
+  if (target.type === 'dir') {
+    enterFolder(target);
     return;
   }
 
-  if (!previewKind(entry.name)) {
+  if (!target.kind) {
     // Not something the viewer can show: a click means "get the file".
-    downloadEntry(entry);
+    downloadTarget(target);
     return;
   }
 
-  // Everything previewable in this folder, in the order it is shown,
-  // so the viewer can step through it. Capture folder/subpath now: the
+  // Everything previewable in this list, in the order it is SHOWN, so the
+  // viewer can step through it. Built from the rendered rows (each
+  // self-describing), never from module state: what the viewer offers is
+  // exactly what is on screen. The identities are captured now — the
   // viewer must not follow later navigation.
-  const folderId = currentFolderId;
-  const subpath = currentSubpath;
-
-  const playable = currentEntries.filter(
-    (e) => e.type !== 'dir' && previewKind(e.name)
-  );
+  const playable = Array.from(
+    target.row.parentElement.querySelectorAll('.files-row:not(.is-dir)')
+  )
+    .filter((row) => row.dataset.kind)
+    .map(targetFromRow);
 
   openViewer({
-    items: playable.map((e) => viewerItem(folderId, subpath, e)),
-    index: Math.max(0, playable.indexOf(entry)),
+    items: playable.map(viewerItem),
+    index: Math.max(0, playable.findIndex((t) => t.row === target.row)),
   });
 }
 
@@ -872,12 +958,6 @@ export function canUploadToCurrentFolder() {
 // ------------------------------------------------------------
 // Event handling (one delegated listener per mount)
 // ------------------------------------------------------------
-
-function entryFrom(target) {
-  const i = Number(target.closest('[data-i]')?.dataset.i);
-
-  return Number.isInteger(i) ? currentEntries[i] : undefined;
-}
 
 function toggleNewFolder(open) {
   const form = $('#files-newfolder');
@@ -974,25 +1054,26 @@ function onClick(event) {
       paintList();
       break;
 
+    // Each of these three acts on the row the button is IN.
     case 'open': {
-      const entry = entryFrom(el);
-      if (entry) openEntry(entry);
+      const target = rowTarget(el);
+      if (target) openTarget(target);
       break;
     }
 
     case 'download': {
-      const entry = entryFrom(el);
-      if (entry) downloadEntry(entry);
+      const target = rowTarget(el);
+      if (target) downloadTarget(target);
       break;
     }
 
     case 'link': {
-      const entry = entryFrom(el);
-      if (entry) {
+      const target = rowTarget(el);
+      if (target) {
         openLinkDialog({
-          folderId: currentFolderId,
-          subpath: currentSubpath,
-          file: entry.name,
+          folderId: target.folderId,
+          subpath: target.subpath,
+          file: target.name,
         });
       }
       break;

@@ -338,6 +338,30 @@
   .sv-wrap{padding:20px 12px;}
   .sv-actions .sv-btn{flex:1 1 100%;}
 }
+/* Share-link landing page in short landscape screens (~275-305px of content
+   height): the portrait card is 365-420px tall, so lay it out as one
+   compact row — icon on the left, details and actions on the right. */
+@media (max-height:480px) and (orientation:landscape){
+  .sv-wrap{padding:8px 16px;}
+  .sv-card--file,
+  .sv-card--error{
+    display:grid;grid-template-columns:auto minmax(0,1fr);
+    grid-template-areas:"tile title" "tile meta" "tile from" "tile actions" "tile link";
+    column-gap:20px;row-gap:2px;align-items:center;justify-items:start;
+    max-width:600px;padding:14px 20px;text-align:left;
+  }
+  .sv-card--error{grid-template-areas:"tile title" "tile text" "tile actions";}
+  .sv-card > .files-tile,
+  .sv-card > .sv-icon{grid-area:tile;align-self:center;}
+  .sv-card > .sv-title{grid-area:title;margin:0;font-size:16px;-webkit-line-clamp:2;}
+  .sv-card > .sv-meta{grid-area:meta;}
+  .sv-card > .sv-from{grid-area:from;}
+  .sv-card > .sv-text{grid-area:text;}
+  .sv-card > .sv-actions{grid-area:actions;justify-content:flex-start;margin-top:8px;width:auto;}
+  .sv-card > .sv-link{grid-area:link;margin:0;min-height:44px;padding:0;}
+  .sv-actions .sv-btn{flex:0 0 auto;}
+}
+
 /* Landscape phones: little vertical room — drop the artwork and tighten. */
 @media (max-height:480px) and (orientation:landscape){
   .fa-art{display:none;}

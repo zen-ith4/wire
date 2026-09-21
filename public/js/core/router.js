@@ -45,9 +45,16 @@ const routes = {
 
   // Opened by a file share link (#share/<token>, see files/links.js). Not
   // a tab: navigate() maps the whole "share/<token>" hash onto this route.
+  //
+  // "flush": the landing page is one centred card that must fit the
+  // screen, so it owns the whole content area itself. Without this the
+  // padded, scrolling .content wrapper stacked its own padding (24/28/60,
+  // 20/16/24 on phones) around the page's, which is what made it scroll
+  // on short (landscape) screens.
   'share-link': {
     title: 'Shared file',
     render: renderSharedFile,
+    flush: true,
   },
 
   'admin-users': {

@@ -111,7 +111,7 @@ export async function renderSharedFile(params = {}) {
 
   main.innerHTML = `
     <div class="sv-wrap">
-      <div class="sv-card">
+      <div class="sv-card sv-card--file">
         <div class="files-tile files-tile--${tileKind(name, 'file')} files-tile--xl" aria-hidden="true">
           ${fileIcon(name, 'file')}
         </div>

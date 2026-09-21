@@ -507,6 +507,14 @@ export function createComposer(config) {
     const input =
       getInput();
 
+    // Remember whether the user was actively typing before
+    // sending. Android/Capacitor may cause the WebView textarea
+    // to lose focus while async work is running. Only restore
+    // focus when it was already focused before the send.
+    const shouldRefocus =
+      !!input &&
+      document.activeElement === input;
+
     const content =
       input
         ? input.value.trim()
@@ -543,19 +551,19 @@ export function createComposer(config) {
          * uses Web Crypto and therefore returns a Promise.
          */
         const textBody = await buildTextBody(
-            content,
-            replyToId
+          content,
+          replyToId
         );
 
         const message = await api(sendTextUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                ...textBody,
-                reply_to_id: replyToId
-            }),
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            ...textBody,
+            reply_to_id: replyToId
+          }),
         });
 
         if (input) {
@@ -566,6 +574,21 @@ export function createComposer(config) {
         clearReply();
 
         onMessage(message);
+
+        // Restore the keyboard only if the textarea had focus
+        // before sending. Use the current element in case the
+        // composer DOM was recreated during the async operation.
+        if (shouldRefocus) {
+          requestAnimationFrame(() => {
+            const currentInput = getInput();
+
+            if (currentInput) {
+              currentInput.focus({
+                preventScroll: true
+              });
+            }
+          });
+        }
 
       } catch (e) {
         showToast(
@@ -643,6 +666,19 @@ export function createComposer(config) {
       );
 
     renderStaging();
+
+    // Keep the keyboard open after attachment sending too.
+    if (shouldRefocus) {
+      requestAnimationFrame(() => {
+        const currentInput = getInput();
+
+        if (currentInput) {
+          currentInput.focus({
+            preventScroll: true
+          });
+        }
+      });
+    }
   }
 
   // ---------- File input ----------

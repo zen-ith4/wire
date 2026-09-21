@@ -515,10 +515,24 @@
  * ================================================================ */
 
 @media (max-width: 640px) {
+  /*
+   * Same width model as the desktop rule above: a definite design
+   * width, capped by the space actually available (max-width: 100%).
+   *
+   * Do NOT use `width: 100%; max-width: 240px` here. An own message's
+   * .chat-msg is shrink-to-fit (align-self: flex-end), so its width is
+   * derived from its content and `width: 100%` on the player is a cyclic
+   * percentage: for intrinsic sizing it counts as `auto`, the flex-basis:0
+   * waveform contributes ~0, and the own bubble collapses to the fixed
+   * controls (or to the sender/meta row width). Incoming messages are
+   * stretched to a definite width, so they never hit that. A definite
+   * `width` contributes its real size to intrinsic sizing, so own and
+   * incoming resolve to the same width.
+   */
   .voice-message {
-    width: 100%;
+    width: 240px;
     min-width: 0;
-    max-width: 240px;
+    max-width: 100%;
 
     gap: 6px;
     padding: 5px 8px 5px 5px;

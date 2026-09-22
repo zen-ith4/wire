@@ -8,6 +8,7 @@ import {
   ACCENT_PRESETS,
   applyAccent,
   applyAccentPreset,
+  getCurrentAccentHex,
   applyAmbientLevel,
   getCurrentAmbientLevel,
   getCurrentTheme,
@@ -79,9 +80,6 @@ function bindMessageBubbleStyle() {
 
   if (!container) return;
 
-  // The style was already applied at startup
-  // (initMessageBubbleStyle in app.js); this only syncs the
-  // control.
   syncBubbleStyleButtons(
     container,
     getMessageBubbleStyle()
@@ -131,8 +129,6 @@ function bindFont() {
 
   if (!select) return;
 
-  // The font itself was already applied at startup
-  // (initFontFamily in app.js); this only syncs the control.
   select.value = getFontFamily();
 
   select.addEventListener(
@@ -146,6 +142,93 @@ function bindFont() {
 }
 
 // ============================================================
+// Accent helpers
+// ============================================================
+
+function syncAccentControls(hex) {
+  if (
+    typeof hex !== 'string' ||
+    !/^#[0-9a-fA-F]{6}$/.test(hex)
+  ) {
+    return;
+  }
+
+  const normalized =
+    hex.toUpperCase();
+
+  const colorInput =
+    document.getElementById(
+      'custom-accent-color'
+    );
+
+  const hexInput =
+    document.getElementById(
+      'custom-accent-hex'
+    );
+
+  if (colorInput) {
+    colorInput.value =
+      normalized;
+  }
+
+  if (hexInput) {
+    hexInput.value =
+      normalized;
+  }
+
+  const preset =
+    ACCENT_PRESETS.find(
+      item =>
+        item.hex.toUpperCase() ===
+        normalized
+    );
+
+  document
+    .querySelectorAll(
+      '#accent-swatches .accent-swatch'
+    )
+    .forEach(button => {
+      const selected =
+        Boolean(
+          preset &&
+          button.dataset.name ===
+            preset.name
+        );
+
+      button.classList.toggle(
+        'selected',
+        selected
+      );
+
+      button.setAttribute(
+        'aria-pressed',
+        String(selected)
+      );
+    });
+}
+
+function syncAccentFromServer(updatedMe) {
+  const serverAccent =
+    updatedMe?.accent_color;
+
+  if (
+    typeof serverAccent === 'string' &&
+    /^#[0-9a-fA-F]{6}$/.test(
+      serverAccent
+    )
+  ) {
+    const normalized =
+      serverAccent.toUpperCase();
+
+    applyAccent(normalized);
+    syncAccentControls(normalized);
+  }
+
+  setCurrentUser(updatedMe);
+  repaintAllMessageAccents();
+}
+
+// ============================================================
 // Accent preset
 // ============================================================
 
@@ -156,6 +239,15 @@ function bindAccentPresets() {
     );
 
   if (!container) return;
+
+  /*
+   * The server-backed accent has already been applied during
+   * application startup. This only synchronizes the controls
+   * with the current runtime value.
+   */
+  syncAccentControls(
+    getCurrentAccentHex()
+  );
 
   container.addEventListener(
     'click',
@@ -176,43 +268,16 @@ function bindAccentPresets() {
 
       if (!preset) return;
 
+      const previousAccent =
+        getCurrentAccentHex();
+
+      const nextAccent =
+        preset.hex.toUpperCase();
+
       applyAccentPreset(preset);
-
-      container
-        .querySelectorAll('.accent-swatch')
-        .forEach(button => {
-          button.classList.toggle(
-            'selected',
-            button === swatch
-          );
-        });
-
-      const colorInput =
-        document.getElementById(
-          'custom-accent-color'
-        );
-
-      const hexInput =
-        document.getElementById(
-          'custom-accent-hex'
-        );
-
-      if (colorInput) {
-        colorInput.value =
-          preset.hex;
-      }
-
-      if (hexInput) {
-        hexInput.value =
-          preset.hex;
-      }
+      syncAccentControls(nextAccent);
 
       try {
-        // This write makes the cached settings data stale (see settings.js).
-        window.dispatchEvent(
-          new Event('wire:settings-stale')
-        );
-
         await api(
           '/api/me/accent-color',
           {
@@ -223,7 +288,7 @@ function bindAccentPresets() {
             },
             body: JSON.stringify({
               accent_color:
-                preset.hex
+                nextAccent
             })
           }
         );
@@ -231,9 +296,17 @@ function bindAccentPresets() {
         const updatedMe =
           await api('/api/me');
 
-        setCurrentUser(updatedMe);
+        syncAccentFromServer(
+          updatedMe
+        );
 
-        repaintAllMessageAccents();
+        /*
+         * The cached settings data is now stale.
+         * Accent itself is NOT stored in localStorage.
+         */
+        window.dispatchEvent(
+          new Event('wire:settings-stale')
+        );
 
         showToast(
           'Accent color updated',
@@ -241,6 +314,16 @@ function bindAccentPresets() {
         );
 
       } catch (error) {
+        /*
+         * The server rejected the change.
+         * Restore the previous account/runtime value.
+         */
+        applyAccent(previousAccent);
+        syncAccentControls(
+          previousAccent
+        );
+        repaintAllMessageAccents();
+
         showToast(
           error.message,
           'error'
@@ -279,9 +362,18 @@ function bindCustomAccent() {
         button.classList.remove(
           'selected'
         );
+
+        button.setAttribute(
+          'aria-pressed',
+          'false'
+        );
       });
   };
 
+  /*
+   * Color picker changes are intentionally only runtime/preview
+   * changes. Nothing is persisted until the user clicks Save.
+   */
   colorInput?.addEventListener(
     'input',
     () => {
@@ -295,9 +387,14 @@ function bindCustomAccent() {
       );
 
       clearPresetSelection();
+      repaintAllMessageAccents();
     }
   );
 
+  /*
+   * Same behavior for manually typed HEX values:
+   * preview immediately, persist only on Save.
+   */
   hexInput?.addEventListener(
     'input',
     () => {
@@ -321,6 +418,7 @@ function bindCustomAccent() {
       applyAccent(normalized);
 
       clearPresetSelection();
+      repaintAllMessageAccents();
     }
   );
 
@@ -345,17 +443,21 @@ function bindCustomAccent() {
         return;
       }
 
+      const previousAccent =
+        getCurrentAccentHex();
+
+      /*
+       * Optimistic preview.
+       * The server remains the source of truth.
+       */
       applyAccent(value);
+      syncAccentControls(value);
+      repaintAllMessageAccents();
 
       saveButton.disabled =
         true;
 
       try {
-        // This write makes the cached settings data stale (see settings.js).
-        window.dispatchEvent(
-          new Event('wire:settings-stale')
-        );
-
         const data =
           await api(
             '/api/me/accent-color',
@@ -375,19 +477,27 @@ function bindCustomAccent() {
         const updatedMe =
           await api('/api/me');
 
-        setCurrentUser(updatedMe);
+        /*
+         * Always reapply the value returned by the server.
+         * This prevents the client from assuming its requested
+         * value was accepted if the backend normalized it.
+         */
+        syncAccentFromServer(
+          updatedMe
+        );
 
-        repaintAllMessageAccents();
+        window.dispatchEvent(
+          new Event('wire:settings-stale')
+        );
 
-        if (colorInput) {
-          colorInput.value =
-            data.accent_color;
-        }
+        const savedAccent =
+          data?.accent_color ||
+          updatedMe?.accent_color ||
+          value;
 
-        if (hexInput) {
-          hexInput.value =
-            data.accent_color;
-        }
+        syncAccentControls(
+          savedAccent
+        );
 
         showToast(
           'Custom accent saved',
@@ -395,6 +505,16 @@ function bindCustomAccent() {
         );
 
       } catch (error) {
+        /*
+         * Never leave the renderer showing an unsaved account
+         * color after a failed request.
+         */
+        applyAccent(previousAccent);
+        syncAccentControls(
+          previousAccent
+        );
+        repaintAllMessageAccents();
+
         showToast(
           error.message,
           'error'
@@ -502,8 +622,6 @@ function bindAnimations() {
 
   if (!toggle) return;
 
-  // Always initialize the control from the actual
-  // localStorage-backed state.
   const enabled =
     getAnimationsEnabled();
 
@@ -520,8 +638,6 @@ function bindAnimations() {
   toggle.addEventListener(
     'click',
     () => {
-      // Read the real persisted state instead of
-      // trusting whatever class the DOM currently has.
       const next =
         !getAnimationsEnabled();
 
@@ -557,10 +673,6 @@ async function bindHardwareAcceleration(
 
   if (!toggle) return;
 
-  /*
-   * The renderer already received the current value, so there is
-   * no second IPC read here.
-   */
   toggle.classList.toggle(
     'on',
     Boolean(initialValue)
@@ -800,10 +912,6 @@ function bindBackgrounds() {
         );
       });
 
-    /*
-     * Any background outside the featured list lives inside
-     * the "More" section. Keep it open after selection.
-     */
     if (
       !featured?.contains(swatch)
     ) {

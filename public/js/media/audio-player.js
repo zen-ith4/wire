@@ -246,7 +246,7 @@ export async function renderAudio(msg, scope, containerEl) {
           type="button"
           class="audio-player-download"
           title="Download ${escapeAttr(filename)}"
-          onclick="window.downloadAttachment(${msg.id}, '${escapeAttr(filename)}', '${scope}')"
+          onclick="window.downloadAttachment(${msg.id}, '${escapeAttr(filename)}', '${scope}', '${escapeAttr(msg.attachment_mime || '')}')"
         >${ICONS.download}</button>
       </div>
 

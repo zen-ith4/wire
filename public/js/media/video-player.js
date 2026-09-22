@@ -1045,7 +1045,8 @@ export async function renderVideo(
       downloadAttachment(
         msg.id,
         msg.attachment_name,
-        scope
+        scope,
+        msg.attachment_mime
       );
     }
   );

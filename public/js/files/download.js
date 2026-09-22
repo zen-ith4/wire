@@ -2,7 +2,8 @@
 // Downloads for the Files tab — ONE implementation shared by the file
 // list, the media viewer and the shared-link page.
 //
-//   Native Capacitor -> FileTransfer straight into Android Download/
+//   Native Capacitor -> FileTransfer into Wire/<Images|Videos|Audio|Files>/
+//                        under external storage (see downloadDestination.js)
 //   Browser/Electron -> XMLHttpRequest -> Blob -> <a download>
 //
 // Both report to the shared Wire progress bar
@@ -22,6 +23,7 @@ import { getToken, logout } from '../core/auth.js';
 import { resolveServerUrl } from '../core/server.js';
 import { Capacitor, FileTransfer } from '../vendor/capacitor.js';
 import { showToast } from '../core/utils.js';
+import { sanitizeFilename, resolveNativeDestination } from './downloadDestination.js';
 
 function isNativeCapacitor() {
   try {
@@ -31,17 +33,8 @@ function isNativeCapacitor() {
   }
 }
 
-export function sanitizeFilename(name) {
-  const original = typeof name === 'string' ? name.trim() : '';
-
-  const cleaned = original
-    .replace(/[\/\\?%*:|"<>]/g, '_')
-    .replace(/[\u0000-\u001F\u007F]/g, '_')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  return cleaned || 'download';
-}
+// Re-exported for anything that already imports sanitizeFilename from here.
+export { sanitizeFilename };
 
 function createDownloadId() {
   return `files-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -62,13 +55,25 @@ async function downloadNative(source, safeName, downloadId) {
     throw new Error('Authentication required');
   }
 
-  // Files are written directly to /storage/emulated/0/Download/
-  const destinationUri = `file:///storage/emulated/0/Download/${safeName}`;
+  // Wire/<Images|Videos|Audio|Files>/<name>, created on demand — see
+  // downloadDestination.js. `source.mimeType` is optional; when a
+  // caller doesn't have it, classification falls back to the file
+  // extension.
+  let destination;
+
+  try {
+    destination = await resolveNativeDestination(source.mimeType, safeName);
+  } catch (error) {
+    console.error('[Files Download] Could not prepare Wire folder:', error);
+    throw new Error('Could not create the Wire download folder');
+  }
+
+  const { uri: destinationUri, filename: finalName } = destination;
 
   let progressListener = null;
 
   try {
-    window.__wireDownloadProgress?.start(downloadId, safeName);
+    window.__wireDownloadProgress?.start(downloadId, finalName);
 
     progressListener = await FileTransfer.addListener('progress', (progress) => {
       if (!progress) return;
@@ -93,7 +98,7 @@ async function downloadNative(source, safeName, downloadId) {
 
     window.__wireDownloadProgress?.finish(downloadId);
 
-    return { ...result, uri: destinationUri, filename: safeName };
+    return { ...result, uri: destinationUri, filename: finalName };
 
   } catch (error) {
     window.__wireDownloadProgress?.fail(downloadId);
@@ -236,8 +241,10 @@ export async function downloadFromSource(source) {
     const downloadId = createDownloadId();
 
     if (isNativeCapacitor()) {
-      await downloadNative(source, filename, downloadId);
-      showToast(`Downloaded: ${filename}`, 'success');
+      const result = await downloadNative(source, filename, downloadId);
+      // The final name can differ from `filename` if a same-named file
+      // already existed in that Wire category folder.
+      showToast(`Downloaded: ${result?.filename || filename}`, 'success');
       return;
     }
 

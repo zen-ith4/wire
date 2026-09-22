@@ -3,13 +3,13 @@ import { initRouter, navigate } from './router.js';
 import { initSocket } from './socket.js';
 
 import {
-getToken,
-getCurrentUser,
-setCurrentUser,
-renderLogin,
-logout,
-renderUnlock,
-attemptAutoUnlock
+  getToken,
+  getCurrentUser,
+  setCurrentUser,
+  renderLogin,
+  logout,
+  renderUnlock,
+  attemptAutoUnlock
 } from './auth.js';
 
 import { showToast } from './utils.js';
@@ -27,24 +27,24 @@ import { startAutoEnhance } from '../ui/ui-enhance.js';
 import { initDragDrop } from '../files/dragdrop.js';
 
 import {
-initAccent,
-initTheme,
-initBackgroundTheme,
-initAnimations,
-initFontFamily,
-initMessageBubbleStyle
+  initAccent,
+  initTheme,
+  initBackgroundTheme,
+  initAnimations,
+  initFontFamily,
+  initMessageBubbleStyle
 } from '../settings/theme.js';
 
 import { initSidebarResize } from '../ui/sidebar-resize.js';
 
 import {
-initMobileShell,
-navBadgeHtml,
-renderMobileNav
+  initMobileShell,
+  navBadgeHtml,
+  renderMobileNav
 } from '../ui/mobile-shell.js';
 
 import {
-isIdentityUnlocked
+  isIdentityUnlocked
 } from '../crypto/identity-service.js';
 
 import '../ui/profile-card.js';
@@ -52,612 +52,540 @@ import '../media/image-viewer.js';
 import { registerServiceWorker } from './pwa.js';
 
 const NAV_ITEMS = [
-{
-view: 'files',
-label: 'My Files',
-icon: ICONS.folders
-},
+  {
+    view: 'files',
+    label: 'My Files',
+    icon: ICONS.folders
+  },
 
-{
-view: 'chat',
-label: 'Chat',
-icon: ICONS.chat
-},
+  {
+    view: 'chat',
+    label: 'Chat',
+    icon: ICONS.chat
+  },
 
-{
-view: 'messages',
-label: 'Messages',
-icon: ICONS.mail,
-badge: 'dm'
-},
+  {
+    view: 'messages',
+    label: 'Messages',
+    icon: ICONS.mail,
+    badge: 'dm'
+  },
 
-{
-view: 'settings',
-label: 'Settings',
-icon: ICONS.settings
-}
+  {
+    view: 'settings',
+    label: 'Settings',
+    icon: ICONS.settings
+  }
 ];
 
 const ADMIN_NAV_ITEMS = [
-{
-view: 'admin-users',
-label: 'Users',
-icon: ICONS.users,
-group: 'People & access'
-},
+  {
+    view: 'admin-users',
+    label: 'Users',
+    icon: ICONS.users,
+    group: 'People & access'
+  },
 
-{
-view: 'admin-folders',
-label: 'Shared Folders',
-icon: ICONS.folders,
-group: 'Server'
-},
+  {
+    view: 'admin-folders',
+    label: 'Shared Folders',
+    icon: ICONS.folders,
+    group: 'Server'
+  },
 
-{
-view: 'admin-permissions',
-label: 'Permissions',
-icon: ICONS.key,
-group: 'People & access'
-},
+  {
+    view: 'admin-permissions',
+    label: 'Permissions',
+    icon: ICONS.key,
+    group: 'People & access'
+  },
 
-{
-view: 'admin-wireguard',
-label: 'WireGuard',
-icon: ICONS.shield,
-group: 'Server'
-}
+  {
+    view: 'admin-wireguard',
+    label: 'WireGuard',
+    icon: ICONS.shield,
+    group: 'Server'
+  }
 ];
 
 function buildNav(user) {
+  const container =
+    document.getElementById(
+      'nav-links'
+    );
 
-const container =
-document.getElementById(
-'nav-links'
-);
+  if (!container) return;
 
-if (!container) return;
+  container.innerHTML = '';
 
-container.innerHTML = '';
+  // The one admin permission check for navigation:
+  // feeds the desktop sidebar AND the phone "more" menu.
+  const adminItems =
+    user.is_admin
+      ? ADMIN_NAV_ITEMS
+      : [];
 
-// The one admin permission check for navigation: feeds the desktop
-// sidebar below AND the phone "more" menu (ui/mobile-shell.js).
-const adminItems =
-user.is_admin
-? ADMIN_NAV_ITEMS
-: [];
+  const items = [
+    ...NAV_ITEMS,
+    ...adminItems
+  ];
 
-const items =
-[
-...NAV_ITEMS,
-...adminItems
-];
+  items.forEach(item => {
+    const el =
+      document.createElement('div');
 
-items.forEach(item => {
+    el.className =
+      'nav-link';
 
-const el =
-  document.createElement('div');
+    el.dataset.view =
+      item.view;
 
+    el.innerHTML = `
+      ${item.icon || ''}
+      <span>${item.label}</span>
+      ${navBadgeHtml(item)}
+    `;
 
-el.className =
-  'nav-link';
+    el.addEventListener(
+      'click',
+      () => {
+        navigate(item.view);
+      }
+    );
 
-
-el.dataset.view =
-  item.view;
-
-
-el.innerHTML = `
-  ${item.icon || ''}
-  <span>${item.label}</span>
-  ${navBadgeHtml(item)}
-`;
-
-
-el.addEventListener(
-  'click',
-  () => {
-
-    navigate(item.view);
-  }
-);
-
-
-container.appendChild(el);
-
-});
-
-/*
-
-* Phones: bottom tab bar + admin "more" menu, built from the
-* same lists and driven by the same navigate().
-  */
-  renderMobileNav({
-  tabs: NAV_ITEMS,
-  adminItems,
-  navigate
+    container.appendChild(el);
   });
-  }
+
+  /*
+   * Phones: bottom tab bar + admin "more" menu,
+   * built from the same lists and driven by
+   * the same navigate().
+   */
+  renderMobileNav({
+    tabs: NAV_ITEMS,
+    adminItems,
+    navigate
+  });
+}
 
 function fillProfile(user) {
+  const nameEl =
+    document.getElementById(
+      'profile-username'
+    );
 
-const nameEl =
-document.getElementById(
-'profile-username'
-);
+  const initialsEl =
+    document.getElementById(
+      'profile-initials'
+    );
 
-const initialsEl =
-document.getElementById(
-'profile-initials'
-);
+  const sectionEl =
+    document.getElementById(
+      'sidebar-profile-section'
+    );
 
-const sectionEl =
-document.getElementById(
-'sidebar-profile-section'
-);
+  if (nameEl) {
+    nameEl.textContent =
+      user.username;
+  }
 
-if (nameEl) {
+  if (initialsEl) {
+    const initialsSpan =
+      initialsEl.querySelector(
+        '.avatar-initials'
+      );
 
-nameEl.textContent =
-  user.username;
+    const initialsText =
+      (user.username || '?')
+        .charAt(0)
+        .toUpperCase();
 
-}
+    if (initialsSpan) {
+      initialsSpan.textContent =
+        initialsText;
+    } else {
+      initialsEl.textContent =
+        initialsText;
+    }
 
-if (initialsEl) {
+    initialsEl.dataset.avatarUser =
+      user.id;
 
-const initialsSpan =
-  initialsEl.querySelector(
-    '.avatar-initials'
-  );
+    applyAvatar(
+      'profile-initials',
+      user.id
+    );
+  }
 
+  if (sectionEl) {
+    sectionEl.title =
+      `View ${user.username}'s profile`;
 
-const initialsText =
-  (user.username || '?')
-    .charAt(0)
-    .toUpperCase();
-
-
-if (initialsSpan) {
-
-  initialsSpan.textContent =
-    initialsText;
-
-} else {
-
-  initialsEl.textContent =
-    initialsText;
-}
-
-
-initialsEl.dataset.avatarUser =
-  user.id;
-
-
-applyAvatar(
-  'profile-initials',
-  user.id
-);
-
-}
-
-if (sectionEl) {
-
-sectionEl.title =
-  `View ${user.username}'s profile`;
-
-
-sectionEl.onclick = () => {
-
-  window.openProfileCard?.(
-    user.id
-  );
-
-};
-
-}
+    sectionEl.onclick = () => {
+      window.openProfileCard?.(
+        user.id
+      );
+    };
+  }
 }
 
 function showApp(user) {
+  const loginWrap =
+    document.getElementById(
+      'login-wrap'
+    );
 
-const loginWrap =
-document.getElementById(
-'login-wrap'
-);
+  const app =
+    document.getElementById(
+      'app'
+    );
 
-const app =
-document.getElementById(
-'app'
-);
+  if (loginWrap) {
+    loginWrap.style.display =
+      'none';
+  }
 
-if (loginWrap) {
+  if (app) {
+    app.style.display =
+      'flex';
+  }
 
-loginWrap.style.display =
-  'none';
+  buildNav(user);
 
-}
+  fillProfile(user);
 
-if (app) {
-
-app.style.display =
-  'flex';
-
-}
-
-buildNav(user);
-
-fillProfile(user);
-
-refreshUnreadBadge();
+  refreshUnreadBadge();
 }
 
 /* =========================================================
-
-* Global helpers
-* ========================================================= */
+ * Global helpers
+ * ========================================================= */
 
 window.logout =
-logout;
+  logout;
 
 /* =========================================================
-
-* Application startup
-* ========================================================= */
+ * Application startup
+ * ========================================================= */
 
 async function startApplication(
-user,
-token
+  user,
+  token
 ) {
+  /*
+   * Accent must already have been initialized from
+   * user.accent_color before this function is called.
+   *
+   * This keeps the server-side account accent as the
+   * source of truth across browser, Electron and
+   * Capacitor Android.
+   */
 
-showApp(user);
+  showApp(user);
 
-initSocket(token);
+  initSocket(token);
 
-initRouter();
+  initRouter();
 
-startAutoEnhance();
+  startAutoEnhance();
 
-initDragDrop();
+  initDragDrop();
 }
 
 /* =========================================================
-
-* Bootstrap
-* ========================================================= */
+ * Bootstrap
+ * ========================================================= */
 
 async function bootstrap() {
-
-/*
-
-* Apply local theme immediately.
-  */
-
-initTheme();
-
-initAccent();
-
-initBackgroundTheme();
-
-initAnimations();
-
-initFontFamily();
-
-initMessageBubbleStyle();
-
-/*
-
-* Restore sidebar width and initialize
-* the resize handle.
-  */
-
-initSidebarResize();
-
-/*
-
-* Phone layout: keyboard awareness + the admin menu's
-* global listeners (bottom bar itself is built in buildNav).
-  */
-
-initMobileShell();
-
-/*
-
-* Check current authentication state.
-  */
-
-const token =
-getToken();
-
-/*
-
-* No account session.
-* 
-* Login will authenticate the account and,
-* inside auth.js, initialize the E2EE identity
-* using the SAME account password.
-  */
-
-if (!token) {
-
-renderLogin(
-  async () => {
-
-    const user =
-      getCurrentUser();
-
-    const currentToken =
-      getToken();
-
-
-    if (
-      !user ||
-      !currentToken
-    ) {
-      throw new Error(
-        'Authentication state is unavailable'
-      );
-    }
-
-
-    /*
-     * The freshly authenticated user is now
-     * available in auth.js. Apply the server-side
-     * accent immediately so it takes priority over
-     * the login-time localStorage accent.
-     */
-    initAccent(
-      user.accent_color || null
-    );
-
-
-    await startApplication(
-      user,
-      currentToken
-    );
-  }
-);
-
-return;
-
-}
-
-try {
-
-/* ------------------------------------------------------
- * Get authenticated user
- * ------------------------------------------------------ */
-
-const me =
-  await api('/api/me');
-
-
-/* ------------------------------------------------------
- * Restore current user state
- * ------------------------------------------------------ */
-
-setCurrentUser(me);
-
-
-/* ------------------------------------------------------
- * Database accent takes priority over localStorage.
- * ------------------------------------------------------ */
-
-initAccent(
-  me.accent_color || null
-);
-
-
-/* ------------------------------------------------------
- * Identity state
- *
- * The identity is intentionally kept only in memory.
- *
- * If the page was reloaded, the password is no longer
- * available and the encrypted identity cannot be
- * silently unlocked.
- *
- * Therefore the user must authenticate again through
- * the login flow, which will use the same password to
- * restore the E2EE identity.
- * ------------------------------------------------------ */
-
-if (!isIdentityUnlocked()) {
-
   /*
-   * We already have a valid token AND /api/me has
-   * already confirmed the account - the session itself
-   * is fine. We only need to unlock the local E2EE
-   * identity.
+   * Apply only local/device appearance settings
+   * immediately.
    *
-   * First try silently, using unlock material cached on
-   * this device from a previous login where the user opted
-   * in via "Remember me on this device" (see auth.js - works
-   * in both the Electron app and the plain browser). If that
-   * succeeds, the app opens directly with no prompt at all.
+   * Accent is intentionally NOT initialized here.
+   * It belongs to the authenticated account and must
+   * come from /api/me or the freshly authenticated user.
    */
 
-  const autoUnlocked =
-    await attemptAutoUnlock(
-      me,
-      token
-    );
+  initTheme();
 
+  initBackgroundTheme();
 
-  if (autoUnlocked) {
+  initAnimations();
 
-    initAccent(
-      me.accent_color || null
-    );
+  initFontFamily();
 
+  initMessageBubbleStyle();
 
-    await startApplication(
-      me,
-      token
+  /*
+   * Restore sidebar width and initialize
+   * the resize handle.
+   */
+
+  initSidebarResize();
+
+  /*
+   * Phone layout: keyboard awareness + the admin
+   * menu's global listeners.
+   */
+
+  initMobileShell();
+
+  /*
+   * Check current authentication state.
+   */
+
+  const token =
+    getToken();
+
+  /*
+   * No account session.
+   *
+   * Login will authenticate the account and,
+   * inside auth.js, initialize the E2EE identity
+   * using the SAME account password.
+   */
+
+  if (!token) {
+    renderLogin(
+      async () => {
+        const user =
+          getCurrentUser();
+
+        const currentToken =
+          getToken();
+
+        if (
+          !user ||
+          !currentToken
+        ) {
+          throw new Error(
+            'Authentication state is unavailable'
+          );
+        }
+
+        /*
+         * The authenticated user's accent is now
+         * available from the server/login response.
+         *
+         * Apply it BEFORE creating the application UI.
+         *
+         * No localStorage fallback is used for accent.
+         */
+
+        initAccent(
+          user.accent_color || null
+        );
+
+        await startApplication(
+          user,
+          currentToken
+        );
+      }
     );
 
     return;
   }
 
+  try {
+    /* ------------------------------------------------------
+     * Get authenticated user
+     * ------------------------------------------------------ */
 
-  /*
-   * No cached unlock material (browser, first login on
-   * this device, explicit sign-out since, or the cached
-   * material failed an integrity/decryption check). Fall
-   * back to a password-only "unlock" step - not a login:
-   * it never calls /api/auth/login and never touches the
-   * token. Using the full login form here (as before this
-   * fix) made a perfectly valid session look logged-out
-   * on every restart.
-   */
+    const me =
+      await api('/api/me');
 
-  renderUnlock(
-    me,
-    async () => {
+    /* ------------------------------------------------------
+     * Restore current user state
+     * ------------------------------------------------------ */
+
+    setCurrentUser(me);
+
+    /*
+     * Database accent is the account-level source of truth.
+     *
+     * IMPORTANT:
+     * This happens before showApp(), initRouter(),
+     * socket initialization and any authenticated UI.
+     */
+
+    initAccent(
+      me.accent_color || null
+    );
+
+    /* ------------------------------------------------------
+     * Identity state
+     *
+     * The identity is intentionally kept only in memory.
+     * ------------------------------------------------------ */
+
+    if (!isIdentityUnlocked()) {
+      /*
+       * We already have a valid token AND /api/me has
+       * confirmed the account. We only need to unlock
+       * the local E2EE identity.
+       *
+       * First try silently using cached unlock material.
+       */
+
+      const autoUnlocked =
+        await attemptAutoUnlock(
+          me,
+          token
+        );
+
+      if (autoUnlocked) {
+        /*
+         * Accent was already initialized from `me`
+         * before attempting the identity unlock.
+         *
+         * No second accent initialization is necessary.
+         */
+
+        await startApplication(
+          me,
+          token
+        );
+
+        return;
+      }
 
       /*
-       * Unlock has completed. The user/token were
-       * already valid before this step ran.
+       * No cached unlock material.
+       * Fall back to the password-only unlock step.
        */
-      initAccent(
-        me.accent_color || null
+
+      renderUnlock(
+        me,
+        async () => {
+          /*
+           * Unlock has completed.
+           * The user/token were already valid.
+           *
+           * The account accent was already applied
+           * before the unlock screen appeared.
+           */
+
+          await startApplication(
+            me,
+            token
+          );
+        }
       );
 
+      return;
+    }
 
-      await startApplication(
-        me,
-        token
+    /* ------------------------------------------------------
+     * Identity is already unlocked.
+     * ------------------------------------------------------ */
+
+    await startApplication(
+      me,
+      token
+    );
+
+  } catch (err) {
+    /*
+     * api() handles 401 itself.
+     */
+
+    if (
+      err.message !== 'Session expired'
+    ) {
+      console.error(
+        err
+      );
+
+      showToast(
+        'Failed to start application',
+        'error'
+      );
+
+      renderLogin(
+        async () => {
+          const user =
+            getCurrentUser();
+
+          const currentToken =
+            getToken();
+
+          if (
+            !user ||
+            !currentToken
+          ) {
+            throw new Error(
+              'Authentication state is unavailable'
+            );
+          }
+
+          /*
+           * Login has restored the authenticated user.
+           * Apply the server-side accent before the
+           * application UI is initialized.
+           */
+
+          initAccent(
+            user.accent_color || null
+          );
+
+          await startApplication(
+            user,
+            currentToken
+          );
+        }
       );
     }
-  );
-
-  return;
+  }
 }
 
-
-/* ------------------------------------------------------
- * Identity is already unlocked.
- *
- * This can happen when bootstrap is called again
- * during the same page lifetime.
- * ------------------------------------------------------ */
-
-await startApplication(
-  me,
-  token
-);
-
-} catch (err) {
-
 /*
- * api() handles 401 itself.
+ * Browser/PWA only (no-op in the native app):
+ * keep the app shell available locally.
  */
 
-if (
-  err.message !== 'Session expired'
-) {
+registerServiceWorker();
 
+bootstrap().catch(err => {
   console.error(
     err
   );
-
 
   showToast(
     'Failed to start application',
     'error'
   );
-
-
-  renderLogin(
-    async () => {
-
-      const user =
-        getCurrentUser();
-
-      const currentToken =
-        getToken();
-
-
-      if (
-        !user ||
-        !currentToken
-      ) {
-        throw new Error(
-          'Authentication state is unavailable'
-        );
-      }
-
-
-      /*
-       * Login has restored the authenticated user.
-       * Apply the server-side accent before the
-       * application UI is initialized.
-       */
-      initAccent(
-        user.accent_color || null
-      );
-
-
-      await startApplication(
-        user,
-        currentToken
-      );
-    }
-  );
-}
-
-}
-}
-
-// Browser/PWA only (no-op in the native app): keep the app shell available locally.
-registerServiceWorker();
-
-bootstrap().catch(err => {
-
-console.error(
-err
-);
-
-showToast(
-'Failed to start application',
-'error'
-);
 });
 
 /* =========================================================
-
-* Global error handling
-* ========================================================= */
+ * Global error handling
+ * ========================================================= */
 
 window.addEventListener(
-'unhandledrejection',
-event => {
+  'unhandledrejection',
+  event => {
+    console.error(
+      'Unhandled promise rejection:',
+      event.reason
+    );
 
-console.error(
-  'Unhandled promise rejection:',
-  event.reason
-);
-
-
-showToast(
-  'An unexpected error occurred',
-  'error'
-);
-
-}
+    showToast(
+      'An unexpected error occurred',
+      'error'
+    );
+  }
 );
 
 window.addEventListener(
-'error',
-event => {
+  'error',
+  event => {
+    console.error(
+      'Unhandled error:',
+      event.error || event.message
+    );
 
-console.error(
-  'Unhandled error:',
-  event.error || event.message
-);
-
-
-showToast(
-  'An unexpected error occurred',
-  'error'
-);
-
-}
+    showToast(
+      'An unexpected error occurred',
+      'error'
+    );
+  }
 );

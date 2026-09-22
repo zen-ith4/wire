@@ -98,7 +98,6 @@ export const BACKGROUND_PRESETS = [
 
 export const DEFAULT_BACKGROUND_ID = 'void';
 
-const ACCENT_STORAGE_KEY = 'wire-accent';
 const AMBIENT_STORAGE_KEY = 'wire-ambient-level';
 const THEME_STORAGE_KEY = 'wire-theme';
 const BUBBLE_ACCENT_STORAGE_KEY = 'wire-bubble-accent';
@@ -110,6 +109,10 @@ const FONT_STORAGE_KEY = 'wire-font-family';
 
 // ============================================================
 // Storage helpers
+//
+// Accent Color is intentionally NOT included here.
+// Accent is account-scoped and comes from /api/me.
+// All other appearance preferences remain local.
 // ============================================================
 
 function safeGetStorage(key) {
@@ -132,33 +135,49 @@ function safeSetStorage(key, value) {
 
 // ============================================================
 // Accent helpers
+//
+// IMPORTANT:
+// Accent Color is account-scoped.
+//
+// There is deliberately NO:
+//   - ACCENT_STORAGE_KEY
+//   - localStorage read for Accent
+//   - localStorage write for Accent
+//
+// The server value from /api/me is the source of truth.
+// currentAccentHex is only runtime state for the current session.
 // ============================================================
 
-export function getCurrentAccentHex() {
-  const saved = safeGetStorage(ACCENT_STORAGE_KEY);
+const DEFAULT_ACCENT_HEX =
+  ACCENT_PRESETS[0].hex;
 
-  if (
-    typeof saved === 'string' &&
-    /^#[0-9a-fA-F]{6}$/.test(saved)
-  ) {
-    return saved.toUpperCase();
-  }
+let currentAccentHex =
+  DEFAULT_ACCENT_HEX;
 
-  const preset = ACCENT_PRESETS.find(
-    preset => preset.name === saved
+
+function isValidAccentHex(value) {
+  return (
+    typeof value === 'string' &&
+    /^#[0-9a-fA-F]{6}$/.test(value)
   );
+}
 
-  return preset?.hex || ACCENT_PRESETS[0].hex;
+
+export function getCurrentAccentHex() {
+  return currentAccentHex;
 }
 
 
 export function getCurrentAccentName() {
-  const hex = getCurrentAccentHex();
+  const hex =
+    currentAccentHex;
 
-  const preset = ACCENT_PRESETS.find(
-    preset =>
-      preset.hex.toUpperCase() === hex.toUpperCase()
-  );
+  const preset =
+    ACCENT_PRESETS.find(
+      preset =>
+        preset.hex.toUpperCase() ===
+        hex.toUpperCase()
+    );
 
   return preset?.name || null;
 }
@@ -182,8 +201,11 @@ export function getCurrentAmbientLevel() {
 
 
 export function hexToRgb(hex) {
-  const clean = hex.replace('#', '');
-  const value = Number.parseInt(clean, 16);
+  const clean =
+    hex.replace('#', '');
+
+  const value =
+    Number.parseInt(clean, 16);
 
   return {
     r: (value >> 16) & 255,
@@ -194,19 +216,25 @@ export function hexToRgb(hex) {
 
 
 export function rgbStringFromHex(hex) {
-  const { r, g, b } = hexToRgb(hex);
+  const { r, g, b } =
+    hexToRgb(hex);
 
   return `${r}, ${g}, ${b}`;
 }
 
 
 export function contrastTextFor(rgbString) {
-  const [r, g, b] = rgbString
-    .split(',')
-    .map(value => Number(value.trim()));
+  const [r, g, b] =
+    rgbString
+      .split(',')
+      .map(value =>
+        Number(value.trim())
+      );
 
   const brightness =
-    (r * 299 + g * 587 + b * 114) / 1000;
+    (r * 299 +
+      g * 587 +
+      b * 114) / 1000;
 
   return brightness > 150
     ? '#16161A'
@@ -223,45 +251,60 @@ function rgbToHsl(r, g, b) {
   g /= 255;
   b /= 255;
 
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
+  const max =
+    Math.max(r, g, b);
+
+  const min =
+    Math.min(r, g, b);
 
   let h = 0;
   let s = 0;
 
-  const l = (max + min) / 2;
+  const l =
+    (max + min) / 2;
 
   if (max !== min) {
-    const d = max - min;
+    const d =
+      max - min;
 
-    s = l > 0.5
-      ? d / (2 - max - min)
-      : d / (max + min);
+    s =
+      l > 0.5
+        ? d / (2 - max - min)
+        : d / (max + min);
 
     switch (max) {
       case r:
-        h = (g - b) / d + (g < b ? 6 : 0);
+        h =
+          (g - b) / d +
+          (g < b ? 6 : 0);
         break;
 
       case g:
-        h = (b - r) / d + 2;
+        h =
+          (b - r) / d + 2;
         break;
 
       default:
-        h = (r - g) / d + 4;
+        h =
+          (r - g) / d + 4;
         break;
     }
 
     h /= 6;
   }
 
-  return { h, s, l };
+  return {
+    h,
+    s,
+    l
+  };
 }
 
 
 function hslToRgb(h, s, l) {
   if (s === 0) {
-    const value = Math.round(l * 255);
+    const value =
+      Math.round(l * 255);
 
     return {
       r: value,
@@ -270,58 +313,96 @@ function hslToRgb(h, s, l) {
     };
   }
 
-  const hue2rgb = (p, q, t) => {
-    if (t < 0) t += 1;
-    if (t > 1) t -= 1;
+  const hue2rgb =
+    (p, q, t) => {
+      if (t < 0) t += 1;
+      if (t > 1) t -= 1;
 
-    if (t < 1 / 6) {
-      return p + (q - p) * 6 * t;
-    }
+      if (t < 1 / 6) {
+        return p +
+          (q - p) * 6 * t;
+      }
 
-    if (t < 1 / 2) {
-      return q;
-    }
+      if (t < 1 / 2) {
+        return q;
+      }
 
-    if (t < 2 / 3) {
-      return p + (q - p) * (2 / 3 - t) * 6;
-    }
+      if (t < 2 / 3) {
+        return p +
+          (q - p) *
+            (2 / 3 - t) * 6;
+      }
 
-    return p;
-  };
+      return p;
+    };
 
   const q =
     l < 0.5
       ? l * (1 + s)
       : l + s - l * s;
 
-  const p = 2 * l - q;
+  const p =
+    2 * l - q;
 
   return {
     r: Math.round(
-      hue2rgb(p, q, h + 1 / 3) * 255
+      hue2rgb(
+        p,
+        q,
+        h + 1 / 3
+      ) * 255
     ),
+
     g: Math.round(
-      hue2rgb(p, q, h) * 255
+      hue2rgb(
+        p,
+        q,
+        h
+      ) * 255
     ),
+
     b: Math.round(
-      hue2rgb(p, q, h - 1 / 3) * 255
+      hue2rgb(
+        p,
+        q,
+        h - 1 / 3
+      ) * 255
     )
   };
 }
 
 
 function secondaryRgbString(rgbString) {
-  const [r, g, b] = rgbString
-    .split(',')
-    .map(value => Number(value.trim()));
+  const [r, g, b] =
+    rgbString
+      .split(',')
+      .map(value =>
+        Number(value.trim())
+      );
 
-  const { h, s, l } = rgbToHsl(r, g, b);
+  const {
+    h,
+    s,
+    l
+  } =
+    rgbToHsl(
+      r,
+      g,
+      b
+    );
 
-  const shifted = hslToRgb(
-    (h + 0.11) % 1,
-    Math.min(1, s * 0.92 + 0.04),
-    Math.min(0.8, l * 1.12 + 0.04)
-  );
+  const shifted =
+    hslToRgb(
+      (h + 0.11) % 1,
+      Math.min(
+        1,
+        s * 0.92 + 0.04
+      ),
+      Math.min(
+        0.8,
+        l * 1.12 + 0.04
+      )
+    );
 
   return `${shifted.r}, ${shifted.g}, ${shifted.b}`;
 }
@@ -331,9 +412,14 @@ function secondaryRgbString(rgbString) {
 // Runtime state
 // ============================================================
 
-let currentRgb = ACCENT_PRESETS[0].rgb;
-let currentLevel = getCurrentAmbientLevel();
-let currentBackgroundId = DEFAULT_BACKGROUND_ID;
+let currentRgb =
+  ACCENT_PRESETS[0].rgb;
+
+let currentLevel =
+  getCurrentAmbientLevel();
+
+let currentBackgroundId =
+  DEFAULT_BACKGROUND_ID;
 
 
 // ============================================================
@@ -359,12 +445,6 @@ function backgroundFactor(
 
   let factor =
     peak * lightScale;
-
-  // Light mode:
-  // Level 3 is slightly reduced.
-  // Level 4 is reduced more and has its own ceiling,
-  // so it can never collapse into Level 5.
-  // Level 5 keeps the maximum light-mode intensity.
 
   if (peak === AMBIENT_LEVELS[2]) {
     factor *= 0.84;
@@ -423,13 +503,19 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'monochrome': {
       const f =
-        backgroundFactor(peak, dark, 1.7);
+        backgroundFactor(
+          peak,
+          dark,
+          1.7
+        );
 
       const p =
         (f * 0.75).toFixed(3);
 
       const rgb =
-        dark ? '0,0,0' : '60,60,66';
+        dark
+          ? '0,0,0'
+          : '60,60,66';
 
       return `
         radial-gradient(
@@ -444,7 +530,11 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'steel': {
       const f =
-        backgroundFactor(peak, dark, 1.65);
+        backgroundFactor(
+          peak,
+          dark,
+          1.65
+        );
 
       const p1 =
         (f * 0.75).toFixed(3);
@@ -474,24 +564,43 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'aurora': {
       const f =
-        backgroundFactor(peak, dark, 1.75);
+        backgroundFactor(
+          peak,
+          dark,
+          1.75
+        );
 
-      const p1 = (f * 0.85).toFixed(3);
-      const p2 = (f * 0.7).toFixed(3);
-      const p3 = (f * 0.6).toFixed(3);
-      const p4 = (f * 0.45).toFixed(3);
+      const p1 =
+        (f * 0.85).toFixed(3);
+
+      const p2 =
+        (f * 0.7).toFixed(3);
+
+      const p3 =
+        (f * 0.6).toFixed(3);
+
+      const p4 =
+        (f * 0.45).toFixed(3);
 
       const teal =
-        dark ? '95,190,175' : '150,215,200';
+        dark
+          ? '95,190,175'
+          : '150,215,200';
 
       const violet =
-        dark ? '150,130,215' : '190,175,230';
+        dark
+          ? '150,130,215'
+          : '190,175,230';
 
       const pink =
-        dark ? '195,150,180' : '225,190,210';
+        dark
+          ? '195,150,180'
+          : '225,190,210';
 
       const blue =
-        dark ? '110,150,210' : '175,195,230';
+        dark
+          ? '110,150,210'
+          : '175,195,230';
 
       return `
         linear-gradient(
@@ -515,11 +624,20 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'ocean': {
       const f =
-        backgroundFactor(peak, dark, 1.8);
+        backgroundFactor(
+          peak,
+          dark,
+          1.8
+        );
 
-      const p1 = f.toFixed(3);
-      const p2 = (f * 0.7).toFixed(3);
-      const p3 = (f * 0.45).toFixed(3);
+      const p1 =
+        f.toFixed(3);
+
+      const p2 =
+        (f * 0.7).toFixed(3);
+
+      const p3 =
+        (f * 0.45).toFixed(3);
 
       return `
         radial-gradient(
@@ -545,10 +663,17 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'forest': {
       const f =
-        backgroundFactor(peak, dark, 1.8);
+        backgroundFactor(
+          peak,
+          dark,
+          1.8
+        );
 
-      const p1 = f.toFixed(3);
-      const p2 = (f * 0.65).toFixed(3);
+      const p1 =
+        f.toFixed(3);
+
+      const p2 =
+        (f * 0.65).toFixed(3);
 
       return `
         radial-gradient(
@@ -568,11 +693,20 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'sunset': {
       const f =
-        backgroundFactor(peak, dark, 1.75);
+        backgroundFactor(
+          peak,
+          dark,
+          1.75
+        );
 
-      const p1 = f.toFixed(3);
-      const p2 = (f * 0.65).toFixed(3);
-      const p3 = (f * 0.35).toFixed(3);
+      const p1 =
+        f.toFixed(3);
+
+      const p2 =
+        (f * 0.65).toFixed(3);
+
+      const p3 =
+        (f * 0.35).toFixed(3);
 
       return `
         linear-gradient(
@@ -594,10 +728,17 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'ember': {
       const f =
-        backgroundFactor(peak, dark, 1.8);
+        backgroundFactor(
+          peak,
+          dark,
+          1.8
+        );
 
-      const p1 = f.toFixed(3);
-      const p2 = (f * 0.55).toFixed(3);
+      const p1 =
+        f.toFixed(3);
+
+      const p2 =
+        (f * 0.55).toFixed(3);
 
       return `
         radial-gradient(
@@ -618,10 +759,17 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'ice': {
       const f =
-        backgroundFactor(peak, dark, 1.55);
+        backgroundFactor(
+          peak,
+          dark,
+          1.55
+        );
 
-      const p1 = f.toFixed(3);
-      const p2 = (f * 0.55).toFixed(3);
+      const p1 =
+        f.toFixed(3);
+
+      const p2 =
+        (f * 0.55).toFixed(3);
 
       return `
         radial-gradient(
@@ -645,17 +793,30 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'midnight': {
       const f =
-        backgroundFactor(peak, dark, 1.9);
+        backgroundFactor(
+          peak,
+          dark,
+          1.9
+        );
 
-      const p1 = f.toFixed(3);
-      const p2 = (f * 0.5).toFixed(3);
-      const p3 = (f * 0.4).toFixed(3);
+      const p1 =
+        f.toFixed(3);
+
+      const p2 =
+        (f * 0.5).toFixed(3);
+
+      const p3 =
+        (f * 0.4).toFixed(3);
 
       const rgbMain =
-        dark ? '32,42,108' : '90,112,196';
+        dark
+          ? '32,42,108'
+          : '90,112,196';
 
       const rgbFaint =
-        dark ? '16,22,58' : '150,165,222';
+        dark
+          ? '16,22,58'
+          : '150,165,222';
 
       return `
         radial-gradient(
@@ -676,10 +837,17 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'deep-space': {
       const f =
-        backgroundFactor(peak, dark, 1.85);
+        backgroundFactor(
+          peak,
+          dark,
+          1.85
+        );
 
-      const p1 = f.toFixed(3);
-      const p2 = (f * 0.6).toFixed(3);
+      const p1 =
+        f.toFixed(3);
+
+      const p2 =
+        (f * 0.6).toFixed(3);
 
       return `
         radial-gradient(
@@ -699,20 +867,35 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'nebula': {
       const f =
-        backgroundFactor(peak, dark, 1.8);
+        backgroundFactor(
+          peak,
+          dark,
+          1.8
+        );
 
-      const p1 = f.toFixed(3);
-      const p2 = (f * 0.85).toFixed(3);
-      const p3 = (f * 0.65).toFixed(3);
+      const p1 =
+        f.toFixed(3);
+
+      const p2 =
+        (f * 0.85).toFixed(3);
+
+      const p3 =
+        (f * 0.65).toFixed(3);
 
       const rgbA =
-        dark ? '110,80,170' : '170,150,220';
+        dark
+          ? '110,80,170'
+          : '170,150,220';
 
       const rgbB =
-        dark ? '65,92,178' : '145,170,225';
+        dark
+          ? '65,92,178'
+          : '145,170,225';
 
       const rgbC =
-        dark ? '150,95,150' : '215,175,205';
+        dark
+          ? '150,95,150'
+          : '215,175,205';
 
       return `
         radial-gradient(
@@ -741,20 +924,35 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'glass': {
       const f =
-        backgroundFactor(peak, dark, 1.35);
+        backgroundFactor(
+          peak,
+          dark,
+          1.35
+        );
 
-      const p1 = (f * 0.95).toFixed(3);
-      const p2 = (f * 0.7).toFixed(3);
-      const p3 = (f * 0.35).toFixed(3);
+      const p1 =
+        (f * 0.95).toFixed(3);
+
+      const p2 =
+        (f * 0.7).toFixed(3);
+
+      const p3 =
+        (f * 0.35).toFixed(3);
 
       const rgbA =
-        dark ? '215,220,232' : '255,255,255';
+        dark
+          ? '215,220,232'
+          : '255,255,255';
 
       const rgbB =
-        dark ? '150,172,202' : '200,214,234';
+        dark
+          ? '150,172,202'
+          : '200,214,234';
 
       const rgbSheen =
-        dark ? '235,238,245' : '255,255,255';
+        dark
+          ? '235,238,245'
+          : '255,255,255';
 
       return `
         linear-gradient(
@@ -783,10 +981,17 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'graphite': {
       const f =
-        backgroundFactor(peak, dark, 1.6);
+        backgroundFactor(
+          peak,
+          dark,
+          1.6
+        );
 
-      const p1 = f.toFixed(3);
-      const p2 = (f * 0.55).toFixed(3);
+      const p1 =
+        f.toFixed(3);
+
+      const p2 =
+        (f * 0.55).toFixed(3);
 
       return `
         radial-gradient(
@@ -806,10 +1011,17 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'slate': {
       const f =
-        backgroundFactor(peak, dark, 1.55);
+        backgroundFactor(
+          peak,
+          dark,
+          1.55
+        );
 
-      const p1 = f.toFixed(3);
-      const p2 = (f * 0.65).toFixed(3);
+      const p1 =
+        f.toFixed(3);
+
+      const p2 =
+        (f * 0.65).toFixed(3);
 
       return `
         linear-gradient(
@@ -829,10 +1041,17 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'charcoal': {
       const f =
-        backgroundFactor(peak, dark, 1.7);
+        backgroundFactor(
+          peak,
+          dark,
+          1.7
+        );
 
-      const p1 = f.toFixed(3);
-      const p2 = (f * 0.5).toFixed(3);
+      const p1 =
+        f.toFixed(3);
+
+      const p2 =
+        (f * 0.5).toFixed(3);
 
       return `
         radial-gradient(
@@ -852,10 +1071,17 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'arctic': {
       const f =
-        backgroundFactor(peak, dark, 1.5);
+        backgroundFactor(
+          peak,
+          dark,
+          1.5
+        );
 
-      const p1 = f.toFixed(3);
-      const p2 = (f * 0.65).toFixed(3);
+      const p1 =
+        f.toFixed(3);
+
+      const p2 =
+        (f * 0.65).toFixed(3);
 
       return `
         radial-gradient(
@@ -875,10 +1101,17 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'mist': {
       const f =
-        backgroundFactor(peak, dark, 1.5);
+        backgroundFactor(
+          peak,
+          dark,
+          1.5
+        );
 
-      const p1 = f.toFixed(3);
-      const p2 = (f * 0.55).toFixed(3);
+      const p1 =
+        f.toFixed(3);
+
+      const p2 =
+        (f * 0.55).toFixed(3);
 
       return `
         linear-gradient(
@@ -895,10 +1128,17 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'rain': {
       const f =
-        backgroundFactor(peak, dark, 1.55);
+        backgroundFactor(
+          peak,
+          dark,
+          1.55
+        );
 
-      const p1 = f.toFixed(3);
-      const p2 = (f * 0.55).toFixed(3);
+      const p1 =
+        f.toFixed(3);
+
+      const p2 =
+        (f * 0.55).toFixed(3);
 
       return `
         radial-gradient(
@@ -918,11 +1158,20 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'twilight': {
       const f =
-        backgroundFactor(peak, dark, 1.7);
+        backgroundFactor(
+          peak,
+          dark,
+          1.7
+        );
 
-      const p1 = f.toFixed(3);
-      const p2 = (f * 0.7).toFixed(3);
-      const p3 = (f * 0.45).toFixed(3);
+      const p1 =
+        f.toFixed(3);
+
+      const p2 =
+        (f * 0.7).toFixed(3);
+
+      const p3 =
+        (f * 0.45).toFixed(3);
 
       return `
         linear-gradient(
@@ -943,11 +1192,20 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'cosmic': {
       const f =
-        backgroundFactor(peak, dark, 1.75);
+        backgroundFactor(
+          peak,
+          dark,
+          1.75
+        );
 
-      const p1 = f.toFixed(3);
-      const p2 = (f * 0.7).toFixed(3);
-      const p3 = (f * 0.5).toFixed(3);
+      const p1 =
+        f.toFixed(3);
+
+      const p2 =
+        (f * 0.7).toFixed(3);
+
+      const p3 =
+        (f * 0.5).toFixed(3);
 
       return `
         radial-gradient(
@@ -972,10 +1230,17 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'starlight': {
       const f =
-        backgroundFactor(peak, dark, 1.6);
+        backgroundFactor(
+          peak,
+          dark,
+          1.6
+        );
 
-      const p1 = f.toFixed(3);
-      const p2 = (f * 0.55).toFixed(3);
+      const p1 =
+        f.toFixed(3);
+
+      const p2 =
+        (f * 0.55).toFixed(3);
 
       return `
         radial-gradient(
@@ -995,11 +1260,20 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'plasma': {
       const f =
-        backgroundFactor(peak, dark, 1.75);
+        backgroundFactor(
+          peak,
+          dark,
+          1.75
+        );
 
-      const p1 = f.toFixed(3);
-      const p2 = (f * 0.7).toFixed(3);
-      const p3 = (f * 0.45).toFixed(3);
+      const p1 =
+        f.toFixed(3);
+
+      const p2 =
+        (f * 0.7).toFixed(3);
+
+      const p3 =
+        (f * 0.45).toFixed(3);
 
       return `
         radial-gradient(
@@ -1025,10 +1299,17 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'lavender': {
       const f =
-        backgroundFactor(peak, dark, 1.65);
+        backgroundFactor(
+          peak,
+          dark,
+          1.65
+        );
 
-      const p1 = f.toFixed(3);
-      const p2 = (f * 0.6).toFixed(3);
+      const p1 =
+        f.toFixed(3);
+
+      const p2 =
+        (f * 0.6).toFixed(3);
 
       return `
         radial-gradient(
@@ -1048,10 +1329,17 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'rose': {
       const f =
-        backgroundFactor(peak, dark, 1.7);
+        backgroundFactor(
+          peak,
+          dark,
+          1.7
+        );
 
-      const p1 = f.toFixed(3);
-      const p2 = (f * 0.6).toFixed(3);
+      const p1 =
+        f.toFixed(3);
+
+      const p2 =
+        (f * 0.6).toFixed(3);
 
       return `
         radial-gradient(
@@ -1071,10 +1359,17 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'sand': {
       const f =
-        backgroundFactor(peak, dark, 1.75);
+        backgroundFactor(
+          peak,
+          dark,
+          1.75
+        );
 
-      const p1 = f.toFixed(3);
-      const p2 = (f * 0.55).toFixed(3);
+      const p1 =
+        f.toFixed(3);
+
+      const p2 =
+        (f * 0.55).toFixed(3);
 
       return `
         radial-gradient(
@@ -1094,10 +1389,17 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'desert': {
       const f =
-        backgroundFactor(peak, dark, 1.75);
+        backgroundFactor(
+          peak,
+          dark,
+          1.75
+        );
 
-      const p1 = f.toFixed(3);
-      const p2 = (f * 0.6).toFixed(3);
+      const p1 =
+        f.toFixed(3);
+
+      const p2 =
+        (f * 0.6).toFixed(3);
 
       return `
         linear-gradient(
@@ -1117,10 +1419,17 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'moss': {
       const f =
-        backgroundFactor(peak, dark, 1.75);
+        backgroundFactor(
+          peak,
+          dark,
+          1.75
+        );
 
-      const p1 = f.toFixed(3);
-      const p2 = (f * 0.6).toFixed(3);
+      const p1 =
+        f.toFixed(3);
+
+      const p2 =
+        (f * 0.6).toFixed(3);
 
       return `
         radial-gradient(
@@ -1140,10 +1449,17 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'deep-green': {
       const f =
-        backgroundFactor(peak, dark, 1.7);
+        backgroundFactor(
+          peak,
+          dark,
+          1.7
+        );
 
-      const p1 = f.toFixed(3);
-      const p2 = (f * 0.65).toFixed(3);
+      const p1 =
+        f.toFixed(3);
+
+      const p2 =
+        (f * 0.65).toFixed(3);
 
       return `
         radial-gradient(
@@ -1163,10 +1479,17 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'volcanic': {
       const f =
-        backgroundFactor(peak, dark, 1.75);
+        backgroundFactor(
+          peak,
+          dark,
+          1.75
+        );
 
-      const p1 = f.toFixed(3);
-      const p2 = (f * 0.55).toFixed(3);
+      const p1 =
+        f.toFixed(3);
+
+      const p2 =
+        (f * 0.55).toFixed(3);
 
       return `
         radial-gradient(
@@ -1187,10 +1510,17 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'copper': {
       const f =
-        backgroundFactor(peak, dark, 1.7);
+        backgroundFactor(
+          peak,
+          dark,
+          1.7
+        );
 
-      const p1 = f.toFixed(3);
-      const p2 = (f * 0.6).toFixed(3);
+      const p1 =
+        f.toFixed(3);
+
+      const p2 =
+        (f * 0.6).toFixed(3);
 
       return `
         linear-gradient(
@@ -1214,11 +1544,20 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'custom-accent': {
       const f =
-        backgroundFactor(peak, dark, 1.4);
+        backgroundFactor(
+          peak,
+          dark,
+          1.4
+        );
 
-      const p1 = f.toFixed(3);
-      const p2 = (f * 0.55).toFixed(3);
-      const p3 = (f * 0.3).toFixed(3);
+      const p1 =
+        f.toFixed(3);
+
+      const p2 =
+        (f * 0.55).toFixed(3);
+
+      const p3 =
+        (f * 0.3).toFixed(3);
 
       return `
         radial-gradient(
@@ -1239,11 +1578,20 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'accent-flow': {
       const f =
-        backgroundFactor(peak, dark, 1.4);
+        backgroundFactor(
+          peak,
+          dark,
+          1.4
+        );
 
-      const p1 = f.toFixed(3);
-      const p2 = (f * 0.8).toFixed(3);
-      const p3 = (f * 0.6).toFixed(3);
+      const p1 =
+        f.toFixed(3);
+
+      const p2 =
+        (f * 0.8).toFixed(3);
+
+      const p3 =
+        (f * 0.6).toFixed(3);
 
       return `
         radial-gradient(
@@ -1268,11 +1616,20 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'accent-glow': {
       const f =
-        backgroundFactor(peak, dark, 1.4);
+        backgroundFactor(
+          peak,
+          dark,
+          1.4
+        );
 
-      const p1 = f.toFixed(3);
-      const p2 = (f * 0.62).toFixed(3);
-      const p3 = (f * 0.32).toFixed(3);
+      const p1 =
+        f.toFixed(3);
+
+      const p2 =
+        (f * 0.62).toFixed(3);
+
+      const p3 =
+        (f * 0.32).toFixed(3);
 
       return `
         radial-gradient(
@@ -1289,7 +1646,11 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'accent-depth': {
       const f =
-        backgroundFactor(peak, dark, 1.4);
+        backgroundFactor(
+          peak,
+          dark,
+          1.4
+        );
 
       const pFar =
         (f * 0.35).toFixed(3);
@@ -1323,11 +1684,20 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'accent-horizon': {
       const f =
-        backgroundFactor(peak, dark, 1.4);
+        backgroundFactor(
+          peak,
+          dark,
+          1.4
+        );
 
-      const pBand = f.toFixed(3);
-      const pBand2 = (f * 0.75).toFixed(3);
-      const pFill = (f * 0.3).toFixed(3);
+      const pBand =
+        f.toFixed(3);
+
+      const pBand2 =
+        (f * 0.75).toFixed(3);
+
+      const pFill =
+        (f * 0.3).toFixed(3);
 
       return `
         linear-gradient(
@@ -1349,10 +1719,17 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'accent-corner': {
       const f =
-        backgroundFactor(peak, dark, 1.4);
+        backgroundFactor(
+          peak,
+          dark,
+          1.4
+        );
 
-      const p1 = f.toFixed(3);
-      const p2 = (f * 0.7).toFixed(3);
+      const p1 =
+        f.toFixed(3);
+
+      const p2 =
+        (f * 0.7).toFixed(3);
 
       return `
         radial-gradient(
@@ -1372,12 +1749,23 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'accent-orbit': {
       const f =
-        backgroundFactor(peak, dark, 1.45);
+        backgroundFactor(
+          peak,
+          dark,
+          1.45
+        );
 
-      const pA = (f * 0.6).toFixed(3);
-      const pB = (f * 0.55).toFixed(3);
-      const pC = (f * 0.58).toFixed(3);
-      const pD = (f * 0.5).toFixed(3);
+      const pA =
+        (f * 0.6).toFixed(3);
+
+      const pB =
+        (f * 0.55).toFixed(3);
+
+      const pC =
+        (f * 0.58).toFixed(3);
+
+      const pD =
+        (f * 0.5).toFixed(3);
 
       return `
         radial-gradient(
@@ -1407,11 +1795,20 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'accent-mesh': {
       const f =
-        backgroundFactor(peak, dark, 1.4);
+        backgroundFactor(
+          peak,
+          dark,
+          1.4
+        );
 
-      const pA = (f * 0.55).toFixed(3);
-      const pB = (f * 0.5).toFixed(3);
-      const pC = (f * 0.45).toFixed(3);
+      const pA =
+        (f * 0.55).toFixed(3);
+
+      const pB =
+        (f * 0.5).toFixed(3);
+
+      const pC =
+        (f * 0.45).toFixed(3);
 
       return `
         radial-gradient(
@@ -1440,10 +1837,17 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'accent-sunrise': {
       const f =
-        backgroundFactor(peak, dark, 1.4);
+        backgroundFactor(
+          peak,
+          dark,
+          1.4
+        );
 
-      const p1 = f.toFixed(3);
-      const p2 = (f * 0.55).toFixed(3);
+      const p1 =
+        f.toFixed(3);
+
+      const p2 =
+        (f * 0.55).toFixed(3);
 
       return `
         radial-gradient(
@@ -1459,10 +1863,17 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'accent-pool': {
       const f =
-        backgroundFactor(peak, dark, 1.4);
+        backgroundFactor(
+          peak,
+          dark,
+          1.4
+        );
 
-      const p1 = f.toFixed(3);
-      const p2 = (f * 0.5).toFixed(3);
+      const p1 =
+        f.toFixed(3);
+
+      const p2 =
+        (f * 0.5).toFixed(3);
 
       return `
         radial-gradient(
@@ -1478,10 +1889,17 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'accent-split': {
       const f =
-        backgroundFactor(peak, dark, 1.4);
+        backgroundFactor(
+          peak,
+          dark,
+          1.4
+        );
 
-      const p1 = f.toFixed(3);
-      const p2 = (f * 0.7).toFixed(3);
+      const p1 =
+        f.toFixed(3);
+
+      const p2 =
+        (f * 0.7).toFixed(3);
 
       return `
         linear-gradient(
@@ -1497,11 +1915,20 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'accent-ripple': {
       const f =
-        backgroundFactor(peak, dark, 1.4);
+        backgroundFactor(
+          peak,
+          dark,
+          1.4
+        );
 
-      const p1 = f.toFixed(3);
-      const p2 = (f * 0.6).toFixed(3);
-      const p3 = (f * 0.3).toFixed(3);
+      const p1 =
+        f.toFixed(3);
+
+      const p2 =
+        (f * 0.6).toFixed(3);
+
+      const p3 =
+        (f * 0.3).toFixed(3);
 
       return `
         radial-gradient(
@@ -1519,11 +1946,20 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'accent-lens': {
       const f =
-        backgroundFactor(peak, dark, 1.4);
+        backgroundFactor(
+          peak,
+          dark,
+          1.4
+        );
 
-      const p1 = f.toFixed(3);
-      const p2 = (f * 0.65).toFixed(3);
-      const p3 = (f * 0.25).toFixed(3);
+      const p1 =
+        f.toFixed(3);
+
+      const p2 =
+        (f * 0.65).toFixed(3);
+
+      const p3 =
+        (f * 0.25).toFixed(3);
 
       return `
         radial-gradient(
@@ -1540,10 +1976,17 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'accent-veil': {
       const f =
-        backgroundFactor(peak, dark, 1.4);
+        backgroundFactor(
+          peak,
+          dark,
+          1.4
+        );
 
-      const p1 = f.toFixed(3);
-      const p2 = (f * 0.55).toFixed(3);
+      const p1 =
+        f.toFixed(3);
+
+      const p2 =
+        (f * 0.55).toFixed(3);
 
       return `
         linear-gradient(
@@ -1560,10 +2003,17 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'accent-pulse': {
       const f =
-        backgroundFactor(peak, dark, 1.4);
+        backgroundFactor(
+          peak,
+          dark,
+          1.4
+        );
 
-      const p1 = f.toFixed(3);
-      const p2 = (f * 0.7).toFixed(3);
+      const p1 =
+        f.toFixed(3);
+
+      const p2 =
+        (f * 0.7).toFixed(3);
 
       return `
         radial-gradient(
@@ -1583,10 +2033,17 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'accent-frame': {
       const f =
-        backgroundFactor(peak, dark, 1.4);
+        backgroundFactor(
+          peak,
+          dark,
+          1.4
+        );
 
-      const p1 = f.toFixed(3);
-      const p2 = (f * 0.65).toFixed(3);
+      const p1 =
+        f.toFixed(3);
+
+      const p2 =
+        (f * 0.65).toFixed(3);
 
       return `
         radial-gradient(
@@ -1602,11 +2059,20 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'accent-drift': {
       const f =
-        backgroundFactor(peak, dark, 1.4);
+        backgroundFactor(
+          peak,
+          dark,
+          1.4
+        );
 
-      const p1 = f.toFixed(3);
-      const p2 = (f * 0.72).toFixed(3);
-      const p3 = (f * 0.48).toFixed(3);
+      const p1 =
+        f.toFixed(3);
+
+      const p2 =
+        (f * 0.72).toFixed(3);
+
+      const p3 =
+        (f * 0.48).toFixed(3);
 
       return `
         radial-gradient(
@@ -1631,11 +2097,20 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'accent-prism': {
       const f =
-        backgroundFactor(peak, dark, 1.4);
+        backgroundFactor(
+          peak,
+          dark,
+          1.4
+        );
 
-      const p1 = f.toFixed(3);
-      const p2 = (f * 0.7).toFixed(3);
-      const p3 = (f * 0.45).toFixed(3);
+      const p1 =
+        f.toFixed(3);
+
+      const p2 =
+        (f * 0.7).toFixed(3);
+
+      const p3 =
+        (f * 0.45).toFixed(3);
 
       return `
         linear-gradient(
@@ -1660,11 +2135,20 @@ function buildBackgroundCss(id, { peak, dark }) {
 
     case 'accent-eclipse': {
       const f =
-        backgroundFactor(peak, dark, 1.4);
+        backgroundFactor(
+          peak,
+          dark,
+          1.4
+        );
 
-      const p1 = f.toFixed(3);
-      const p2 = (f * 0.68).toFixed(3);
-      const p3 = (f * 0.35).toFixed(3);
+      const p1 =
+        f.toFixed(3);
+
+      const p2 =
+        (f * 0.68).toFixed(3);
+
+      const p3 =
+        (f * 0.35).toFixed(3);
 
       return `
         radial-gradient(
@@ -1710,20 +2194,26 @@ function paintUnderlay() {
   const backgroundCss =
     buildBackgroundCss(
       currentBackgroundId,
-      { peak, dark }
+      {
+        peak,
+        dark
+      }
     );
 
-  // Also published as a CSS variable so any surface that needs its own
-  // copy of the site background (currently the mobile .dm-thread layer,
-  // see responsive.css) paints the exact same layers instead of
-  // re-deriving them.
+  /*
+   * Also published as a CSS variable so any surface that needs
+   * its own copy of the site background paints the exact same
+   * layers instead of re-deriving them.
+   */
   document.documentElement.style.setProperty(
     '--ambient-bg',
     backgroundCss
   );
 
   const underlay =
-    document.getElementById('ambient-underlay');
+    document.getElementById(
+      'ambient-underlay'
+    );
 
   if (!underlay) {
     return;
@@ -1736,16 +2226,15 @@ function paintUnderlay() {
 
 // ============================================================
 // Apply arbitrary HEX accent
+//
+// Accent is account-scoped.
+// This function changes runtime state only.
+// It NEVER writes to localStorage.
+// Persistence is handled by the account API in the settings layer.
 // ============================================================
 
-export function applyAccent(
-  hex,
-  { persist = true } = {}
-) {
-  if (
-    typeof hex !== 'string' ||
-    !/^#[0-9a-fA-F]{6}$/.test(hex)
-  ) {
+export function applyAccent(hex) {
+  if (!isValidAccentHex(hex)) {
     return false;
   }
 
@@ -1753,7 +2242,9 @@ export function applyAccent(
     hex.toUpperCase();
 
   const rgb =
-    rgbStringFromHex(normalized);
+    rgbStringFromHex(
+      normalized
+    );
 
   const root =
     document.documentElement;
@@ -1803,16 +2294,13 @@ export function applyAccent(
     contrastTextFor(rgb)
   );
 
-  currentRgb = rgb;
+  currentAccentHex =
+    normalized;
+
+  currentRgb =
+    rgb;
 
   paintUnderlay();
-
-  if (persist) {
-    safeSetStorage(
-      ACCENT_STORAGE_KEY,
-      normalized
-    );
-  }
 
   return true;
 }
@@ -1822,20 +2310,15 @@ export function applyAccent(
 // Accent preset
 // ============================================================
 
-export function applyAccentPreset(
-  preset,
-  options = {}
-) {
-  if (!preset?.hex) {
+export function applyAccentPreset(preset) {
+  if (!preset?.hex || !isValidAccentHex(preset.hex)) {
     return false;
   }
 
   return applyAccent(
-    preset.hex,
-    options
+    preset.hex
   );
 }
-
 
 // ============================================================
 // Ambient
@@ -1871,6 +2354,12 @@ export function applyAmbientLevel(
 
 // ============================================================
 // Accent initialization
+//
+// userAccentColor comes from the authenticated user's /api/me
+// response.
+//
+// No localStorage fallback exists.
+// If the server has no valid accent, Neutral is used.
 // ============================================================
 
 export function initAccent(
@@ -1879,32 +2368,23 @@ export function initAccent(
   currentLevel =
     getCurrentAmbientLevel();
 
-  let hex = null;
+  const hex =
+    isValidAccentHex(
+      userAccentColor
+    )
+      ? userAccentColor.toUpperCase()
+      : DEFAULT_ACCENT_HEX;
 
-  if (
-    typeof userAccentColor === 'string' &&
-    /^#[0-9a-fA-F]{6}$/.test(userAccentColor)
-  ) {
-    hex =
-      userAccentColor.toUpperCase();
-  }
-
-  if (!hex) {
-    hex =
-      getCurrentAccentHex();
-  }
-
-  applyAccent(
-    hex,
-    { persist: false }
-  );
+  applyAccent(hex);
 
   return hex;
 }
 
 
 export function getCurrentAmbientLevelValue() {
-  return AMBIENT_LEVELS[currentLevel];
+  return AMBIENT_LEVELS[
+    currentLevel
+  ];
 }
 
 
@@ -1920,7 +2400,8 @@ export function getCurrentBackgroundTheme() {
 
   const preset =
     BACKGROUND_PRESETS.find(
-      preset => preset.id === saved
+      preset =>
+        preset.id === saved
     );
 
   return preset?.id ||
@@ -1934,7 +2415,8 @@ export function applyBackgroundTheme(
 ) {
   const preset =
     BACKGROUND_PRESETS.find(
-      preset => preset.id === id
+      preset =>
+        preset.id === id
     );
 
   if (!preset) {
@@ -2043,7 +2525,9 @@ export function initTheme() {
 
   applyTheme(
     theme,
-    { persist: false }
+    {
+      persist: false
+    }
   );
 
   return theme;
@@ -2076,7 +2560,9 @@ export function applyUseAccentForBubbles(
   if (persist) {
     safeSetStorage(
       BUBBLE_ACCENT_STORAGE_KEY,
-      value ? 'on' : 'off'
+      value
+        ? 'on'
+        : 'off'
     );
   }
 
@@ -2086,14 +2572,6 @@ export function applyUseAccentForBubbles(
 
 // ============================================================
 // Message bubble style
-// ------------------------------------------------------------
-// Same contract as the other appearance settings in this file:
-// the preference lives in localStorage, is applied to <html> as
-// data-bubble-style (css/features/messages.css keys every
-// .chat-bubble variant off it), and is (re)applied at startup by
-// initMessageBubbleStyle() from app.js bootstrap(). The Settings
-// screen only *changes* it (applyMessageBubbleStyle) and reflects
-// it in its buttons — it is never what makes it take effect.
 // ============================================================
 
 export const BUBBLE_STYLES = [
@@ -2103,7 +2581,9 @@ export const BUBBLE_STYLES = [
   'clean'
 ];
 
-export const DEFAULT_BUBBLE_STYLE = 'filled';
+export const DEFAULT_BUBBLE_STYLE =
+  'filled';
+
 
 export function getMessageBubbleStyle() {
   const saved =
@@ -2146,7 +2626,9 @@ export function initMessageBubbleStyle() {
 
   applyMessageBubbleStyle(
     style,
-    { persist: false }
+    {
+      persist: false
+    }
   );
 
   return style;
@@ -2155,17 +2637,11 @@ export function initMessageBubbleStyle() {
 
 // ============================================================
 // Animations (global appearance toggle)
-// ------------------------------------------------------------
-// Turns the "new" decorative animations described in
-// core/motion.css on/off app-wide via a single attribute,
-// html[data-animations="on"], which raises the --motion-* CSS
-// variables those animations are all written against from 0ms to
-// real durations. No default preference exists yet elsewhere in
-// the app, so — per spec — this defaults to OFF rather than
-// inheriting on/off from any other setting.
 // ============================================================
 
-const ANIMATIONS_ATTR = 'data-animations';
+const ANIMATIONS_ATTR =
+  'data-animations';
+
 
 export function getAnimationsEnabled() {
   const saved =
@@ -2198,7 +2674,9 @@ export function applyAnimationsEnabled(
   if (persist) {
     safeSetStorage(
       ANIMATIONS_STORAGE_KEY,
-      value ? 'on' : 'off'
+      value
+        ? 'on'
+        : 'off'
     );
   }
 
@@ -2212,7 +2690,9 @@ export function initAnimations() {
 
   applyAnimationsEnabled(
     enabled,
-    { persist: false }
+    {
+      persist: false
+    }
   );
 
   return enabled;
@@ -2227,16 +2707,11 @@ export function initAnimations() {
 // property on <html>. css/core/reset.css points html/body at it
 // and everything else inherits, so this module only has to
 // (1) read + validate the stored id, (2) persist it and
-// (3) update that one property. Nothing here touches individual
-// elements, and nothing needs to run again for content rendered
-// later.
+// (3) update that one property.
 //
-// The default (DEFAULT_FONT_ID) is the font Wire has always
-// shipped with. Keep its stack in sync with the fallback
-// declared for --wire-font-family in css/core/tokens.css, which
-// is what the page uses until this module has run.
 
-export const DEFAULT_FONT_ID = 'inter';
+export const DEFAULT_FONT_ID =
+  'inter';
 
 export const FONT_OPTIONS = {
   system:
@@ -2288,7 +2763,8 @@ export function applyFontFamily(
     FONT_OPTIONS[value]
   );
 
-  root.dataset.font = value;
+  root.dataset.font =
+    value;
 
   if (persist) {
     safeSetStorage(
@@ -2307,7 +2783,9 @@ export function initFontFamily() {
 
   applyFontFamily(
     font,
-    { persist: false }
+    {
+      persist: false
+    }
   );
 
   return font;

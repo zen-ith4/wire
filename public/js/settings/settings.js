@@ -5,6 +5,11 @@ import {
 } from '../core/utils.js';
 
 import {
+  getCurrentUser,
+  setCurrentUser
+} from '../core/auth.js';
+
+import {
   claimRender,
   isUserTypingIn
 } from '../core/view-session.js';
@@ -36,6 +41,10 @@ import {
 import {
   bindNotificationSettings
 } from './settings-notifications.js';
+
+import {
+  initAccent
+} from './theme.js';
 
 
 // ============================================================
@@ -93,6 +102,26 @@ async function fetchSettingsData() {
       security
     ])
   };
+}
+
+
+// ============================================================
+// Account-scoped appearance
+//
+// Accent Color is different from the rest of Appearance.
+//
+// Other appearance settings are device/local settings.
+// Accent Color belongs to the authenticated account and therefore
+// must always come from /api/me.
+//
+// This function deliberately does NOT write anything to storage.
+// It only applies the server value to the current runtime theme.
+// ============================================================
+
+function applyAccountAccent(me) {
+  initAccent(
+    me?.accent_color || null
+  );
 }
 
 
@@ -210,6 +239,18 @@ export async function renderSettings(opts) {
       me,
       security
     } = data;
+
+    /*
+     * Accent Color is account-scoped.
+     *
+     * The server value returned by /api/me is the source of truth.
+     * Unlike the other appearance settings, Accent Color must not
+     * be restored from localStorage.
+     *
+     * This also fixes the case where the theme was still using an
+     * old local accent until the Settings screen was opened.
+     */
+    applyAccountAccent(me);
 
     /*
      * Electron only: the current hardware-acceleration setting is

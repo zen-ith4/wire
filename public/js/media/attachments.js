@@ -21,6 +21,10 @@ import {
   isVoiceMessage,
   renderVoiceMessage
 } from './voice-message.js';
+import {
+  sanitizeFilename,
+  resolveNativeDestination
+} from '../files/downloadDestination.js';
 
 // Track pending loads: key = `${prefix}-${id}`, value = { promise, controller }
 const pendingLoads = new Map();
@@ -881,7 +885,7 @@ export function imageDownloadButtonHtml(
       )}"
       onclick="window.downloadAttachment(${msg.id}, '${escapeAttr(
         msg.attachment_name
-      )}', '${scope}')"
+      )}', '${scope}', '${escapeAttr(msg.attachment_mime || '')}')"
     >${ICONS.download}</button>`;
 }
 
@@ -990,7 +994,7 @@ export function renderAttachment(
     class="chat-attachment"
     onclick="window.downloadAttachment(${msg.id}, '${escapeAttr(
       msg.attachment_name
-    )}', '${scope}')"
+    )}', '${scope}', '${escapeAttr(msg.attachment_mime || '')}')"
   >
     ${ICONS.file}
 
@@ -1347,34 +1351,6 @@ function isNativeCapacitor() {
   }
 }
 
-function sanitizeFilename(
-  name
-) {
-  const original =
-    typeof name === 'string'
-      ? name.trim()
-      : '';
-
-  const cleaned =
-    original
-      .replace(
-        /[\/\\?%*:|"<>]/g,
-        '_'
-      )
-      .replace(
-        /[\u0000-\u001F\u007F]/g,
-        '_'
-      )
-      .replace(
-        /\s+/g,
-        ' '
-      )
-      .trim();
-
-  return cleaned ||
-    'download';
-}
-
 function handleNativeDownloadAuthError(
   error
 ) {
@@ -1418,7 +1394,8 @@ async function downloadAttachmentNative(
   id,
   name,
   scope,
-  downloadId
+  downloadId,
+  mimeType
 ) {
   const token =
     getToken();
@@ -1444,8 +1421,35 @@ async function downloadAttachmentNative(
       name
     );
 
+  // Wire/<Images|Videos|Audio|Files>/<name>, created on demand — see
+  // files/downloadDestination.js. This is the same resolver the
+  // Files-tab/shared-link downloads use (files/download.js), so every
+  // native download path shares one categorization/storage
+  // implementation.
+  let destination;
+
+  try {
+    destination =
+      await resolveNativeDestination(
+        mimeType,
+        safeName
+      );
+  } catch (error) {
+    console.error(
+      '[Download] Could not prepare Wire folder:',
+      error
+    );
+
+    throw new Error(
+      'Could not create the Wire download folder'
+    );
+  }
+
   const destinationUri =
-    `file:///storage/emulated/0/Download/${safeName}`;
+    destination.uri;
+
+  const finalName =
+    destination.filename;
 
   console.log(
     '[Download] Native download:',
@@ -1453,7 +1457,9 @@ async function downloadAttachmentNative(
       id,
       scope,
       name:
-        safeName,
+        finalName,
+      category:
+        destination.category,
       url:
         resolvedUrl,
       destination:
@@ -1524,7 +1530,7 @@ async function downloadAttachmentNative(
         destinationUri,
 
       filename:
-        safeName
+        finalName
     };
 
   } catch (error) {
@@ -1929,7 +1935,8 @@ async function downloadAttachmentWeb(
 export async function downloadAttachment(
   id,
   name,
-  scope
+  scope,
+  mimeType
 ) {
   const filename =
     sanitizeFilename(
@@ -1954,6 +1961,7 @@ export async function downloadAttachment(
         name:
           filename,
         scope,
+        mimeType,
         native:
           isNativeCapacitor(),
         downloadId
@@ -1963,19 +1971,23 @@ export async function downloadAttachment(
     if (
       isNativeCapacitor()
     ) {
-      await downloadAttachmentNative(
-        id,
-        filename,
-        scope,
-        downloadId
-      );
+      const result =
+        await downloadAttachmentNative(
+          id,
+          filename,
+          scope,
+          downloadId,
+          mimeType
+        );
 
       finishDownloadProgress(
         downloadId
       );
 
       showToast(
-        `Downloaded: ${filename}`,
+        // May differ from `filename` if a same-named file already
+        // existed in that Wire category folder.
+        `Downloaded: ${result?.filename || filename}`,
         'success'
       );
 

@@ -151,7 +151,9 @@ export function toggleImageViewerZoom() {
 
 export function downloadImageViewerImage() {
   if (!current) return;
-  downloadAttachment(current.msgId, current.filename, current.scope);
+  // The viewer only ever opens images, so the category is known
+  // without needing the message's real MIME type here.
+  downloadAttachment(current.msgId, current.filename, current.scope, 'image/*');
 }
 
 // Exposed for inline onclick handlers, same convention used

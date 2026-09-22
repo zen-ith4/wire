@@ -18,6 +18,10 @@ import {
   isWebNotificationSupported,
   requestWebNotificationPermission,
 } from '../notifications/web-notifications.js';
+import {
+  requestPushPermissionAndRegister,
+  deregisterPushNotifications,
+} from '../notifications/push-registration.js';
 
 function isElectronApp() {
   return Boolean(window.electronAPI && window.electronAPI.isElectron);
@@ -37,27 +41,41 @@ export function bindNotificationSettings() {
   toggle.addEventListener('click', async () => {
     const next = !getDmNotificationsEnabled();
 
-    // Only the plain browser/PWA path needs an explicit permission
-    // prompt, and only when turning notifications on. Electron and
-    // Capacitor Android handle OS-level permission through their
-    // own native APIs, not this one.
-    if (
-      next &&
-      !isNativeApp() &&
-      !isElectronApp() &&
-      isWebNotificationSupported()
-    ) {
-      const permission = await requestWebNotificationPermission();
+    if (next) {
+      if (isNativeApp()) {
+        // Covers both the "app alive" Local Notification path and
+        // the FCM device-token registration for backgrounded/killed
+        // delivery — see notification-manager.js's dispatchToCapacitor()
+        // and push-registration.js. One explicit prompt for both.
+        const permission = await requestPushPermissionAndRegister();
 
-      if (permission === 'denied') {
-        showToast(
-          'Notifications are blocked for Wire in your browser settings',
-          'error'
-        );
-        // The in-app preference still turns on below — the OS/
-        // browser-level block is the user's own separate setting
-        // and we never try to work around it.
+        if (permission === 'denied') {
+          showToast(
+            'Notifications are blocked for Wire in Android system settings',
+            'error'
+          );
+          // The in-app preference still turns on below — this app
+          // never tries to bypass an OS-level notification block.
+        }
+      } else if (!isElectronApp() && isWebNotificationSupported()) {
+        const permission = await requestWebNotificationPermission();
+
+        if (permission === 'denied') {
+          showToast(
+            'Notifications are blocked for Wire in your browser settings',
+            'error'
+          );
+        }
       }
+      // Electron needs no explicit permission step here — it uses
+      // Electron's native Notification API directly (see
+      // notification-manager.js's dispatchToElectron()).
+    } else if (isNativeApp()) {
+      // Turning DM Notifications off also stops FCM pushes from
+      // reaching this device, not just the in-app Local Notification
+      // path — deregister the token rather than leaving a live
+      // registration the setting no longer reflects.
+      await deregisterPushNotifications();
     }
 
     const applied = setDmNotificationsEnabled(next);

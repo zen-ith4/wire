@@ -1,5 +1,7 @@
 let ioInstance = null;
 
+const { sendDmPush } = require('./push.service');
+
 function setIo(io) {
   ioInstance = io;
 }
@@ -38,6 +40,17 @@ function emitNewDirectMessage(message) {
     'new-dm-message',
     message
   );
+
+  // Fire-and-forget: an FCM push (for the recipient's backgrounded/
+  // killed Android devices — see services/push.service.js) is
+  // additional delivery alongside the Socket.IO emit above, never a
+  // replacement for it, and must never delay or break it. Whether a
+  // sender should also get a push on their own other devices isn't
+  // needed here — sendDmPush only ever looks up tokens for
+  // message.recipient_id.
+  sendDmPush(message).catch((e) => {
+    console.error('[Push] sendDmPush threw:', e.message);
+  });
 }
 
 function emitChatMessageDeleted(id) {

@@ -29,6 +29,7 @@ import { formatBytes, formatDate } from '../core/utils.js';
 import { openDialog } from './dialog.js';
 import { buildAudioPlayer } from './audio-ui.js';
 import { describeType, formatDuration } from './kinds.js';
+import { pushOverlay, closeOverlay } from '../core/navigation.js';
 
 const MAX_RECOVERIES = 3;
 const SWIPE_DISTANCE = 60;
@@ -52,8 +53,18 @@ export function openViewer({ items, index = 0 }) {
       closed = true;
       loadSeq++;
       teardownItem();
+
+      // Fires for every close path (X button, backdrop, Escape,
+      // programmatic close() — including Android Back, which calls
+      // close() below), so navigation history can never go stale.
+      closeOverlay('files-viewer');
     },
   });
+
+  // Stepping between files inside the viewer (prev/next) is internal
+  // viewer state, not application navigation — this is ONE history
+  // entry regardless of how many files get viewed before it closes.
+  pushOverlay('files-viewer', close);
 
   panel.innerHTML = `
     <header class="fv-bar">

@@ -47,6 +47,12 @@ import {
   decryptIncomingMessage
 } from '../crypto/messages/message-crypto.js';
 import { maybeNotifyDM } from '../notifications/notification-manager.js';
+import {
+  pushEntry as pushNavEntry,
+  peekEntry as peekNavEntry,
+  pushOverlay,
+  closeOverlay,
+} from '../core/navigation.js';
 
 // ---------- Per-conversation message cache ----------
 const dmCache = new Map();
@@ -690,6 +696,8 @@ export async function refreshUnreadBadge() {
 let dmPickerUsers = null;
 
 window.openNewDmPicker = async function () {
+  pushOverlay('dm-new-picker', window.closeNewDmPicker);
+
   document.querySelector('.dm-layout')?.classList.add('showing-thread');
   playDmThreadEnter();
   document.querySelectorAll('.dm-conv').forEach((el) => el.classList.remove('active'));
@@ -814,6 +822,13 @@ function startDmFromPickerRow(row) {
   const id = Number(row.dataset.userId);
   const username = row.dataset.username;
   if (!Number.isInteger(id) || id <= 0) return;
+
+  // Selecting a person closes the picker (it's about to be replaced
+  // by the conversation thread) — remove its overlay entry directly
+  // rather than via window.closeNewDmPicker(), which would instead
+  // reopen whatever conversation was active before the picker opened.
+  closeOverlay('dm-new-picker');
+
   openDmConversation(id, username);
 }
 
@@ -855,11 +870,17 @@ function handleDmPickerListKeydown(e) {
 // Returns to whichever conversation was open before "New message" was
 // clicked, or to the empty placeholder if none was.
 window.closeNewDmPicker = function () {
+  closeOverlay('dm-new-picker');
+
   document.querySelector('.dm-layout')?.classList.remove('showing-thread');
   dmPickerUsers = null;
 
   if (dmActivePeer) {
-    openDmConversation(dmActivePeer.id, dmActivePeer.username);
+    // Re-showing the conversation the picker was opened from, not a
+    // new navigation state — it's already represented in history.
+    openDmConversation(dmActivePeer.id, dmActivePeer.username, {
+      fromNav: true,
+    });
     return;
   }
 
@@ -1187,7 +1208,14 @@ function bindDmMobileSwipeBack(root) {
 }
 
 // ---------- Open conversation ----------
-window.openDmConversation = async function (peerId, username) {
+// `opts.fromNav` is set by navigation.js when it calls this back as a
+// DM history entry's restore() — i.e. Back is switching to a
+// conversation that's already represented in the navigation stack, so
+// this must not push another entry for it (that would duplicate the
+// entry Back is in the middle of revealing).
+window.openDmConversation = async function (peerId, username, opts = {}) {
+  const { fromNav = false } = opts;
+
   peerId = Number(peerId);
   if (!Number.isInteger(peerId) || peerId <= 0) {
     showToast('Invalid DM recipient', 'error');
@@ -1208,6 +1236,34 @@ window.openDmConversation = async function (peerId, username) {
 
   dmActivePeer = { id: peerId, username };
   dmEntry = getOrCreateDmCacheEntry(peerId, username);
+
+  // Record this conversation in navigation history so Android Back
+  // steps through DM Alice -> DM Bob -> ... one conversation at a
+  // time, same as any other navigation context. Skipped when this
+  // call is itself a restore() coming from navigation.js (fromNav),
+  // and when the conversation now on top of the stack is already
+  // this same peer (reselecting the active conversation, e.g. from
+  // the "New message" picker, isn't a new navigation state).
+  if (!fromNav) {
+    const topEntry = peekNavEntry();
+    const alreadyTop =
+      topEntry &&
+      topEntry.type === 'dm' &&
+      Number(topEntry.params?.id) === peerId;
+
+    if (!alreadyTop) {
+      pushNavEntry({
+        type: 'dm',
+        key: 'messages',
+        params: { id: peerId, username },
+        restore: (params) =>
+          window.openDmConversation(params.id, params.username, {
+            fromNav: true,
+          }),
+        deactivate: () => window.closeDmThreadMobile(),
+      });
+    }
+  }
 
   document.querySelector('.dm-layout')?.classList.add('showing-thread');
   cleanupImageUrls(document.getElementById('dm-messages'), 'dm');

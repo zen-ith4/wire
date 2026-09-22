@@ -55,5 +55,28 @@ if (window.location.protocol === 'file:') {
     // change to that existing flow.
     showConnectScreen: () =>
       ipcRenderer.invoke('server:show-connect-screen'),
+
+    // DM notifications — see main.js's 'dm-notification:show' handler
+    // and notifications/notification-manager.js's dispatchToElectron().
+    // Fire-and-forget: the main process shows a real Notification and
+    // reports clicks back over the single 'dm-notification:clicked'
+    // channel below.
+    showDmNotification: (payload) =>
+      ipcRenderer.send('dm-notification:show', payload),
+
+    // Registers the page's click handler. ipcRenderer.on() itself is
+    // only ever called once below, at preload module scope (preload
+    // re-runs once per page load, same as the rest of this file) — so
+    // calling this again just swaps which callback that one listener
+    // forwards to, and never accumulates listeners on a re-render.
+    onDmNotificationClicked: (handler) => {
+      dmNotificationClickHandler = typeof handler === 'function' ? handler : null;
+    },
+  });
+
+  let dmNotificationClickHandler = null;
+
+  ipcRenderer.on('dm-notification:clicked', (event, payload) => {
+    if (dmNotificationClickHandler) dmNotificationClickHandler(payload);
   });
 }

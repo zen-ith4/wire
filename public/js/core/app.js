@@ -51,6 +51,14 @@ import '../ui/profile-card.js';
 import '../media/image-viewer.js';
 import { registerServiceWorker } from './pwa.js';
 
+import {
+  initNotificationClickRouting,
+  markAppReadyForNotificationNavigation
+} from '../notifications/notification-manager.js';
+
+import { initPushRegistration } from '../notifications/push-registration.js';
+
+
 const NAV_ITEMS = [
   {
     view: 'files',
@@ -77,6 +85,7 @@ const NAV_ITEMS = [
     icon: ICONS.settings
   }
 ];
+
 
 const ADMIN_NAV_ITEMS = [
   {
@@ -108,15 +117,20 @@ const ADMIN_NAV_ITEMS = [
   }
 ];
 
+
 function buildNav(user) {
+
   const container =
     document.getElementById(
       'nav-links'
     );
 
+
   if (!container) return;
 
+
   container.innerHTML = '';
+
 
   // The one admin permission check for navigation:
   // feeds the desktop sidebar AND the phone "more" menu.
@@ -125,20 +139,27 @@ function buildNav(user) {
       ? ADMIN_NAV_ITEMS
       : [];
 
-  const items = [
-    ...NAV_ITEMS,
-    ...adminItems
-  ];
+
+  const items =
+    [
+      ...NAV_ITEMS,
+      ...adminItems
+    ];
+
 
   items.forEach(item => {
+
     const el =
       document.createElement('div');
+
 
     el.className =
       'nav-link';
 
+
     el.dataset.view =
       item.view;
+
 
     el.innerHTML = `
       ${item.icon || ''}
@@ -146,15 +167,19 @@ function buildNav(user) {
       ${navBadgeHtml(item)}
     `;
 
+
     el.addEventListener(
       'click',
       () => {
+
         navigate(item.view);
       }
     );
 
+
     container.appendChild(el);
   });
+
 
   /*
    * Phones: bottom tab bar + admin "more" menu,
@@ -168,48 +193,63 @@ function buildNav(user) {
   });
 }
 
+
 function fillProfile(user) {
+
   const nameEl =
     document.getElementById(
       'profile-username'
     );
+
 
   const initialsEl =
     document.getElementById(
       'profile-initials'
     );
 
+
   const sectionEl =
     document.getElementById(
       'sidebar-profile-section'
     );
 
+
   if (nameEl) {
+
     nameEl.textContent =
       user.username;
   }
 
+
   if (initialsEl) {
+
     const initialsSpan =
       initialsEl.querySelector(
         '.avatar-initials'
       );
+
 
     const initialsText =
       (user.username || '?')
         .charAt(0)
         .toUpperCase();
 
+
     if (initialsSpan) {
+
       initialsSpan.textContent =
         initialsText;
+
     } else {
+
       initialsEl.textContent =
         initialsText;
     }
 
+
     initialsEl.dataset.avatarUser =
       user.id;
+
 
     applyAvatar(
       'profile-initials',
@@ -217,38 +257,51 @@ function fillProfile(user) {
     );
   }
 
+
   if (sectionEl) {
+
     sectionEl.title =
       `View ${user.username}'s profile`;
 
+
     sectionEl.onclick = () => {
+
       window.openProfileCard?.(
         user.id
       );
+
     };
   }
 }
 
+
 function showApp(user) {
+
   const loginWrap =
     document.getElementById(
       'login-wrap'
     );
+
 
   const app =
     document.getElementById(
       'app'
     );
 
+
   if (loginWrap) {
+
     loginWrap.style.display =
       'none';
   }
 
+
   if (app) {
+
     app.style.display =
       'flex';
   }
+
 
   buildNav(user);
 
@@ -257,12 +310,14 @@ function showApp(user) {
   refreshUnreadBadge();
 }
 
+
 /* =========================================================
  * Global helpers
  * ========================================================= */
 
 window.logout =
   logout;
+
 
 /* =========================================================
  * Application startup
@@ -272,6 +327,7 @@ async function startApplication(
   user,
   token
 ) {
+
   /*
    * Accent must already have been initialized from
    * user.accent_color before this function is called.
@@ -287,16 +343,28 @@ async function startApplication(
 
   initRouter();
 
+  /*
+   * Routing is only safe once the app shell above is mounted.
+   *
+   * A notification tapped from a cold start is held by
+   * notification-manager.js until this exact point.
+   */
+  markAppReadyForNotificationNavigation();
+
+  initPushRegistration();
+
   startAutoEnhance();
 
   initDragDrop();
 }
+
 
 /* =========================================================
  * Bootstrap
  * ========================================================= */
 
 async function bootstrap() {
+
   /*
    * Apply only local/device appearance settings
    * immediately.
@@ -316,12 +384,14 @@ async function bootstrap() {
 
   initMessageBubbleStyle();
 
+
   /*
    * Restore sidebar width and initialize
    * the resize handle.
    */
 
   initSidebarResize();
+
 
   /*
    * Phone layout: keyboard awareness + the admin
@@ -330,12 +400,14 @@ async function bootstrap() {
 
   initMobileShell();
 
+
   /*
    * Check current authentication state.
    */
 
   const token =
     getToken();
+
 
   /*
    * No account session.
@@ -346,13 +418,16 @@ async function bootstrap() {
    */
 
   if (!token) {
+
     renderLogin(
       async () => {
+
         const user =
           getCurrentUser();
 
         const currentToken =
           getToken();
+
 
         if (
           !user ||
@@ -362,6 +437,7 @@ async function bootstrap() {
             'Authentication state is unavailable'
           );
         }
+
 
         /*
          * The authenticated user's accent is now
@@ -376,6 +452,7 @@ async function bootstrap() {
           user.accent_color || null
         );
 
+
         await startApplication(
           user,
           currentToken
@@ -386,7 +463,9 @@ async function bootstrap() {
     return;
   }
 
+
   try {
+
     /* ------------------------------------------------------
      * Get authenticated user
      * ------------------------------------------------------ */
@@ -394,11 +473,13 @@ async function bootstrap() {
     const me =
       await api('/api/me');
 
+
     /* ------------------------------------------------------
      * Restore current user state
      * ------------------------------------------------------ */
 
     setCurrentUser(me);
+
 
     /*
      * Database accent is the account-level source of truth.
@@ -412,6 +493,7 @@ async function bootstrap() {
       me.accent_color || null
     );
 
+
     /* ------------------------------------------------------
      * Identity state
      *
@@ -419,6 +501,7 @@ async function bootstrap() {
      * ------------------------------------------------------ */
 
     if (!isIdentityUnlocked()) {
+
       /*
        * We already have a valid token AND /api/me has
        * confirmed the account. We only need to unlock
@@ -433,7 +516,9 @@ async function bootstrap() {
           token
         );
 
+
       if (autoUnlocked) {
+
         /*
          * Accent was already initialized from `me`
          * before attempting the identity unlock.
@@ -449,6 +534,7 @@ async function bootstrap() {
         return;
       }
 
+
       /*
        * No cached unlock material.
        * Fall back to the password-only unlock step.
@@ -457,6 +543,7 @@ async function bootstrap() {
       renderUnlock(
         me,
         async () => {
+
           /*
            * Unlock has completed.
            * The user/token were already valid.
@@ -475,6 +562,7 @@ async function bootstrap() {
       return;
     }
 
+
     /* ------------------------------------------------------
      * Identity is already unlocked.
      * ------------------------------------------------------ */
@@ -485,6 +573,7 @@ async function bootstrap() {
     );
 
   } catch (err) {
+
     /*
      * api() handles 401 itself.
      */
@@ -492,22 +581,27 @@ async function bootstrap() {
     if (
       err.message !== 'Session expired'
     ) {
+
       console.error(
         err
       );
+
 
       showToast(
         'Failed to start application',
         'error'
       );
 
+
       renderLogin(
         async () => {
+
           const user =
             getCurrentUser();
 
           const currentToken =
             getToken();
+
 
           if (
             !user ||
@@ -517,6 +611,7 @@ async function bootstrap() {
               'Authentication state is unavailable'
             );
           }
+
 
           /*
            * Login has restored the authenticated user.
@@ -528,6 +623,7 @@ async function bootstrap() {
             user.accent_color || null
           );
 
+
           await startApplication(
             user,
             currentToken
@@ -538,6 +634,7 @@ async function bootstrap() {
   }
 }
 
+
 /*
  * Browser/PWA only (no-op in the native app):
  * keep the app shell available locally.
@@ -545,16 +642,32 @@ async function bootstrap() {
 
 registerServiceWorker();
 
+
+/*
+ * Registered exactly once per page load, regardless of
+ * login state.
+ *
+ * Capacitor's plugin bridge and window.electronAPI buffer/
+ * replay events fired before a listener existed, so this
+ * must be initialized immediately rather than after login.
+ */
+
+initNotificationClickRouting();
+
+
 bootstrap().catch(err => {
+
   console.error(
     err
   );
+
 
   showToast(
     'Failed to start application',
     'error'
   );
 });
+
 
 /* =========================================================
  * Global error handling
@@ -563,10 +676,12 @@ bootstrap().catch(err => {
 window.addEventListener(
   'unhandledrejection',
   event => {
+
     console.error(
       'Unhandled promise rejection:',
       event.reason
     );
+
 
     showToast(
       'An unexpected error occurred',
@@ -575,13 +690,16 @@ window.addEventListener(
   }
 );
 
+
 window.addEventListener(
   'error',
   event => {
+
     console.error(
       'Unhandled error:',
       event.error || event.message
     );
+
 
     showToast(
       'An unexpected error occurred',

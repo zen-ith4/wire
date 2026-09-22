@@ -6,6 +6,7 @@ import {
   escapeHtml,
   escapeAttr
 } from '../core/utils.js';
+import { pushOverlay, closeOverlay } from '../core/navigation.js';
 
 // State to manage concurrency
 let abortController = null;
@@ -185,6 +186,12 @@ export async function openPreview(type, folderId, subpath, file) {
   modal.classList.add('active');
   content.innerHTML = loadingState();
 
+  // Not currently reachable from any call site in the app (the Files
+  // tab and share-link preview both use files/viewer.js's
+  // openViewer() instead), but wired defensively so Android Back
+  // behaves correctly if this modal is ever hooked up again.
+  pushOverlay('preview', closePreview);
+
   try {
     const url =
       `/api/files/preview/${folderId}` +
@@ -331,6 +338,8 @@ export function closePreview() {
 
   content.innerHTML = '';
   modal.classList.remove('active');
+
+  closeOverlay('preview');
 }
 
 /**

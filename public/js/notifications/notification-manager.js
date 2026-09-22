@@ -20,6 +20,7 @@
 
 import { getCurrentUser } from '../core/auth.js';
 import { isNativeApp } from '../core/server.js';
+import { navigate } from '../core/router.js';
 import { isVoiceMessage } from '../media/voice-message.js';
 import {
   isWebNotificationSupported,
@@ -27,10 +28,6 @@ import {
 } from './web-notifications.js';
 
 const SETTING_STORAGE_KEY = 'wire-dm-notifications';
-
-function notifLog(...args) {
-  console.log('[Wire][Notifications]', ...args);
-}
 
 function notifWarn(...args) {
   console.warn('[Wire][Notifications]', ...args);
@@ -227,14 +224,180 @@ function dispatchToElectron(payload) {
   }
 }
 
-function dispatchToCapacitor(payload) {
-  // No native Android notification plugin is wired up yet — see
-  // notifications/PLATFORM-NOTES.md for exactly what's needed
-  // (channel, POST_NOTIFICATIONS permission, click → deep link).
-  // Deliberately not falling back to the Web Notification API here:
-  // it would either silently no-op or, worse, look like it worked.
-  notifLog(
-    'Native Android notification skipped (not implemented yet):',
-    payload
+// ------------------------------------------------------------
+// Capacitor Android — "app alive" path only.
+//
+// This project has no JS bundler (index.html loads core/app.js
+// directly as a native <script type="module">, and Capacitor's
+// webDir is the same plain `public` folder — see core/server.js's
+// isCapacitor(), which already reads window.Capacitor the same way
+// rather than importing @capacitor/core). So Capacitor plugins are
+// consumed the same way core/server.js already detects the platform:
+// via the window.Capacitor.Plugins global the native runtime injects,
+// never via `import ... from '@capacitor/...'`.
+//
+// The fully-backgrounded/killed case is handled entirely differently
+// — by Android auto-displaying the FCM push's own "notification"
+// block, with no app code involved at all. See push-registration.js
+// and PLATFORM-NOTES.md.
+// ------------------------------------------------------------
+
+function getCapacitorPlugin(name) {
+  return (
+    window.Capacitor &&
+    window.Capacitor.Plugins &&
+    window.Capacitor.Plugins[name]
   );
 }
+
+// Local Notification ids must fit a signed 32-bit int. This is also
+// used server-side (conceptually — see PLATFORM-NOTES.md) to pick the
+// same Android notification tag for the FCM-displayed version of the
+// same message, so if both a Local Notification (this path) and an
+// FCM auto-notification ever end up posted for the same message,
+// Android's own NotificationManager replaces one with the other
+// instead of showing two.
+export function androidNotificationIdForMessage(messageId) {
+  return Math.abs(Number(messageId) % 2147483647);
+}
+
+async function dispatchToCapacitor(payload) {
+  // The moment Android actually backgrounds the app,
+  // document.visibilityState flips to 'hidden' almost immediately —
+  // well before the OS ever gets around to suspending or killing the
+  // WebView's JS. From that point on this path deliberately does
+  // nothing, and the FCM push (see push-registration.js /
+  // PLATFORM-NOTES.md) is the only thing that can display a
+  // notification. That split is what keeps the two delivery
+  // mechanisms from racing to show the same message twice: while
+  // genuinely foregrounded, Android never auto-displays an FCM
+  // "notification" payload at all (that's standard FCM/Android
+  // behavior, not something this app controls), so only this path can
+  // fire; the instant the app is backgrounded, only FCM can.
+  if (
+    typeof document !== 'undefined' &&
+    document.visibilityState !== 'visible'
+  ) {
+    return;
+  }
+
+  const LocalNotifications = getCapacitorPlugin('LocalNotifications');
+
+  if (!LocalNotifications) {
+    notifWarn(
+      '@capacitor/local-notifications is not installed/synced yet — ' +
+        'see notifications/PLATFORM-NOTES.md.'
+    );
+    return;
+  }
+
+  try {
+    // Permission is requested once, from the Settings "DM
+    // Notifications" toggle (settings-notifications.js) — never from
+    // here, and never repeated on every message.
+    const { display } = await LocalNotifications.checkPermissions();
+    if (display !== 'granted') return;
+
+    await LocalNotifications.schedule({
+      notifications: [
+        {
+          id: androidNotificationIdForMessage(payload.messageId),
+          title: payload.senderName,
+          body: payload.preview,
+          channelId: 'wire-dm',
+          extra: {
+            conversationId: payload.conversationId,
+            senderName: payload.senderName,
+          },
+        },
+      ],
+    });
+  } catch (e) {
+    notifWarn('Local notification failed:', e);
+  }
+}
+
+// ------------------------------------------------------------
+// Notification click routing (Electron + Capacitor).
+//
+// navigate('messages', { id, username }) — see core/router.js and
+// ui/profile-card.js for the same call shape — only works once the
+// app shell is actually mounted (a logged-in session with initRouter()
+// already called, from core/app.js's startApplication()). A
+// notification tapped from a cold start reaches this listener before
+// that's true, so the target is held here and delivered once
+// markAppReadyForNotificationNavigation() is called.
+// ------------------------------------------------------------
+
+let appReadyForNavigation = false;
+let pendingNotificationTarget = null;
+
+function routeNotificationClick(target) {
+  if (!target || target.conversationId == null) return;
+
+  const resolved = {
+    id: Number(target.conversationId),
+    username: target.senderName || undefined,
+  };
+
+  if (!Number.isInteger(resolved.id)) return;
+
+  if (appReadyForNavigation) {
+    navigate('messages', resolved);
+  } else {
+    pendingNotificationTarget = resolved;
+  }
+}
+
+export function markAppReadyForNotificationNavigation() {
+  appReadyForNavigation = true;
+
+  if (pendingNotificationTarget) {
+    const target = pendingNotificationTarget;
+    pendingNotificationTarget = null;
+    navigate('messages', target);
+  }
+}
+
+// Registered exactly once, at module load (see core/app.js, which
+// calls this once at true top-level script scope — never inside
+// startApplication/login) — window.electronAPI.onDmNotificationClicked
+// and Capacitor's addListener() both already guard against
+// accumulating duplicate handlers on their own side (see preload.js
+// and, for Capacitor, its documented listener-buffering behavior), so
+// this only ever needs to run once per page load.
+export function initNotificationClickRouting() {
+  if (
+    window.electronAPI &&
+    typeof window.electronAPI.onDmNotificationClicked === 'function'
+  ) {
+    window.electronAPI.onDmNotificationClicked((data) =>
+      routeNotificationClick(data)
+    );
+  }
+
+  const LocalNotifications = getCapacitorPlugin('LocalNotifications');
+  if (LocalNotifications) {
+    LocalNotifications.addListener(
+      'localNotificationActionPerformed',
+      (action) => routeNotificationClick(action?.notification?.extra)
+    );
+  }
+
+  const PushNotifications = getCapacitorPlugin('PushNotifications');
+  if (PushNotifications) {
+    PushNotifications.addListener(
+      'pushNotificationActionPerformed',
+      (action) => routeNotificationClick(action?.notification?.data)
+    );
+  }
+}
+
+// A notification tapped for one account shouldn't navigate into a
+// session that's no longer active once someone logs out (and,
+// symmetrically, a stale pending target from before login shouldn't
+// survive into a *different* account signing in on the same device).
+window.addEventListener('wire:logout', () => {
+  appReadyForNavigation = false;
+  pendingNotificationTarget = null;
+});

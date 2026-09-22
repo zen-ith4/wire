@@ -22,6 +22,10 @@ const {
   emitProfileAvatarUpdate,
   emitProfileBannerUpdate,
 } = require('../services/socket.service');
+const {
+  upsertPushToken,
+  deletePushToken,
+} = require('../services/pushToken.service');
 
 
 // GET /me
@@ -804,6 +808,69 @@ function getUserIdentityPublicKey(req, res) {
     });
 }
 
+// POST /me/push-token
+function registerPushToken(req, res) {
+  const { token } = req.body || {};
+
+  if (typeof token !== 'string' || !token.trim()) {
+    return res.status(400).json({
+      error: 'Push token required'
+    });
+  }
+
+  const trimmedToken = token.trim();
+
+  // FCM registration tokens are long opaque strings (typically
+  // 140-200+ chars); these bounds just reject obvious garbage, not
+  // any specific token format.
+  if (trimmedToken.length < 32 || trimmedToken.length > 4096) {
+    return res.status(400).json({
+      error: 'Invalid push token'
+    });
+  }
+
+  // Only Android ships push in this project right now (see
+  // notifications/PLATFORM-NOTES.md) — Electron uses its own native
+  // Notification API directly, with no token/backend involvement, so
+  // there's nothing else this column could legitimately hold yet.
+  const normalizedPlatform = 'android';
+
+  upsertPushToken(
+    req.user.id,
+    trimmedToken,
+    normalizedPlatform
+  );
+
+  res.json({
+    success: true
+  });
+}
+
+
+// DELETE /me/push-token
+function deregisterPushToken(req, res) {
+  const { token } = req.body || {};
+
+  if (typeof token !== 'string' || !token.trim()) {
+    return res.status(400).json({
+      error: 'Push token required'
+    });
+  }
+
+  // Scoped to req.user.id inside the service — this can never delete
+  // another user's token, even if a stale/reused token value were
+  // passed in.
+  deletePushToken(
+    req.user.id,
+    token.trim()
+  );
+
+  res.json({
+    success: true
+  });
+}
+
+
 module.exports = {
   getMe,
   updateBio,
@@ -819,5 +886,7 @@ module.exports = {
   updatePublicKey,
   getIdentityKey,
   saveIdentityKey,
-  getUserIdentityPublicKey
+  getUserIdentityPublicKey,
+  registerPushToken,
+  deregisterPushToken
 };

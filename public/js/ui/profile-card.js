@@ -14,6 +14,7 @@ import { avatarHtml, bannerHtml } from './avatar.js';
 import { isUserOnline, onPresenceChange } from '../chat/presence.js';
 import { getCurrentUser } from '../core/auth.js';
 import { navigate } from '../core/router.js';
+import { pushOverlay, closeOverlay } from '../core/navigation.js';
 
 let openProfileId = null; // which user the open card belongs to, or null if closed
 
@@ -35,6 +36,11 @@ export async function openProfileCard(userId) {
 
   body.innerHTML = loadingState();
   modal.classList.add('active');
+
+  // Android Back should close the card and reveal whatever it was
+  // opened over (Files, a DM thread, ...) untouched — it never routes
+  // anywhere, so there's nothing else for Back to restore.
+  pushOverlay('profile-card', window.closeProfileCard);
 
   try {
     const profile = await api(`/api/me/${id}`);

@@ -13,7 +13,7 @@
  * never bundled, imported, or started here.
  */
 
-const { app, BrowserWindow, ipcMain, net, shell, Menu, safeStorage } = require('electron');
+const { app, BrowserWindow, ipcMain, net, shell, Menu, safeStorage, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -484,6 +484,61 @@ ipcMain.handle('app:relaunch', () => {
 ipcMain.handle('server:show-connect-screen', () => {
   showConnectScreen({ autoAttempt: false });
   return true;
+});
+
+// ---------------------------------------------------------------------------
+// IPC — DM notifications
+//
+// Renderer → main: 'dm-notification:show'. The renderer (the remote
+// Wire site's own notifications/notification-manager.js) has already
+// decided this DM should notify — see that file's shouldNotifyDM() —
+// this handler only ever displays what it's told and reports a click
+// back. Registered once here at module load, not per-window/per-load,
+// so a renderer reload can never register a second listener.
+//
+// Main → renderer: 'dm-notification:clicked', delivered only to the
+// window whose notification was actually clicked.
+// ---------------------------------------------------------------------------
+
+function isPlainString(value) {
+  return typeof value === 'string' && value.length > 0;
+}
+
+ipcMain.on('dm-notification:show', (event, payload) => {
+  // Only the app's one real window can trigger a notification — this
+  // channel carries no secrets, but validating the sender and the
+  // payload shape keeps a malformed or unexpected call from ever
+  // reaching Electron's native Notification API.
+  if (!mainWindow || event.sender !== mainWindow.webContents) return;
+  if (!payload || typeof payload !== 'object') return;
+  if (!Notification.isSupported()) return;
+
+  const { conversationId, senderName, preview } = payload;
+
+  if (!Number.isInteger(conversationId)) return;
+
+  const notification = new Notification({
+    title: isPlainString(senderName) ? senderName : 'New message',
+    body: isPlainString(preview) ? preview : '',
+    icon: APP_ICON_PATH,
+    silent: false,
+  });
+
+  notification.on('click', () => {
+    if (!mainWindow) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+
+    // Only enough to route the click — see notifications/web-
+    // notifications.js's navigate('messages', { id, username }) for
+    // the same shape on the web side.
+    mainWindow.webContents.send('dm-notification:clicked', {
+      conversationId,
+      senderName: isPlainString(senderName) ? senderName : undefined,
+    });
+  });
+
+  notification.show();
 });
 
 // ---------------------------------------------------------------------------

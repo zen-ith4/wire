@@ -6,5 +6,6 @@ module.exports = [
   require('./userFolders.tabels'),
   require('./wireguard.tabels'),
   require('./messageReactions.tabels'),
-  require('./shareLinks.tabels')
+  require('./shareLinks.tabels'),
+  require('./pushTokens.tabels')
 ];

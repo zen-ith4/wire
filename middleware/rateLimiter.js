@@ -568,6 +568,31 @@ const shareLinkLimiter =
   });
 
 
+// ---------------------------------------------------------------
+// Push-token registration
+//
+// Not exposed to unauthenticated requests (see routes/me.routes.js —
+// this sits behind `authenticate` like every other /me endpoint), so
+// this only needs to guard against a compromised/misbehaving client
+// hammering the endpoint, not against enumeration/abuse from anyone
+// unauthenticated.
+// ---------------------------------------------------------------
+const pushTokenLimiter =
+  createRateLimiter({
+    windowMs:
+      10 * 60 * 1000,
+
+    max:
+      20,
+
+    keyFn:
+      userOrIpKey,
+
+    message:
+      'Too many push-token requests, please try again later'
+  });
+
+
 module.exports = {
   loginRateLimiter,
   registerRateLimiter,
@@ -578,5 +603,6 @@ module.exports = {
   apiLimiter,
   chatWriteLimiter,
   uploadLimiter,
-  shareLinkLimiter
+  shareLinkLimiter,
+  pushTokenLimiter
 };

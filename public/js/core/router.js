@@ -27,6 +27,18 @@ import { renderWireguard } from '../wireguard/wireguard.js';
 
 import { App } from '../vendor/capacitor-app.js';
 
+// Dependency-free in-route navigation context (DM conversation
+// selection and overlay screens: image viewer, files viewer,
+// preview, profile card). See core/navigation.js for the full
+// picture — router.js remains the single owner of the Android Back
+// listener and of route-level history; it just asks navigation.js
+// first whether there's finer-grained context to unwind.
+import {
+  hasContext as hasNavigationContext,
+  handleBack as handleNavigationBack,
+  resetContext as resetNavigationContext,
+} from './navigation.js';
+
 const routes = {
   files: {
     title: 'My Files',
@@ -342,6 +354,22 @@ function initAndroidBackButton() {
         );
 
         /*
+         * Overlays (image viewer, files viewer, preview, profile
+         * card) and DM conversation selection live underneath route-
+         * level history, in navigation.js. Android Back must unwind
+         * those first: closing an overlay or stepping back to a
+         * previous DM should never also pop a route or exit the app
+         * in the same press.
+         */
+        if (
+          hasNavigationContext()
+        ) {
+          handleNavigationBack();
+
+          return;
+        }
+
+        /*
          * Repair an impossible empty stack.
          */
         if (
@@ -372,6 +400,9 @@ function initAndroidBackButton() {
         ) {
           console.log(
             '[router] At navigation root, exiting app'
+          );
+          console.log(
+            '[nav] ROOT -> EXIT'
           );
 
           await App.exitApp();
@@ -940,6 +971,22 @@ export function navigate(
       !!route.flush
     );
   }
+
+  // -----------------------------------------------------------------------
+  // In-route navigation context
+  // -----------------------------------------------------------------------
+
+  /*
+   * Any DM conversation selection or overlay (image viewer, files
+   * viewer, preview, profile card) belonged to the screen we're
+   * leaving. Closing overlays here (resetContext() does this) covers
+   * the rare case where a route switch happens without one having
+   * been closed first, so Android Back never inherits stale context
+   * from a screen that's no longer showing.
+   */
+  resetNavigationContext(
+    `route:${resolvedView}`
+  );
 
   // -----------------------------------------------------------------------
   // Render route

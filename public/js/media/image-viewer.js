@@ -11,6 +11,7 @@
 
 import { downloadAttachment } from './attachments.js';
 import { avatarHtml } from '../ui/avatar.js';
+import { pushOverlay, closeOverlay } from '../core/navigation.js';
 
 // Cycle through a few sensible zoom levels for the toolbar
 // button/double-tap (keeps those predictable and easy to reset);
@@ -112,6 +113,10 @@ export function openImageViewer(el) {
 
   modal.classList.add('active');
   document.body.style.overflow = 'hidden';
+
+  // Android Back should close the viewer and reveal the DM thread it
+  // was opened from, not navigate away from the conversation.
+  pushOverlay('image-viewer', closeImageViewer);
 }
 
 export function closeImageViewer() {
@@ -120,6 +125,10 @@ export function closeImageViewer() {
 
   modal.classList.remove('active');
   document.body.style.overflow = '';
+
+  // Keeps navigation history in sync no matter how the viewer was
+  // closed — the X button, the backdrop, Escape, or Android Back.
+  closeOverlay('image-viewer');
 
   // Don't revoke the blob URL here — it's owned by the attachment
   // element (attachments.js revokes it on cleanup/reload), the
@@ -151,9 +160,7 @@ export function toggleImageViewerZoom() {
 
 export function downloadImageViewerImage() {
   if (!current) return;
-  // The viewer only ever opens images, so the category is known
-  // without needing the message's real MIME type here.
-  downloadAttachment(current.msgId, current.filename, current.scope, 'image/*');
+  downloadAttachment(current.msgId, current.filename, current.scope);
 }
 
 // Exposed for inline onclick handlers, same convention used

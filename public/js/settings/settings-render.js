@@ -22,6 +22,10 @@ import {
   getBackgroundPreviewCss
 } from './theme.js';
 
+import {
+  getDmNotificationsEnabled
+} from '../notifications/notification-manager.js';
+
 
 // ============================================================
 // Background configuration
@@ -744,6 +748,59 @@ function renderAppearance({
 // Banner
 // ============================================================
 
+// ============================================================
+// Notifications
+// ============================================================
+
+function renderNotifications() {
+  const dmNotificationsEnabled = getDmNotificationsEnabled();
+
+  return `
+    <div class="settings-section">
+
+      <div class="settings-section-title">
+        Notifications
+      </div>
+
+
+      <!-- DM notifications -->
+
+      <div class="settings-row">
+
+        <div>
+          <div class="settings-row-label">
+            DM Notifications
+          </div>
+
+          <div class="settings-row-sublabel">
+            Get notified about new direct messages when
+            you're not already looking at that conversation
+          </div>
+        </div>
+
+        <button
+          type="button"
+          class="switch${
+            dmNotificationsEnabled
+              ? ' on'
+              : ''
+          }"
+          id="dm-notifications-toggle"
+          role="switch"
+          aria-checked="${dmNotificationsEnabled}"
+          aria-label="DM Notifications">
+
+          <span class="switch-thumb"></span>
+
+        </button>
+
+      </div>
+
+    </div>
+  `;
+}
+
+
 function renderBanner(me) {
   return `
     <div
@@ -1301,6 +1358,8 @@ export function renderSettingsHtml({
       ${renderBanner(me)}
 
       ${renderProfile(me)}
+
+      ${renderNotifications()}
 
       ${renderSecurity(security)}
 

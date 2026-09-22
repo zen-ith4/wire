@@ -3,100 +3,245 @@
    clicked (see js/image-viewer.js). Deliberately not the shared
    `.modal` component: that one is a centered, boxed dialog, while
    this needs to fill the viewport with the image itself as the
-   focus and controls floating in the corner. Reuses the same
-   tokens (--border, --text, --muted, --radius, --ease-fast) and the
-   flat `.icon-btn` control style already used elsewhere in the app
-   (no glass/shadow effects — kept intentionally plain/minimal).[cite: 1] */
+   focus and controls floating in the corner.
+------------------------------------------------ */
 
 .image-viewer{
   display:none;
-  position:fixed;inset:0;z-index:250;
+  position:fixed;
+  inset:0;
+  z-index:250;
+
   background:rgba(var(--scrim-rgb),.92);
+
   flex-direction:column;
+
   animation:motion-fade-in var(--motion-fast) var(--motion-ease);
 }
-.image-viewer.active{display:flex;}
 
-/* Bar sits in its own stacking context above the image stage so a
-   zoomed/panned image can never visually cover the controls.
-   align-items:flex-start keeps the Zoom/Download/Close buttons
-   pinned flush to the top.
-   justify-content:space-between pushes the sender to the left and actions to the right. */
+.image-viewer.active{
+  display:flex;
+}
+
+
+/* ---------- Top bar ---------- */
+
 .image-viewer-bar{
-  position:relative;z-index:2;
+  position:relative;
+  z-index:2;
+
   flex-shrink:0;
-  display:flex;align-items:flex-start;justify-content:space-between;gap:14px;
+
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+
+  gap:14px;
+
   padding:16px 20px;
 }
-.image-viewer-sender{display:flex;align-items:center;gap:12px;min-width:0;}
-.image-viewer-avatar-slot{display:flex;flex-shrink:0;}
-/* سایز پروفایل کوچکتر شده است (قبلا ۹۶ پیکسل بود) */
-.image-viewer-avatar-slot .chat-avatar{width:64px;height:64px;font-size:24px;}
-.image-viewer-username{
-  font-size:15px;font-weight:550;color:var(--text);
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px;
+
+.image-viewer-sender{
+  display:flex;
+  align-items:center;
+
+  gap:12px;
+
+  min-width:0;
 }
+
+.image-viewer-avatar-slot{
+  display:flex;
+  flex-shrink:0;
+}
+
+/* Profile avatar */
+.image-viewer-avatar-slot .chat-avatar{
+  width:64px;
+  height:64px;
+
+  font-size:24px;
+}
+
+.image-viewer-username{
+  font-size:15px;
+  font-weight:550;
+
+  color:var(--text);
+
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+
+  max-width:180px;
+}
+
+
+/* ---------- Viewer actions ---------- */
+
 .image-viewer-actions{
   display:flex;
   align-items:center;
+
   gap:4px;
+
   flex-shrink:0;
 }
 
+
+/*
+ * Viewer action icons are ALWAYS WHITE.
+ *
+ * They must not inherit --text because --text changes
+ * between dark and light themes.
+ */
 .image-viewer-actions .icon-btn{
-  color:var(--text, #fff);
+  color:#fff !important;
+  -webkit-text-fill-color:#fff !important;
 }
+
+
+/*
+ * SVG icons inherit the button's white color.
+ */
+.image-viewer-actions .icon-btn svg{
+  color:#fff !important;
+}
+
+
+/*
+ * Line-based SVG icons.
+ *
+ * This handles icons using:
+ *   stroke="currentColor"
+ *   stroke="..."
+ */
+.image-viewer-actions .icon-btn svg,
+.image-viewer-actions .icon-btn svg *{
+  stroke:#fff !important;
+}
+
+
+/*
+ * Fill-based SVG icons.
+ *
+ * Only replace actual fills. Explicit `fill="none"`
+ * remains transparent below.
+ */
+.image-viewer-actions .icon-btn svg [fill]:not([fill="none"]){
+  fill:#fff !important;
+}
+
+
+/*
+ * Preserve explicitly transparent SVG fills.
+ */
+.image-viewer-actions .icon-btn svg [fill="none"]{
+  fill:none !important;
+}
+
+
+/* ---------- Close button ---------- */
 
 .image-viewer-close:hover{
   background:rgba(var(--red),.16);
-  color:#D6A3A3;
-}
-.image-viewer-actions .icon-btn svg,
-.image-viewer-actions .icon-btn svg * {
-  stroke: currentColor !important;
+
+  color:#D6A3A3 !important;
+  -webkit-text-fill-color:#D6A3A3 !important;
 }
 
-/* Close button: flat like the rest, just turns red on hover.[cite: 1] */
-.image-viewer-close:hover{background:rgba(var(--red),.16);color:#D6A3A3;}
+.image-viewer-close:hover svg,
+.image-viewer-close:hover svg *{
+  stroke:#D6A3A3 !important;
+}
 
-/* overflow:hidden clips the image to the stage — this is what
-   actually keeps a scaled/panned image from ever rendering on top
-   of the bar above it, the z-index is just a second safety net.[cite: 1] */
+
+/* ---------- Image stage ---------- */
+
 .image-viewer-stage{
-  position:relative;z-index:1;overflow:hidden;
-  flex:1;min-height:0;
-  display:flex;align-items:center;justify-content:center;
-  padding:0 24px 24px;
-  /* Multi-touch (pinch) is handled manually in js/image-viewer.js —
-     without this, the browser's own page-zoom gesture recognizer
-     competes with ours for the same two fingers, and the resulting
-     scale/pan fights or double-applies. Scoped to just this stage
-     (not the whole page — see core/reset.css) so pinch-zoom
-     accessibility elsewhere in the app is untouched. */
-  touch-action:none;
-}
-.image-viewer-stage img{
-  max-width:100%;max-height:100%;
-  object-fit:contain;
-  border-radius:var(--radius-lg);
-  cursor:default;
-  transition:transform var(--ease-fast);
-  transform-origin:center center;
-  /* Panning is handled manually (see js/image-viewer.js) — disable
-     the browser's own image drag/ghost so it doesn't fight that.[cite: 1] */
-  -webkit-user-drag:none;user-drag:none;
-  user-select:none;-webkit-user-select:none;
-  touch-action:none;
-}
-.image-viewer-stage img.zoomed{cursor:grab;}
-.image-viewer-stage img.zoomed.panning{cursor:grabbing;transition:none;}
+  position:relative;
+  z-index:1;
 
-/* Mobile: controls stay reachable, image keeps its own margin so
-   zoomed content never sits flush under the bar. */
+  overflow:hidden;
+
+  flex:1;
+  min-height:0;
+
+  display:flex;
+  align-items:center;
+  justify-content:center;
+
+  padding:0 24px 24px;
+
+  /*
+   * Multi-touch pinch zoom is handled manually in
+   * js/image-viewer.js.
+   */
+  touch-action:none;
+}
+
+
+.image-viewer-stage img{
+  max-width:100%;
+  max-height:100%;
+
+  object-fit:contain;
+
+  border-radius:var(--radius-lg);
+
+  cursor:default;
+
+  transition:transform var(--ease-fast);
+
+  transform-origin:center center;
+
+  /*
+   * Panning is handled manually.
+   */
+  -webkit-user-drag:none;
+  user-drag:none;
+
+  user-select:none;
+  -webkit-user-select:none;
+
+  touch-action:none;
+}
+
+
+.image-viewer-stage img.zoomed{
+  cursor:grab;
+}
+
+.image-viewer-stage img.zoomed.panning{
+  cursor:grabbing;
+
+  transition:none;
+}
+
+
+/* ---------- Mobile ---------- */
+
 @media (max-width:480px){
-  .image-viewer-bar{padding:12px 14px;gap:8px;}
-  /* سایز آواتار موبایل هم کمی کوچکتر شده است */
-  .image-viewer-avatar-slot .chat-avatar{width:44px;height:44px;font-size:16px;}
-  .image-viewer-username{max-width:100px;font-size:13px;}
-  .image-viewer-stage{padding:0 10px 14px;}
+
+  .image-viewer-bar{
+    padding:12px 14px;
+    gap:8px;
+  }
+
+  .image-viewer-avatar-slot .chat-avatar{
+    width:44px;
+    height:44px;
+
+    font-size:16px;
+  }
+
+  .image-viewer-username{
+    max-width:100px;
+
+    font-size:13px;
+  }
+
+  .image-viewer-stage{
+    padding:0 10px 14px;
+  }
 }

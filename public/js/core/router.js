@@ -7,8 +7,14 @@ import { perfNavStart } from './perf.js';
 // revalidates in the background; the first visit loads normally.
 import { showFiles } from '../files/files.js';
 import { renderSharedFile } from '../files/share-view.js';
-import { showChat, destroyChatComposer } from '../chat/chat.js';
-import { showDm, destroyDmComposer } from '../chat/dm.js';
+import {
+  showChat,
+  destroyChatComposer,
+} from '../chat/chat.js';
+import {
+  showDm,
+  destroyDmComposer,
+} from '../chat/dm.js';
 import { showSettings } from '../settings/settings.js';
 
 import {
@@ -18,6 +24,8 @@ import {
 } from '../settings/admin.js';
 
 import { renderWireguard } from '../wireguard/wireguard.js';
+
+import { App } from '../vendor/capacitor-app.js';
 
 const routes = {
   files: {
@@ -43,14 +51,7 @@ const routes = {
     render: showSettings,
   },
 
-  // Opened by a file share link (#share/<token>, see files/links.js). Not
-  // a tab: navigate() maps the whole "share/<token>" hash onto this route.
-  //
-  // "flush": the landing page is one centred card that must fit the
-  // screen, so it owns the whole content area itself. Without this the
-  // padded, scrolling .content wrapper stacked its own padding (24/28/60,
-  // 20/16/24 on phones) around the page's, which is what made it scroll
-  // on short (landscape) screens.
+  // Opened by a file share link (#share/<token>, see files/links.js).
   'share-link': {
     title: 'Shared file',
     render: renderSharedFile,
@@ -78,172 +79,945 @@ const routes = {
   },
 };
 
-// "share/<token>" -> "<token>"; null for every other view name. The token
-// only ever lives in the URL fragment, so it is never sent to the server.
 const SHARE_PREFIX = 'share/';
 
 function shareTokenFrom(view) {
-  return typeof view === 'string' && view.startsWith(SHARE_PREFIX)
+  return (
+    typeof view === 'string' &&
+    view.startsWith(SHARE_PREFIX)
+  )
     ? view.slice(SHARE_PREFIX.length)
     : null;
 }
 
-// The view navigate() last mounted (the raw name it was called with).
+// -------------------------------------------------------------------------
+// Router state
+// -------------------------------------------------------------------------
+
 let currentView = null;
+
 let hashListenerAttached = false;
 
-export function initRouter() {
-  navigate(window.location.hash.slice(1) || 'files');
+let androidBackButtonAttached = false;
 
-  // initRouter() can run again if startup is re-entered (e.g. login after
-  // a failed boot); one listener is all the URL ever needs.
-  if (hashListenerAttached) return;
-  hashListenerAttached = true;
+let routerInitialized = false;
 
-  window.addEventListener('hashchange', () => {
-    const view = window.location.hash.slice(1) || 'files';
+// -------------------------------------------------------------------------
+// Wire navigation stack
+//
+// IMPORTANT:
+//
+// Every stack entry contains both the route and its params:
+//
+//   {
+//     view: 'messages',
+//     params: {
+//       id: 'abc',
+//       username: 'Alice'
+//     }
+//   }
+//
+// This means Back can restore the exact navigation state instead of
+// merely restoring the route name.
+//
+// Android Back is completely independent from window.history.
+// -------------------------------------------------------------------------
 
-    // navigate() writes location.hash itself to keep the URL in sync, and
-    // that write fires a hashchange too. That event is just the echo of a
-    // navigation that has already been rendered — running it again would
-    // render every click twice (two sets of API calls racing each other,
-    // and params such as navigate('messages', { id }) dropped by the second
-    // pass). Only a hash that differs from what is mounted — Back/Forward,
-    // a typed URL — is a new navigation. Clicks never come through here:
-    // they call navigate() directly, so re-tapping the active tab still
-    // re-renders it.
-    if (view === currentView) return;
+let navigationStack = [];
 
-    navigate(view);
-  });
+// -------------------------------------------------------------------------
+// Helpers
+// -------------------------------------------------------------------------
+
+function isValidRoute(view) {
+  return (
+    typeof view === 'string' &&
+    (
+      routes[view] ||
+      shareTokenFrom(view) !== null
+    )
+  );
 }
 
-// Loading -> content (new, toggle-gated; see core/motion.css). Most views
-// paint a spinner and later swap the real content in with innerHTML, which
-// otherwise pops in. When — and only when — a .loading-state is what got
-// replaced, the newly added top-level nodes get the shared fade-in. Later
-// refreshes/re-renders of already-visible content are deliberately left
-// alone (replaying a fade on every refresh would read as flicker), and so is
-// the message list (.chat-messages), which keeps its own rendering.
+function resolveRoute(view) {
+  return isValidRoute(view)
+    ? view
+    : 'files';
+}
+
+// -------------------------------------------------------------------------
+// Navigation entry helpers
+// -------------------------------------------------------------------------
+
+function cloneNavigationParams(params) {
+  if (
+    params === undefined ||
+    params === null
+  ) {
+    return params;
+  }
+
+  /*
+   * Params should normally be plain serializable objects.
+   *
+   * Use structuredClone when available so Back gets its own snapshot
+   * instead of sharing a mutable object with the current route.
+   */
+  try {
+    if (
+      typeof structuredClone === 'function'
+    ) {
+      return structuredClone(params);
+    }
+  } catch (err) {
+    console.warn(
+      '[router] structuredClone failed:',
+      err
+    );
+  }
+
+  /*
+   * Fallback for normal JSON-style route params.
+   */
+  try {
+    return JSON.parse(
+      JSON.stringify(params)
+    );
+  } catch (err) {
+    console.warn(
+      '[router] Could not clone navigation params:',
+      err
+    );
+
+    return params;
+  }
+}
+
+function createNavigationEntry(
+  view,
+  params
+) {
+  return {
+    view,
+    params: cloneNavigationParams(
+      params
+    ),
+  };
+}
+
+function serializeNavigationParams(
+  params
+) {
+  if (
+    params === undefined ||
+    params === null
+  ) {
+    return '';
+  }
+
+  try {
+    return JSON.stringify(params);
+  } catch (err) {
+    return String(params);
+  }
+}
+
+function navigationEntriesEqual(
+  a,
+  b
+) {
+  if (!a || !b) {
+    return false;
+  }
+
+  return (
+    a.view === b.view &&
+    serializeNavigationParams(a.params) ===
+      serializeNavigationParams(b.params)
+  );
+}
+
+function getCurrentNavigationEntry() {
+  return (
+    navigationStack[
+      navigationStack.length - 1
+    ] || null
+  );
+}
+
+function getPreviousNavigationEntry() {
+  if (
+    navigationStack.length < 2
+  ) {
+    return null;
+  }
+
+  return navigationStack[
+    navigationStack.length - 2
+  ];
+}
+
+function logNavigationStack(reason) {
+  console.log(
+    '[router] navigation stack:',
+    reason,
+    navigationStack.map(
+      (entry) => ({
+        view: entry.view,
+        params: entry.params,
+      })
+    )
+  );
+}
+
+// -------------------------------------------------------------------------
+// URL synchronization
+// -------------------------------------------------------------------------
+
+function syncUrlToView(view) {
+  const targetHash = `#${view}`;
+
+  if (
+    window.location.hash === targetHash
+  ) {
+    return;
+  }
+
+  /*
+   * Keep the URL synchronized without creating a browser-history entry.
+   *
+   * Android Back uses navigationStack instead.
+   */
+  window.history.replaceState(
+    null,
+    '',
+    targetHash
+  );
+}
+
+// -------------------------------------------------------------------------
+// Android Back button
+// -------------------------------------------------------------------------
+
+function initAndroidBackButton() {
+  console.log(
+    '[router] initAndroidBackButton() called'
+  );
+
+  if (
+    !window.Capacitor?.isNativePlatform?.()
+  ) {
+    console.log(
+      '[router] NOT native Capacitor platform'
+    );
+
+    return;
+  }
+
+  console.log(
+    '[router] native Capacitor platform detected'
+  );
+
+  if (
+    androidBackButtonAttached
+  ) {
+    console.log(
+      '[router] Back listener already attached'
+    );
+
+    return;
+  }
+
+  try {
+    App.addListener(
+      'backButton',
+      async (event) => {
+        console.log(
+          '[router] BACK BUTTON RECEIVED',
+          event
+        );
+
+        logNavigationStack(
+          'before Android Back'
+        );
+
+        /*
+         * Repair an impossible empty stack.
+         */
+        if (
+          navigationStack.length === 0
+        ) {
+          const rootEntry =
+            createNavigationEntry(
+              'files',
+              undefined
+            );
+
+          navigationStack = [
+            rootEntry,
+          ];
+
+          currentView = 'files';
+
+          logNavigationStack(
+            'stack repaired'
+          );
+        }
+
+        /*
+         * At root there is nowhere inside Wire to navigate.
+         */
+        if (
+          navigationStack.length <= 1
+        ) {
+          console.log(
+            '[router] At navigation root, exiting app'
+          );
+
+          await App.exitApp();
+
+          return;
+        }
+
+        /*
+         * Remove the currently visible entry.
+         *
+         * Example:
+         *
+         * [
+         *   files,
+         *   chat,
+         *   messages(A),
+         *   messages(B)
+         * ]
+         *
+         * becomes:
+         *
+         * [
+         *   files,
+         *   chat,
+         *   messages(A)
+         * ]
+         */
+        const currentEntry =
+          navigationStack.pop();
+
+        console.log(
+          '[router] Removed current entry:',
+          currentEntry
+        );
+
+        /*
+         * The new last item is the exact destination.
+         */
+        const previousEntry =
+          getCurrentNavigationEntry();
+
+        if (
+          !previousEntry
+        ) {
+          console.warn(
+            '[router] Previous navigation entry missing'
+          );
+
+          await App.exitApp();
+
+          return;
+        }
+
+        console.log(
+          '[router] Android Back ->',
+          previousEntry
+        );
+
+        logNavigationStack(
+          'after pop'
+        );
+
+        /*
+         * IMPORTANT:
+         *
+         * fromBack=true means navigate() must NOT push the destination
+         * onto the stack again.
+         *
+         * The destination is already the last item.
+         */
+        navigate(
+          previousEntry.view,
+          cloneNavigationParams(
+            previousEntry.params
+          ),
+          {
+            fromBack: true,
+          }
+        );
+      }
+    );
+
+    androidBackButtonAttached = true;
+
+    console.log(
+      '[router] BACK BUTTON LISTENER ATTACHED'
+    );
+  } catch (err) {
+    console.error(
+      '[router] BACK BUTTON INIT FAILED',
+      err
+    );
+  }
+}
+
+// -------------------------------------------------------------------------
+// Router initialization
+// -------------------------------------------------------------------------
+
+export function initRouter() {
+  /*
+   * Prevent duplicate initialization.
+   */
+  if (
+    routerInitialized
+  ) {
+    console.log(
+      '[router] initRouter() ignored: already initialized'
+    );
+
+    return;
+  }
+
+  routerInitialized = true;
+
+  /*
+   * Install native Android Back handling.
+   */
+  initAndroidBackButton();
+
+  /*
+   * Determine the initial route.
+   *
+   * Invalid or missing hashes always start at Files.
+   */
+  const rawInitialView =
+    window.location.hash.slice(1) ||
+    'files';
+
+  const initialView =
+    resolveRoute(rawInitialView);
+
+  /*
+   * The initial route is the only route in the stack.
+   */
+  navigationStack = [
+    createNavigationEntry(
+      initialView,
+      undefined
+    ),
+  ];
+
+  logNavigationStack(
+    'initialization'
+  );
+
+  /*
+   * Mount the initial route.
+   *
+   * fromBack=true prevents this initial mount from being interpreted
+   * as forward navigation.
+   */
+  navigate(
+    initialView,
+    undefined,
+    {
+      initial: true,
+      fromBack: true,
+    }
+  );
+
+  // ---------------------------------------------------------------
+  // Hash listener
+  // ---------------------------------------------------------------
+
+  if (
+    hashListenerAttached
+  ) {
+    return;
+  }
+
+  hashListenerAttached = true;
+
+  window.addEventListener(
+    'hashchange',
+    () => {
+      const rawView =
+        window.location.hash.slice(1) ||
+        'files';
+
+      const view =
+        resolveRoute(rawView);
+
+      console.log(
+        '[router] hashchange:',
+        view
+      );
+
+      /*
+       * navigate() uses replaceState(), so normally our own navigation
+       * does not produce hashchange.
+       *
+       * If some other part of the application changes location.hash
+       * directly, this becomes a real forward navigation and gets
+       * recorded by navigate().
+       */
+      if (
+        view === currentView
+      ) {
+        return;
+      }
+
+      navigate(view);
+    }
+  );
+}
+
+// -------------------------------------------------------------------------
+// Loading -> content animation
+// -------------------------------------------------------------------------
+
 let contentSwapMotionBound = false;
 
 function bindContentSwapMotion() {
-  if (contentSwapMotionBound) return;
+  if (
+    contentSwapMotionBound
+  ) {
+    return;
+  }
 
-  const root = document.getElementById('content-area');
-  if (!root || typeof MutationObserver !== 'function') return;
+  const root =
+    document.getElementById(
+      'content-area'
+    );
+
+  if (
+    !root ||
+    typeof MutationObserver !== 'function'
+  ) {
+    return;
+  }
 
   contentSwapMotionBound = true;
 
-  new MutationObserver((records) => {
-    if (!document.documentElement.hasAttribute('data-animations')) return;
-
-    for (const rec of records) {
-      const target = rec.target;
-      if (!(target instanceof Element) || target.closest('.chat-messages')) {
-        continue;
+  new MutationObserver(
+    (records) => {
+      if (
+        !document.documentElement.hasAttribute(
+          'data-animations'
+        )
+      ) {
+        return;
       }
 
-      const replacedLoading = Array.from(rec.removedNodes).some(
-        (n) =>
-          n.nodeType === 1 &&
-          (n.matches('.loading-state') || n.querySelector('.loading-state'))
-      );
-      if (!replacedLoading) continue;
+      for (
+        const rec of records
+      ) {
+        const target =
+          rec.target;
 
-      rec.addedNodes.forEach((n) => {
-        if (n.nodeType === 1 && !n.matches('.loading-state')) {
-          n.classList.add('motion-fade-in');
+        if (
+          !(target instanceof Element) ||
+          target.closest('.chat-messages')
+        ) {
+          continue;
         }
-      });
+
+        const replacedLoading =
+          Array.from(
+            rec.removedNodes
+          ).some(
+            (n) =>
+              n.nodeType === 1 &&
+              (
+                n.matches(
+                  '.loading-state'
+                ) ||
+                n.querySelector(
+                  '.loading-state'
+                )
+              )
+          );
+
+        if (
+          !replacedLoading
+        ) {
+          continue;
+        }
+
+        rec.addedNodes.forEach(
+          (n) => {
+            if (
+              n.nodeType === 1 &&
+              !n.matches(
+                '.loading-state'
+              )
+            ) {
+              n.classList.add(
+                'motion-fade-in'
+              );
+            }
+          }
+        );
+      }
     }
-  }).observe(root, { childList: true, subtree: true });
+  ).observe(
+    root,
+    {
+      childList: true,
+      subtree: true,
+    }
+  );
 }
 
-export function navigate(view, params) {
-  const user = getCurrentUser();
+// -------------------------------------------------------------------------
+// Navigation
+// -------------------------------------------------------------------------
+
+export function navigate(
+  view,
+  params,
+  options = {}
+) {
+  const user =
+    getCurrentUser();
 
   if (!user) {
     return;
   }
 
+  const {
+    fromBack = false,
+    initial = false,
+  } = options;
+
+  const resolvedView =
+    resolveRoute(view);
+
+  const requestedEntry =
+    createNavigationEntry(
+      resolvedView,
+      params
+    );
+
+  const currentEntry =
+    getCurrentNavigationEntry();
+
+  // -----------------------------------------------------------------------
+  // Ignore exact duplicate navigation
+  // -----------------------------------------------------------------------
+
+  /*
+   * IMPORTANT:
+   *
+   * Comparing only currentView was the source of a subtle problem.
+   *
+   * These are different navigations:
+   *
+   *   messages(A)
+   *   messages(B)
+   *
+   * even though currentView === "messages" for both.
+   *
+   * Therefore compare both route AND params.
+   */
+  if (
+    !initial &&
+    !fromBack &&
+    navigationEntriesEqual(
+      currentEntry,
+      requestedEntry
+    )
+  ) {
+    console.log(
+      '[router] Duplicate navigation ignored:',
+      requestedEntry
+    );
+
+    return;
+  }
+
   bindContentSwapMotion();
 
-  perfNavStart(view);
+  perfNavStart(
+    resolvedView
+  );
 
-  const shareToken = shareTokenFrom(view);
-  const isShareLink = shareToken !== null;
+  const shareToken =
+    shareTokenFrom(
+      resolvedView
+    );
 
-  const route = isShareLink
-    ? routes['share-link']
-    : routes[view] || routes.files;
+  const isShareLink =
+    shareToken !== null;
 
-  // Record what is being mounted and tell the view-ownership tracker
-  // (core/view-session.js) BEFORE rendering, so that renders still in
-  // flight for the previously mounted view know they are stale and stop
-  // writing into #content-area.
-  currentView = view;
-  enterView(isShareLink ? 'share-link' : routes[view] ? view : 'files');
+  const route =
+    isShareLink
+      ? routes['share-link']
+      : routes[resolvedView];
 
-  // Release any in-progress voice recording before switching views —
-  // see destroyChatComposer()/destroyDmComposer() for why this can't
-  // just be left to the next renderChat()/renderDm() call. Cheap
-  // no-ops when nothing is currently recording (or that view was
-  // never mounted in the first place).
+  if (!route) {
+    console.warn(
+      '[router] Unknown route:',
+      resolvedView
+    );
+
+    return;
+  }
+
+  // -----------------------------------------------------------------------
+  // Wire navigation stack
+  // -----------------------------------------------------------------------
+
+  /*
+   * Forward navigation:
+   *
+   *   files
+   *   -> chat
+   *   -> messages(A)
+   *   -> messages(B)
+   *
+   * creates:
+   *
+   *   [
+   *     files,
+   *     chat,
+   *     messages(A),
+   *     messages(B)
+   *   ]
+   *
+   * Back navigation does NOT push anything because the current item was
+   * already popped by initAndroidBackButton().
+   */
+  if (
+    !initial &&
+    !fromBack
+  ) {
+    /*
+     * Repair an empty stack if necessary.
+     */
+    if (
+      navigationStack.length === 0
+    ) {
+      navigationStack = [
+        createNavigationEntry(
+          currentView || 'files',
+          undefined
+        ),
+      ];
+    }
+
+    /*
+     * Never add an exact duplicate.
+     */
+    const lastEntry =
+      getCurrentNavigationEntry();
+
+    if (
+      !navigationEntriesEqual(
+        lastEntry,
+        requestedEntry
+      )
+    ) {
+      navigationStack.push(
+        requestedEntry
+      );
+
+      console.log(
+        '[router] Forward navigation recorded:',
+        requestedEntry
+      );
+    }
+  }
+
+  /*
+   * Safety fallback.
+   */
+  if (
+    navigationStack.length === 0
+  ) {
+    navigationStack = [
+      requestedEntry,
+    ];
+  }
+
+  // -----------------------------------------------------------------------
+  // View ownership
+  // -----------------------------------------------------------------------
+
+  /*
+   * Update currentView BEFORE rendering.
+   *
+   * view-session.js uses this boundary to invalidate asynchronous work
+   * belonging to the previous route.
+   */
+  currentView =
+    resolvedView;
+
+  enterView(
+    isShareLink
+      ? 'share-link'
+      : routes[resolvedView]
+        ? resolvedView
+        : 'files'
+  );
+
+  // Release any in-progress voice recording before switching views.
   destroyChatComposer();
   destroyDmComposer();
 
-  // One pass marks the active item in every navigation surface: the
-  // desktop sidebar (.nav-link), the phone bottom tabs and the phone
-  // admin menu (see ui/mobile-shell.js) — they all read the same route.
+  // -----------------------------------------------------------------------
+  // Navigation UI
+  // -----------------------------------------------------------------------
+
   document
-    .querySelectorAll('.nav-link, .bottom-nav-item, .more-menu-item')
-    .forEach((link) => {
-      // A shared file belongs to "My Files" as far as the nav is concerned.
-      const isActive = link.dataset.view === (isShareLink ? 'files' : view);
+    .querySelectorAll(
+      '.nav-link, .bottom-nav-item, .more-menu-item'
+    )
+    .forEach(
+      (link) => {
+        /*
+         * Shared files belong to My Files from the navigation's
+         * point of view.
+         */
+        const isActive =
+          link.dataset.view === (
+            isShareLink
+              ? 'files'
+              : resolvedView
+          );
 
-      link.classList.toggle('active', isActive);
+        link.classList.toggle(
+          'active',
+          isActive
+        );
 
-      if (isActive) {
-        link.setAttribute('aria-current', 'page');
-      } else {
-        link.removeAttribute('aria-current');
+        if (isActive) {
+          link.setAttribute(
+            'aria-current',
+            'page'
+          );
+        } else {
+          link.removeAttribute(
+            'aria-current'
+          );
+        }
       }
-    });
+    );
 
-  const title = document.getElementById('topbar-title');
+  // -----------------------------------------------------------------------
+  // Top bar
+  // -----------------------------------------------------------------------
+
+  const title =
+    document.getElementById(
+      'topbar-title'
+    );
 
   if (title) {
-    title.textContent = route.title;
+    title.textContent =
+      route.title;
   }
 
-  // "flush" routes (Chat, Messages) manage their own internal
-  // scroll regions and need the outer .content wrapper to have zero
-  // padding/scroll of its own — otherwise the messaging UI ends up
-  // boxed inside a padded, independently-scrolling container instead
-  // of filling the window the way a desktop chat app would.
-  const content = document.getElementById('content-area');
+  // -----------------------------------------------------------------------
+  // Content area
+  // -----------------------------------------------------------------------
+
+  const content =
+    document.getElementById(
+      'content-area'
+    );
+
   if (content) {
-    content.classList.toggle('content--flush', !!route.flush);
+    content.classList.toggle(
+      'content--flush',
+      !!route.flush
+    );
   }
 
-  route.render(isShareLink ? { token: shareToken } : params);
+  // -----------------------------------------------------------------------
+  // Render route
+  // -----------------------------------------------------------------------
 
-  // Page/view transition (new, toggle-gated — see core/motion.css /
-  // .view-enter). #content-area is a single persistent DOM node that
-  // each route.render() just refills, so simply adding the class
-  // wouldn't replay the animation on the 2nd+ navigation; removing it
-  // and forcing a reflow before re-adding does. No-op when Animations
-  // is off (var(--motion-base) is 0ms), and this only animates the
-  // outer wrapper's opacity/transform, never the flush chat/DM
-  // views' own internal scroll regions.
+  route.render(
+    isShareLink
+      ? {
+          token: shareToken,
+        }
+      : cloneNavigationParams(
+          params
+        )
+  );
+
+  // -----------------------------------------------------------------------
+  // Page/view transition
+  // -----------------------------------------------------------------------
+
   if (content) {
-    content.classList.remove('view-enter');
+    content.classList.remove(
+      'view-enter'
+    );
+
     void content.offsetWidth;
-    content.classList.add('view-enter');
+
+    content.classList.add(
+      'view-enter'
+    );
   }
 
-  if (window.location.hash !== `#${view}`) {
-    window.location.hash = view;
-  }
+  // -----------------------------------------------------------------------
+  // URL synchronization
+  // -----------------------------------------------------------------------
+
+  syncUrlToView(
+    resolvedView
+  );
+
+  logNavigationStack(
+    `navigate(${resolvedView})`
+  );
 }
+
+// -------------------------------------------------------------------------
+// Debug helpers
+// -------------------------------------------------------------------------
+
+/*
+ * These are intentionally exposed for debugging from Chrome remote
+ * debugging / WebView console.
+ *
+ * Example:
+ *
+ *   window.__wireNavigationStack()
+ *
+ * returns:
+ *
+ *   [
+ *     { view: 'files', params: undefined },
+ *     { view: 'messages', params: { id: '123', username: 'Alice' } }
+ *   ]
+ */
+
+window.__wireNavigationStack =
+  function () {
+    return navigationStack.map(
+      (entry) => ({
+        view: entry.view,
+        params:
+          cloneNavigationParams(
+            entry.params
+          ),
+      })
+    );
+  };
+
+window.__wireCurrentView =
+  function () {
+    return currentView;
+  };

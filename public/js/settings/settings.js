@@ -33,6 +33,10 @@ import {
   bindAccountSettings
 } from './settings-account.js';
 
+import {
+  bindNotificationSettings
+} from './settings-notifications.js';
+
 
 // ============================================================
 // Snapshot (stale-while-revalidate)
@@ -259,6 +263,8 @@ export async function renderSettings(opts) {
     bindMediaSettings({
       me
     });
+
+    bindNotificationSettings();
 
     bindAccountSettings();
 

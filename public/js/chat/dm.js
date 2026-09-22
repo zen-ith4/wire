@@ -46,6 +46,7 @@ import {
   encryptOutgoingMessage,
   decryptIncomingMessage
 } from '../crypto/messages/message-crypto.js';
+import { maybeNotifyDM } from '../notifications/notification-manager.js';
 
 // ---------- Per-conversation message cache ----------
 const dmCache = new Map();
@@ -1700,6 +1701,14 @@ export async function addDmMessage(msg) {
 
   const isActiveConversation =
     dmActivePeer && Number(dmActivePeer.id) === peerId;
+
+  // Decision + platform dispatch for a system notification lives
+  // entirely in notification-manager.js. It already knows how to
+  // ignore the current user's own messages, so it's safe to call
+  // unconditionally here rather than threading a "was this from
+  // the socket" flag through — the composer's own optimistic-add
+  // path lands here too, and is simply a no-op for that module.
+  maybeNotifyDM(decrypted, isActiveConversation);
 
   if (!isActiveConversation) return;
 

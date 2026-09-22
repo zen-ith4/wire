@@ -3,6 +3,7 @@ const router = express.Router();
 
 const { authenticate } = require('../middleware/authenticate');
 const { asyncHandler } = require('../middleware/asyncHandler');
+const { pushTokenLimiter } = require('../middleware/rateLimiter');
 
 const {
     getIdentityKey,
@@ -27,6 +28,8 @@ const {
   getBanner,
   getUserProfile,
   getUserIdentityPublicKey,
+  registerPushToken,
+  deregisterPushToken,
 } = require('../controllers/me.controller');
 
 
@@ -100,6 +103,20 @@ router.get(
     '/identity-key/:userId',
     authenticate,
     getUserIdentityPublicKey
+);
+
+router.post(
+    '/push-token',
+    authenticate,
+    pushTokenLimiter,
+    registerPushToken
+);
+
+router.delete(
+    '/push-token',
+    authenticate,
+    pushTokenLimiter,
+    deregisterPushToken
 );
 
 // Generic single-segment pattern must stay last.

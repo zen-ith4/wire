@@ -619,8 +619,28 @@ function renderAppearance({
             Inter
           </option>
 
+          <option value="anthropic-sans">
+            Anthropic Sans
+          </option>
+
           <option value="noto-sans">
             Noto Sans
+          </option>
+
+          <option value="vazirmatn">
+            Vazirmatn
+          </option>
+
+          <option value="roboto">
+            Roboto
+          </option>
+
+          <option value="open-sans">
+            Open Sans
+          </option>
+
+          <option value="poppins">
+            Poppins
           </option>
 
           <option value="monospace">
@@ -745,15 +765,12 @@ function renderAppearance({
 
 
 // ============================================================
-// Banner
-// ============================================================
-
-// ============================================================
 // Notifications
 // ============================================================
 
 function renderNotifications() {
-  const dmNotificationsEnabled = getDmNotificationsEnabled();
+  const dmNotificationsEnabled =
+    getDmNotificationsEnabled();
 
   return `
     <div class="settings-section">

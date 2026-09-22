@@ -2718,15 +2718,29 @@ export const FONT_OPTIONS = {
     'system-ui, sans-serif',
 
   inter:
-    '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif',
+    '"Inter", "Vazirmatn", system-ui, sans-serif',
+
+  'anthropic-sans':
+    '"Anthropic Sans", "Vazirmatn", system-ui, sans-serif',
 
   'noto-sans':
-    '"Noto Sans", system-ui, sans-serif',
+    '"Noto Sans", "Vazirmatn", system-ui, sans-serif',
+
+  vazirmatn:
+    '"Vazirmatn", system-ui, sans-serif',
+
+  roboto:
+    '"Roboto", "Vazirmatn", Arial, sans-serif',
+
+  'open-sans':
+    '"Open Sans", "Vazirmatn", Arial, sans-serif',
+
+  poppins:
+    '"Poppins", "Vazirmatn", system-ui, sans-serif',
 
   monospace:
     'ui-monospace, "JetBrains Mono", monospace'
 };
-
 
 export function getFontFamily() {
   const saved =

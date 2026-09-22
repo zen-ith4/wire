@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
+
   <!-- Real mobile viewport height (accounts for the browser chrome/
        address bar and the on-screen keyboard) exposed as --vh, used
        by .app/.main (layout/app.css) as calc(var(--vh,1vh) * 100).
@@ -14,33 +15,60 @@
        before first paint) rather than in app.js so there's no flash
        of the wrong height while the module script loads. -->
   <link rel="icon" type="image/x-icon" href="/favicon.ico" />
-  
+
   <script>
     (function () {
       function setVh() {
         var vv = window.visualViewport;
         var h = (vv && vv.height) || window.innerHeight;
-        document.documentElement.style.setProperty('--vh', (h * 0.01) + 'px');
+        document.documentElement.style.setProperty(
+          '--vh',
+          (h * 0.01) + 'px'
+        );
       }
+
       setVh();
-      window.addEventListener('resize', setVh);
-      window.addEventListener('orientationchange', setVh);
+
+      window.addEventListener(
+        'resize',
+        setVh
+      );
+
+      window.addEventListener(
+        'orientationchange',
+        setVh
+      );
+
       if (window.visualViewport) {
-        window.visualViewport.addEventListener('resize', setVh);
+        window.visualViewport.addEventListener(
+          'resize',
+          setVh
+        );
       }
     })();
   </script>
+
   <title>Wire — Private Drive</title>
 
-  <!-- Typography: Inter (referenced first in style.css's font stack; falls
-       back to the OS system font if this fails to load, so nothing breaks
-       without it) -->
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;550;600;700&display=swap" rel="stylesheet" />
+  <!-- ================================================================
+       TYPOGRAPHY
+       
+       All application fonts are bundled locally under /fonts/.
+       No external Google Fonts requests are required.
+       ================================================================ -->
 
-  <link rel="stylesheet" href="/css/main.css" />
+  <link
+    rel="stylesheet"
+    href="/css/fonts.css"
+  />
+
+  <!-- Main application stylesheet -->
+  <link
+    rel="stylesheet"
+    href="/css/main.css"
+  />
 </head>
+
 <body>
 
   <!-- ===== Ambient Background =====
@@ -48,6 +76,7 @@
        the whole app. .bg/.bg-blob/.bg-grid are kept (unused, render
        nothing) so nothing else that might reference them breaks. -->
   <div id="ambient-underlay"></div>
+
   <div class="bg">
     <div class="bg-blob a"></div>
     <div class="bg-blob b"></div>
@@ -55,138 +84,418 @@
     <div class="bg-grid"></div>
   </div>
 
+
   <!-- ===== App Shell ===== -->
-  <div class="app" id="app" style="display:none;">
+  <div
+    class="app"
+    id="app"
+    style="display:none;"
+  >
 
     <!-- Sidebar (desktop navigation; hidden on phones, where the bottom
          nav below takes over — see layout/bottom-nav.css + responsive.css) -->
-    <aside class="sidebar" id="sidebar">
+    <aside
+      class="sidebar"
+      id="sidebar"
+    >
       <div class="brand">
-        <div class="brand-mark"><img src="/img/logo.jpg" alt="Wire" /></div>
-        <div class="brand-name">Wire</div>
+        <div class="brand-mark">
+          <img
+            src="/img/logo.jpg"
+            alt="Wire"
+          />
+        </div>
+
+        <div class="brand-name">
+          Wire
+        </div>
       </div>
-      <div class="nav-group-label">Workspace</div>
+
+      <div class="nav-group-label">
+        Workspace
+      </div>
+
       <div id="nav-links"></div>
+
       <div class="sidebar-footer">
+
         <!-- My own profile — plain (not liquid-glass; that treatment is
              reserved for the other person's header inside a DM, see
              messages.css/.dm-peer-profile). Clicking opens the same
              read-only profile card used everywhere else in the app. -->
-        <div class="sidebar-profile" id="sidebar-profile-section">
-          <div class="sidebar-profile-avatar" id="profile-initials">
-            <span class="avatar-initials">?</span>
+        <div
+          class="sidebar-profile"
+          id="sidebar-profile-section"
+        >
+          <div
+            class="sidebar-profile-avatar"
+            id="profile-initials"
+          >
+            <span class="avatar-initials">
+              ?
+            </span>
           </div>
-          <span class="sidebar-profile-name" id="profile-username"></span>
+
+          <span
+            class="sidebar-profile-name"
+            id="profile-username"
+          ></span>
         </div>
+
       </div>
     </aside>
 
+
     <!-- Sidebar resize handle (desktop only; hidden together with the
          sidebar on phones, see responsive.css) -->
-    <div class="sidebar-resize-handle" id="sidebar-resize-handle" title="Drag to resize · double-click to reset"></div>
+    <div
+      class="sidebar-resize-handle"
+      id="sidebar-resize-handle"
+      title="Drag to resize · double-click to reset"
+    ></div>
+
 
     <!-- Main Content -->
     <div class="main">
+
       <!-- Topbar -->
       <header class="topbar">
-        <div class="topbar-title" id="topbar-title">My Files</div>
+        <div
+          class="topbar-title"
+          id="topbar-title"
+        >
+          My Files
+        </div>
       </header>
 
+
       <!-- Dynamic Content Area -->
-      <div class="content" id="content-area"></div>
+      <div
+        class="content"
+        id="content-area"
+      ></div>
+
 
       <!-- Bottom tab bar (phones only). Rendered by ui/mobile-shell.js from
            the same item list as the sidebar; sits in normal flow under
            .content so nothing can ever scroll/render behind it. -->
-      <nav class="bottom-nav" id="bottom-nav" aria-label="Main"></nav>
+      <nav
+        class="bottom-nav"
+        id="bottom-nav"
+        aria-label="Main"
+      ></nav>
+
     </div>
   </div>
 
+
   <!-- ===== Login Page ===== -->
-  <div class="login-wrap" id="login-wrap"></div>
+  <div
+    class="login-wrap"
+    id="login-wrap"
+  ></div>
+
 
   <!-- The Files tab's share, share-link and media-preview dialogs are native
        <dialog>s created on demand by js/files/ (dialog.js) — no markup here. -->
+
 
   <!-- ===== Image Viewer / Lightbox =====
        Opens when a chat/DM image attachment is clicked
        (js/image-viewer.js). Same backdrop-click-to-close pattern as
        the other modals above: the outer element closes on click,
        inner elements stop propagation. -->
-  <div class="image-viewer" id="image-viewer" onclick="window.closeImageViewer()">
-    <div class="image-viewer-bar" onclick="event.stopPropagation()">
+  <div
+    class="image-viewer"
+    id="image-viewer"
+    onclick="window.closeImageViewer()"
+  >
+
+    <div
+      class="image-viewer-bar"
+      onclick="event.stopPropagation()"
+    >
+
       <div class="image-viewer-sender">
-        <span class="image-viewer-avatar-slot" id="image-viewer-avatar-slot"></span>
-        <span class="image-viewer-username" id="image-viewer-username"></span>
+
+        <span
+          class="image-viewer-avatar-slot"
+          id="image-viewer-avatar-slot"
+        ></span>
+
+        <span
+          class="image-viewer-username"
+          id="image-viewer-username"
+        ></span>
+
       </div>
+
+
       <div class="image-viewer-actions">
-        <button type="button" class="icon-btn" id="image-viewer-zoom" title="Zoom" onclick="window.toggleImageViewerZoom()">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="11" cy="11" r="8" />
-            <line x1="21" y1="21" x2="16.65" y2="16.65" />
-            <line x1="11" y1="8" x2="11" y2="14" />
-            <line x1="8" y1="11" x2="14" y2="11" />
+
+        <button
+          type="button"
+          class="icon-btn"
+          id="image-viewer-zoom"
+          title="Zoom"
+          onclick="window.toggleImageViewerZoom()"
+        >
+          <svg
+            width="15"
+            height="15"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <circle
+              cx="11"
+              cy="11"
+              r="8"
+            />
+
+            <line
+              x1="21"
+              y1="21"
+              x2="16.65"
+              y2="16.65"
+            />
+
+            <line
+              x1="11"
+              y1="8"
+              x2="11"
+              y2="14"
+            />
+
+            <line
+              x1="8"
+              y1="11"
+              x2="14"
+              y2="11"
+            />
           </svg>
         </button>
-        <button type="button" class="icon-btn" title="Download" onclick="window.downloadImageViewerImage()">
-          <svg width="15" height="15" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+
+
+        <button
+          type="button"
+          class="icon-btn"
+          title="Download"
+          onclick="window.downloadImageViewerImage()"
+        >
+          <svg
+            width="15"
+            height="15"
+            viewBox="0 0 24 24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+
             <polyline points="7 10 12 15 17 10" />
-            <line x1="12" y1="15" x2="12" y2="3" />
+
+            <line
+              x1="12"
+              y1="15"
+              x2="12"
+              y2="3"
+            />
           </svg>
         </button>
-        <button type="button" class="icon-btn image-viewer-close" title="Close" onclick="window.closeImageViewer()">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="18" y1="6" x2="6" y2="18" />
-            <line x1="6" y1="6" x2="18" y2="18" />
+
+
+        <button
+          type="button"
+          class="icon-btn image-viewer-close"
+          title="Close"
+          onclick="window.closeImageViewer()"
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <line
+              x1="18"
+              y1="6"
+              x2="6"
+              y2="18"
+            />
+
+            <line
+              x1="6"
+              y1="6"
+              x2="18"
+              y2="18"
+            />
           </svg>
         </button>
+
       </div>
     </div>
+
+
     <div class="image-viewer-stage">
-      <img id="image-viewer-img" src="" alt="" draggable="false" ondragstart="return false;" onclick="event.stopPropagation()" />
+
+      <img
+        id="image-viewer-img"
+        src=""
+        alt=""
+        draggable="false"
+        ondragstart="return false;"
+        onclick="event.stopPropagation()"
+      />
+
     </div>
+
   </div>
+
 
   <!-- ===== Confirm Modal ===== -->
-  <div class="modal" id="confirm-modal" onclick="window.__confirmModalCancel()">
-    <div class="modal-content confirm-modal-content" onclick="event.stopPropagation()">
-      <h3 id="confirm-modal-title">Are you sure?</h3>
+  <div
+    class="modal"
+    id="confirm-modal"
+    onclick="window.__confirmModalCancel()"
+  >
+
+    <div
+      class="modal-content confirm-modal-content"
+      onclick="event.stopPropagation()"
+    >
+
+      <h3 id="confirm-modal-title">
+        Are you sure?
+      </h3>
+
       <p id="confirm-modal-message"></p>
+
       <div class="confirm-modal-actions">
-        <button id="confirm-modal-cancel" class="btn btn-ghost btn-sm" onclick="window.__confirmModalCancel()">Cancel</button>
-        <button id="confirm-modal-ok" class="btn btn-danger btn-sm" onclick="window.__confirmModalOk()">Delete</button>
+
+        <button
+          id="confirm-modal-cancel"
+          class="btn btn-ghost btn-sm"
+          onclick="window.__confirmModalCancel()"
+        >
+          Cancel
+        </button>
+
+        <button
+          id="confirm-modal-ok"
+          class="btn btn-danger btn-sm"
+          onclick="window.__confirmModalOk()"
+        >
+          Delete
+        </button>
+
       </div>
+
     </div>
+
   </div>
+
 
   <!-- ===== Profile Card Modal ===== -->
-  <div class="modal" id="profile-card-modal" onclick="window.closeProfileCard()">
-    <div class="modal-content profile-card-content" onclick="event.stopPropagation()">
-      <button onclick="window.closeProfileCard()" class="btn btn-icon modal-close">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <line x1="18" y1="6" x2="6" y2="18" />
-          <line x1="6" y1="6" x2="6" y2="18" />
+  <div
+    class="modal"
+    id="profile-card-modal"
+    onclick="window.closeProfileCard()"
+  >
+
+    <div
+      class="modal-content profile-card-content"
+      onclick="event.stopPropagation()"
+    >
+
+      <button
+        onclick="window.closeProfileCard()"
+        class="btn btn-icon modal-close"
+      >
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <line
+            x1="18"
+            y1="6"
+            x2="6"
+            y2="18"
+          />
+
+          <line
+            x1="6"
+            y1="6"
+            x2="6"
+            y2="18"
+          />
         </svg>
       </button>
-      <div id="profile-card-body" class="profile-card-body"></div>
+
+      <div
+        id="profile-card-body"
+        class="profile-card-body"
+      ></div>
+
     </div>
+
   </div>
+
 
   <!-- ===== Drag & Drop Overlay ===== -->
-  <div class="dropzone-overlay" id="dropzone-overlay">
+  <div
+    class="dropzone-overlay"
+    id="dropzone-overlay"
+  >
+
     <div class="dropzone-box">
-      <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+
+      <svg
+        width="34"
+        height="34"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+      >
         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+
         <polyline points="17 8 12 3 7 8" />
-        <line x1="12" y1="3" x2="12" y2="15" />
+
+        <line
+          x1="12"
+          y1="3"
+          x2="12"
+          y2="15"
+        />
       </svg>
-      <div class="dropzone-title">Drop to upload</div>
-      <div class="dropzone-sub" id="dropzone-sub">Files will be added here</div>
+
+      <div class="dropzone-title">
+        Drop to upload
+      </div>
+
+      <div
+        class="dropzone-sub"
+        id="dropzone-sub"
+      >
+        Files will be added here
+      </div>
+
     </div>
+
   </div>
 
+
   <!-- ===== JavaScript Modules (ES Modules) ===== -->
-  <script type="module" src="js/core/app.js"></script>
+  <script
+    type="module"
+    src="js/core/app.js"
+  ></script>
+
 </body>
 </html>

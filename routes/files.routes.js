@@ -13,6 +13,7 @@ const {
   downloadFile,
   previewFile,
   uploadFile,
+  deleteEntry,
   getFileMediaToken,
   streamFile,
 } = require('../controllers/files.controller');
@@ -74,6 +75,16 @@ router.post(
   uploadLimiter,
   fileUpload.single('file'),
   uploadFile
+);
+
+
+// Delete a file or folder (with everything inside it) from a folder
+// the caller owns. Target is given as ?subpath=&file=, like the other
+// per-file endpoints.
+router.delete(
+  '/item/:folderId',
+  authenticate,
+  asyncHandler(deleteEntry)
 );
 
 

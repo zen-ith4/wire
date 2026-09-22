@@ -194,7 +194,7 @@
 /* ---------- List ---------- */
 .files-list-head,
 .files-row{
-  display:grid;grid-template-columns:minmax(0,1fr) 92px 150px 84px;
+  display:grid;grid-template-columns:minmax(0,1fr) 92px 150px 120px;
   align-items:center;column-gap:12px;
 }
 .files-list-head{
@@ -219,6 +219,8 @@
   transition:background var(--ease-fast);
 }
 .files-row:hover{background:var(--hover);}
+/* Delete in progress: dimmed and inert (the element also carries `inert`). */
+.files-row.is-deleting{opacity:.5;pointer-events:none;}
 
 /* The name button is stretched over the whole row (::after), so the
    entire row is one big tap target — the actions sit above it. */

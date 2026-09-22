@@ -2,9 +2,14 @@ const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
 
-const { findFolderById } = require('../services/file.service');
+const { findFolderById, listAllFolders } = require('../services/file.service');
+const { deleteLinksForPath } = require('../services/shareLink.service');
 const { getUserFolders, getFolderAccess } = require('../services/share.service');
-const { safeSubPath, resolveRegularFile } = require('../utils/safePath');
+const {
+  safeSubPath,
+  resolveRegularFile,
+  resolveDeletableEntry,
+} = require('../utils/safePath');
 const { moveFileSafe } = require('../utils/file');
 const { detectMimeFromBytes } = require('../utils/detectFileType');
 const { isInlineSafeMime } = require('../utils/inlineSafeMime');
@@ -278,6 +283,101 @@ async function previewFile(req, res) {
   return res.sendFile(resolved);
 }
 
+// ============ Delete a file / folder ============
+//
+// DELETE /api/files/item/:folderId?subpath=<dir>&file=<name>
+//
+// Only the OWNER of the folder may delete inside it. "Can edit" members
+// may upload (see share.js: "Can edit lets someone upload files"), but
+// deleting is not part of what they were granted, and it mirrors the
+// other owner-only actions (share links, sharing, deleting the folder).
+//
+// Storage model: only the top-level folder has database rows (folders /
+// user_folders). Files and sub-folders exist only on disk, so removing
+// them is a filesystem operation; the one table that points INTO a
+// folder is share_links (folder_id + rel_path), and those rows are
+// removed with the file so no dead link is left behind.
+//
+// A directory is removed together with everything in it (recursive).
+// It is refused while another registered folder lives inside it,
+// because removing it would strand that folder's database row.
+function isSameOrInside(candidate, target) {
+  const a = path.resolve(candidate);
+  const b = path.resolve(target);
+
+  return a === b || a.startsWith(b + path.sep);
+}
+
+async function deleteEntry(req, res) {
+  const folderId = validateFolderId(req.params.folderId);
+  if (!folderId) return res.status(400).json({ error: 'Invalid folder id' });
+
+  const folder = findFolderById(folderId);
+
+  if (!folder || folder.owner_id !== req.user.id) {
+    return res.status(403).json({
+      error: 'Only the folder owner can delete files',
+    });
+  }
+
+  const subpath = typeof req.query.subpath === 'string' ? req.query.subpath : '';
+  const name = typeof req.query.file === 'string' ? req.query.file : '';
+
+  const target = await resolveDeletableEntry(folder.path, subpath, name);
+
+  if (!target.ok) {
+    return res.status(404).json({ error: 'File not found' });
+  }
+
+  if (target.type === 'dir') {
+    const strandsFolder = listAllFolders().some(
+      (other) =>
+        other.id !== folder.id &&
+        (isSameOrInside(other.path, target.fullPath) ||
+          isSameOrInside(other.path, target.lexicalPath))
+    );
+
+    if (strandsFolder) {
+      return res.status(409).json({
+        error: 'This folder contains another shared folder. Delete that one from the Folders list first.',
+      });
+    }
+  }
+
+  try {
+    if (target.type === 'dir') {
+      // Recursive, but never follows symlinks: a link inside the tree
+      // is unlinked, its destination is left alone.
+      await fsp.rm(target.fullPath, { recursive: true });
+    } else {
+      await fsp.unlink(target.fullPath);
+    }
+  } catch (err) {
+    if (err.code === 'ENOENT') {
+      return res.status(404).json({ error: 'File not found' });
+    }
+
+    console.error('deleteEntry failed:', err.message);
+    return res.status(500).json({ error: 'Failed to delete' });
+  }
+
+  // The bytes are gone; now drop the rows that pointed at them. A
+  // failure here is logged, not surfaced: the delete DID happen, and a
+  // leftover link already answers "invalid or expired" because its
+  // target no longer resolves (shareLink.controller.js).
+  try {
+    deleteLinksForPath(folder.id, target.relPath, target.type === 'dir');
+  } catch (err) {
+    console.error('deleteEntry: failed to remove share links:', err.message);
+  }
+
+  res.json({
+    success: true,
+    name: target.name,
+    type: target.type === 'dir' ? 'dir' : 'file',
+  });
+}
+
 // ============ Media preview (image / video / audio) ============
 //
 // <video>/<audio>/<img> can't send an Authorization header, so the My
@@ -367,6 +467,7 @@ module.exports = {
   downloadFile,
   previewFile,
   uploadFile,
+  deleteEntry,
   getFileMediaToken,
   streamFile,
 };

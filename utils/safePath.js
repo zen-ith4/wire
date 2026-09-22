@@ -100,6 +100,96 @@ async function resolveRegularFile(basePath, subpath, file) {
   }
 }
 
+// ---------------------------------------------------------------
+// resolveDeletableEntry
+//
+// Resolver for DELETING one entry (file, folder or symlink) that sits
+// directly inside `subpath` of a folder root. It applies the same
+// input rules as resolveRegularFile() — single-segment name, no NUL,
+// no hidden (dot) segments, lexical containment — and differs where
+// deletion needs it to:
+//
+//   - the target is inspected with lstat(), never followed: a symlink
+//     is reported as type 'link' so that only the link itself is ever
+//     removed, not whatever it points at (which may be outside the
+//     root);
+//   - it is the PARENT directory whose real path must stay inside the
+//     real root (a symlinked sub-folder must not lead a delete out of
+//     the user's storage area);
+//   - directories are allowed (type 'dir'), the folder root itself can
+//     never be returned.
+//
+// Never throws for bad input: returns { ok: false } so callers answer
+// with one generic error. On success:
+//   fullPath  — absolute path of the entry, built from the REAL parent
+//   lexicalPath — the same entry as the DB / other folders spell it
+//   relPath   — POSIX path relative to the folder root (what share
+//               links persist)
+//   type      — 'file' | 'dir' | 'link'
+// ---------------------------------------------------------------
+
+async function resolveDeletableEntry(basePath, subpath, name) {
+  try {
+    if (typeof basePath !== 'string' || !basePath) return NOT_FOUND;
+
+    const sub = typeof subpath === 'string' ? subpath : '';
+
+    if (
+      typeof name !== 'string' ||
+      !name ||
+      name === '.' ||
+      name === '..' ||
+      name.length > 255 ||
+      name.includes('/') ||
+      name.includes('\\') ||
+      name.includes('\0') ||
+      sub.includes('\0') ||
+      hasHiddenSegment(name) ||
+      hasHiddenSegment(sub)
+    ) {
+      return NOT_FOUND;
+    }
+
+    const base = path.resolve(basePath);
+    const dir = safeSubPath(base, sub);
+    if (!dir) return NOT_FOUND;
+
+    const lexical = safeSubPath(dir, name);
+    if (!lexical || path.dirname(lexical) !== dir) return NOT_FOUND;
+
+    const [realBase, realDir] = await Promise.all([
+      fsp.realpath(base),
+      fsp.realpath(dir),
+    ]);
+
+    if (
+      realDir !== realBase &&
+      !realDir.startsWith(realBase + path.sep)
+    ) {
+      return NOT_FOUND;
+    }
+
+    const fullPath = path.join(realDir, name);
+    const stat = await fsp.lstat(fullPath);
+
+    let type = 'file';
+    if (stat.isSymbolicLink()) type = 'link';
+    else if (stat.isDirectory()) type = 'dir';
+
+    return {
+      ok: true,
+      fullPath,
+      lexicalPath: lexical,
+      name,
+      type,
+      relPath: path.relative(base, lexical).split(path.sep).join('/'),
+    };
+  } catch {
+    // ENOENT, EACCES, ENOTDIR, ELOOP, ...: all the same answer.
+    return NOT_FOUND;
+  }
+}
+
 // Splits a persisted POSIX relPath back into the (subpath, file) pair
 // resolveRegularFile() expects.
 function splitRelPath(relPath) {
@@ -112,6 +202,7 @@ function splitRelPath(relPath) {
 module.exports = {
   safeSubPath,
   resolveRegularFile,
+  resolveDeletableEntry,
   splitRelPath,
   hasHiddenSegment,
 };

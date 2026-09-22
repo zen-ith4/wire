@@ -209,6 +209,32 @@ function deleteLink(id, createdBy) {
     .run(id, createdBy).changes;
 }
 
+// Removes every link that pointed at a file that no longer exists:
+// the file itself (relPath) or, when a whole directory was deleted,
+// everything beneath it. The prefix test uses substr()/length() rather
+// than LIKE so file names containing % or _ are never treated as
+// wildcards and the match stays case-sensitive, like the filesystem.
+function deleteLinksForPath(folderId, relPath, includeDescendants = false) {
+  if (!includeDescendants) {
+    return getDb()
+      .prepare('DELETE FROM share_links WHERE folder_id = ? AND rel_path = ?')
+      .run(folderId, relPath).changes;
+  }
+
+  const prefix = `${relPath}/`;
+
+  return getDb()
+    .prepare(`
+      DELETE FROM share_links
+      WHERE folder_id = ?
+      AND (
+        rel_path = ?
+        OR substr(rel_path, 1, length(?)) = ?
+      )
+    `)
+    .run(folderId, relPath, prefix, prefix).changes;
+}
+
 module.exports = {
   EXPIRY_PRESETS,
   DEFAULT_EXPIRY_SECONDS,
@@ -223,5 +249,6 @@ module.exports = {
   findActiveLinkById,
   listActiveLinksForFile,
   deleteLink,
+  deleteLinksForPath,
   purgeExpiredLinks,
 };

@@ -21,6 +21,9 @@
 //     crafted filename).
 //   - Clicking a file opens the Files viewer for image/video/audio and
 //     downloads everything else.
+//   - The owner of a folder can delete files and sub-folders from a row's
+//     action buttons (files/delete.js: confirm + DELETE request); the row
+//     is then removed from the view in place, no reload.
 // ============================================================
 
 import { api } from '../core/api.js';
@@ -49,6 +52,7 @@ import { previewKind, tileKind } from './kinds.js';
 import { downloadFromSource, folderFileSource } from './download.js';
 import { openViewer } from './viewer.js';
 import { openLinkDialog } from './links.js';
+import { deleteEntry } from './delete.js';
 import {
   openShareDialog,
   createShareFolder,
@@ -89,6 +93,16 @@ let filesSig = '';       // signature of the data currently painted
 
 let listingSeq = 0;      // latest listing request wins
 
+// Deletions in flight (one key per file/folder, see entryKey()). A row in
+// this set is inert, and a second delete for the same entry is ignored.
+const deleting = new Set();
+
+// The viewer that is currently open, with the identities of the files it
+// can step through, so a deletion can close it if it would leave it
+// showing something that no longer exists. close() on a viewer the user
+// already closed is a no-op.
+let activeViewer = null;
+
 window.addEventListener('wire:logout', () => {
   currentFolderId = null;
   currentSubpath = '';
@@ -104,6 +118,8 @@ window.addEventListener('wire:logout', () => {
   filesLoaded = false;
   filesSig = '';
   listingSeq++;
+  deleting.clear();
+  activeViewer = null;
 });
 
 // ------------------------------------------------------------
@@ -114,6 +130,11 @@ const $root = () => document.getElementById('files-root');
 const $ = (sel) => $root()?.querySelector(sel);
 
 const isOwner = (folderId) => myFoldersById.has(Number(folderId));
+
+// Identity of one entry: folder + sub-path + name (NUL can't occur in any
+// of them, so keys never collide).
+const entryKey = (folderId, subpath, name) =>
+  `${Number(folderId)}\u0000${subpath}\u0000${name}`;
 
 function filesListUrl(folderId, subpath) {
   return `/api/files/list/${folderId}?subpath=${encodeURIComponent(subpath)}`;
@@ -448,8 +469,16 @@ function entryRowHtml(entry) {
     ? `Open folder ${entry.name}`
     : kind ? `Preview ${entry.name}` : `Download ${entry.name}`;
 
+  const owner = isOwner(listedFolderId);
+  const busy = deleting.has(entryKey(listedFolderId, listedSubpath, entry.name));
+
+  const deleteBtn = owner ? `
+          <button type="button" class="files-action files-action--danger" data-act="delete"
+            aria-label="Delete ${isDir ? 'folder ' : ''}${name}" title="Delete">${ICONS.trash}</button>
+  ` : '';
+
   return `
-    <li class="files-row${isDir ? ' is-dir' : ''}"
+    <li class="files-row${isDir ? ' is-dir' : ''}${busy ? ' is-deleting' : ''}"${busy ? ' inert aria-busy="true"' : ''}
         data-folder="${Number(listedFolderId)}"
         data-subpath="${esc(listedSubpath)}"
         data-name="${name}"
@@ -467,13 +496,17 @@ function entryRowHtml(entry) {
       <span class="files-row-size">${isDir ? '—' : esc(size)}</span>
       <span class="files-row-date">${esc(date)}</span>
       <span class="files-row-actions">
-        ${isDir ? `<span class="files-row-chevron" aria-hidden="true">${ICONS.chevronRight}</span>` : `
+        ${isDir ? `
+          ${deleteBtn}
+          <span class="files-row-chevron" aria-hidden="true">${ICONS.chevronRight}</span>
+        ` : `
           <button type="button" class="files-action" data-act="download"
             aria-label="Download ${name}" title="Download">${ICONS.download}</button>
-          ${isOwner(listedFolderId) ? `
+          ${owner ? `
             <button type="button" class="files-action" data-act="link"
               aria-label="Create share link for ${name}" title="Share link">${ICONS.link}</button>
           ` : ''}
+          ${deleteBtn}
         `}
       </span>
     </li>
@@ -874,10 +907,115 @@ function openTarget(target) {
     .filter((row) => row.dataset.kind)
     .map(targetFromRow);
 
-  openViewer({
+  const viewer = openViewer({
     items: playable.map(viewerItem),
     index: Math.max(0, playable.findIndex((t) => t.row === target.row)),
   });
+
+  activeViewer = viewer
+    ? {
+        close: viewer.close,
+        items: playable.map(({ folderId, subpath, name }) => ({ folderId, subpath, name })),
+      }
+    : null;
+}
+
+// ------------------------------------------------------------
+// Deleting
+// ------------------------------------------------------------
+
+const joinPath = (subpath, name) => (subpath ? `${subpath}/${name}` : name);
+
+// Is `item` the deleted entry, or (for a deleted folder) inside it?
+function isAffectedByDelete(item, deleted) {
+  if (item.folderId !== deleted.folderId) return false;
+
+  const itemPath = joinPath(item.subpath, item.name);
+  const deletedPath = joinPath(deleted.subpath, deleted.name);
+
+  return itemPath === deletedPath ||
+    (deleted.type === 'dir' && itemPath.startsWith(`${deletedPath}/`));
+}
+
+// Puts the row into / out of its in-progress state without repainting the
+// list (a repaint would drop focus and scroll anchoring). Repaints get the
+// same state from entryRowHtml() via the `deleting` set.
+function setRowBusy(target, busy) {
+  const rows = $('#files-body')?.querySelectorAll('.files-row') || [];
+
+  for (const row of rows) {
+    const d = row.dataset;
+
+    if (
+      Number(d.folder) === target.folderId &&
+      d.subpath === target.subpath &&
+      d.name === target.name
+    ) {
+      row.classList.toggle('is-deleting', busy);
+      row.toggleAttribute('inert', busy);
+
+      if (busy) row.setAttribute('aria-busy', 'true');
+      else row.removeAttribute('aria-busy');
+    }
+  }
+}
+
+// Takes the deleted entry out of the list that is on screen, in place.
+// Only if the user is still looking at the listing it belonged to —
+// otherwise there is nothing on screen to update, and filesSig = ''
+// makes the next tab-switch revalidation repaint from the server.
+function removeEntryFromView(target) {
+  filesSig = '';
+
+  if (!$root() || listedFolderId !== target.folderId || listedSubpath !== target.subpath) return;
+
+  currentEntries = currentEntries.filter((entry) => entry.name !== target.name);
+
+  paintHeader();
+  paintList();
+  announce(`${target.name} deleted`);
+
+  // The button that had focus is gone; keep keyboard users in the list.
+  if (!$root().contains(document.activeElement)) {
+    $('#files-body')?.focus({ preventScroll: true });
+  }
+}
+
+async function deleteTarget(target) {
+  if (!isOwner(target.folderId)) return;
+
+  const key = entryKey(target.folderId, target.subpath, target.name);
+  if (deleting.has(key)) return;
+
+  const { status, error } = await deleteEntry(target, {
+    onStart: () => {
+      deleting.add(key);
+      setRowBusy(target, true);
+    },
+  });
+
+  if (status === 'cancelled') return;
+
+  deleting.delete(key);
+
+  if (status === 'failed') {
+    setRowBusy(target, false);
+
+    // Already gone (deleted elsewhere): the row is stale, reload it.
+    if (/not found/i.test(error?.message || '') && $root() &&
+        listedFolderId === target.folderId && listedSubpath === target.subpath) {
+      loadListing({ folderId: target.folderId, subpath: target.subpath });
+    }
+
+    return;
+  }
+
+  if (activeViewer?.items.some((item) => isAffectedByDelete(item, target))) {
+    activeViewer.close();
+    activeViewer = null;
+  }
+
+  removeEntryFromView(target);
 }
 
 // ------------------------------------------------------------
@@ -1064,6 +1202,12 @@ function onClick(event) {
     case 'download': {
       const target = rowTarget(el);
       if (target) downloadTarget(target);
+      break;
+    }
+
+    case 'delete': {
+      const target = rowTarget(el);
+      if (target) deleteTarget(target);
       break;
     }
 

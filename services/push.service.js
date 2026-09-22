@@ -11,9 +11,20 @@
 // the exact Firebase Console + environment setup this needs.
 // ============================================================
 
-const { getPushTokensForUser, deletePushTokenByValue } = require('./pushToken.service');
+const {
+  getApps,
+  getApp,
+  initializeApp,
+  applicationDefault,
+} = require('firebase-admin/app');
 
-let admin = null;
+const { getMessaging } = require('firebase-admin/messaging');
+
+const {
+  getPushTokensForUser,
+  deletePushTokenByValue,
+} = require('./pushToken.service');
+
 let firebaseApp = null;
 let initAttempted = false;
 
@@ -21,10 +32,12 @@ function tryInitFirebase() {
   if (initAttempted) return firebaseApp;
   initAttempted = true;
 
-  // firebase-admin's default credential lookup (applicationDefault())
-  // reads this exact env var — a path to a service-account JSON file.
-  // Nothing here invents, generates, or commits any credential; if
-  // it's unset, push is simply disabled.
+  // firebase-admin's applicationDefault() uses
+  // GOOGLE_APPLICATION_CREDENTIALS when it is set to the path of a
+  // service-account JSON file.
+  //
+  // Nothing here invents, generates, or commits any credential.
+  // If it is unset, push is simply disabled.
   if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) {
     console.warn(
       '[Push] GOOGLE_APPLICATION_CREDENTIALS is not set — FCM push notifications ' +
@@ -32,31 +45,40 @@ function tryInitFirebase() {
         'client. See notifications/PLATFORM-NOTES.md to enable push for ' +
         'backgrounded/killed Android devices.'
     );
+
     return null;
   }
 
   try {
-    // Required only when push is actually configured — see
-    // package.json / PLATFORM-NOTES.md for the install command. Not
-    // requiring this at the top of the file means the rest of the
-    // app still runs with zero errors on a checkout that hasn't run
-    // that install yet.
-    admin = require('firebase-admin');
-
-    firebaseApp = admin.apps.length
-      ? admin.app()
-      : admin.initializeApp({
-          credential: admin.credential.applicationDefault(),
+    // Firebase Admin SDK v14 uses modular entry points.
+    //
+    // Do not use the removed legacy namespace API:
+    //   require('firebase-admin')
+    //   admin.apps
+    //   admin.credential
+    //   admin.messaging()
+    //
+    // applicationDefault() reads GOOGLE_APPLICATION_CREDENTIALS and
+    // authenticates using the service-account JSON file.
+    firebaseApp = getApps().length
+      ? getApp()
+      : initializeApp({
+          credential: applicationDefault(),
         });
 
-    console.log('[Push] Firebase Admin initialized — FCM push notifications enabled.');
+    console.log(
+      '[Push] Firebase Admin initialized — FCM push notifications enabled.'
+    );
   } catch (e) {
     console.error(
-      '[Push] Failed to initialize Firebase Admin (is the firebase-admin package ' +
-        'installed, and does GOOGLE_APPLICATION_CREDENTIALS point at a valid ' +
-        'service-account file?):',
-      e.message
+      '[Push] Failed to initialize Firebase Admin:',
+      {
+        name: e?.name || 'Error',
+        code: e?.code || 'unknown',
+        message: e?.message || 'Unknown error',
+      }
     );
+
     firebaseApp = null;
   }
 
@@ -79,9 +101,11 @@ function buildSafePushPreview(message) {
 
   if (message.has_attachment) {
     const mime = message.attachment_mime || '';
+
     if (mime.startsWith('image/')) return '📷 Photo';
     if (mime.startsWith('video/')) return '🎞️ Video';
     if (mime.startsWith('audio/')) return '🎤 Voice message';
+
     return '📎 File';
   }
 
@@ -111,6 +135,7 @@ async function sendDmPush(message) {
   if (!app) return;
 
   let tokens;
+
   try {
     tokens = getPushTokensForUser(message.recipient_id);
   } catch (e) {
@@ -122,20 +147,20 @@ async function sendDmPush(message) {
 
   const preview = buildSafePushPreview(message);
   const tag = androidNotificationTag(message.id);
+  const messaging = getMessaging(app);
 
   const results = await Promise.allSettled(
     tokens.map(({ token }) =>
-      admin.messaging().send({
+      messaging.send({
         token,
+
         notification: {
           title: message.sender_username || 'New message',
           body: preview,
         },
-        // Everything Android needs to route a tap to the right DM —
-        // see notification-manager.js's routeNotificationClick() and
-        // push-registration.js's 'pushNotificationActionPerformed'
-        // listener. Deliberately no ciphertext, no tokens, no
-        // identity/session data.
+
+        // Everything Android needs to route a tap to the right DM.
+        // Deliberately no ciphertext, tokens, or identity/session data.
         data: {
           conversationId: String(message.sender_id),
           senderId: String(message.sender_id),
@@ -143,8 +168,10 @@ async function sendDmPush(message) {
           messageId: String(message.id),
           preview,
         },
+
         android: {
           priority: 'high',
+
           notification: {
             channelId: 'wire-dm',
             tag,
@@ -158,7 +185,10 @@ async function sendDmPush(message) {
     if (result.status !== 'rejected') return;
 
     // Never log the token itself — only the SDK's error code.
-    const code = result.reason && result.reason.errorInfo && result.reason.errorInfo.code;
+    const code =
+      result.reason &&
+      result.reason.errorInfo &&
+      result.reason.errorInfo.code;
 
     if (
       code === 'messaging/registration-token-not-registered' ||
@@ -166,7 +196,10 @@ async function sendDmPush(message) {
     ) {
       deletePushTokenByValue(tokens[i].token);
     } else {
-      console.error('[Push] Send failed:', code || 'unknown_error');
+      console.error(
+        '[Push] Send failed:',
+        code || 'unknown_error'
+      );
     }
   });
 }

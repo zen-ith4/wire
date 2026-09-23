@@ -1,11 +1,11 @@
 // ============================================================
 // Settings > Notifications
 // ------------------------------------------------------------
-// Binds the "DM Notifications" toggle. Follows the same pattern
-// as bindAnimations() in settings-appearance.js/theme.js: a plain
-// on/off switch backed by localStorage, initialized from the real
-// persisted state and never from whatever class happens to be in
-// the freshly-rendered DOM.
+// Binds the "DM Notifications" and "Message sounds" toggles. Both
+// follow the same pattern as bindAnimations() in
+// settings-appearance.js/theme.js: a plain on/off switch backed by
+// localStorage, initialized from the real persisted state and never
+// from whatever class happens to be in the freshly-rendered DOM.
 // ============================================================
 
 import { showToast } from '../core/utils.js';
@@ -14,6 +14,7 @@ import {
   getDmNotificationsEnabled,
   setDmNotificationsEnabled,
 } from '../notifications/notification-manager.js';
+import { messageSoundManager } from '../notifications/message-sounds.js';
 import {
   isWebNotificationSupported,
   requestWebNotificationPermission,
@@ -27,7 +28,31 @@ function isElectronApp() {
   return Boolean(window.electronAPI && window.electronAPI.isElectron);
 }
 
+function bindMessageSoundsToggle() {
+  const toggle = document.getElementById('message-sounds-toggle');
+  if (!toggle) return;
+
+  const paint = (enabled) => {
+    toggle.classList.toggle('on', enabled);
+    toggle.setAttribute('aria-checked', String(enabled));
+  };
+
+  paint(messageSoundManager.isEnabled());
+
+  toggle.addEventListener('click', () => {
+    const next = !messageSoundManager.isEnabled();
+    const applied = messageSoundManager.setEnabled(next);
+    paint(applied);
+
+    // Turning sounds on plays a preview. The click is also the user
+    // gesture browsers need before they will let the page play audio.
+    if (applied) messageSoundManager.playReceived();
+  });
+}
+
 export function bindNotificationSettings() {
+  bindMessageSoundsToggle();
+
   const toggle = document.getElementById('dm-notifications-toggle');
   if (!toggle) return;
 

@@ -47,6 +47,7 @@ import {
   decryptIncomingMessage
 } from '../crypto/messages/message-crypto.js';
 import { maybeNotifyDM } from '../notifications/notification-manager.js';
+import { messageSoundManager } from '../notifications/message-sounds.js';
 import {
   pushEntry as pushNavEntry,
   peekEntry as peekNavEntry,
@@ -1358,7 +1359,13 @@ thread.innerHTML = `
       };
     },
     buildFormExtra: (form) => form.append('recipient_id', dmActivePeer.id),
-    onMessage: (message) => addDmMessage(message),
+    onMessage: (message) => {
+      addDmMessage(message);
+      // The composer only calls onMessage after the send succeeded
+      // (text, file and voice paths alike), so a failed send never
+      // reaches this line.
+      messageSoundManager.playSent(message?.id);
+    },
     typingEmitter: dmTypingEmitter,
     canSend: () => !!dmActivePeer,
     inputAreaId: 'dm-input-area',
@@ -1765,6 +1772,17 @@ export async function addDmMessage(msg) {
   // the socket" flag through — the composer's own optimistic-add
   // path lands here too, and is simply a no-op for that module.
   maybeNotifyDM(decrypted, isActiveConversation);
+
+  // In-app "message received" sound. addDmMessage() is only reached
+  // for live messages (the Socket.IO 'new-dm-message' event and the
+  // composer's own send) — initial load, history sync and pagination
+  // fill the cache directly and never come through here. Reaching this
+  // point also means the message passed the entry.ids dedupe above and
+  // decrypted successfully; the manager additionally dedupes by id to
+  // cover two concurrent calls racing past that check.
+  if (Number(decrypted.sender_id) !== Number(currentUser.id)) {
+    messageSoundManager.playReceived(decrypted.id);
+  }
 
   if (!isActiveConversation) return;
 

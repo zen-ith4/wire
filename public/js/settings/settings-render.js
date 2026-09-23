@@ -25,6 +25,7 @@ import {
 import {
   getDmNotificationsEnabled
 } from '../notifications/notification-manager.js';
+import { messageSoundManager } from '../notifications/message-sounds.js';
 
 
 // ============================================================
@@ -772,6 +773,9 @@ function renderNotifications() {
   const dmNotificationsEnabled =
     getDmNotificationsEnabled();
 
+  const messageSoundsEnabled =
+    messageSoundManager.isEnabled();
+
   return `
     <div class="settings-section">
 
@@ -806,6 +810,40 @@ function renderNotifications() {
           role="switch"
           aria-checked="${dmNotificationsEnabled}"
           aria-label="DM Notifications">
+
+          <span class="switch-thumb"></span>
+
+        </button>
+
+      </div>
+
+
+      <!-- Message sounds -->
+
+      <div class="settings-row">
+
+        <div>
+          <div class="settings-row-label">
+            Message sounds
+          </div>
+
+          <div class="settings-row-sublabel">
+            Play a soft sound when you send a direct
+            message and when a new one arrives
+          </div>
+        </div>
+
+        <button
+          type="button"
+          class="switch${
+            messageSoundsEnabled
+              ? ' on'
+              : ''
+          }"
+          id="message-sounds-toggle"
+          role="switch"
+          aria-checked="${messageSoundsEnabled}"
+          aria-label="Message sounds">
 
           <span class="switch-thumb"></span>
 
@@ -1371,7 +1409,7 @@ export const SETTINGS_CATEGORIES = [
   {
     id: 'notifications',
     label: 'Notifications',
-    sublabel: 'Direct message notifications',
+    sublabel: 'Direct message notifications and sounds',
     icon: ICONS.mail || ''
   },
   {

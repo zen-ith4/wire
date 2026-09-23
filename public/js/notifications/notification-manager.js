@@ -594,6 +594,51 @@ export function initNotificationClickRouting() {
         )
     );
   }
+
+  // ----------------------------------------------------------
+  // Native WireFirebaseMessagingService tap routing
+  //
+  // Background/killed Android DM notifications are now built
+  // entirely natively (android/.../WireFirebaseMessagingService,
+  // not the FCM `notification` block Capacitor's plugin used to let
+  // the OS auto-display), so the tap never fires
+  // 'pushNotificationActionPerformed' above — that listener only
+  // covers notifications the plugin's own code created. Instead
+  // MainActivity hands the tapped notification's target to a tiny
+  // custom plugin, WireNotificationBridge (see
+  // MainActivity.java/WireNotificationBridgePlugin.java), which this
+  // reads once at startup. Safe to call even when the plugin isn't
+  // present (older builds, or a platform other than this Android
+  // app) — getCapacitorPlugin() returns null and this is a no-op.
+  // ----------------------------------------------------------
+
+  const WireNotificationBridge = getCapacitorPlugin(
+    'WireNotificationBridge'
+  );
+
+  if (WireNotificationBridge) {
+    WireNotificationBridge.getLaunchTarget()
+      .then((target) => {
+        if (target && target.conversationId != null) {
+          routeNotificationClick(target);
+        }
+      })
+      .catch((e) => {
+        notifWarn(
+          'WireNotificationBridge.getLaunchTarget() failed:',
+          e
+        );
+      });
+
+    // A tap while the app process is already alive (backgrounded,
+    // not killed) re-delivers via onNewIntent() on the native side
+    // rather than a fresh cold start, so it needs its own listener
+    // rather than only the one-shot getLaunchTarget() call above.
+    WireNotificationBridge.addListener(
+      'notificationTapped',
+      (target) => routeNotificationClick(target)
+    );
+  }
 }
 
 // ------------------------------------------------------------

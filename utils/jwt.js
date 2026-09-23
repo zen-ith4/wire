@@ -154,6 +154,41 @@ function verifyFileMediaToken(token, resource) {
   return payload;
 }
 
+// ======================================================
+// PUSH AVATAR TOKENS
+//
+// Same `typ: 'media'` / resType+resId model as signMediaToken above
+// (type 'avatar', id = the avatar owner's user id), so
+// verifySessionToken() already rejects these as session tokens for
+// free and verifyMediaToken() already enforces the scope check —
+// nothing new to verify, just a new (resType, TTL) combination.
+//
+// TTL is much longer than the 90s chat-attachment tokens: this token
+// is minted once, server-side, at DM-send time and embedded in an
+// FCM data payload (see services/push.service.js). Unlike a token
+// minted just before an <img> loads, there's no way to re-mint it
+// later — the device fetching it may be offline, asleep, or simply
+// slow to get around to opening the notification tray, and the
+// avatar is also re-fetched from the same URL on every subsequent
+// message from that sender until the local Android cache is warm
+// (see the native avatar cache). A few hours comfortably covers
+// "phone was off overnight" without being anywhere near as
+// long-lived as the 24h session token.
+const PUSH_AVATAR_TOKEN_TTL_SECONDS = 6 * 60 * 60; // 6 hours
+
+function signPushAvatarToken(userId) {
+  return jwt.sign(
+    {
+      sub: userId,
+      typ: 'media',
+      resType: 'avatar',
+      resId: userId,
+    },
+    constants.JWT_SECRET,
+    { expiresIn: PUSH_AVATAR_TOKEN_TTL_SECONDS }
+  );
+}
+
 module.exports = {
   signToken,
   verifyToken,
@@ -164,4 +199,6 @@ module.exports = {
   signFileMediaToken,
   verifyFileMediaToken,
   FILE_MEDIA_TOKEN_TTL_SECONDS,
+  signPushAvatarToken,
+  PUSH_AVATAR_TOKEN_TTL_SECONDS,
 };

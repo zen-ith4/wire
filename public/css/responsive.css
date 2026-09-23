@@ -64,11 +64,18 @@
 /* ---- Settings (features/settings.css) ---- */
 @media (max-width:1100px){
   .content{padding:24px;}
-  .settings-layout{max-width:500px;}
+  .settings-shell{max-width:500px;}
 }
 @media (max-width:520px){
   .profile-banner-wrap{aspect-ratio:2.2/1;}
   .profile-banner-actions{right:10px;bottom:10px;gap:6px;}
+}
+
+/* ---- Settings categories (features/settings.css) ---- */
+@media (max-width:760px){
+  .settings-category-row{gap:12px;min-height:56px;}
+  .settings-category-row-icon{width:34px;height:34px;}
+  .settings-category-header{margin-bottom:16px;}
 }
 
 /* ---- Image viewer (features/image-viewer.css) ----

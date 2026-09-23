@@ -30,13 +30,19 @@ function pushWarn(...args) {
 let channelEnsured = false;
 
 // Android 8+ requires a notification channel to exist before any
-// notification on it can show — this one channel is shared by both
-// delivery paths: the Local Notification path in
-// notification-manager.js's dispatchToCapacitor() *and* the FCM
-// auto-displayed notification (see PLATFORM-NOTES.md), since
-// LocalNotifications.createChannel() creates a real OS-level
-// NotificationChannel, not something scoped to the plugin. Creating
-// it is idempotent, so calling this more than once is harmless.
+// notification on it can show. LocalNotifications.createChannel()
+// creates a real OS-level NotificationChannel, not something scoped
+// to the plugin, so this is enough to cover any Local Notification
+// this app schedules on "wire-dm" elsewhere. It is NOT the only
+// place this channel gets created, though: background/killed DM
+// notifications are now built by the native
+// WireFirebaseMessagingService (see PLATFORM-NOTES.md), which cannot
+// rely on this JS having ever run first (a fresh install's first
+// message can arrive before the app has ever been opened), so that
+// native code also idempotently creates the same "wire-dm" channel
+// itself as a safety net. Both are harmless to call more than once
+// or in either order — NotificationManager.createNotificationChannel
+// is a no-op if the channel already exists with the same id.
 async function ensureNotificationChannel() {
   if (channelEnsured) return;
 

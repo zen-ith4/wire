@@ -1339,48 +1339,279 @@ function renderAccount() {
 
 
 // ============================================================
-// Full page
+// Category navigation
+// ------------------------------------------------------------
+// Settings is a category list (this file's SETTINGS_CATEGORIES)
+// that drills into one dedicated page per category, instead of
+// one long page with every section stacked. Each category still
+// renders through the exact same render*() functions above —
+// this section only decides *which* one(s) belong to which
+// category and wraps them in the list/detail shell. Behavior
+// (opening/closing a category, Back, animation) lives in
+// settings-nav.js; this file stays templates-only, same as
+// before the redesign.
+//
+// Do NOT list a category here that has no real settings behind
+// it — every id below maps to an existing render function.
 // ============================================================
 
-export function renderSettingsHtml({
-  me,
-  security,
-  hardwareAccelerationEnabled
-}) {
+export const SETTINGS_CATEGORIES = [
+  {
+    id: 'appearance',
+    label: 'Appearance',
+    sublabel: 'Theme, accent, background, fonts, animations',
+    icon: ICONS.palette || ''
+  },
+  {
+    id: 'profile',
+    label: 'Profile',
+    sublabel: 'Photo, banner and bio',
+    icon: ICONS.user || ''
+  },
+  {
+    id: 'notifications',
+    label: 'Notifications',
+    sublabel: 'Direct message notifications',
+    icon: ICONS.mail || ''
+  },
+  {
+    id: 'security',
+    label: 'Security & Privacy',
+    sublabel: 'Password and two-factor authentication',
+    icon: ICONS.shield || ''
+  },
+  {
+    id: 'account',
+    label: 'Account',
+    sublabel: 'Sign out of this device',
+    icon: ICONS.logout || ''
+  }
+];
+
+function findCategory(categoryId) {
+  return SETTINGS_CATEGORIES.find(
+    c => c.id === categoryId
+  ) || null;
+}
+
+
+// ============================================================
+// Category list (the main Settings screen)
+// ============================================================
+
+function renderCategoryListHtml() {
+  const rowsHtml =
+    SETTINGS_CATEGORIES
+      .map(cat => `
+        <button
+          type="button"
+          class="settings-category-row"
+          id="settings-category-row-${escapeHtml(cat.id)}"
+          data-category="${escapeHtml(cat.id)}"
+          role="listitem"
+          aria-label="${escapeHtml(cat.label)}: ${escapeHtml(cat.sublabel)}">
+
+          <span
+            class="settings-category-row-icon"
+            aria-hidden="true">
+
+            ${cat.icon}
+
+          </span>
+
+          <span class="settings-category-row-text">
+
+            <span class="settings-category-row-label">
+              ${escapeHtml(cat.label)}
+            </span>
+
+            <span class="settings-category-row-sublabel">
+              ${escapeHtml(cat.sublabel)}
+            </span>
+
+          </span>
+
+          <span
+            class="settings-category-row-chevron"
+            aria-hidden="true">
+
+            ${ICONS.chevronRight || ''}
+
+          </span>
+
+        </button>
+      `)
+      .join('');
+
+  return `
+    <div class="card settings-category-card">
+      <div
+        class="settings-category-list"
+        id="settings-category-list"
+        role="list">
+
+        ${rowsHtml}
+
+      </div>
+    </div>
+  `;
+}
+
+
+// ============================================================
+// Category detail body — the content of one opened category.
+//
+// Every existing render*() function above is reused as-is; this
+// only picks the right one(s) for the given category id. Kept as
+// its own export so settings-nav.js can call it again when the
+// user opens a *different* category without needing a full-page
+// re-render (see openSettingsCategory()).
+// ============================================================
+
+export function renderCategoryBodyHtml(
+  categoryId,
+  {
+    me,
+    security,
+    hardwareAccelerationEnabled
+  }
+) {
   const isElectronApp =
     Boolean(
       window.electronAPI &&
       window.electronAPI.isElectron
     );
 
-  /*
-   * Hardware acceleration is supplied asynchronously by the
-   * caller. Keep true as the fallback for existing callers
-   * that do not provide the value.
-   */
   const resolvedHardwareAcceleration =
     hardwareAccelerationEnabled ??
     true;
 
-  return `
-    <div class="settings-layout">
-
-      ${renderAppearance({
+  switch (categoryId) {
+    case 'appearance':
+      return renderAppearance({
         me,
         isElectronApp,
         hardwareAccelerationEnabled:
           resolvedHardwareAcceleration
-      })}
+      });
 
-      ${renderBanner(me)}
+    case 'profile':
+      return (
+        renderBanner(me) +
+        renderProfile(me)
+      );
 
-      ${renderProfile(me)}
+    case 'notifications':
+      return renderNotifications();
 
-      ${renderNotifications()}
+    case 'security':
+      return renderSecurity(security);
 
-      ${renderSecurity(security)}
+    case 'account':
+      return renderAccount();
 
-      ${renderAccount()}
+    default:
+      return '';
+  }
+}
+
+
+// ============================================================
+// Full page
+//
+// A grid-stacked shell: the category list and the opened
+// category's detail pane occupy the same grid cell (see
+// .settings-shell in settings.css) so the container's height is
+// always the taller of the two and swapping between them never
+// jumps. Only ONE of them is ever interactive at a time — see
+// .category-open in settings.css and settings-nav.js.
+//
+// activeCategoryId is supplied by settings.js (from
+// settings-nav.js's module state) so a re-render triggered from
+// *inside* an open category (password change, avatar upload,
+// email 2FA, etc. — see settings-security.js/settings-media.js)
+// redraws that same category's fresh data instead of bouncing
+// back to the category list.
+// ============================================================
+
+export function renderSettingsHtml({
+  me,
+  security,
+  hardwareAccelerationEnabled,
+  activeCategoryId
+}) {
+  const activeCategory =
+    activeCategoryId
+      ? findCategory(activeCategoryId)
+      : null;
+
+  const bodyHtml =
+    activeCategory
+      ? renderCategoryBodyHtml(
+          activeCategory.id,
+          {
+            me,
+            security,
+            hardwareAccelerationEnabled
+          }
+        )
+      : '';
+
+  return `
+    <div
+      class="settings-shell${
+        activeCategory
+          ? ' category-open'
+          : ''
+      }"
+      id="settings-shell">
+
+      <div class="settings-pane settings-pane-list">
+
+        ${renderCategoryListHtml()}
+
+      </div>
+
+      <div
+        class="settings-pane settings-pane-detail"
+        id="settings-category-detail">
+
+        <div class="settings-category-header">
+
+          <button
+            type="button"
+            class="settings-category-back"
+            id="settings-category-back"
+            aria-label="Back to Settings">
+
+            ${ICONS.arrowLeft || ''}
+            <span>Settings</span>
+
+          </button>
+
+          <div
+            class="settings-category-header-title"
+            id="settings-category-title">
+
+            ${
+              activeCategory
+                ? escapeHtml(activeCategory.label)
+                : ''
+            }
+
+          </div>
+
+        </div>
+
+        <div
+          class="settings-category-body"
+          id="settings-category-body">
+
+          ${bodyHtml}
+
+        </div>
+
+      </div>
 
     </div>
   `;

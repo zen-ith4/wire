@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 
 const { authenticate } = require('../middleware/authenticate');
+const { avatarMediaAuth } = require('../middleware/mediaAuth');
 const { asyncHandler } = require('../middleware/asyncHandler');
 const { pushTokenLimiter } = require('../middleware/rateLimiter');
 
@@ -62,9 +63,16 @@ router.delete(
   removeAvatar
 );
 
+// avatarMediaAuth accepts EITHER the normal session Bearer token
+// (the logged-in WebView's usual path) OR a short-lived, single-user
+// -scoped `?token=` (the native Android push path — see
+// middleware/mediaAuth.js and utils/jwt.js's signPushAvatarToken).
+// Strictly more permissive than the old `authenticate`-only guard in
+// exactly one narrow, scoped way — it never grants access to
+// anything beyond this one user's avatar.
 router.get(
   '/avatar/:userId',
-  authenticate,
+  avatarMediaAuth,
   getAvatar
 );
 

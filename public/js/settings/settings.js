@@ -15,7 +15,9 @@ import {
 } from '../core/view-session.js';
 
 import {
-  renderSettingsHtml
+  renderSettingsHtml,
+  renderCategoryBodyHtml,
+  SETTINGS_CATEGORIES
 } from './settings-render.js';
 
 import {
@@ -46,6 +48,12 @@ import {
   initAccent
 } from './theme.js';
 
+import {
+  getActiveSettingsCategory,
+  mountSettingsCategoryNav,
+  resetSettingsCategory
+} from './settings-nav.js';
+
 
 // ============================================================
 // Snapshot (stale-while-revalidate)
@@ -71,9 +79,26 @@ function dropSettingsSnapshot() {
 
 window.addEventListener(
   'wire:logout',
-  dropSettingsSnapshot
+  () => {
+    dropSettingsSnapshot();
+
+    // Unlike the plain 'wire:settings-stale' write signal below,
+    // signing out really does leave the screen: reset back to the
+    // category list so a later sign-in doesn't resume mid-category.
+    resetSettingsCategory();
+  }
 );
 
+/*
+ * Fired by the profile/appearance/security/media modules right
+ * before each write (see their own comments). This only means
+ * "the cached snapshot is stale, refetch on next paint" — the
+ * write is almost always happening *inside* an open category
+ * (e.g. a password change in Security), so this must NOT reset
+ * which category is open, or the re-render those modules trigger
+ * right after the write would bounce the user back to the
+ * category list mid-task.
+ */
 window.addEventListener(
   'wire:settings-stale',
   dropSettingsSnapshot
@@ -134,6 +159,13 @@ function applyAccountAccent(me) {
 // ============================================================
 
 export async function showSettings() {
+  /*
+   * Fresh entry into the Settings tab (router navigation, not an
+   * internal re-render — see settings-nav.js) always starts at the
+   * category list, never resumes whatever category was last open.
+   */
+  resetSettingsCategory();
+
   const snap =
     settingsSnapshot;
 
@@ -273,41 +305,76 @@ export async function renderSettings(opts) {
       return;
     }
 
+    const activeCategoryId =
+      getActiveSettingsCategory();
+
     main.innerHTML =
       renderSettingsHtml({
         me,
         security,
-        hardwareAccelerationEnabled
+        hardwareAccelerationEnabled,
+        activeCategoryId
       });
 
     /*
-     * Bind each feature area independently.
-     *
-     * The DOM has already been rendered at this point, so all
-     * modules can safely query their own controls.
+     * Bind one category's feature area at a time, lazily, instead
+     * of every module unconditionally on every paint: only the
+     * category the user has actually opened (or is re-opening via
+     * a write-triggered refresh — see settings-security.js /
+     * settings-media.js) has matching DOM to bind against. The
+     * category list itself, and the Back button, are bound by
+     * mountSettingsCategoryNav().
      */
-    await bindAppearanceSettings({
-      me,
-      security,
-      hardwareAccelerationEnabled
+    async function bindCategory(categoryId) {
+      switch (categoryId) {
+        case 'appearance':
+          await bindAppearanceSettings({
+            me,
+            security,
+            hardwareAccelerationEnabled
+          });
+          break;
+
+        case 'profile':
+          bindProfileSettings({
+            me
+          });
+
+          bindMediaSettings({
+            me
+          });
+          break;
+
+        case 'security':
+          bindSecuritySettings({
+            me,
+            security
+          });
+          break;
+
+        case 'notifications':
+          bindNotificationSettings();
+          break;
+
+        case 'account':
+          bindAccountSettings();
+          break;
+      }
+    }
+
+    mountSettingsCategoryNav({
+      categories: SETTINGS_CATEGORIES,
+      bindCategory,
+      renderBody: categoryId =>
+        renderCategoryBodyHtml(
+          categoryId,
+          {
+            me,
+            security,
+            hardwareAccelerationEnabled
+          }
+        )
     });
-
-    bindProfileSettings({
-      me
-    });
-
-    bindSecuritySettings({
-      me,
-      security
-    });
-
-    bindMediaSettings({
-      me
-    });
-
-    bindNotificationSettings();
-
-    bindAccountSettings();
 
   } catch (e) {
     if (!isCurrent()) {

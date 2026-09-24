@@ -55,22 +55,22 @@ const constants = {
   WG_INTERFACE: process.env.WG_INTERFACE || 'wg0',
 
   // ======================================================
-  // Push notifications (Android FCM)
+  // Push notifications (Android FCM) — avatar image
   // ======================================================
   //
-  // Only used by services/push.service.js to build an absolute
-  // avatarUrl inside an FCM data payload — every other URL in this
-  // app is relative/same-origin because it's only ever rendered
-  // inside the WebView. A native Android background/killed FCM
-  // handler has no "current origin" to resolve a relative URL
-  // against, so this is the one place that genuinely needs an
-  // absolute, externally-reachable URL.
+  // Used only by services/push.service.js to build an absolute
+  // avatarUrl for the FCM notification payload's
+  // android.notification.imageUrl. Every other URL in this app is
+  // relative/same-origin because it's only ever rendered inside the
+  // WebView; FCM's own image-fetching infrastructure has no "current
+  // origin" to resolve a relative URL against, so this is the one
+  // place that genuinely needs an absolute, externally-reachable URL.
   //
-  // Optional: if unset, sendDmPush() simply omits avatarUrl from the
-  // payload and the native notification falls back to the generic
-  // Wire icon. Never guessed/derived from HOST, since HOST here is a
-  // bind address (often a WireGuard LAN IP), not necessarily the
-  // address a phone off that VPN can reach.
+  // Optional: if unset, sendDmPush() simply omits imageUrl and the
+  // notification shows Android's normal default icon, exactly as
+  // before this feature existed. Never guessed/derived from HOST,
+  // since HOST here is a bind address (often a WireGuard LAN IP),
+  // not necessarily the address a phone off that VPN can reach.
   PUBLIC_BASE_URL: process.env.PUBLIC_BASE_URL
     ? process.env.PUBLIC_BASE_URL.replace(/\/+$/, '')
     : null,

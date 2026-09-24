@@ -45,6 +45,10 @@ import {
 } from './settings-notifications.js';
 
 import {
+  bindMessageSoundSettings
+} from './settings-message-sounds.js';
+
+import {
   initAccent
 } from './theme.js';
 
@@ -354,6 +358,10 @@ export async function renderSettings(opts) {
 
         case 'notifications':
           bindNotificationSettings();
+          break;
+
+        case 'message-sounds':
+          bindMessageSoundSettings();
           break;
 
         case 'account':

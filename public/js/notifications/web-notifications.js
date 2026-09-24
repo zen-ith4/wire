@@ -40,6 +40,7 @@ export function showWebNotification({
   senderId,
   senderName,
   preview,
+  icon,
 }) {
   if (!isWebNotificationSupported()) return;
   if (Notification.permission !== 'granted') return;
@@ -48,7 +49,11 @@ export function showWebNotification({
   try {
     notification = new Notification(senderName, {
       body: preview,
-      icon: '/img/logo.jpg',
+      // Falls back to the existing default app icon whenever no
+      // avatar was available (or couldn't be loaded) — see
+      // notification-manager.js's maybeNotifyDM(), which is the only
+      // caller and the only place that decides what `icon` is.
+      icon: icon || '/img/logo.jpg',
       // One notification per peer, not one per message — a second
       // DM from the same person while the first is still showing
       // replaces it instead of stacking.

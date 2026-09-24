@@ -31,6 +31,14 @@ import {
 } from './reply.js';
 import { bindSwipeToReply } from './swipe-reply.js';
 import {
+  createLayoutBuilder,
+  repairSeam,
+  findFirstUnreadId,
+  formatTime,
+  formatFullDateTime
+} from './dm-layout.js';
+import { copyText } from '../files/links.js';
+import {
   createTypingEmitter,
   createTypingIndicator,
   wireTypingInput
@@ -111,7 +119,11 @@ function getOrCreateDmCacheEntry(peerId, username) {
       initialized: false,
       loadingOlder: false,
       scrollTop: 0,
-      atBottom: true
+      atBottom: true,
+      // First unread message of the peer (see settleUnread below) and
+      // whether the "New messages" marker has been shown for it yet.
+      unreadFromId: null,
+      unreadShown: false
     };
     dmCache.set(peerId, entry);
   } else if (username) {
@@ -137,6 +149,22 @@ function saveDmScrollState() {
 
   dmEntry.scrollTop = container.scrollTop;
   dmEntry.atBottom = isNearBottom(container);
+}
+
+// The unread marker belongs to one visit of a conversation: it is
+// computed when the messages are fetched (or when a message arrives
+// while the thread is closed), shown while the thread stays open, and
+// dropped once the user leaves — the server has marked those messages
+// read by then. A boundary that was never shown yet is kept.
+function settleUnread(entry) {
+  if (entry && entry.unreadShown) {
+    entry.unreadFromId = null;
+    entry.unreadShown = false;
+  }
+}
+
+function currentUserId() {
+  return Number(getCurrentUser()?.id);
 }
 
 export function getDmActivePeer() {
@@ -1234,6 +1262,7 @@ window.openDmConversation = async function (peerId, username, opts = {}) {
   dmTypingEmitter.stop();
   dmTypingIndicator.clearAll();
   saveDmScrollState();
+  settleUnread(dmEntry);
 
   dmActivePeer = { id: peerId, username };
   dmEntry = getOrCreateDmCacheEntry(peerId, username);
@@ -1385,6 +1414,8 @@ thread.innerHTML = `
   // listeners go away with it the next time the thread is rebuilt). On
   // the phone layout a rightward swipe that starts in the left edge
   // strip belongs to swipe-back, so it is not started here.
+  bindDmMessageActions(container);
+
   bindSwipeToReply(container, {
     onReply: (id) => window.replyToDmMessage(id),
     shouldIgnoreStart: (e, dir) =>
@@ -1415,6 +1446,7 @@ thread.innerHTML = `
 // ---------- Close conversation ----------
 window.closeDmThreadMobile = function () {
   saveDmScrollState();
+  settleUnread(dmEntry);
 
   const thread = document.getElementById('dm-thread');
 
@@ -1459,9 +1491,13 @@ function renderDmMessagesFromCache() {
     frag.appendChild(buildLoadMoreEl(loadOlderDm));
   }
 
+  const layout = createLayoutBuilder(frag, {
+    boundaryId: dmEntry.unreadFromId
+  });
   for (const msg of dmEntry.messages) {
-    frag.appendChild(buildDmMessageEl(msg, currentUser));
+    layout.add(msg, buildDmMessageEl(msg, currentUser));
   }
+  if (layout.unreadInserted) dmEntry.unreadShown = true;
 
   container.innerHTML = '';
   container.appendChild(frag);
@@ -1492,13 +1528,31 @@ async function syncDmMessagesSince() {
     const currentUser = getCurrentUser();
     const frag = document.createDocumentFragment();
 
-    for (const msg of decryptedMessages) {
-      if (dmEntry.ids.has(msg.id)) continue;
+    const fresh = decryptedMessages.filter((m) => !dmEntry.ids.has(m.id));
+    if (fresh.length === 0) return;
+
+    if (dmEntry.unreadFromId == null) {
+      dmEntry.unreadFromId = findFirstUnreadId(fresh, currentUserId());
+    }
+
+    const prevMsg = dmEntry.messages[dmEntry.messages.length - 1] || null;
+    const lastEl = container ? container.lastElementChild : null;
+    const layout = createLayoutBuilder(frag, {
+      prevMsg,
+      prevEl:
+        lastEl && prevMsg && lastEl.dataset?.msgId === String(prevMsg.id)
+          ? lastEl
+          : null,
+      boundaryId: dmEntry.unreadFromId
+    });
+
+    for (const msg of fresh) {
       dmEntry.ids.add(msg.id);
       dmEntry.byId.set(msg.id, msg);
       dmEntry.messages.push(msg);
-      if (container) frag.appendChild(buildDmMessageEl(msg, currentUser));
+      if (container) layout.add(msg, buildDmMessageEl(msg, currentUser));
     }
+    if (layout.unreadInserted) dmEntry.unreadShown = true;
 
     if (container && frag.childNodes.length > 0) {
       container.appendChild(frag);
@@ -1553,12 +1607,19 @@ async function loadRecentDm() {
     }
 
     const currentUser = getCurrentUser();
+    const unreadId = findFirstUnreadId(decryptedMessages, currentUserId());
+    if (unreadId != null) entry.unreadFromId = unreadId;
+
+    const layout = createLayoutBuilder(frag, {
+      boundaryId: entry.unreadFromId
+    });
     for (const msg of decryptedMessages) {
       entry.ids.add(msg.id);
       entry.byId.set(msg.id, msg);
       entry.messages.push(msg);
-      frag.appendChild(buildDmMessageEl(msg, currentUser));
+      layout.add(msg, buildDmMessageEl(msg, currentUser));
     }
+    if (layout.unreadInserted) entry.unreadShown = true;
 
     container.appendChild(frag);
     container.scrollTop = container.scrollHeight;
@@ -1613,17 +1674,40 @@ async function loadOlderDm() {
 
     const currentUser = getCurrentUser();
     const newMessages = [];
+    const layout = createLayoutBuilder(frag, {
+      boundaryId: entry.unreadFromId
+    });
+    let lastNewEl = null;
     for (const msg of decryptedMessages) {
       if (!entry.ids.has(msg.id)) {
         entry.ids.add(msg.id);
         entry.byId.set(msg.id, msg);
         newMessages.push(msg);
-        frag.appendChild(buildDmMessageEl(msg, currentUser));
+        lastNewEl = buildDmMessageEl(msg, currentUser);
+        layout.add(msg, lastNewEl);
       }
     }
+    if (layout.unreadInserted) entry.unreadShown = true;
+
+    const firstOldMsg = entry.messages[0] || null;
+    const firstOldEl = firstOldMsg
+      ? container.querySelector(':scope > .chat-msg')
+      : null;
 
     entry.messages.unshift(...newMessages);
     container.insertBefore(frag, container.firstChild);
+
+    // The page above joins the old top of the list: its date separator
+    // (it used to be first) and its group may need to change.
+    if (firstOldEl && lastNewEl) {
+      repairSeam({
+        prevMsg: newMessages[newMessages.length - 1],
+        prevEl: lastNewEl,
+        nextMsg: firstOldMsg,
+        nextEl: firstOldEl,
+        boundaryId: entry.unreadFromId
+      });
+    }
     container.scrollTop = oldTop + (container.scrollHeight - prevHeight);
   } catch (e) {
     entry.loadingOlder = false;
@@ -1664,7 +1748,7 @@ function buildDmMessageEl(msg, currentUser) {
     <div class="chat-msg-content">
       <div class="chat-meta">
         <span class="chat-sender">${escapeHtml(msg.sender_username)}</span>
-        <span class="chat-time">${formatDate(msg.timestamp)}</span>
+        <time class="chat-time" datetime="${escapeAttr(msg.timestamp)}" title="${escapeAttr(formatFullDateTime(msg.timestamp))}">${formatTime(msg.timestamp)}</time>
         <button type="button" class="chat-msg-reply" title="Reply" onclick="window.replyToDmMessage(${msg.id})">${ICONS.reply}</button>
         ${imageDownloadButtonHtml(msg, 'dm')}
         ${
@@ -1676,7 +1760,7 @@ function buildDmMessageEl(msg, currentUser) {
       ${buildReplyQuoteHtml(msg, 'dm')}
       ${
         messageText
-          ? `<div class="chat-bubble" dir="auto">${linkifyHtml(messageText)}</div>`
+          ? `<div class="chat-bubble" dir="auto">${linkifyHtml(messageText)}<button type="button" class="chat-msg-copy" title="Copy message text" aria-label="Copy message text">${ICONS.copy}</button></div>`
           : ''
       }
       ${msg.has_attachment ? renderAttachment(msg, 'dm') : ''}
@@ -1694,6 +1778,84 @@ function buildDmMessageEl(msg, currentUser) {
 
   mountAttachmentMedia(msg, div, 'dm');
   return div;
+}
+
+// ---------- Message actions (copy, tap-to-reveal) ----------
+// One delegated click listener per #dm-messages element (the element is
+// rebuilt for every conversation, so nothing accumulates). No
+// per-message handlers.
+const TAP_IGNORE_SELECTOR =
+  'a,button,input,textarea,select,label,video,audio,[role="button"],' +
+  '.reply-quote,.reactions-row,.chat-attachment,.chat-attachment-image-wrap,' +
+  '[data-no-swipe-reply]';
+
+async function copyDmMessageText(btn) {
+  const row = btn.closest('.chat-msg');
+  const msg = row ? dmEntry?.byId.get(Number(row.dataset.msgId)) : null;
+  // The decrypted plain text as sent — never the rendered HTML, ids,
+  // names or timestamps.
+  const text = msg && msg.content != null ? String(msg.content) : '';
+  if (!text) {
+    showToast('Nothing to copy', 'info');
+    return;
+  }
+
+  // copyText() (files/links.js) only has a non-Clipboard-API fallback
+  // when given an input to select; a throwaway one keeps this working
+  // where navigator.clipboard is unavailable.
+  const field = document.createElement('textarea');
+  field.value = text;
+  field.setAttribute('readonly', '');
+  field.setAttribute('aria-hidden', 'true');
+  field.style.cssText =
+    'position:fixed;top:0;left:0;opacity:0;pointer-events:none;';
+  document.body.appendChild(field);
+  let result;
+  try {
+    result = await copyText(text, field);
+  } finally {
+    field.remove();
+  }
+
+  if (result === 'copied') {
+    showToast('Message copied', 'success');
+    btn.innerHTML = ICONS.check;
+    setTimeout(() => {
+      if (btn.isConnected) btn.innerHTML = ICONS.copy;
+    }, 1200);
+  } else {
+    showToast('Couldn\u2019t copy automatically', 'error');
+  }
+}
+
+function bindDmMessageActions(container) {
+  let openRow = null;
+  const noHover = window.matchMedia?.('(hover: none)');
+
+  container.addEventListener('click', (e) => {
+    const copyBtn = e.target.closest('.chat-msg-copy');
+    if (copyBtn && container.contains(copyBtn)) {
+      e.preventDefault();
+      void copyDmMessageText(copyBtn);
+      return;
+    }
+
+    // Touch: nothing is permanently drawn on the bubbles, so a tap on a
+    // row toggles its extras (copy button; a grouped row's toolbar,
+    // which would otherwise sit on top of the message above).
+    if (!noHover?.matches) return;
+    if (e.target.closest(TAP_IGNORE_SELECTOR)) return;
+    const sel = window.getSelection?.();
+    if (sel && !sel.isCollapsed) return;
+
+    const row = e.target.closest('.chat-msg');
+    if (openRow && openRow !== row) openRow.classList.remove('is-actions-open');
+    if (!row || !container.contains(row)) {
+      openRow = null;
+      return;
+    }
+    openRow = row.classList.toggle('is-actions-open') ? row : null;
+  });
 }
 
 // ---------- Incoming / outgoing messages ----------
@@ -1784,7 +1946,17 @@ export async function addDmMessage(msg) {
     messageSoundManager.playReceived(decrypted.id);
   }
 
-  if (!isActiveConversation) return;
+  if (!isActiveConversation) {
+    // Arrived while this thread is closed: remember where the unread
+    // run starts so the marker is drawn when the thread is opened.
+    if (
+      entry.unreadFromId == null &&
+      Number(decrypted.sender_id) !== Number(currentUser.id)
+    ) {
+      entry.unreadFromId = decrypted.id;
+    }
+    return;
+  }
 
   const container = document.getElementById('dm-messages');
   if (!container) return;
@@ -1799,7 +1971,21 @@ export async function addDmMessage(msg) {
   const emptyEl = container.querySelector('.empty-state');
   if (emptyEl) container.innerHTML = '';
 
-  container.appendChild(el);
+  // `entry.messages` already ends with this message; the one before it
+  // is what it may group with / get a date separator against.
+  const prevMsg =
+    entry.messages.length > 1
+      ? entry.messages[entry.messages.length - 2]
+      : null;
+  const lastEl = container.lastElementChild;
+  createLayoutBuilder(container, {
+    prevMsg,
+    prevEl:
+      lastEl && prevMsg && lastEl.dataset?.msgId === String(prevMsg.id)
+        ? lastEl
+        : null,
+    boundaryId: null
+  }).add(decrypted, el);
 
   const isOwnMessage = Number(msg.sender_id) === Number(currentUser.id);
   const wasAtBottom = dmEntry ? dmEntry.atBottom : true;
@@ -1817,6 +2003,20 @@ export function removeDmMessage(id) {
       entry.byId.delete(id);
       const idx = entry.messages.findIndex((m) => m.id === id);
       if (idx !== -1) entry.messages.splice(idx, 1);
+
+      // The boundary message itself was deleted: it moves to the next
+      // message from the peer (everything after it is unread too), or
+      // disappears if there is none.
+      if (entry.unreadFromId === id) {
+        const me = currentUserId();
+        const next =
+          idx === -1
+            ? null
+            : entry.messages
+                .slice(idx)
+                .find((m) => Number(m.sender_id) !== me);
+        entry.unreadFromId = next ? next.id : null;
+      }
     }
   }
 
@@ -1829,7 +2029,33 @@ export function removeDmMessage(id) {
   if (!el) return;
 
   cleanupImageUrls(el, 'dm');
+
+  // Rows around the one being removed, found before it leaves the DOM.
+  const siblingRow = (start, dir) => {
+    let n = start[dir];
+    while (n && !n.classList.contains('chat-msg')) n = n[dir];
+    return n;
+  };
+  const prevEl = siblingRow(el, 'previousElementSibling');
+  const nextEl = siblingRow(el, 'nextElementSibling');
+
   animateRemoval(el, () => {
+    if (dmEntry && (prevEl || nextEl)) {
+      const lookup = (row) =>
+        row ? dmEntry.byId.get(Number(row.dataset.msgId)) || null : null;
+      const nextMsg = lookup(nextEl);
+      if (nextEl && nextMsg) {
+        repairSeam({
+          prevMsg: lookup(prevEl),
+          prevEl,
+          nextMsg,
+          nextEl,
+          boundaryId: dmEntry.unreadFromId
+        });
+      } else if (prevEl) {
+        repairSeam({ prevEl, nextEl: null });
+      }
+    }
     if (!container.querySelector('.chat-msg')) {
       container.innerHTML = emptyState(
         ICONS.mail,

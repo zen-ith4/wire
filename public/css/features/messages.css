@@ -1725,3 +1725,269 @@ input.conv-search-input:focus{
   right:100%;
   margin-right:8px;
 }
+
+
+/* ================================================================
+   DM MESSAGE LIST — date separators, unread marker, sender groups,
+   copy button (chat/dm-layout.js + chat/dm.js)
+   ----------------------------------------------------------------
+   Everything here is scoped to .dm-thread or to modifier classes only
+   the DM renderer sets (.chat-msg--joined-prev / --joined-next), so
+   the group chat list is unaffected. Motion is written against
+   --motion-* and is therefore a no-op when animations are off.
+   ================================================================ */
+
+.dm-thread .chat-messages{
+  gap:0;
+  --dm-group-space:10px;
+  --dm-joined-space:2px;
+  --bubble-join-radius:3px;
+}
+
+@media (max-width:900px){
+  .dm-thread .chat-messages{
+    --dm-group-space:8px;
+  }
+}
+
+/* Larger gap where a new group starts, tight gap inside a group. */
+.dm-thread .chat-msg{
+  margin-top:var(--dm-group-space);
+}
+
+.dm-thread .chat-msg.chat-msg--joined-prev{
+  margin-top:var(--dm-joined-space);
+}
+
+.dm-thread .dm-divider + .chat-msg{
+  margin-top:0;
+}
+
+.dm-thread .chat-messages > :first-child{
+  margin-top:0;
+}
+
+
+/* ---------- Dividers (date + unread) ---------- */
+
+.dm-divider{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  flex-shrink:0;
+  margin:16px 0 10px;
+  font-size:11px;
+  font-weight:550;
+  line-height:1;
+  letter-spacing:.01em;
+  color:var(--muted2);
+  user-select:none;
+  -webkit-user-select:none;
+}
+
+.dm-divider::before,
+.dm-divider::after{
+  content:'';
+  flex:1 1 0;
+  height:1px;
+  background:var(--border);
+}
+
+.dm-divider-label{
+  flex:0 1 auto;
+  min-width:0;
+  text-align:center;
+}
+
+/* Unread marker: accent line + accent pill. The text label carries the
+   meaning (color is only reinforcement); pill text uses the accent's
+   own auto-contrast token so it stays readable for any accent. */
+.dm-divider--unread{
+  margin:12px 0 6px;
+  animation:motion-fade-in var(--motion-base) var(--motion-ease);
+}
+
+.dm-divider--unread::before,
+.dm-divider--unread::after{
+  background:rgb(var(--indigo));
+  opacity:.55;
+}
+
+.dm-divider--unread .dm-divider-label{
+  padding:3px 8px;
+  border-radius:999px;
+  background:rgb(var(--indigo));
+  color:var(--accent-contrast);
+  font-size:10px;
+  font-weight:600;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+  white-space:nowrap;
+}
+
+
+/* ---------- Sender groups ---------- */
+
+/* Rows that continue a group drop their header: the avatar keeps its
+   space (alignment) but is hidden, the name goes, and the action row
+   becomes a small toolbar that doesn't take up any height. */
+.chat-msg--joined-prev .chat-avatar{
+  visibility:hidden;
+}
+
+.chat-msg--joined-prev .chat-msg-content{
+  position:relative;
+}
+
+.chat-msg--joined-prev .chat-sender{
+  display:none;
+}
+
+.chat-msg--joined-prev .chat-meta{
+  position:absolute;
+  top:-20px;
+  right:0;
+  z-index:3;
+  margin:0;
+  gap:2px;
+  align-items:center;
+  padding:2px 4px;
+  border-radius:8px;
+  background:var(--ink2);
+  border:1px solid var(--border);
+  opacity:0;
+  pointer-events:none;
+  transition:opacity var(--ease-fast);
+}
+
+.chat-msg--joined-prev .chat-meta .chat-time{
+  padding:0 2px;
+}
+
+.chat-msg--joined-prev.is-actions-open .chat-meta,
+.chat-msg--joined-prev:focus-within .chat-meta{
+  opacity:1;
+  pointer-events:auto;
+}
+
+@media (hover:hover){
+  .chat-msg--joined-prev:hover .chat-meta{
+    opacity:1;
+    pointer-events:auto;
+  }
+}
+
+/* Connected corners. The tail corner on the avatar side is already
+   small in every style, so a row that continues a group only needs its
+   top corner on that side reduced. Clean has no tail/corners to join
+   (its accent rail is joined instead, below). Specificity is raised
+   deliberately: the own-bubble radius rules above are (0,5,0). */
+:root:not([data-bubble-style="clean"]) .chat-msg.chat-msg--joined-prev:not(.own) .chat-bubble{
+  border-top-left-radius:var(--bubble-join-radius, 3px);
+}
+
+:root:not([data-bubble-style="clean"]) .chat-msg.chat-msg--joined-prev.own .chat-bubble{
+  border-top-right-radius:var(--bubble-join-radius, 3px);
+}
+
+:root[data-bubble-style="clean"] .chat-msg--joined-prev .chat-bubble::before{
+  top:0;
+}
+
+:root[data-bubble-style="clean"] .chat-msg--joined-next .chat-bubble::before{
+  bottom:0;
+}
+
+
+/* ---------- Copy-message button ----------
+   Attached to the bubble's outer edge (half outside, vertically
+   centered) so it never enlarges the bubble and never overlaps a
+   neighbouring bubble in a tight group. */
+
+.chat-bubble{
+  position:relative;
+}
+
+.chat-msg-copy{
+  position:absolute;
+  top:50%;
+  right:-16px;
+  width:22px;
+  height:22px;
+  margin-top:-11px;
+  padding:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border-radius:50%;
+  background:var(--ink2);
+  border:1px solid var(--border);
+  color:var(--muted);
+  cursor:pointer;
+  opacity:0;
+  white-space:normal;
+  user-select:none;
+  -webkit-user-select:none;
+  transition:
+    opacity var(--ease-fast),
+    color var(--ease-fast),
+    background var(--ease-fast),
+    border-color var(--ease-fast);
+}
+
+.chat-msg.own .chat-msg-copy{
+  right:auto;
+  left:-16px;
+}
+
+.chat-msg-copy svg{
+  width:12px;
+  height:12px;
+  flex-shrink:0;
+  pointer-events:none;
+}
+
+/* Larger invisible touch target. */
+.chat-msg-copy::after{
+  content:'';
+  position:absolute;
+  inset:-6px;
+}
+
+.chat-msg-copy:hover{
+  color:var(--text);
+  background:var(--hover);
+  border-color:var(--accent-border);
+}
+
+.chat-msg-copy:focus-visible{
+  opacity:1;
+  color:var(--text);
+  outline:2px solid var(--accent-ring);
+  outline-offset:1px;
+}
+
+.chat-msg:focus-within .chat-msg-copy{
+  opacity:1;
+}
+
+@media (hover:hover){
+  .chat-msg:hover .chat-msg-copy{
+    opacity:1;
+  }
+}
+
+/* No hover on touch: nothing permanent on the bubbles. A tap on a row
+   (dm.js, bindDmMessageActions) toggles .is-actions-open, which reveals
+   this button (and a grouped row's toolbar). Hidden = not tappable, so
+   a stray tap near a bubble edge can't copy by accident. */
+@media (hover:none){
+  .chat-msg-copy{
+    pointer-events:none;
+  }
+
+  .chat-msg.is-actions-open .chat-msg-copy{
+    opacity:1;
+    pointer-events:auto;
+  }
+}

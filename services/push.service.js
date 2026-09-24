@@ -7,25 +7,6 @@
 // DM path (services/socket.service.js's emitNewDirectMessage) changes,
 // and no fake/placeholder credentials are ever used.
 //
-// ------------------------------------------------------------
-// Data-only payload (no top-level `notification` block)
-// ------------------------------------------------------------
-// This used to send a `notification` block and let Android's OS
-// auto-display it. That's no longer enough: the app needs to show
-// the sender's avatar as a large icon, use its own monochrome status
-// -bar icon, group multiple DMs, and skip showing anything at all
-// while the app is foregrounded (a data-only message is delivered to
-// onMessageReceived() in every app state, unlike a `notification`
-// -block message, which the OS intercepts and auto-displays without
-// running any app code — exactly the behavior that made avatars/
-// grouping impossible before). All of that now happens in the native
-// android/.../WireFirebaseMessagingService, not here. See that file
-// and notifications/PLATFORM-NOTES.md for the full picture, including
-// why native E2EE decryption of the message text is NOT implemented
-// (the identity keypair lives in the WebView's IndexedDB —
-// public/js/crypto/storage.js — which a killed app's native code
-// cannot reach).
-//
 // See notifications/PLATFORM-NOTES.md (public/js/notifications/) for
 // the exact Firebase Console + environment setup this needs.
 // ============================================================
@@ -118,42 +99,42 @@ function tryInitFirebase() {
 // the one place the push preview differs from the rich, real preview
 // notification-manager.js's buildPreview() shows for a live,
 // already-decrypted app — see PLATFORM-NOTES.md for this tradeoff.
-//
-// "category" is a coarse machine-readable hint (for the native side
-// to pick an icon/behavior) alongside the same human-readable string.
 function buildSafePushPreview(message) {
-  if (message.is_voice_message) {
-    return { preview: '🎤 Voice message', category: 'voice' };
-  }
+  if (message.is_voice_message) return '🎤 Voice message';
 
   if (message.has_attachment) {
     const mime = message.attachment_mime || '';
 
-    if (mime.startsWith('image/')) return { preview: '📷 Photo', category: 'photo' };
-    if (mime.startsWith('video/')) return { preview: '🎞️ Video', category: 'video' };
-    if (mime.startsWith('audio/')) return { preview: '🎤 Voice message', category: 'voice' };
+    if (mime.startsWith('image/')) return '📷 Photo';
+    if (mime.startsWith('video/')) return '🎞️ Video';
+    if (mime.startsWith('audio/')) return '🎤 Voice message';
 
-    return { preview: '📎 File', category: 'file' };
+    return '📎 File';
   }
 
-  return { preview: 'Sent you a message', category: 'text' };
+  return 'Sent you a message';
 }
 
-// Grouping/tag key: one per CONVERSATION (not per message), so the
-// native side can bundle multiple DMs from the same sender under one
-// Android notification group instead of stacking a separate one per
-// message. See notification-manager.js's androidNotificationIdForMessage()
-// for the (unrelated) per-message id still used by Local Notifications
-// elsewhere in the app — this is deliberately a different, coarser key.
-function androidNotificationTag(conversationId) {
-  return `wire-dm-${Math.abs(Number(conversationId) % 2147483647)}`;
+// Same derivation as the frontend's
+// notifications/notification-manager.js:androidNotificationIdForMessage() —
+// kept as a small best-effort measure so a Local Notification and an
+// FCM-displayed notification for the same message share an
+// identifier, but see that function's own comment and
+// PLATFORM-NOTES.md: whether Android's notification manager actually
+// collapses these into one hasn't been verified on a real device, and
+// the visibility-based guard in dispatchToCapacitor() is the
+// mechanism this design actually relies on to avoid double-notifying.
+function androidNotificationTag(messageId) {
+  return `wire-dm-${Math.abs(Number(messageId) % 2147483647)}`;
 }
 
 // Builds an absolute, short-lived, single-user-scoped avatar URL for
-// the FCM payload — or null if either there's nothing to point at
-// (no avatar) or nowhere externally-reachable to point it at
-// (PUBLIC_BASE_URL unset). Never the raw avatar_path, and never any
-// form of the sender's long-lived session token — see
+// android.notification.imageUrl below — or null if either there's
+// nothing to point at (no avatar) or nowhere externally-reachable to
+// point it at (PUBLIC_BASE_URL unset), in which case Android just
+// shows its normal default notification icon, same as before this
+// feature existed. Never the raw avatar_path, and never any form of
+// the sender's long-lived session token — see
 // middleware/mediaAuth.js's avatarMediaAuth and utils/jwt.js's
 // signPushAvatarToken for the scope this token is limited to.
 function buildAvatarUrl(message) {
@@ -185,51 +166,45 @@ async function sendDmPush(message) {
 
   if (!tokens.length) return;
 
-  const { preview, category } = buildSafePushPreview(message);
-  const tag = androidNotificationTag(message.sender_id);
+  const preview = buildSafePushPreview(message);
+  const tag = androidNotificationTag(message.id);
   const avatarUrl = buildAvatarUrl(message);
   const messaging = getMessaging(app);
-
-  // Deliberately data-only — no top-level `notification` block. See
-  // the header comment above for why: avatar/grouping/icon/
-  // foreground-suppression all need the native
-  // WireFirebaseMessagingService to run its own code for every
-  // message, which a `notification`-block push would skip whenever
-  // the OS auto-displays it.
-  //
-  // Every field here is either already public within the
-  // conversation, or (avatarUrl) scoped and short-lived enough that
-  // a leak only exposes one user's profile picture for a few hours.
-  // Deliberately absent: plaintext content, ciphertext, access
-  // tokens, private keys, session/identity key state.
-  const dataPayload = {
-    conversationId: String(message.sender_id),
-    senderId: String(message.sender_id),
-    senderName: message.sender_username || '',
-    messageId: String(message.id),
-    preview,
-    category,
-    tag,
-  };
-
-  if (avatarUrl) {
-    dataPayload.avatarUrl = avatarUrl;
-  }
 
   const results = await Promise.allSettled(
     tokens.map(({ token }) =>
       messaging.send({
         token,
-        data: dataPayload,
+
+        notification: {
+          title: message.sender_username || 'New message',
+          body: preview,
+        },
+
+        // Everything Android needs to route a tap to the right DM.
+        // Deliberately no ciphertext, tokens, or identity/session data.
+        data: {
+          conversationId: String(message.sender_id),
+          senderId: String(message.sender_id),
+          senderName: message.sender_username || '',
+          messageId: String(message.id),
+          preview,
+        },
 
         android: {
           priority: 'high',
-          // No `android.notification` block either — that would
-          // also trigger OS auto-display for a message that, per
-          // the FCM spec, already carries a `data` payload. Keeping
-          // this purely data-only is what guarantees exactly one
-          // code path (the native service) ever decides whether/how
-          // to show something.
+
+          notification: {
+            channelId: 'wire-dm',
+            tag,
+            // The sender's avatar, shown as the notification's large
+            // icon when present. `undefined` here means the field is
+            // simply omitted from the payload (the SDK drops
+            // undefined keys), leaving Android's existing default
+            // icon behavior completely unchanged for senders with no
+            // avatar or when PUBLIC_BASE_URL isn't configured.
+            imageUrl: avatarUrl || undefined,
+          },
         },
       })
     )

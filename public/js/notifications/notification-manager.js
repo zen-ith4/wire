@@ -31,6 +31,7 @@ import { getCurrentUser } from '../core/auth.js';
 import { isNativeApp } from '../core/server.js';
 import { navigate } from '../core/router.js';
 import { isVoiceMessage } from '../media/voice-message.js';
+import { getAvatarUrl } from '../ui/avatar.js';
 import {
   isWebNotificationSupported,
   showWebNotification,
@@ -389,9 +390,27 @@ function dispatchToPlatform(payload) {
   // ----------------------------------------------------------
   // Plain browser / installed PWA
   // ----------------------------------------------------------
+  //
+  // getAvatarUrl() is the same cached, already-authenticated
+  // blob-URL fetch every avatar <img> in the app already uses (see
+  // public/js/ui/avatar.js) — nothing new is added to the auth
+  // path, and the resulting blob: URL never carries any token, so
+  // there is nothing sensitive in the Notification's `icon` value
+  // itself. Resolves to `null` for a user with no avatar, which
+  // showWebNotification() already treats as "use the default icon".
 
   if (isWebNotificationSupported()) {
-    showWebNotification(payload);
+    getAvatarUrl(payload.senderId)
+      .then((icon) =>
+        showWebNotification({ ...payload, icon })
+      )
+      .catch((e) => {
+        notifWarn(
+          'getAvatarUrl() failed, showing notification without an avatar:',
+          e
+        );
+        showWebNotification(payload);
+      });
   }
 }
 
@@ -592,51 +611,6 @@ export function initNotificationClickRouting() {
         routeNotificationClick(
           action?.notification?.data
         )
-    );
-  }
-
-  // ----------------------------------------------------------
-  // Native WireFirebaseMessagingService tap routing
-  //
-  // Background/killed Android DM notifications are now built
-  // entirely natively (android/.../WireFirebaseMessagingService,
-  // not the FCM `notification` block Capacitor's plugin used to let
-  // the OS auto-display), so the tap never fires
-  // 'pushNotificationActionPerformed' above — that listener only
-  // covers notifications the plugin's own code created. Instead
-  // MainActivity hands the tapped notification's target to a tiny
-  // custom plugin, WireNotificationBridge (see
-  // MainActivity.java/WireNotificationBridgePlugin.java), which this
-  // reads once at startup. Safe to call even when the plugin isn't
-  // present (older builds, or a platform other than this Android
-  // app) — getCapacitorPlugin() returns null and this is a no-op.
-  // ----------------------------------------------------------
-
-  const WireNotificationBridge = getCapacitorPlugin(
-    'WireNotificationBridge'
-  );
-
-  if (WireNotificationBridge) {
-    WireNotificationBridge.getLaunchTarget()
-      .then((target) => {
-        if (target && target.conversationId != null) {
-          routeNotificationClick(target);
-        }
-      })
-      .catch((e) => {
-        notifWarn(
-          'WireNotificationBridge.getLaunchTarget() failed:',
-          e
-        );
-      });
-
-    // A tap while the app process is already alive (backgrounded,
-    // not killed) re-delivers via onNewIntent() on the native side
-    // rather than a fresh cold start, so it needs its own listener
-    // rather than only the one-shot getLaunchTarget() call above.
-    WireNotificationBridge.addListener(
-      'notificationTapped',
-      (target) => routeNotificationClick(target)
     );
   }
 }

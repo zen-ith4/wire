@@ -1,0 +1,882 @@
+diff -ruN /tmp/orig/public/css/features/messages.css public/css/features/messages.css
+--- /tmp/orig/public/css/features/messages.css	2026-09-22 04:45:02.000000000 +0000
++++ public/css/features/messages.css	2026-09-23 22:30:35.007802359 +0000
+@@ -1725,3 +1725,269 @@
+   right:100%;
+   margin-right:8px;
+ }
++
++
++/* ================================================================
++   DM MESSAGE LIST — date separators, unread marker, sender groups,
++   copy button (chat/dm-layout.js + chat/dm.js)
++   ----------------------------------------------------------------
++   Everything here is scoped to .dm-thread or to modifier classes only
++   the DM renderer sets (.chat-msg--joined-prev / --joined-next), so
++   the group chat list is unaffected. Motion is written against
++   --motion-* and is therefore a no-op when animations are off.
++   ================================================================ */
++
++.dm-thread .chat-messages{
++  gap:0;
++  --dm-group-space:10px;
++  --dm-joined-space:2px;
++  --bubble-join-radius:3px;
++}
++
++@media (max-width:900px){
++  .dm-thread .chat-messages{
++    --dm-group-space:8px;
++  }
++}
++
++/* Larger gap where a new group starts, tight gap inside a group. */
++.dm-thread .chat-msg{
++  margin-top:var(--dm-group-space);
++}
++
++.dm-thread .chat-msg.chat-msg--joined-prev{
++  margin-top:var(--dm-joined-space);
++}
++
++.dm-thread .dm-divider + .chat-msg{
++  margin-top:0;
++}
++
++.dm-thread .chat-messages > :first-child{
++  margin-top:0;
++}
++
++
++/* ---------- Dividers (date + unread) ---------- */
++
++.dm-divider{
++  display:flex;
++  align-items:center;
++  gap:12px;
++  flex-shrink:0;
++  margin:16px 0 10px;
++  font-size:11px;
++  font-weight:550;
++  line-height:1;
++  letter-spacing:.01em;
++  color:var(--muted2);
++  user-select:none;
++  -webkit-user-select:none;
++}
++
++.dm-divider::before,
++.dm-divider::after{
++  content:'';
++  flex:1 1 0;
++  height:1px;
++  background:var(--border);
++}
++
++.dm-divider-label{
++  flex:0 1 auto;
++  min-width:0;
++  text-align:center;
++}
++
++/* Unread marker: accent line + accent pill. The text label carries the
++   meaning (color is only reinforcement); pill text uses the accent's
++   own auto-contrast token so it stays readable for any accent. */
++.dm-divider--unread{
++  margin:12px 0 6px;
++  animation:motion-fade-in var(--motion-base) var(--motion-ease);
++}
++
++.dm-divider--unread::before,
++.dm-divider--unread::after{
++  background:rgb(var(--indigo));
++  opacity:.55;
++}
++
++.dm-divider--unread .dm-divider-label{
++  padding:3px 8px;
++  border-radius:999px;
++  background:rgb(var(--indigo));
++  color:var(--accent-contrast);
++  font-size:10px;
++  font-weight:600;
++  letter-spacing:.06em;
++  text-transform:uppercase;
++  white-space:nowrap;
++}
++
++
++/* ---------- Sender groups ---------- */
++
++/* Rows that continue a group drop their header: the avatar keeps its
++   space (alignment) but is hidden, the name goes, and the action row
++   becomes a small toolbar that doesn't take up any height. */
++.chat-msg--joined-prev .chat-avatar{
++  visibility:hidden;
++}
++
++.chat-msg--joined-prev .chat-msg-content{
++  position:relative;
++}
++
++.chat-msg--joined-prev .chat-sender{
++  display:none;
++}
++
++.chat-msg--joined-prev .chat-meta{
++  position:absolute;
++  top:-20px;
++  right:0;
++  z-index:3;
++  margin:0;
++  gap:2px;
++  align-items:center;
++  padding:2px 4px;
++  border-radius:8px;
++  background:var(--ink2);
++  border:1px solid var(--border);
++  opacity:0;
++  pointer-events:none;
++  transition:opacity var(--ease-fast);
++}
++
++.chat-msg--joined-prev .chat-meta .chat-time{
++  padding:0 2px;
++}
++
++.chat-msg--joined-prev.is-actions-open .chat-meta,
++.chat-msg--joined-prev:focus-within .chat-meta{
++  opacity:1;
++  pointer-events:auto;
++}
++
++@media (hover:hover){
++  .chat-msg--joined-prev:hover .chat-meta{
++    opacity:1;
++    pointer-events:auto;
++  }
++}
++
++/* Connected corners. The tail corner on the avatar side is already
++   small in every style, so a row that continues a group only needs its
++   top corner on that side reduced. Clean has no tail/corners to join
++   (its accent rail is joined instead, below). Specificity is raised
++   deliberately: the own-bubble radius rules above are (0,5,0). */
++:root:not([data-bubble-style="clean"]) .chat-msg.chat-msg--joined-prev:not(.own) .chat-bubble{
++  border-top-left-radius:var(--bubble-join-radius, 3px);
++}
++
++:root:not([data-bubble-style="clean"]) .chat-msg.chat-msg--joined-prev.own .chat-bubble{
++  border-top-right-radius:var(--bubble-join-radius, 3px);
++}
++
++:root[data-bubble-style="clean"] .chat-msg--joined-prev .chat-bubble::before{
++  top:0;
++}
++
++:root[data-bubble-style="clean"] .chat-msg--joined-next .chat-bubble::before{
++  bottom:0;
++}
++
++
++/* ---------- Copy-message button ----------
++   Attached to the bubble's outer edge (half outside, vertically
++   centered) so it never enlarges the bubble and never overlaps a
++   neighbouring bubble in a tight group. */
++
++.chat-bubble{
++  position:relative;
++}
++
++.chat-msg-copy{
++  position:absolute;
++  top:50%;
++  right:-16px;
++  width:22px;
++  height:22px;
++  margin-top:-11px;
++  padding:0;
++  display:flex;
++  align-items:center;
++  justify-content:center;
++  border-radius:50%;
++  background:var(--ink2);
++  border:1px solid var(--border);
++  color:var(--muted);
++  cursor:pointer;
++  opacity:0;
++  white-space:normal;
++  user-select:none;
++  -webkit-user-select:none;
++  transition:
++    opacity var(--ease-fast),
++    color var(--ease-fast),
++    background var(--ease-fast),
++    border-color var(--ease-fast);
++}
++
++.chat-msg.own .chat-msg-copy{
++  right:auto;
++  left:-16px;
++}
++
++.chat-msg-copy svg{
++  width:12px;
++  height:12px;
++  flex-shrink:0;
++  pointer-events:none;
++}
++
++/* Larger invisible touch target. */
++.chat-msg-copy::after{
++  content:'';
++  position:absolute;
++  inset:-6px;
++}
++
++.chat-msg-copy:hover{
++  color:var(--text);
++  background:var(--hover);
++  border-color:var(--accent-border);
++}
++
++.chat-msg-copy:focus-visible{
++  opacity:1;
++  color:var(--text);
++  outline:2px solid var(--accent-ring);
++  outline-offset:1px;
++}
++
++.chat-msg:focus-within .chat-msg-copy{
++  opacity:1;
++}
++
++@media (hover:hover){
++  .chat-msg:hover .chat-msg-copy{
++    opacity:1;
++  }
++}
++
++/* No hover on touch: nothing permanent on the bubbles. A tap on a row
++   (dm.js, bindDmMessageActions) toggles .is-actions-open, which reveals
++   this button (and a grouped row's toolbar). Hidden = not tappable, so
++   a stray tap near a bubble edge can't copy by accident. */
++@media (hover:none){
++  .chat-msg-copy{
++    pointer-events:none;
++  }
++
++  .chat-msg.is-actions-open .chat-msg-copy{
++    opacity:1;
++    pointer-events:auto;
++  }
++}
+diff -ruN /tmp/orig/public/js/chat/dm-layout.js public/js/chat/dm-layout.js
+--- /tmp/orig/public/js/chat/dm-layout.js	1970-01-01 00:00:00.000000000 +0000
++++ public/js/chat/dm-layout.js	2026-09-23 22:28:44.236075014 +0000
+@@ -0,0 +1,213 @@
++// ============================================================
++// DM message-list layout: date separators, unread marker and
++// sender grouping.
++// ------------------------------------------------------------
++// Pure presentation. Message data, the cache in dm.js and the message
++// elements themselves are untouched; this module only decides which
++// small divider elements sit between messages and which "joined"
++// modifier classes a message row carries:
++//
++//   chat-msg--joined-prev   same group as the message above
++//   chat-msg--joined-next   same group as the message below
++//
++// standalone = neither, first = next only, middle = both, last = prev
++// only. CSS (features/messages.css) turns those into spacing, corners
++// and the hidden avatar/name of non-first rows.
++//
++// Invariant: a divider always sits IMMEDIATELY BEFORE the message it
++// introduces. Every incremental update (append, prepend, delete) only
++// has to repair the one seam it touches — nothing rescans the list.
++//
++// Calendar days use the browser's local timezone, the same as
++// formatDate() in core/utils.js.
++// ============================================================
++
++const JOIN_PREV = 'chat-msg--joined-prev';
++const JOIN_NEXT = 'chat-msg--joined-next';
++const DIVIDER = 'dm-divider';
++
++const DAY_LABEL = { year: 'numeric', month: 'long', day: 'numeric' };
++const TIME_LABEL = { hour: '2-digit', minute: '2-digit' };
++const FULL_LABEL = { dateStyle: 'medium', timeStyle: 'short' };
++
++// ---------- Formatting ----------
++
++export function dayKey(iso) {
++  const d = new Date(iso);
++  if (Number.isNaN(d.getTime())) return '';
++  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
++}
++
++export function formatDayLabel(iso) {
++  return new Date(iso).toLocaleDateString(undefined, DAY_LABEL);
++}
++
++export function formatTime(iso) {
++  if (!iso) return '';
++  return new Date(iso).toLocaleTimeString(undefined, TIME_LABEL);
++}
++
++export function formatFullDateTime(iso) {
++  if (!iso) return '';
++  return new Date(iso).toLocaleString(undefined, FULL_LABEL);
++}
++
++// ---------- Divider elements ----------
++
++// role="separator" + aria-label announces the date once; the visible
++// text is aria-hidden so it isn't read a second time.
++function buildDateSeparatorEl(iso) {
++  const label = formatDayLabel(iso);
++  const el = document.createElement('div');
++  el.className = `${DIVIDER} ${DIVIDER}--date`;
++  el.setAttribute('role', 'separator');
++  el.setAttribute('aria-label', label);
++  const span = document.createElement('span');
++  span.className = 'dm-divider-label';
++  span.setAttribute('aria-hidden', 'true');
++  span.textContent = label;
++  el.appendChild(span);
++  return el;
++}
++
++function buildUnreadMarkerEl() {
++  const el = document.createElement('div');
++  el.className = `${DIVIDER} ${DIVIDER}--unread`;
++  el.setAttribute('role', 'separator');
++  el.setAttribute('aria-label', 'New messages');
++  const span = document.createElement('span');
++  span.className = 'dm-divider-label';
++  span.setAttribute('aria-hidden', 'true');
++  span.textContent = 'New messages';
++  el.appendChild(span);
++  return el;
++}
++
++// ---------- Grouping rules ----------
++
++function sameSender(a, b) {
++  return Number(a.sender_id) === Number(b.sender_id);
++}
++
++// The one place that decides whether `msg` continues `prev`'s group.
++// Date changes and the unread boundary always start a new group.
++function joinsPrevious(prev, msg, boundaryId) {
++  if (!prev) return false;
++  if (boundaryId != null && msg.id === boundaryId) return false;
++  if (dayKey(prev.timestamp) !== dayKey(msg.timestamp)) return false;
++  return sameSender(prev, msg);
++}
++
++function setJoinPrev(el, on) {
++  el.classList.toggle(JOIN_PREV, on);
++}
++
++function setJoinNext(el, on) {
++  el.classList.toggle(JOIN_NEXT, on);
++}
++
++// ---------- Unread boundary ----------
++
++/**
++ * Id of the first message from the peer the server had not yet
++ * marked read when it was fetched (read_at is null in that response —
++ * the server marks the conversation read only AFTER building it), or
++ * null. Own messages are never "unread".
++ */
++export function findFirstUnreadId(messages, myId) {
++  for (const m of messages) {
++    if (Number(m.sender_id) !== Number(myId) && m.read_at == null) {
++      return m.id;
++    }
++  }
++  return null;
++}
++
++// ---------- Batch builder (initial render, sync, older pages, live) ----------
++
++/**
++ * Appends messages to `parent` (a DocumentFragment or the list), with
++ * separators and join classes. `prevMsg`/`prevEl` describe what is
++ * already above the first appended message (null for a fresh list).
++ * Returns { add(msg, el), unreadInserted }.
++ */
++export function createLayoutBuilder(
++  parent,
++  { prevMsg = null, prevEl = null, boundaryId = null } = {}
++) {
++  let pMsg = prevMsg;
++  let pEl = prevEl;
++  let pDay = prevMsg ? dayKey(prevMsg.timestamp) : null;
++
++  const builder = {
++    unreadInserted: false,
++    add(msg, el) {
++      const day = dayKey(msg.timestamp);
++      const newDay = pMsg === null || day !== pDay;
++      const isBoundary = boundaryId != null && msg.id === boundaryId;
++
++      if (newDay) parent.appendChild(buildDateSeparatorEl(msg.timestamp));
++      if (isBoundary) {
++        parent.appendChild(buildUnreadMarkerEl());
++        builder.unreadInserted = true;
++      }
++
++      const join =
++        !newDay && !isBoundary && pMsg !== null && sameSender(pMsg, msg);
++      setJoinPrev(el, join);
++      if (join && pEl) setJoinNext(pEl, true);
++
++      parent.appendChild(el);
++      pMsg = msg;
++      pEl = el;
++      pDay = day;
++    },
++  };
++  return builder;
++}
++
++// ---------- Seam repair (prepend / delete) ----------
++
++function isDivider(node) {
++  return !!node && node.classList?.contains(DIVIDER);
++}
++
++/**
++ * Re-derives everything that depends on the pair (prev, next) after
++ * the list changed between them. prev/next are message data and their
++ * rows; any may be null (list edge). Cheap: touches only the dividers
++ * directly above `nextEl` and the two rows' join classes.
++ * Returns true if an unread marker was (re)inserted.
++ */
++export function repairSeam({ prevMsg, prevEl, nextMsg, nextEl, boundaryId }) {
++  if (!nextEl) {
++    if (prevEl) {
++      setJoinNext(prevEl, false);
++      // Dividers that introduced the removed last row are now trailing.
++      while (isDivider(prevEl.nextElementSibling)) {
++        prevEl.nextElementSibling.remove();
++      }
++    }
++    return false;
++  }
++
++  let s = nextEl.previousElementSibling;
++  while (isDivider(s)) {
++    const before = s.previousElementSibling;
++    s.remove();
++    s = before;
++  }
++
++  const hasPrev = !!(prevMsg && prevEl);
++  const newDay =
++    !hasPrev || dayKey(prevMsg.timestamp) !== dayKey(nextMsg.timestamp);
++  const isBoundary = boundaryId != null && nextMsg.id === boundaryId;
++
++  if (newDay) nextEl.before(buildDateSeparatorEl(nextMsg.timestamp));
++  if (isBoundary) nextEl.before(buildUnreadMarkerEl());
++
++  const join = hasPrev && joinsPrevious(prevMsg, nextMsg, boundaryId);
++  setJoinPrev(nextEl, join);
++  if (prevEl) setJoinNext(prevEl, join);
++  return isBoundary;
++}
+diff -ruN /tmp/orig/public/js/chat/dm.js public/js/chat/dm.js
+--- /tmp/orig/public/js/chat/dm.js	2026-09-23 14:57:24.000000000 +0000
++++ public/js/chat/dm.js	2026-09-23 22:30:00.805961647 +0000
+@@ -31,6 +31,14 @@
+ } from './reply.js';
+ import { bindSwipeToReply } from './swipe-reply.js';
+ import {
++  createLayoutBuilder,
++  repairSeam,
++  findFirstUnreadId,
++  formatTime,
++  formatFullDateTime
++} from './dm-layout.js';
++import { copyText } from '../files/links.js';
++import {
+   createTypingEmitter,
+   createTypingIndicator,
+   wireTypingInput
+@@ -111,7 +119,11 @@
+       initialized: false,
+       loadingOlder: false,
+       scrollTop: 0,
+-      atBottom: true
++      atBottom: true,
++      // First unread message of the peer (see settleUnread below) and
++      // whether the "New messages" marker has been shown for it yet.
++      unreadFromId: null,
++      unreadShown: false
+     };
+     dmCache.set(peerId, entry);
+   } else if (username) {
+@@ -139,6 +151,22 @@
+   dmEntry.atBottom = isNearBottom(container);
+ }
+ 
++// The unread marker belongs to one visit of a conversation: it is
++// computed when the messages are fetched (or when a message arrives
++// while the thread is closed), shown while the thread stays open, and
++// dropped once the user leaves — the server has marked those messages
++// read by then. A boundary that was never shown yet is kept.
++function settleUnread(entry) {
++  if (entry && entry.unreadShown) {
++    entry.unreadFromId = null;
++    entry.unreadShown = false;
++  }
++}
++
++function currentUserId() {
++  return Number(getCurrentUser()?.id);
++}
++
+ export function getDmActivePeer() {
+   return dmActivePeer;
+ }
+@@ -1234,6 +1262,7 @@
+   dmTypingEmitter.stop();
+   dmTypingIndicator.clearAll();
+   saveDmScrollState();
++  settleUnread(dmEntry);
+ 
+   dmActivePeer = { id: peerId, username };
+   dmEntry = getOrCreateDmCacheEntry(peerId, username);
+@@ -1385,6 +1414,8 @@
+   // listeners go away with it the next time the thread is rebuilt). On
+   // the phone layout a rightward swipe that starts in the left edge
+   // strip belongs to swipe-back, so it is not started here.
++  bindDmMessageActions(container);
++
+   bindSwipeToReply(container, {
+     onReply: (id) => window.replyToDmMessage(id),
+     shouldIgnoreStart: (e, dir) =>
+@@ -1415,6 +1446,7 @@
+ // ---------- Close conversation ----------
+ window.closeDmThreadMobile = function () {
+   saveDmScrollState();
++  settleUnread(dmEntry);
+ 
+   const thread = document.getElementById('dm-thread');
+ 
+@@ -1459,9 +1491,13 @@
+     frag.appendChild(buildLoadMoreEl(loadOlderDm));
+   }
+ 
++  const layout = createLayoutBuilder(frag, {
++    boundaryId: dmEntry.unreadFromId
++  });
+   for (const msg of dmEntry.messages) {
+-    frag.appendChild(buildDmMessageEl(msg, currentUser));
++    layout.add(msg, buildDmMessageEl(msg, currentUser));
+   }
++  if (layout.unreadInserted) dmEntry.unreadShown = true;
+ 
+   container.innerHTML = '';
+   container.appendChild(frag);
+@@ -1492,13 +1528,31 @@
+     const currentUser = getCurrentUser();
+     const frag = document.createDocumentFragment();
+ 
+-    for (const msg of decryptedMessages) {
+-      if (dmEntry.ids.has(msg.id)) continue;
++    const fresh = decryptedMessages.filter((m) => !dmEntry.ids.has(m.id));
++    if (fresh.length === 0) return;
++
++    if (dmEntry.unreadFromId == null) {
++      dmEntry.unreadFromId = findFirstUnreadId(fresh, currentUserId());
++    }
++
++    const prevMsg = dmEntry.messages[dmEntry.messages.length - 1] || null;
++    const lastEl = container ? container.lastElementChild : null;
++    const layout = createLayoutBuilder(frag, {
++      prevMsg,
++      prevEl:
++        lastEl && prevMsg && lastEl.dataset?.msgId === String(prevMsg.id)
++          ? lastEl
++          : null,
++      boundaryId: dmEntry.unreadFromId
++    });
++
++    for (const msg of fresh) {
+       dmEntry.ids.add(msg.id);
+       dmEntry.byId.set(msg.id, msg);
+       dmEntry.messages.push(msg);
+-      if (container) frag.appendChild(buildDmMessageEl(msg, currentUser));
++      if (container) layout.add(msg, buildDmMessageEl(msg, currentUser));
+     }
++    if (layout.unreadInserted) dmEntry.unreadShown = true;
+ 
+     if (container && frag.childNodes.length > 0) {
+       container.appendChild(frag);
+@@ -1553,12 +1607,19 @@
+     }
+ 
+     const currentUser = getCurrentUser();
++    const unreadId = findFirstUnreadId(decryptedMessages, currentUserId());
++    if (unreadId != null) entry.unreadFromId = unreadId;
++
++    const layout = createLayoutBuilder(frag, {
++      boundaryId: entry.unreadFromId
++    });
+     for (const msg of decryptedMessages) {
+       entry.ids.add(msg.id);
+       entry.byId.set(msg.id, msg);
+       entry.messages.push(msg);
+-      frag.appendChild(buildDmMessageEl(msg, currentUser));
++      layout.add(msg, buildDmMessageEl(msg, currentUser));
+     }
++    if (layout.unreadInserted) entry.unreadShown = true;
+ 
+     container.appendChild(frag);
+     container.scrollTop = container.scrollHeight;
+@@ -1613,17 +1674,40 @@
+ 
+     const currentUser = getCurrentUser();
+     const newMessages = [];
++    const layout = createLayoutBuilder(frag, {
++      boundaryId: entry.unreadFromId
++    });
++    let lastNewEl = null;
+     for (const msg of decryptedMessages) {
+       if (!entry.ids.has(msg.id)) {
+         entry.ids.add(msg.id);
+         entry.byId.set(msg.id, msg);
+         newMessages.push(msg);
+-        frag.appendChild(buildDmMessageEl(msg, currentUser));
++        lastNewEl = buildDmMessageEl(msg, currentUser);
++        layout.add(msg, lastNewEl);
+       }
+     }
++    if (layout.unreadInserted) entry.unreadShown = true;
++
++    const firstOldMsg = entry.messages[0] || null;
++    const firstOldEl = firstOldMsg
++      ? container.querySelector(':scope > .chat-msg')
++      : null;
+ 
+     entry.messages.unshift(...newMessages);
+     container.insertBefore(frag, container.firstChild);
++
++    // The page above joins the old top of the list: its date separator
++    // (it used to be first) and its group may need to change.
++    if (firstOldEl && lastNewEl) {
++      repairSeam({
++        prevMsg: newMessages[newMessages.length - 1],
++        prevEl: lastNewEl,
++        nextMsg: firstOldMsg,
++        nextEl: firstOldEl,
++        boundaryId: entry.unreadFromId
++      });
++    }
+     container.scrollTop = oldTop + (container.scrollHeight - prevHeight);
+   } catch (e) {
+     entry.loadingOlder = false;
+@@ -1664,7 +1748,7 @@
+     <div class="chat-msg-content">
+       <div class="chat-meta">
+         <span class="chat-sender">${escapeHtml(msg.sender_username)}</span>
+-        <span class="chat-time">${formatDate(msg.timestamp)}</span>
++        <time class="chat-time" datetime="${escapeAttr(msg.timestamp)}" title="${escapeAttr(formatFullDateTime(msg.timestamp))}">${formatTime(msg.timestamp)}</time>
+         <button type="button" class="chat-msg-reply" title="Reply" onclick="window.replyToDmMessage(${msg.id})">${ICONS.reply}</button>
+         ${imageDownloadButtonHtml(msg, 'dm')}
+         ${
+@@ -1676,7 +1760,7 @@
+       ${buildReplyQuoteHtml(msg, 'dm')}
+       ${
+         messageText
+-          ? `<div class="chat-bubble" dir="auto">${linkifyHtml(messageText)}</div>`
++          ? `<div class="chat-bubble" dir="auto">${linkifyHtml(messageText)}<button type="button" class="chat-msg-copy" title="Copy message text" aria-label="Copy message text">${ICONS.copy}</button></div>`
+           : ''
+       }
+       ${msg.has_attachment ? renderAttachment(msg, 'dm') : ''}
+@@ -1696,6 +1780,84 @@
+   return div;
+ }
+ 
++// ---------- Message actions (copy, tap-to-reveal) ----------
++// One delegated click listener per #dm-messages element (the element is
++// rebuilt for every conversation, so nothing accumulates). No
++// per-message handlers.
++const TAP_IGNORE_SELECTOR =
++  'a,button,input,textarea,select,label,video,audio,[role="button"],' +
++  '.reply-quote,.reactions-row,.chat-attachment,.chat-attachment-image-wrap,' +
++  '[data-no-swipe-reply]';
++
++async function copyDmMessageText(btn) {
++  const row = btn.closest('.chat-msg');
++  const msg = row ? dmEntry?.byId.get(Number(row.dataset.msgId)) : null;
++  // The decrypted plain text as sent — never the rendered HTML, ids,
++  // names or timestamps.
++  const text = msg && msg.content != null ? String(msg.content) : '';
++  if (!text) {
++    showToast('Nothing to copy', 'info');
++    return;
++  }
++
++  // copyText() (files/links.js) only has a non-Clipboard-API fallback
++  // when given an input to select; a throwaway one keeps this working
++  // where navigator.clipboard is unavailable.
++  const field = document.createElement('textarea');
++  field.value = text;
++  field.setAttribute('readonly', '');
++  field.setAttribute('aria-hidden', 'true');
++  field.style.cssText =
++    'position:fixed;top:0;left:0;opacity:0;pointer-events:none;';
++  document.body.appendChild(field);
++  let result;
++  try {
++    result = await copyText(text, field);
++  } finally {
++    field.remove();
++  }
++
++  if (result === 'copied') {
++    showToast('Message copied', 'success');
++    btn.innerHTML = ICONS.check;
++    setTimeout(() => {
++      if (btn.isConnected) btn.innerHTML = ICONS.copy;
++    }, 1200);
++  } else {
++    showToast('Couldn\u2019t copy automatically', 'error');
++  }
++}
++
++function bindDmMessageActions(container) {
++  let openRow = null;
++  const noHover = window.matchMedia?.('(hover: none)');
++
++  container.addEventListener('click', (e) => {
++    const copyBtn = e.target.closest('.chat-msg-copy');
++    if (copyBtn && container.contains(copyBtn)) {
++      e.preventDefault();
++      void copyDmMessageText(copyBtn);
++      return;
++    }
++
++    // Touch: nothing is permanently drawn on the bubbles, so a tap on a
++    // row toggles its extras (copy button; a grouped row's toolbar,
++    // which would otherwise sit on top of the message above).
++    if (!noHover?.matches) return;
++    if (e.target.closest(TAP_IGNORE_SELECTOR)) return;
++    const sel = window.getSelection?.();
++    if (sel && !sel.isCollapsed) return;
++
++    const row = e.target.closest('.chat-msg');
++    if (openRow && openRow !== row) openRow.classList.remove('is-actions-open');
++    if (!row || !container.contains(row)) {
++      openRow = null;
++      return;
++    }
++    openRow = row.classList.toggle('is-actions-open') ? row : null;
++  });
++}
++
+ // ---------- Incoming / outgoing messages ----------
+ export async function addDmMessage(msg) {
+   const currentUser = getCurrentUser();
+@@ -1784,7 +1946,17 @@
+     messageSoundManager.playReceived(decrypted.id);
+   }
+ 
+-  if (!isActiveConversation) return;
++  if (!isActiveConversation) {
++    // Arrived while this thread is closed: remember where the unread
++    // run starts so the marker is drawn when the thread is opened.
++    if (
++      entry.unreadFromId == null &&
++      Number(decrypted.sender_id) !== Number(currentUser.id)
++    ) {
++      entry.unreadFromId = decrypted.id;
++    }
++    return;
++  }
+ 
+   const container = document.getElementById('dm-messages');
+   if (!container) return;
+@@ -1799,7 +1971,21 @@
+   const emptyEl = container.querySelector('.empty-state');
+   if (emptyEl) container.innerHTML = '';
+ 
+-  container.appendChild(el);
++  // `entry.messages` already ends with this message; the one before it
++  // is what it may group with / get a date separator against.
++  const prevMsg =
++    entry.messages.length > 1
++      ? entry.messages[entry.messages.length - 2]
++      : null;
++  const lastEl = container.lastElementChild;
++  createLayoutBuilder(container, {
++    prevMsg,
++    prevEl:
++      lastEl && prevMsg && lastEl.dataset?.msgId === String(prevMsg.id)
++        ? lastEl
++        : null,
++    boundaryId: null
++  }).add(decrypted, el);
+ 
+   const isOwnMessage = Number(msg.sender_id) === Number(currentUser.id);
+   const wasAtBottom = dmEntry ? dmEntry.atBottom : true;
+@@ -1817,6 +2003,20 @@
+       entry.byId.delete(id);
+       const idx = entry.messages.findIndex((m) => m.id === id);
+       if (idx !== -1) entry.messages.splice(idx, 1);
++
++      // The boundary message itself was deleted: it moves to the next
++      // message from the peer (everything after it is unread too), or
++      // disappears if there is none.
++      if (entry.unreadFromId === id) {
++        const me = currentUserId();
++        const next =
++          idx === -1
++            ? null
++            : entry.messages
++                .slice(idx)
++                .find((m) => Number(m.sender_id) !== me);
++        entry.unreadFromId = next ? next.id : null;
++      }
+     }
+   }
+ 
+@@ -1829,7 +2029,33 @@
+   if (!el) return;
+ 
+   cleanupImageUrls(el, 'dm');
++
++  // Rows around the one being removed, found before it leaves the DOM.
++  const siblingRow = (start, dir) => {
++    let n = start[dir];
++    while (n && !n.classList.contains('chat-msg')) n = n[dir];
++    return n;
++  };
++  const prevEl = siblingRow(el, 'previousElementSibling');
++  const nextEl = siblingRow(el, 'nextElementSibling');
++
+   animateRemoval(el, () => {
++    if (dmEntry && (prevEl || nextEl)) {
++      const lookup = (row) =>
++        row ? dmEntry.byId.get(Number(row.dataset.msgId)) || null : null;
++      const nextMsg = lookup(nextEl);
++      if (nextEl && nextMsg) {
++        repairSeam({
++          prevMsg: lookup(prevEl),
++          prevEl,
++          nextMsg,
++          nextEl,
++          boundaryId: dmEntry.unreadFromId
++        });
++      } else if (prevEl) {
++        repairSeam({ prevEl, nextEl: null });
++      }
++    }
+     if (!container.querySelector('.chat-msg')) {
+       container.innerHTML = emptyState(
+         ICONS.mail,

@@ -64,6 +64,58 @@ function loadUserAndContinue(userId, req, res, next) {
   next();
 }
 
+/*
+ * ------------------------------------------------------------------
+ * Avatar media (GET /api/me/avatar/:userId)
+ * ------------------------------------------------------------------
+ *
+ * Two legitimate callers:
+ *
+ *   1. The logged-in WebView (public/js/ui/avatar.js's getAvatarUrl())
+ *      — sends the normal Authorization: Bearer <session token>,
+ *      exactly like every other authenticated request. Unaffected by
+ *      this change.
+ *
+ *   2. Android's FCM notification image (services/push.service.js) —
+ *      the image is fetched by Google's/Android's own infrastructure,
+ *      not by app code, so there is no way to attach an Authorization
+ *      header, and the user's session token must never be put in an
+ *      FCM payload. Instead it uses a short-lived, single-user-scoped
+ *      `?token=` minted server-side by signPushAvatarToken()
+ *      (utils/jwt.js) at DM-send time.
+ *
+ * Same shape as mediaAuth() below, just scoped to resType 'avatar'
+ * with id = the requested :userId instead of a chat/DM message id.
+ */
+function avatarMediaAuth(req, res, next) {
+  const header = req.headers.authorization;
+
+  try {
+    if (header && header.startsWith('Bearer ')) {
+      const token = header.slice(7).trim();
+      const payload = verifySessionToken(token);
+      return loadUserAndContinue(payload.sub || payload.id, req, res, next);
+    }
+
+    if (typeof req.query.token === 'string' && req.query.token) {
+      const payload = verifyMediaToken(req.query.token.trim(), {
+        type: 'avatar',
+        id: Number(req.params.userId),
+      });
+
+      return loadUserAndContinue(payload.sub, req, res, next);
+    }
+  } catch (err) {
+    return res.status(401).json({
+      error: 'Invalid token'
+    });
+  }
+
+  return res.status(401).json({
+    error: 'Unauthorized'
+  });
+}
+
 function mediaAuth(req, res, next) {
   const header = req.headers.authorization;
 
@@ -86,60 +138,6 @@ function mediaAuth(req, res, next) {
       const payload = verifyMediaToken(req.query.token.trim(), {
         type: resourceType,
         id: resourceId,
-      });
-
-      return loadUserAndContinue(payload.sub, req, res, next);
-    }
-  } catch (err) {
-    return res.status(401).json({
-      error: 'Invalid token'
-    });
-  }
-
-  return res.status(401).json({
-    error: 'Unauthorized'
-  });
-}
-
-/*
- * ------------------------------------------------------------------
- * Avatar media (GET /api/me/avatar/:userId)
- * ------------------------------------------------------------------
- *
- * Two legitimate callers of this route:
- *
- *   1. The logged-in WebView (public/js/ui/avatar.js's fetchBlob())
- *      — sends the normal Authorization: Bearer <session token>,
- *      exactly like every other authenticated request.
- *
- *   2. The native Android push path (services/push.service.js /
- *      the FirebaseMessagingService on-device) — has no session
- *      token to put in an FCM payload (forbidden — see
- *      push.service.js's comments) and no Authorization header
- *      support from a plain HTTP GET issued by native code without
- *      also plumbing the session token through, which is exactly the
- *      secret-in-payload problem this is avoiding. Instead it uses a
- *      short-lived, single-user-scoped `?token=` minted server-side
- *      by signPushAvatarToken() (utils/jwt.js) at DM-send time and
- *      embedded in the FCM data payload as part of the avatar URL.
- *
- * Same shape as mediaAuth() above, just scoped to resType 'avatar'
- * with id = the requested :userId instead of a chat/DM message id.
- */
-function avatarMediaAuth(req, res, next) {
-  const header = req.headers.authorization;
-
-  try {
-    if (header && header.startsWith('Bearer ')) {
-      const token = header.slice(7).trim();
-      const payload = verifySessionToken(token);
-      return loadUserAndContinue(payload.sub || payload.id, req, res, next);
-    }
-
-    if (typeof req.query.token === 'string' && req.query.token) {
-      const payload = verifyMediaToken(req.query.token.trim(), {
-        type: 'avatar',
-        id: Number(req.params.userId),
       });
 
       return loadUserAndContinue(payload.sub, req, res, next);

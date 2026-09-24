@@ -63,13 +63,12 @@ router.delete(
   removeAvatar
 );
 
-// avatarMediaAuth accepts EITHER the normal session Bearer token
-// (the logged-in WebView's usual path) OR a short-lived, single-user
-// -scoped `?token=` (the native Android push path — see
-// middleware/mediaAuth.js and utils/jwt.js's signPushAvatarToken).
-// Strictly more permissive than the old `authenticate`-only guard in
-// exactly one narrow, scoped way — it never grants access to
-// anything beyond this one user's avatar.
+// avatarMediaAuth accepts EITHER the normal session Bearer token (the
+// logged-in WebView's usual path, unchanged) OR a short-lived,
+// single-user-scoped `?token=` (Android's FCM notification image path
+// — see middleware/mediaAuth.js and utils/jwt.js's
+// signPushAvatarToken). Strictly more permissive than the old
+// `authenticate`-only guard in exactly that one narrow, scoped way.
 router.get(
   '/avatar/:userId',
   avatarMediaAuth,

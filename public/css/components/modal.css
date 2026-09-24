@@ -14,8 +14,8 @@
 }
 .modal.active{display:flex;opacity:1;pointer-events:auto;animation:motion-fade-in var(--motion-fast) var(--motion-ease);}
 .modal-content {
-  background:rgba(var(--ink2-rgb),.92);
-  backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  background:rgba(var(--ink2-rgb),var(--sf-modal-alpha, .92));
+  backdrop-filter:var(--sf-modal-filter,blur(20px));-webkit-backdrop-filter:var(--sf-modal-filter,blur(20px));
   border:1px solid var(--border);
   border-radius:var(--radius-lg);
   padding:26px;width:100%;max-width:900px;

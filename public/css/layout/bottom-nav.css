@@ -91,7 +91,8 @@ button.topbar-more-btn{display:none;}
   right:calc(12px + env(safe-area-inset-right));
   min-width:216px;max-width:calc(100vw - 24px);
   padding:6px;
-  background:rgba(var(--ink2-rgb), .96);
+  background:rgba(var(--ink2-rgb), var(--sf-popover-alpha, .96));
+  backdrop-filter:var(--sf-popover-filter,none);-webkit-backdrop-filter:var(--sf-popover-filter,none);
   border:1px solid var(--border);border-radius:var(--radius-lg);
   box-shadow:0 12px 32px rgba(0,0,0,.35);
   transform-origin:top right;

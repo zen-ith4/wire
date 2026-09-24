@@ -37,6 +37,10 @@ import {
   showConfirm
 } from '../ui/confirm.js';
 
+import {
+  bindCustomAppearance
+} from './settings-appearance-custom.js';
+
 // ============================================================
 // Message bubble style
 //
@@ -948,6 +952,7 @@ export async function bindAppearanceSettings({
 
   bindBubbleAccent();
   bindAnimations();
+  bindCustomAppearance();
 
   if (
     window.electronAPI?.isElectron

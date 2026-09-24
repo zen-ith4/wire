@@ -23,6 +23,12 @@ import {
 } from './theme.js';
 
 import {
+  renderCustomBackgroundSection,
+  renderAdvancedAppearanceSection,
+  renderResetAllRow
+} from './settings-appearance-custom.js';
+
+import {
   getDmNotificationsEnabled
 } from '../notifications/notification-manager.js';
 import { renderMessageSounds } from './settings-message-sounds.js';
@@ -475,6 +481,11 @@ function renderAppearance({
       </div>
 
 
+      <!-- Custom background (local image) -->
+
+      ${renderCustomBackgroundSection()}
+
+
       <!-- Message bubble style -->
 
       <div
@@ -759,6 +770,16 @@ function renderAppearance({
           `
           : ''
       }
+
+
+      <!-- Advanced (transparency / blur) -->
+
+      ${renderAdvancedAppearanceSection()}
+
+
+      <!-- Reset -->
+
+      ${renderResetAllRow()}
 
     </div>
   `;

@@ -2,8 +2,8 @@
 .emoji-picker{
   position:fixed;z-index:250;width:320px;height:380px;
   display:flex;flex-direction:column;
-  background:rgba(var(--ink2-rgb),.95);
-  backdrop-filter:blur(16px);
+  background:rgba(var(--ink2-rgb),var(--sf-popover-alpha, .95));
+  backdrop-filter:var(--sf-popover-filter,blur(16px));-webkit-backdrop-filter:var(--sf-popover-filter,blur(16px));
   border:1px solid var(--border);
   border-radius:var(--radius-lg);
   box-shadow:0 16px 40px -8px rgba(0,0,0,.55), 0 4px 12px -2px rgba(0,0,0,.35);
@@ -40,7 +40,7 @@ input.emoji-picker-search:focus{border-color:var(--accent-border);}
 .emoji-picker-skin-menu{
   position:absolute;top:44px;right:10px;z-index:5;
   display:none;gap:6px;padding:8px;
-  background:rgba(var(--ink2-rgb),.98);backdrop-filter:blur(16px);
+  background:rgba(var(--ink2-rgb),var(--sf-popover-alpha, .98));backdrop-filter:var(--sf-popover-filter,blur(16px));-webkit-backdrop-filter:var(--sf-popover-filter,blur(16px));
   border:1px solid var(--border);border-radius:var(--radius);
   box-shadow:0 8px 24px -6px rgba(0,0,0,.5);
 }

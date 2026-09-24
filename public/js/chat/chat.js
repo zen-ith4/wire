@@ -15,13 +15,14 @@ import { avatarHtml } from '../ui/avatar.js';
 import { getCurrentUser } from '../core/auth.js';
 import { showConfirm } from '../ui/confirm.js';
 import { openEmojiPicker } from '../ui/emoji-picker.js';
-import { renderReactionsRow, updateMessageReactions, onReactionsUpdated } from './reactions.js';
+import { renderReactionsRow, reactButtonHtml, updateMessageReactions, onReactionsUpdated } from './reactions.js';
 import { buildReplyQuoteHtml, buildReplyPreview } from './reply.js';
 import { bindSwipeToReply } from './swipe-reply.js';
 import { createTypingEmitter, createTypingIndicator, wireTypingInput } from './typing.js';
 import { getSocket } from '../core/socket.js';
 import { createComposer } from './composer.js';
 import { setMessageAccent } from './message-accent.js';
+import { bindTapReveal } from './tap-reveal.js';
 
 let chatRenderGeneration = 0;
 let chatOldest = null;
@@ -168,6 +169,8 @@ export async function renderChat(opts) {
   bindSwipeToReply(document.getElementById('chat-messages'), {
     onReply: (id) => window.replyToChatMessage(id),
   });
+  // Touch: message actions appear only for the tapped message.
+  bindTapReveal(document.getElementById('chat-messages'));
   if (!fromCache) {
     chatOldest = null;
     chatHasMore = true;
@@ -409,13 +412,18 @@ function buildChatMessageEl(msg) {
       <div class="chat-meta">
         <span class="chat-sender">${escapeHtml(msg.username)}</span>
         <span class="chat-time">${formatDate(msg.timestamp)}</span>
-        <button type="button" class="chat-msg-reply" title="Reply" onclick="window.replyToChatMessage(${msg.id})">${ICONS.reply}</button>
-        ${imageDownloadButtonHtml(msg, 'chat')}
-        ${canDelete ? `<button type="button" class="chat-msg-delete" title="Delete message" onclick="window.deleteChatMessage(${msg.id})">${ICONS.trash}</button>` : ''}
       </div>
       ${buildReplyQuoteHtml(msg, 'chat')}
       ${msg.content ? `<div class="chat-bubble">${linkifyHtml(msg.content)}</div>` : ''}
       ${msg.has_attachment ? renderAttachment(msg, 'chat') : ''}
+      <div class="chat-msg-actions" role="toolbar" aria-label="Message actions">
+        <div class="chat-msg-actions-bar">
+        <button type="button" class="chat-msg-reply" title="Reply" aria-label="Reply" onclick="window.replyToChatMessage(${msg.id})">${ICONS.reply}</button>
+        ${reactButtonHtml(msg, 'chat')}
+        ${imageDownloadButtonHtml(msg, 'chat')}
+        ${canDelete ? `<button type="button" class="chat-msg-delete" title="Delete message" onclick="window.deleteChatMessage(${msg.id})">${ICONS.trash}</button>` : ''}
+        </div>
+      </div>
       ${renderReactionsRow(msg, 'chat')}
     </div>
   `;

@@ -20,9 +20,22 @@ const MESSAGES_CONTAINER_ID = {
 };
 
 /**
- * HTML for the row below a message bubble: existing reaction pills
- * (grouped by emoji, with a count and "own reaction" highlight) plus
- * a hover-revealed "add reaction" button. Called from
+ * The "React" button of a message's action bar (the .chat-meta row).
+ * It is the only entry point for adding a reaction from a message;
+ * it opens the same shared picker as always through
+ * window.openReactionPicker, anchored to itself. Called from
+ * buildChatMessageEl()/buildDmMessageEl().
+ */
+export function reactButtonHtml(msg, scope) {
+  return `<button type="button" class="chat-msg-react" title="React" aria-label="Add reaction"
+    onclick="window.openReactionPicker('${scope}', ${msg.id}, this)">${ICONS.emoji}</button>`;
+}
+
+/**
+ * HTML for the row below a message bubble: the existing reaction pills
+ * (grouped by emoji, with a count and "own reaction" highlight).
+ * Empty string when the message has no reactions, so an unreacted
+ * message carries no extra row. Called from
  * buildChatMessageEl()/buildDmMessageEl() when a message is first
  * rendered.
  */
@@ -42,13 +55,11 @@ export function renderReactionsRow(msg, scope) {
     `;
   }).join('');
 
+  if (!reactions.length) return '';
+
   return `
     <div class="reactions-row" data-msg-id="${msg.id}">
       ${pillsHtml}
-      <button type="button" class="reaction-add-btn" title="Add reaction"
-        onclick="window.openReactionPicker('${scope}', ${msg.id}, this)">
-        ${ICONS.emoji}
-      </button>
     </div>
   `;
 }
@@ -84,9 +95,9 @@ export function updateMessageReactions(scope, messageId, reactions) {
   if (existingRow) {
     existingRow.outerHTML = html;
   } else {
-    // Older messages rendered before this feature existed in this
-    // session wouldn't have a .reactions-row yet — append one.
-    msgEl.querySelector('div:last-child')?.insertAdjacentHTML('beforeend', html);
+    // A message without reactions has no .reactions-row yet — append
+    // one (CSS orders it after the bubble/attachment).
+    msgEl.querySelector('.chat-msg-content')?.insertAdjacentHTML('beforeend', html);
   }
 }
 

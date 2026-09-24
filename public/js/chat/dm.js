@@ -24,7 +24,8 @@ import { getCurrentUser } from '../core/auth.js';
 import { claimRender } from '../core/view-session.js';
 import { showConfirm } from '../ui/confirm.js';
 import { openEmojiPicker } from '../ui/emoji-picker.js';
-import { renderReactionsRow, onReactionsUpdated } from './reactions.js';
+import { renderReactionsRow, reactButtonHtml, onReactionsUpdated } from './reactions.js';
+import { isEmojiPickerOpen } from '../ui/emoji-picker.js';
 import {
   buildReplyQuoteHtml,
   buildReplyPreview
@@ -38,6 +39,7 @@ import {
   formatFullDateTime
 } from './dm-layout.js';
 import { copyText } from '../files/links.js';
+import { TAP_IGNORE_SELECTOR, isTouchClick } from './tap-reveal.js';
 import {
   createTypingEmitter,
   createTypingIndicator,
@@ -1749,21 +1751,31 @@ function buildDmMessageEl(msg, currentUser) {
       <div class="chat-meta">
         <span class="chat-sender">${escapeHtml(msg.sender_username)}</span>
         <time class="chat-time" datetime="${escapeAttr(msg.timestamp)}" title="${escapeAttr(formatFullDateTime(msg.timestamp))}">${formatTime(msg.timestamp)}</time>
-        <button type="button" class="chat-msg-reply" title="Reply" onclick="window.replyToDmMessage(${msg.id})">${ICONS.reply}</button>
-        ${imageDownloadButtonHtml(msg, 'dm')}
-        ${
-          canDelete
-            ? `<button type="button" class="chat-msg-delete" title="Delete message" onclick="window.deleteDmMessage(${msg.id})">${ICONS.trash}</button>`
-            : ''
-        }
       </div>
       ${buildReplyQuoteHtml(msg, 'dm')}
       ${
         messageText
-          ? `<div class="chat-bubble" dir="auto">${linkifyHtml(messageText)}<button type="button" class="chat-msg-copy" title="Copy message text" aria-label="Copy message text">${ICONS.copy}</button></div>`
+          ? `<div class="chat-bubble" dir="auto">${linkifyHtml(messageText)}</div>`
           : ''
       }
       ${msg.has_attachment ? renderAttachment(msg, 'dm') : ''}
+      <div class="chat-msg-actions" role="toolbar" aria-label="Message actions">
+        <div class="chat-msg-actions-bar">
+        <button type="button" class="chat-msg-reply" title="Reply" aria-label="Reply" onclick="window.replyToDmMessage(${msg.id})">${ICONS.reply}</button>
+        ${reactButtonHtml(msg, 'dm')}
+        ${
+          messageText
+            ? `<button type="button" class="chat-msg-copy" title="Copy message text" aria-label="Copy message text">${ICONS.copy}</button>`
+            : ''
+        }
+        ${imageDownloadButtonHtml(msg, 'dm')}
+        ${
+          canDelete
+            ? `<button type="button" class="chat-msg-delete" title="Delete message" aria-label="Delete message" onclick="window.deleteDmMessage(${msg.id})">${ICONS.trash}</button>`
+            : ''
+        }
+        </div>
+      </div>
       ${renderReactionsRow(msg, 'dm')}
     </div>
   `;
@@ -1780,14 +1792,10 @@ function buildDmMessageEl(msg, currentUser) {
   return div;
 }
 
-// ---------- Message actions (copy, tap-to-reveal) ----------
+// ---------- Message actions (copy, tap-to-reveal, double-tap react) ----------
 // One delegated click listener per #dm-messages element (the element is
 // rebuilt for every conversation, so nothing accumulates). No
 // per-message handlers.
-const TAP_IGNORE_SELECTOR =
-  'a,button,input,textarea,select,label,video,audio,[role="button"],' +
-  '.reply-quote,.reactions-row,.chat-attachment,.chat-attachment-image-wrap,' +
-  '[data-no-swipe-reply]';
 
 async function copyDmMessageText(btn) {
   const row = btn.closest('.chat-msg');
@@ -1828,9 +1836,41 @@ async function copyDmMessageText(btn) {
   }
 }
 
+// Double-tap = two touch clicks on the same message this close in
+// time and space. Built on `click` (not touchstart/touchend or
+// dblclick): the browser emits exactly one click per tap, so a tap can
+// never be counted twice, a swipe/scroll produces no click at all (and
+// swipe-reply swallows the click after its own gesture), and the
+// picker opens from inside a click — which the picker's own
+// outside-click listener (registered a tick later) cannot see.
+// .chat-msg is touch-action:pan-y, so there is no double-tap-zoom and
+// no click delay: the first tap acts immediately.
+const DOUBLE_TAP_MS = 300;
+const DOUBLE_TAP_SLOP_PX = 30;
+
 function bindDmMessageActions(container) {
   let openRow = null;
-  const noHover = window.matchMedia?.('(hover: none)');
+  let armTimer = 0;
+  let lastTap = null; // { row, t, x, y }
+
+  // A row's extras open on the first tap but only become tappable once
+  // the double-tap window has passed (.is-actions-armed): a floating
+  // toolbar that opens over the message's edge would otherwise catch
+  // the second tap of a double-tap (the browser snaps taps to nearby
+  // buttons) and fire Reply/Delete instead of opening the reactions.
+  const setRowActions = (row, on) => {
+    clearTimeout(armTimer);
+    row.classList.toggle('is-actions-open', on);
+    row.classList.remove('is-actions-armed');
+    if (on) {
+      armTimer = setTimeout(() => {
+        if (row.classList.contains('is-actions-open')) {
+          row.classList.add('is-actions-armed');
+        }
+      }, DOUBLE_TAP_MS + 20);
+    }
+    openRow = on ? row : null;
+  };
 
   container.addEventListener('click', (e) => {
     const copyBtn = e.target.closest('.chat-msg-copy');
@@ -1840,21 +1880,62 @@ function bindDmMessageActions(container) {
       return;
     }
 
-    // Touch: nothing is permanently drawn on the bubbles, so a tap on a
-    // row toggles its extras (copy button; a grouped row's toolbar,
-    // which would otherwise sit on top of the message above).
-    if (!noHover?.matches) return;
-    if (e.target.closest(TAP_IGNORE_SELECTOR)) return;
-    const sel = window.getSelection?.();
-    if (sel && !sel.isCollapsed) return;
+    if (!isTouchClick(e)) return;
 
-    const row = e.target.closest('.chat-msg');
-    if (openRow && openRow !== row) openRow.classList.remove('is-actions-open');
-    if (!row || !container.contains(row)) {
-      openRow = null;
+    // Taps on links, buttons, media, attachments, the reply quote or
+    // reaction pills belong to those controls and never count.
+    if (e.target.closest(TAP_IGNORE_SELECTOR)) {
+      lastTap = null;
       return;
     }
-    openRow = row.classList.toggle('is-actions-open') ? row : null;
+    const sel = window.getSelection?.();
+    if (sel && !sel.isCollapsed) {
+      lastTap = null;
+      return;
+    }
+
+    const row = e.target.closest('.chat-msg');
+    if (openRow && openRow !== row) setRowActions(openRow, false);
+    if (!row || !container.contains(row)) {
+      lastTap = null;
+      return;
+    }
+
+    // Double-tap on the bubble (or, for a message without one, its
+    // content area) opens the SAME reaction picker the React button
+    // opens, via window.openReactionPicker.
+    const msgId = Number(row.dataset.msgId);
+    const target =
+      e.target.closest('.chat-bubble') ||
+      (row.querySelector('.chat-bubble')
+        ? null
+        : e.target.closest('.chat-msg-content'));
+
+    if (
+      target &&
+      lastTap &&
+      lastTap.row === row &&
+      e.timeStamp - lastTap.t <= DOUBLE_TAP_MS &&
+      Math.abs(e.clientX - lastTap.x) <= DOUBLE_TAP_SLOP_PX &&
+      Math.abs(e.clientY - lastTap.y) <= DOUBLE_TAP_SLOP_PX
+    ) {
+      lastTap = null; // a third rapid tap starts a new gesture
+      setRowActions(row, false);
+      if (dmEntry?.byId.has(msgId) && !isEmojiPickerOpen()) {
+        window.openReactionPicker('dm', msgId, target);
+      }
+      return;
+    }
+
+    lastTap = target
+      ? { row, t: e.timeStamp, x: e.clientX, y: e.clientY }
+      : null;
+
+    // Single tap (acts immediately, no waiting for a possible second
+    // tap): nothing is permanently drawn on the bubbles, so it toggles
+    // the row's extra actions (React/Copy, and a grouped row's toolbar,
+    // which would otherwise sit on top of the message above).
+    setRowActions(row, !row.classList.contains('is-actions-open'));
   });
 }
 

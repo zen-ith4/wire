@@ -115,7 +115,7 @@ const FONT_STORAGE_KEY = 'wire-font-family';
 // All other appearance preferences remain local.
 // ============================================================
 
-function safeGetStorage(key) {
+export function safeGetStorage(key) {
   try {
     return localStorage.getItem(key);
   } catch {
@@ -124,7 +124,7 @@ function safeGetStorage(key) {
 }
 
 
-function safeSetStorage(key, value) {
+export function safeSetStorage(key, value) {
   try {
     localStorage.setItem(key, value);
   } catch {

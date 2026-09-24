@@ -64,8 +64,8 @@
   width:var(--files-sidebar-width);min-width:var(--files-sidebar-width);height:100%;
   display:flex;flex-direction:column;min-height:0;
   border-right:1px solid var(--border);
-  background:rgba(var(--ink-rgb),.62);
-  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  background:rgba(var(--ink-rgb),var(--sf-panel-alpha, .62));
+  backdrop-filter:var(--sf-panel-filter,blur(12px));-webkit-backdrop-filter:var(--sf-panel-filter,blur(12px));
 }
 .files-sidebar-head{
   display:flex;align-items:center;justify-content:space-between;gap:10px;
@@ -130,8 +130,8 @@
    ================================================================ */
 .files-main{
   flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;height:100%;position:relative;
-  background:rgba(var(--void-rgb),.55);
-  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  background:rgba(var(--void-rgb),var(--sf-main-alpha, .55));
+  backdrop-filter:var(--sf-main-filter,blur(12px));-webkit-backdrop-filter:var(--sf-main-filter,blur(12px));
 }
 
 .files-header{

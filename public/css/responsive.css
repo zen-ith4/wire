@@ -142,20 +142,10 @@
   .modal-content{padding:20px;max-height:100%;}
   .confirm-modal-content{padding:20px;}
 
-  /* ---- Touch target + hover-reveal fixes ----
-     Hover-only reveal (opacity:0 until :hover) leaves these
-     controls effectively unreachable on touch, since touch has no
-     persistent hover state — always show them below the desktop
-     breakpoint instead of gating on hover. Buttons are also bumped
-     a little for comfortable tap targets without changing the
-     desktop-only compact look. */
-  .chat-msg-delete,
-  .chat-msg-reply,
-  .chat-msg-download,
-  .reaction-add-btn{
-    opacity:1;
-    width:26px;height:26px;
-  }
+  /* ---- Touch target fixes ----
+     Message action buttons are NOT forced visible here any more: they
+     follow the desktop hover reveal, or on touch the tap reveal
+     (.is-actions-open, see the end of features/messages.css). */
   .icon-btn{width:34px;height:34px;}
   .btn-icon{width:42px;height:42px;}
   .chat-input-area .btn-icon{width:42px;height:42px;}
@@ -183,18 +173,6 @@
   input[type=number],
   textarea{
     font-size:16px;
-  }
-}
-
-/* Touch-capable devices regardless of viewport width (covers
-   tablets, which can be wider than the 900px breakpoint above but
-   still have no real hover state). */
-@media (hover:none){
-  .chat-msg-delete,
-  .chat-msg-reply,
-  .chat-msg-download,
-  .reaction-add-btn{
-    opacity:1;
   }
 }
 

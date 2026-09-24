@@ -9,7 +9,8 @@
   z-index:5;
 
   /* Same transparent surface as the sidebar */
-  background:rgba(var(--ink-rgb), .42);
+  background:rgba(var(--ink-rgb), var(--sf-sidebar-alpha, .42));
+  backdrop-filter:var(--sf-sidebar-filter,none);-webkit-backdrop-filter:var(--sf-sidebar-filter,none);
 }
 
 .topbar-title{
@@ -21,5 +22,5 @@
 
 /* Light mode: slightly lighter transparent surface */
 :root[data-theme="light"] .topbar{
-  background:rgba(var(--ink-rgb), .36);
+  background:rgba(var(--ink-rgb), var(--sf-sidebar-alpha, .36));
 }

@@ -35,6 +35,10 @@ import {
   initMessageBubbleStyle
 } from '../settings/theme.js';
 
+import { initSurfaces } from '../settings/appearance-surfaces.js';
+
+import { initCustomBackground } from '../settings/custom-background.js';
+
 import { initSidebarResize } from '../ui/sidebar-resize.js';
 
 import {
@@ -383,6 +387,18 @@ async function bootstrap() {
   initFontFamily();
 
   initMessageBubbleStyle();
+
+  /*
+   * Advanced appearance overrides (CSS variables only) and the
+   * local custom background. Both are device-local, so they are
+   * applied here with the other local appearance settings — before
+   * login and independent of the Settings screen. The background
+   * touches IndexedDB only if it is enabled and has an image.
+   */
+
+  initSurfaces();
+
+  initCustomBackground();
 
 
   /*

@@ -1,0 +1,286 @@
+/* ================================================================
+   Custom background + Advanced appearance
+
+   Everything is driven by custom properties written by
+   js/settings/custom-background.js (--cbg-*) and
+   js/settings/appearance-surfaces.js (--sf-*). Colors come from
+   the existing theme tokens (--void-rgb, --ink2, --border, accent
+   vars), so light/dark and every accent work without extra rules.
+   ================================================================ */
+
+/* ---------- Shared layer (live background + Settings preview) ---- */
+
+.cbg-surface{
+  position:absolute;
+  inset:0;
+  overflow:hidden;
+  pointer-events:none;
+  contain:strict;
+}
+
+/* The live layer: above #ambient-underlay, below .app. */
+#custom-bg{
+  position:fixed;
+  z-index:0;
+}
+
+.cbg-surface img{
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  object-fit:var(--cbg-fit, cover);
+  object-position:var(--cbg-pos, 50% 50%);
+  opacity:var(--cbg-opacity, 1);
+  filter:var(--cbg-filter, none);
+  transform:var(--cbg-scale, none);
+  user-select:none;
+  -webkit-user-drag:none;
+}
+
+/* Dimming veil: tinted with the theme's own base color so it
+   darkens in dark mode and lightens in light mode, keeping text
+   contrast on either theme. */
+.cbg-surface::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  background:rgba(var(--void-rgb), var(--cbg-dim, .4));
+}
+
+/* ---------- Phone: the opaque conversation layer -----------------
+   On phones the open conversation is an opaque layer with its own
+   copy of the site background (responsive.css, .dm-thread::before).
+   With a custom background on, that layer needs the image too, at
+   the same screen position, or the chat would show the preset
+   background instead. Only exists while a custom background is on. */
+@media (max-width:760px){
+  html[data-custom-bg] .dm-thread::after{
+    content:"";
+    position:absolute;z-index:-1;pointer-events:none;
+    left:calc(-1 * var(--dm-bg-x, 0px));
+    top:calc(-1 * var(--dm-bg-y, 0px));
+    width:var(--dm-bg-w, 100vw);
+    height:var(--dm-bg-h, 100vh);
+    background:
+      linear-gradient(
+        rgba(var(--void-rgb), var(--cbg-dim, .4)),
+        rgba(var(--void-rgb), var(--cbg-dim, .4))
+      ),
+      var(--cbg-url, none) var(--cbg-pos, 50% 50%) / var(--cbg-size, cover) no-repeat;
+    opacity:var(--cbg-opacity, 1);
+    filter:var(--cbg-filter, none);
+    transform:var(--cbg-scale, none);
+  }
+}
+
+/* ---------- Settings: custom background block ---------- */
+
+.custom-bg-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:20px;
+}
+
+.custom-bg-preview{
+  position:relative;
+  width:100%;
+  aspect-ratio:16 / 9;
+  max-height:220px;
+  border-radius:var(--radius-lg);
+  border:1px solid var(--border);
+  overflow:hidden;
+  background:var(--ambient-bg, var(--void));
+  display:flex;
+  flex-direction:column;
+  justify-content:flex-end;
+  gap:6px;
+  padding:12px;
+}
+
+.custom-bg-preview-empty{
+  position:absolute;
+  inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:16px;
+  text-align:center;
+  font-size:12px;
+  color:var(--muted);
+}
+
+/* Sample bubbles so readability can be judged before applying. */
+.custom-bg-sample{
+  position:relative;
+  max-width:70%;
+  padding:6px 10px;
+  border-radius:12px;
+  font-size:12px;
+  line-height:1.35;
+  border:1px solid var(--border);
+  background:rgba(var(--ink2-rgb), .85);
+  color:var(--text);
+}
+
+.custom-bg-sample.is-own{
+  align-self:flex-end;
+  background:rgb(var(--indigo));
+  border-color:rgb(var(--indigo));
+  color:var(--accent-contrast);
+}
+
+.custom-bg-actions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  align-items:center;
+}
+
+.custom-bg-file-btn{
+  position:relative;
+  cursor:pointer;
+}
+
+/* Visually hidden but still focusable and labelled. */
+.custom-bg-file-input{
+  position:absolute;
+  width:1px;
+  height:1px;
+  margin:-1px;
+  padding:0;
+  overflow:hidden;
+  clip:rect(0 0 0 0);
+  clip-path:inset(50%);
+  white-space:nowrap;
+  border:0;
+}
+
+.custom-bg-file-btn:focus-within,
+.settings-advanced-summary:focus-visible{
+  outline:2px solid rgb(var(--indigo));
+  outline-offset:2px;
+}
+
+.custom-bg-status{
+  font-size:12px;
+  color:var(--muted);
+  min-height:1.2em;
+}
+
+.custom-bg-status.is-error{
+  color:#D6A3A3;
+}
+
+.custom-bg-controls.is-off{
+  opacity:.5;
+}
+
+.custom-bg-selects{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+}
+
+.custom-bg-selects label{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  font-size:11.5px;
+  color:var(--muted2);
+}
+
+/* Slider row (reuses .sound-slider / .sound-volume-* styling) */
+.appearance-slider-row{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+  padding:6px 0;
+}
+
+.appearance-slider-row .settings-row-label{
+  min-width:0;
+}
+
+.appearance-slider-row.is-disabled{
+  opacity:.45;
+}
+
+/* ---------- Settings: Advanced ---------- */
+
+.settings-advanced{
+  margin-top:8px;
+  border-top:1px solid var(--border-soft);
+}
+
+.settings-advanced-summary{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:14px 0;
+  cursor:pointer;
+  list-style:none;
+  border-radius:var(--radius);
+}
+
+.settings-advanced-summary::-webkit-details-marker{
+  display:none;
+}
+
+.settings-advanced-chevron{
+  display:inline-flex;
+  color:var(--muted2);
+}
+
+.settings-advanced[open] .settings-advanced-chevron{
+  transform:rotate(180deg);
+}
+
+.settings-advanced-body{
+  padding-bottom:6px;
+}
+
+.surface-card{
+  margin-top:12px;
+  padding:14px;
+  border:1px solid var(--border-soft);
+  border-radius:var(--radius-lg);
+}
+
+.surface-card-head{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:12px;
+  margin-bottom:6px;
+}
+
+.surface-blur-switch{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  font-size:12px;
+  color:var(--muted);
+  flex-shrink:0;
+}
+
+.settings-reset-row{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  padding-top:14px;
+}
+
+@media (max-width:520px){
+  .custom-bg-head,
+  .appearance-slider-row{
+    flex-wrap:wrap;
+  }
+
+  .appearance-slider-row .sound-volume-control{
+    flex:1 1 100%;
+  }
+}

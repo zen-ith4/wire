@@ -3,7 +3,8 @@
   height:100vh;
   height:100dvh;
   height:calc(var(--vh, 1vh) * 100);
-  background:rgba(var(--ink-rgb), .42);
+  background:rgba(var(--ink-rgb), var(--sf-sidebar-alpha, .42));
+  backdrop-filter:var(--sf-sidebar-filter,none);-webkit-backdrop-filter:var(--sf-sidebar-filter,none);
   display:flex;flex-direction:column;
   border-right:1px solid var(--border);
   user-select:none;z-index:10;
@@ -292,5 +293,5 @@ body.sidebar-resizing *{
 /* Light mode: slightly stronger surface tint for readability while
    still allowing the ambient background to remain clearly visible. */
 :root[data-theme="light"] .sidebar{
-  background:rgba(var(--ink-rgb),.36);
+  background:rgba(var(--ink-rgb),var(--sf-sidebar-alpha, .36));
 }

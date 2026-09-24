@@ -972,6 +972,7 @@ function bindDmThreadBackground() {
   if (!layout) return;
 
   syncDmThreadBackground();
+  window.dispatchEvent(new Event('wire:dm-layout'));
 
   // Keyboard open/close (bottom bar hides), rotation, safe-area changes…
   // all resize the layout box.

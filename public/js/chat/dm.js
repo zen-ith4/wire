@@ -39,7 +39,12 @@ import {
   formatFullDateTime
 } from './dm-layout.js';
 import { copyText } from '../files/links.js';
-import { TAP_IGNORE_SELECTOR, isTouchClick } from './tap-reveal.js';
+import {
+  TAP_IGNORE_SELECTOR,
+  isTouchClick,
+  placeActionBar,
+  bindContextMenu
+} from './tap-reveal.js';
 import {
   createTypingEmitter,
   createTypingIndicator,
@@ -167,6 +172,15 @@ function settleUnread(entry) {
 
 function currentUserId() {
   return Number(getCurrentUser()?.id);
+}
+
+// Message data behind a rendered row (null for rows without any, e.g.
+// the "Unable to decrypt" placeholder) — what dm-layout.js needs to
+// re-derive grouping for rows below a changed seam.
+function dmMsgOfRow(row) {
+  return row && dmEntry
+    ? dmEntry.byId.get(Number(row.dataset.msgId)) || null
+    : null;
 }
 
 export function getDmActivePeer() {
@@ -1494,7 +1508,8 @@ function renderDmMessagesFromCache() {
   }
 
   const layout = createLayoutBuilder(frag, {
-    boundaryId: dmEntry.unreadFromId
+    boundaryId: dmEntry.unreadFromId,
+    myId: currentUserId()
   });
   for (const msg of dmEntry.messages) {
     layout.add(msg, buildDmMessageEl(msg, currentUser));
@@ -1545,7 +1560,8 @@ async function syncDmMessagesSince() {
         lastEl && prevMsg && lastEl.dataset?.msgId === String(prevMsg.id)
           ? lastEl
           : null,
-      boundaryId: dmEntry.unreadFromId
+      boundaryId: dmEntry.unreadFromId,
+      myId: currentUserId()
     });
 
     for (const msg of fresh) {
@@ -1613,7 +1629,8 @@ async function loadRecentDm() {
     if (unreadId != null) entry.unreadFromId = unreadId;
 
     const layout = createLayoutBuilder(frag, {
-      boundaryId: entry.unreadFromId
+      boundaryId: entry.unreadFromId,
+      myId: currentUserId()
     });
     for (const msg of decryptedMessages) {
       entry.ids.add(msg.id);
@@ -1677,7 +1694,8 @@ async function loadOlderDm() {
     const currentUser = getCurrentUser();
     const newMessages = [];
     const layout = createLayoutBuilder(frag, {
-      boundaryId: entry.unreadFromId
+      boundaryId: entry.unreadFromId,
+      myId: currentUserId()
     });
     let lastNewEl = null;
     for (const msg of decryptedMessages) {
@@ -1707,7 +1725,11 @@ async function loadOlderDm() {
         prevEl: lastNewEl,
         nextMsg: firstOldMsg,
         nextEl: firstOldEl,
-        boundaryId: entry.unreadFromId
+        boundaryId: entry.unreadFromId,
+        myId: currentUserId(),
+        // The older page can move where the group at the seam starts,
+        // which changes how far its outgoing window reaches below.
+        msgOf: dmMsgOfRow
       });
     }
     container.scrollTop = oldTop + (container.scrollHeight - prevHeight);
@@ -1778,6 +1800,7 @@ function buildDmMessageEl(msg, currentUser) {
       </div>
       ${renderReactionsRow(msg, 'dm')}
     </div>
+    <time class="chat-time chat-time-side" datetime="${escapeAttr(msg.timestamp)}" title="${escapeAttr(formatFullDateTime(msg.timestamp))}" aria-hidden="true">${formatTime(msg.timestamp)}</time>
   `;
 
   if (
@@ -1792,7 +1815,7 @@ function buildDmMessageEl(msg, currentUser) {
   return div;
 }
 
-// ---------- Message actions (copy, tap-to-reveal, double-tap react) ----------
+// ---------- Message actions (copy, tap-to-reveal, double-tap react, right-click menu) ----------
 // One delegated click listener per #dm-messages element (the element is
 // rebuilt for every conversation, so nothing accumulates). No
 // per-message handlers.
@@ -1849,6 +1872,10 @@ const DOUBLE_TAP_MS = 300;
 const DOUBLE_TAP_SLOP_PX = 30;
 
 function bindDmMessageActions(container) {
+  // Desktop: right-click opens the same action bar (tap-reveal.js);
+  // touch keeps the tap toggle below.
+  bindContextMenu(container);
+
   let openRow = null;
   let armTimer = 0;
   let lastTap = null; // { row, t, x, y }
@@ -1863,6 +1890,8 @@ function bindDmMessageActions(container) {
     row.classList.toggle('is-actions-open', on);
     row.classList.remove('is-actions-armed');
     if (on) {
+      // Opposite side of the sender, kept inside the visible list.
+      placeActionBar(row, container);
       armTimer = setTimeout(() => {
         if (row.classList.contains('is-actions-open')) {
           row.classList.add('is-actions-armed');
@@ -2065,7 +2094,8 @@ export async function addDmMessage(msg) {
       lastEl && prevMsg && lastEl.dataset?.msgId === String(prevMsg.id)
         ? lastEl
         : null,
-    boundaryId: null
+    boundaryId: null,
+    myId: currentUserId()
   }).add(decrypted, el);
 
   const isOwnMessage = Number(msg.sender_id) === Number(currentUser.id);
@@ -2122,8 +2152,7 @@ export function removeDmMessage(id) {
 
   animateRemoval(el, () => {
     if (dmEntry && (prevEl || nextEl)) {
-      const lookup = (row) =>
-        row ? dmEntry.byId.get(Number(row.dataset.msgId)) || null : null;
+      const lookup = dmMsgOfRow;
       const nextMsg = lookup(nextEl);
       if (nextEl && nextMsg) {
         repairSeam({
@@ -2131,7 +2160,9 @@ export function removeDmMessage(id) {
           prevEl,
           nextMsg,
           nextEl,
-          boundaryId: dmEntry.unreadFromId
+          boundaryId: dmEntry.unreadFromId,
+          myId: currentUserId(),
+          msgOf: dmMsgOfRow
         });
       } else if (prevEl) {
         repairSeam({ prevEl, nextEl: null });

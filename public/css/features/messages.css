@@ -565,40 +565,9 @@ input.conv-search-input:focus{
 
 /* ================================================================
    MESSAGE BUBBLE STYLES
-   ================================================================
-
-   settings/theme.js sets (initMessageBubbleStyle() at app startup,
-   applyMessageBubbleStyle() when changed from Settings):
-
-     document.documentElement.dataset.bubbleStyle
-
-   Supported values:
-
-     filled
-     soft
-     outline
-     clean
-
-   filled  = solid sender-colored bubble
-   soft    = tinted/translucent sender-colored bubble
-   outline = transparent bubble with sender-colored border
-   clean   = frameless bubble with a subtle sender accent rail
-
-   Sender-specific:
-     --message-accent
-     --message-accent-contrast
-
-   remain the source of truth for sender colors.
    ================================================================ */
 
 .chat-bubble{
-  /*
-   * Base/fallback = filled.
-   *
-   * JS paints --message-accent and --message-accent-contrast on the
-   * message row. The fallback values below are only for the brief
-   * period before that paint happens.
-   */
   --bubble-background:var(--message-accent, var(--ink2));
   --bubble-border:1px solid var(--border);
   --bubble-color:var(--message-accent-contrast, var(--text));
@@ -654,13 +623,6 @@ input.conv-search-input:focus{
 
 /* ================================================================
    SOFT
-   ================================================================
-
-   Soft keeps the sender's accent but lowers its visual weight.
-   This is intentionally not a transparent/ghost bubble.
-
-   color-mix() lets us derive the tint directly from the actual
-   sender accent without requiring a separate --accent-rgb token.
    ================================================================ */
 
 :root[data-bubble-style="soft"] .chat-bubble{
@@ -724,16 +686,6 @@ input.conv-search-input:focus{
 
 /* ================================================================
    CLEAN
-   ================================================================
-
-   Clean is deliberately different from Soft.
-
-   It does not look like a box with a different background.
-   The message itself sits directly on the chat surface, while
-   a narrow accent rail identifies the sender.
-
-   This gives the setting an actual fourth visual language instead
-   of another barely-different rectangle.
    ================================================================ */
 
 :root[data-bubble-style="clean"] .chat-bubble{
@@ -746,9 +698,6 @@ input.conv-search-input:focus{
 
   position:relative;
 }
-
-
-/* Accent rail */
 
 :root[data-bubble-style="clean"] .chat-bubble::before{
   content:'';
@@ -763,9 +712,6 @@ input.conv-search-input:focus{
   pointer-events:none;
 }
 
-
-/* Own messages use the rail on the opposite side */
-
 :root[data-bubble-style="clean"] .chat-msg.own .chat-bubble{
   padding-left:8px;
   padding-right:11px;
@@ -775,9 +721,6 @@ input.conv-search-input:focus{
   left:auto;
   right:0;
 }
-
-
-/* Subtle hover surface */
 
 :root[data-bubble-style="clean"] .chat-bubble:hover{
   background:
@@ -803,9 +746,6 @@ input.conv-search-input:focus{
   align-self:flex-end;
 }
 
-
-/* Filled/outline keep the normal directional corner. */
-
 :root[data-bubble-style="filled"] .chat-msg.own .chat-bubble,
 :root[data-bubble-style="outline"] .chat-msg.own .chat-bubble{
   border-radius:
@@ -814,9 +754,6 @@ input.conv-search-input:focus{
     3px
     var(--radius-lg);
 }
-
-
-/* Clean has no speech-bubble tail. */
 
 :root[data-bubble-style="clean"] .chat-msg .chat-bubble,
 :root[data-bubble-style="clean"] .chat-msg.own .chat-bubble{
@@ -898,10 +835,6 @@ input.conv-search-input:focus{
   flex-shrink:0;
 }
 
-.chat-msg:hover .chat-msg-delete{
-  opacity:1;
-}
-
 .chat-msg-delete:hover{
   background:rgba(var(--red),.15);
   color:#D6A3A3;
@@ -933,10 +866,6 @@ input.conv-search-input:focus{
   width:13px;
   height:13px;
   flex-shrink:0;
-}
-
-.chat-msg:hover .chat-msg-reply{
-  opacity:1;
 }
 
 .chat-msg-reply:hover{
@@ -972,20 +901,13 @@ input.conv-search-input:focus{
   flex-shrink:0;
 }
 
-.chat-msg:hover .chat-msg-download{
-  opacity:1;
-}
-
 .chat-msg-download:hover{
   background:var(--hover);
   color:var(--text);
 }
 
 
-/* ---------- React / Copy ----------
-   Same size, radius, hover reveal and hover treatment as Reply, so they
-   read as part of the one action bar (.chat-msg-actions-bar). React opens the shared
-   emoji picker (chat/reactions.js); Copy is DM-only (chat/dm.js). */
+/* ---------- React / Copy ---------- */
 
 .chat-msg-react,
 .chat-msg-copy{
@@ -1015,8 +937,6 @@ input.conv-search-input:focus{
   pointer-events:none;
 }
 
-.chat-msg:hover .chat-msg-react,
-.chat-msg:hover .chat-msg-copy,
 .chat-msg-react:focus-visible,
 .chat-msg-copy:focus-visible{
   opacity:1;
@@ -1033,6 +953,7 @@ input.conv-search-input:focus{
   outline:2px solid var(--accent-ring);
   outline-offset:1px;
 }
+
 
 /* ================================================================
    REPLY QUOTE
@@ -1664,25 +1585,25 @@ input.conv-search-input:focus{
   padding:6px 0 14px;
 }
 
-/* Mobile DM swipe-back */
+
+/* ================================================================
+   MOBILE DM SWIPE-BACK
+   ================================================================ */
+
 .dm-thread,
-.dm-thread .chat-messages {
-  touch-action: pan-y;
+.dm-thread .chat-messages{
+  touch-action:pan-y;
 }
 
-/* ---------- Swipe to reply (touch) — chat/swipe-reply.js ----------
-   touch-action: the browser may pan vertically (scrolling) and pinch,
-   but never horizontally over a message, so a sideways drag is
-   delivered to the gesture instead of being claimed (and cancelled) by
-   the browser. Same policy .dm-thread .chat-messages already has. */
+
+/* ================================================================
+   SWIPE TO REPLY
+   ================================================================ */
+
 .chat-msg{
   touch-action:pan-y pinch-zoom;
 }
 
-/* Only while a swipe is in progress (classes added/removed by the
-   gesture, nothing permanent): the row needs to be a positioning
-   context for the indicator, and the list must not grow a horizontal
-   scroll area from the indicator sitting just outside the row. */
 .chat-messages.is-swiping-reply{
   overflow-x:hidden;
 }
@@ -1692,10 +1613,6 @@ input.conv-search-input:focus{
   will-change:transform;
 }
 
-/* Same look as the avatar chip next to it (surface, hairline border,
-   muted glyph); it only adds an accent-tinted border once the swipe is
-   far enough that releasing will reply. Opacity/scale are driven by the
-   finger, so they are deliberately not transitioned here. */
 .swipe-reply-indicator{
   position:absolute;
   width:28px;
@@ -1729,7 +1646,6 @@ input.conv-search-input:focus{
   color:var(--text);
 }
 
-/* The row moves away from this side, uncovering the indicator. */
 .swipe-reply-indicator--right{
   left:100%;
   margin-left:8px;
@@ -1742,13 +1658,7 @@ input.conv-search-input:focus{
 
 
 /* ================================================================
-   DM MESSAGE LIST — date separators, unread marker, sender groups,
-   copy button (chat/dm-layout.js + chat/dm.js)
-   ----------------------------------------------------------------
-   Everything here is scoped to .dm-thread or to modifier classes only
-   the DM renderer sets (.chat-msg--joined-prev / --joined-next), so
-   the group chat list is unaffected. Motion is written against
-   --motion-* and is therefore a no-op when animations are off.
+   DM MESSAGE LIST
    ================================================================ */
 
 .dm-thread .chat-messages{
@@ -1764,7 +1674,6 @@ input.conv-search-input:focus{
   }
 }
 
-/* Larger gap where a new group starts, tight gap inside a group. */
 .dm-thread .chat-msg{
   margin-top:var(--dm-group-space);
 }
@@ -1782,7 +1691,7 @@ input.conv-search-input:focus{
 }
 
 
-/* ---------- Dividers (date + unread) ---------- */
+/* ---------- Dividers ---------- */
 
 .dm-divider{
   display:flex;
@@ -1813,9 +1722,6 @@ input.conv-search-input:focus{
   text-align:center;
 }
 
-/* Unread marker: accent line + accent pill. The text label carries the
-   meaning (color is only reinforcement); pill text uses the accent's
-   own auto-contrast token so it stays readable for any accent. */
 .dm-divider--unread{
   margin:12px 0 6px;
   animation:motion-fade-in var(--motion-base) var(--motion-ease);
@@ -1842,9 +1748,6 @@ input.conv-search-input:focus{
 
 /* ---------- Sender groups ---------- */
 
-/* Rows that continue a group drop their header: the sender name and
-   time are shown once, above the group's first message. The avatar keeps
-   its space (alignment) but is hidden. */
 .chat-msg--joined-prev .chat-avatar{
   visibility:hidden;
 }
@@ -1853,11 +1756,6 @@ input.conv-search-input:focus{
   display:none;
 }
 
-/* Connected corners. The tail corner on the avatar side is already
-   small in every style, so a row that continues a group only needs its
-   top corner on that side reduced. Clean has no tail/corners to join
-   (its accent rail is joined instead, below). Specificity is raised
-   deliberately: the own-bubble radius rules above are (0,5,0). */
 :root:not([data-bubble-style="clean"]) .chat-msg.chat-msg--joined-prev:not(.own) .chat-bubble{
   border-top-left-radius:var(--bubble-join-radius, 3px);
 }
@@ -1875,19 +1773,50 @@ input.conv-search-input:focus{
 }
 
 
-/* ================================================================
-   MESSAGE ACTION BAR (React / Reply / Copy / Download / Delete)
-   ----------------------------------------------------------------
-   An overlay attached to the message body, never part of the header
-   or of the message layout: .chat-msg-actions is a zero-height row
-   that sits directly after the bubble/attachment, and the bar inside
-   it is absolutely positioned over the bubble's lower edge, so
-   showing/hiding it can't move anything. The area above a message
-   only ever holds the sender name and time.
+/* ---------- Timestamp of a right-clicked grouped message ---------- */
 
-   Reveal is the existing CSS :hover system, scoped to the bubble
-   itself (a sibling combinator, no JS), or on touch the row's
-   .is-actions-open class set by chat/tap-reveal.js / dm.js.
+.chat-time-side{
+  display:none;
+}
+
+.chat-msg--joined-prev.is-context-open{
+  position:relative;
+}
+
+.chat-msg--joined-prev.is-context-open > .chat-time-side{
+  position:absolute;
+  top:0;
+  height:30px;
+  display:flex;
+  align-items:center;
+  white-space:nowrap;
+  pointer-events:none;
+  user-select:none;
+  -webkit-user-select:none;
+  animation:motion-fade-in var(--motion-fast) var(--motion-ease);
+}
+
+.chat-msg--joined-prev.is-context-open:not(.own) > .chat-time-side{
+  left:34px;
+  transform:translateX(-100%);
+}
+
+.chat-msg--joined-prev.is-context-open.own > .chat-time-side{
+  right:34px;
+  transform:translateX(100%);
+}
+
+
+/* ================================================================
+   MESSAGE ACTION BAR
+   ----------------------------------------------------------------
+   Desktop:
+     - right-click positions the bar at the pointer.
+   Mobile:
+     - tap positions the bar beside the actual message body.
+     - incoming -> right side of bubble
+     - outgoing -> left side of bubble
+   The bar never participates in normal layout.
    ================================================================ */
 
 .chat-msg-actions{
@@ -1901,23 +1830,41 @@ input.conv-search-input:focus{
 .chat-msg-actions-bar{
   position:absolute;
   top:-11px;
+
   display:flex;
   align-items:center;
   gap:2px;
   padding:2px 3px;
+
   border-radius:8px;
   background:var(--ink2);
   border:1px solid var(--border);
   box-shadow:0 2px 8px rgba(0,0,0,.25);
+
   backdrop-filter:blur(12px);
   -webkit-backdrop-filter:blur(12px);
+
   white-space:nowrap;
   opacity:0;
   pointer-events:none;
+
   transition:opacity var(--ease-fast);
+
+  /*
+   * Position is controlled by tap-reveal.js through these variables.
+   * The base left/right anchor only provides a stable coordinate system
+   * for the transform. It does NOT determine the final mobile position.
+   */
+  transform:translate(
+    var(--menu-dx, 0px),
+    var(--menu-dy, 0px)
+  );
 }
 
-/* Anchored on the side the bubble sits on. */
+
+/* Stable initial anchors used by placeActionBar() before it applies
+   the calculated transform. */
+
 .chat-msg:not(.own) .chat-msg-actions-bar{
   left:10px;
 }
@@ -1926,8 +1873,9 @@ input.conv-search-input:focus{
   right:10px;
 }
 
-/* Inside the bar the buttons are always fully visible; the bar itself
-   carries the reveal. */
+
+/* ---------- Action buttons ---------- */
+
 .chat-msg-actions-bar :is(
   .chat-msg-react,
   .chat-msg-reply,
@@ -1938,25 +1886,14 @@ input.conv-search-input:focus{
   opacity:1;
 }
 
-/* Desktop: hovering the message body (bubble, attachment, media...)
-   reveals ITS bar; hovering the bar keeps it, so the pointer can travel
-   from the bubble onto it. Keyboard focus reveals it too. */
-@media (hover:hover){
-  .chat-msg-content > :not(.chat-meta, .reply-quote, .chat-msg-actions, .reactions-row):hover ~ .chat-msg-actions .chat-msg-actions-bar,
-  .chat-msg-actions:hover .chat-msg-actions-bar{
-    opacity:1;
-    pointer-events:auto;
-  }
-}
-
 .chat-msg-actions:focus-within .chat-msg-actions-bar{
   opacity:1;
   pointer-events:auto;
 }
 
-/* Touch (and any device where a tap toggles a row): only the active row
-   shows its bar. .is-actions-armed is added after the double-tap window
-   (dm.js) so the bar can't catch the second tap of a double-tap. */
+
+/* ---------- Open state ---------- */
+
 .chat-msg.is-actions-open .chat-msg-actions-bar{
   opacity:1;
 }
@@ -1965,14 +1902,21 @@ input.conv-search-input:focus{
   pointer-events:auto;
 }
 
+
+/* ---------- Touch / mobile ---------- */
+
 @media (hover:none){
-  /* Absent (not just transparent) on every inactive message. */
+
+  /* Inactive rows have no action bar at all. */
   .chat-msg:not(.is-actions-open) .chat-msg-actions-bar{
     display:none;
   }
 
-  /* Just below the bubble rather than over it, so a tap on the message
-     never lands on a bar button; touch-size buttons. */
+  /*
+   * The JS now positions the bar beside the actual bubble using
+   * getBoundingClientRect(), so this top value is only the base
+   * coordinate before --menu-dy is applied.
+   */
   .chat-msg-actions-bar{
     top:3px;
   }

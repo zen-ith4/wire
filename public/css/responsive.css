@@ -143,9 +143,9 @@
   .confirm-modal-content{padding:20px;}
 
   /* ---- Touch target fixes ----
-     Message action buttons are NOT forced visible here any more: they
-     follow the desktop hover reveal, or on touch the tap reveal
-     (.is-actions-open, see the end of features/messages.css). */
+     Message action buttons are NOT forced visible here any more: the
+     action bar opens on a desktop right-click, or on touch the tap
+     reveal (.is-actions-open, see the end of features/messages.css). */
   .icon-btn{width:34px;height:34px;}
   .btn-icon{width:42px;height:42px;}
   .chat-input-area .btn-icon{width:42px;height:42px;}

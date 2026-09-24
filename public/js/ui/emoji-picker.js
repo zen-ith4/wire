@@ -2,22 +2,67 @@
 // Emoji picker
 // ------------------------------------------------------------
 // One picker instance is created lazily on first use and reused
-// for the rest of the session — by both the message composer and
-// message reactions (see chat.js / dm.js). It never gets removed
-// from the DOM once created; opening it again just repositions and
-// re-shows the same node, which is what makes repeated opens
-// flicker-free (no rebuild, no layout thrash).
+// for the rest of the session.
+//
+// Emoji data itself is also lazy-loaded. The relatively large
+// emoji dataset is NOT imported during module evaluation. It is
+// fetched only when the picker is actually opened for the first
+// time.
+//
+// Category contents are rendered lazily as their sections approach
+// the viewport. This avoids creating hundreds of emoji buttons and
+// forcing a large DOM/layout pass on the first open.
 //
 // This module owns *only* picker mechanics (rendering, search,
 // categories, recents, skin tone, positioning, open/close). It has
 // no opinion about what selecting an emoji *does* — every call to
-// openEmojiPicker() supplies its own onSelect callback, so the
-// composer can insert a character into an input while a reaction
-// button can call a completely different API. That separation
-// is what lets one picker serve two very different features.
+// openEmojiPicker() supplies its own onSelect callback.
 // ============================================================
 
-import { CATEGORIES, EMOJI } from '../vendor/emoji-data.js';
+// ---------------- Lazy emoji data ----------------
+
+let emojiDataPromise = null;
+let CATEGORIES = [];
+let EMOJI = [];
+let emojiDataLoaded = false;
+
+function loadEmojiData() {
+  if (emojiDataLoaded) {
+    return Promise.resolve();
+  }
+
+  if (!emojiDataPromise) {
+    emojiDataPromise = import('../vendor/emoji-data.js')
+      .then((module) => {
+        CATEGORIES = module.CATEGORIES;
+        EMOJI = module.EMOJI;
+
+        emojiById.clear();
+
+        for (const emoji of EMOJI) {
+          emojiById.set(
+            emoji.id,
+            emoji
+          );
+        }
+
+        emojiDataLoaded = true;
+      })
+      .catch((error) => {
+        // Allow another attempt if the dynamic import failed.
+        emojiDataPromise = null;
+
+        console.error(
+          '[emoji-picker] Failed to load emoji data:',
+          error
+        );
+
+        throw error;
+      });
+  }
+
+  return emojiDataPromise;
+}
 
 const RECENTS_KEY = 'wire-emoji-recents';
 const SKIN_KEY = 'wire-emoji-skin';
@@ -136,23 +181,141 @@ function emojiChar(item, skin) {
   return skinData?.native || item.char;
 }
 
-// ---------------- Module state (the one shared instance) ----------------
+// ---------------- Module state ----------------
 
 let pickerEl = null;
 let onSelectCallback = null;
 let currentSkin = getSkin();
 let isOpen = false;
 
-const emojiById = new Map(
-  EMOJI.map(e => [e.id, e])
-);
+const emojiById = new Map();
 
-// ---------------- DOM construction (built once) ----------------
+// ---------------- Lazy section rendering ----------------
+
+let sectionObserver = null;
+
+function createSectionObserver() {
+  if (sectionObserver) {
+    return sectionObserver;
+  }
+
+  if (
+    typeof IntersectionObserver ===
+    'undefined'
+  ) {
+    return null;
+  }
+
+  sectionObserver =
+    new IntersectionObserver(
+      entries => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) {
+            continue;
+          }
+
+          const section =
+            entry.target;
+
+          renderLazySection(
+            section
+          );
+
+          sectionObserver?.unobserve(
+            section
+          );
+        }
+      },
+      {
+        root: null,
+        rootMargin: '300px 0px',
+        threshold: 0
+      }
+    );
+
+  return sectionObserver;
+}
+
+function renderLazySection(section) {
+  if (
+    section.dataset.rendered ===
+    'true'
+  ) {
+    return;
+  }
+
+  const catId =
+    section.dataset.cat;
+
+  const items = EMOJI.filter(
+    item => item.cat === catId
+  );
+
+  const grid =
+    section.querySelector(
+      '.emoji-picker-grid'
+    );
+
+  if (!grid) {
+    return;
+  }
+
+  grid.innerHTML = items
+    .map(item =>
+      emojiButtonHtml(item)
+    )
+    .join('');
+
+  section.dataset.rendered =
+    'true';
+}
+
+function observeLazySections(el) {
+  const observer =
+    createSectionObserver();
+
+  const sections =
+    el.querySelectorAll(
+      '.emoji-picker-section[data-lazy="true"]'
+    );
+
+  if (!observer) {
+    for (const section of sections) {
+      renderLazySection(section);
+    }
+
+    return;
+  }
+
+  for (const section of sections) {
+    observer.observe(section);
+  }
+}
+
+function createCategorySection(cat) {
+  return `
+    <div
+      class="emoji-picker-section"
+      data-cat="${cat.id}"
+      data-lazy="true"
+    >
+      <div class="emoji-picker-section-title">
+        ${cat.name}
+      </div>
+
+      <div class="emoji-picker-grid"></div>
+    </div>
+  `;
+}
+
+// ---------------- DOM construction ----------------
 
 function buildPicker() {
-  const el = document.createElement('div');
+  const el =
+    document.createElement('div');
 
-  el.className = 'emoji-picker';
+  el.className =
+    'emoji-picker';
 
   el.setAttribute(
     'role',
@@ -193,45 +356,50 @@ function buildPicker() {
     <div class="emoji-picker-skin-menu"></div>
   `;
 
-  const tabsEl = el.querySelector(
-    '.emoji-picker-tabs'
-  );
+  const tabsEl =
+    el.querySelector(
+      '.emoji-picker-tabs'
+    );
 
-  tabsEl.innerHTML = CATEGORIES.map(cat =>
-    `
-      <button
-        type="button"
-        class="emoji-picker-tab"
-        data-cat="${cat.id}"
-        title="${cat.name}"
-      >
-        ${cat.icon}
-      </button>
-    `
-  ).join('');
-
-  const skinMenuEl = el.querySelector(
-    '.emoji-picker-skin-menu'
-  );
-
-  skinMenuEl.innerHTML =
-    SKIN_SWATCH_COLORS.map((color, i) =>
+  tabsEl.innerHTML =
+    CATEGORIES.map(cat =>
       `
         <button
           type="button"
-          class="emoji-picker-skin-swatch"
-          data-skin="${i}"
-          title="${SKIN_LABELS[i]}"
-          style="--swatch:${color};"
-        ></button>
+          class="emoji-picker-tab"
+          data-cat="${cat.id}"
+          title="${cat.name}"
+        >
+          ${cat.icon}
+        </button>
       `
+    ).join('');
+
+  const skinMenuEl =
+    el.querySelector(
+      '.emoji-picker-skin-menu'
+    );
+
+  skinMenuEl.innerHTML =
+    SKIN_SWATCH_COLORS.map(
+      (color, i) =>
+        `
+          <button
+            type="button"
+            class="emoji-picker-skin-swatch"
+            data-skin="${i}"
+            title="${SKIN_LABELS[i]}"
+            style="--swatch:${color};"
+          ></button>
+        `
     ).join('');
 
   // ---- Search ----
 
-  const searchInput = el.querySelector(
-    '.emoji-picker-search'
-  );
+  const searchInput =
+    el.querySelector(
+      '.emoji-picker-search'
+    );
 
   searchInput.addEventListener(
     'input',
@@ -248,17 +416,25 @@ function buildPicker() {
   tabsEl.addEventListener(
     'click',
     (e) => {
-      const btn = e.target.closest(
-        '.emoji-picker-tab'
-      );
+      const btn =
+        e.target.closest(
+          '.emoji-picker-tab'
+        );
 
-      if (!btn) return;
+      if (!btn) {
+        return;
+      }
 
-      const section = el.querySelector(
-        `.emoji-picker-section[data-cat="${btn.dataset.cat}"]`
-      );
+      const section =
+        el.querySelector(
+          `.emoji-picker-section[data-cat="${btn.dataset.cat}"]`
+        );
 
       if (section) {
+        renderLazySection(
+          section
+        );
+
         section.scrollIntoView({
           block: 'start'
         });
@@ -268,9 +444,10 @@ function buildPicker() {
 
   // ---- Skin tone button ----
 
-  const skinBtn = el.querySelector(
-    '.emoji-picker-skin-btn'
-  );
+  const skinBtn =
+    el.querySelector(
+      '.emoji-picker-skin-btn'
+    );
 
   skinBtn.addEventListener(
     'click',
@@ -288,11 +465,14 @@ function buildPicker() {
   skinMenuEl.addEventListener(
     'click',
     (e) => {
-      const swatch = e.target.closest(
-        '.emoji-picker-skin-swatch'
-      );
+      const swatch =
+        e.target.closest(
+          '.emoji-picker-skin-swatch'
+        );
 
-      if (!swatch) return;
+      if (!swatch) {
+        return;
+      }
 
       currentSkin = Number(
         swatch.dataset.skin
@@ -320,24 +500,31 @@ function buildPicker() {
   ).addEventListener(
     'click',
     (e) => {
-      const btn = e.target.closest(
-        '.emoji-picker-emoji'
-      );
+      const btn =
+        e.target.closest(
+          '.emoji-picker-emoji'
+        );
 
-      if (!btn) return;
+      if (!btn) {
+        return;
+      }
 
-      const item = emojiById.get(
-        btn.dataset.id
-      );
+      const item =
+        emojiById.get(
+          btn.dataset.id
+        );
 
-      if (!item) return;
+      if (!item) {
+        return;
+      }
 
       pushRecent(item.id);
 
-      const char = emojiChar(
-        item,
-        currentSkin
-      );
+      const char =
+        emojiChar(
+          item,
+          currentSkin
+        );
 
       if (onSelectCallback) {
         onSelectCallback(char);
@@ -362,71 +549,90 @@ function buildPicker() {
 }
 
 function updateSkinButton(el) {
-  const btn = el.querySelector(
-    '.emoji-picker-skin-btn'
-  );
+  const btn =
+    el.querySelector(
+      '.emoji-picker-skin-btn'
+    );
 
   btn.style.setProperty(
     '--swatch',
-    SKIN_SWATCH_COLORS[currentSkin]
+    SKIN_SWATCH_COLORS[
+      currentSkin
+    ]
   );
 }
 
 // ---------------- Rendering ----------------
 
 function renderBody(el, query) {
-  const body = el.querySelector(
-    '.emoji-picker-body'
-  );
+  const body =
+    el.querySelector(
+      '.emoji-picker-body'
+    );
 
-  const tabsEl = el.querySelector(
-    '.emoji-picker-tabs'
-  );
+  const tabsEl =
+    el.querySelector(
+      '.emoji-picker-tabs'
+    );
 
-  const q = query
-    .trim()
-    .toLowerCase();
+  const q =
+    query
+      .trim()
+      .toLowerCase();
+
+  // Disconnect observers for the previous
+  // category DOM before replacing it.
+  if (sectionObserver) {
+    sectionObserver.disconnect();
+  }
 
   // ---- Search ----
 
   if (q) {
-    tabsEl.classList.add('hidden');
-
-    const matches = EMOJI.filter(
-      item =>
-        item.name
-          .toLowerCase()
-          .includes(q) ||
-
-        item.kw.includes(q) ||
-
-        item.id
-          .toLowerCase()
-          .includes(q)
+    tabsEl.classList.add(
+      'hidden'
     );
 
-    body.innerHTML = matches.length
-      ? `
-        <div
-          class="emoji-picker-section"
-          data-cat="search"
-        >
-          <div class="emoji-picker-section-title">
-            Search Results
-          </div>
+    const matches =
+      EMOJI.filter(
+        item =>
+          item.name
+            .toLowerCase()
+            .includes(q) ||
 
-          <div class="emoji-picker-grid">
-            ${matches
-              .map(item => emojiButtonHtml(item))
-              .join('')}
+          item.kw.includes(q) ||
+
+          item.id
+            .toLowerCase()
+            .includes(q)
+      );
+
+    body.innerHTML =
+      matches.length
+        ? `
+          <div
+            class="emoji-picker-section"
+            data-cat="search"
+            data-rendered="true"
+          >
+            <div class="emoji-picker-section-title">
+              Search Results
+            </div>
+
+            <div class="emoji-picker-grid">
+              ${matches
+                .map(item =>
+                  emojiButtonHtml(item)
+                )
+                .join('')}
+            </div>
           </div>
-        </div>
-      `
-      : `
-        <div class="emoji-picker-empty">
-          No emoji found
-        </div>
-      `;
+        `
+        : `
+          <div class="emoji-picker-empty">
+            No emoji found
+          </div>
+        `;
 
     return;
   }
@@ -437,9 +643,12 @@ function renderBody(el, query) {
 
   // ---- Recents ----
 
-  const recents = getRecents()
-    .map(id => emojiById.get(id))
-    .filter(Boolean);
+  const recents =
+    getRecents()
+      .map(id =>
+        emojiById.get(id)
+      )
+      .filter(Boolean);
 
   const sections = [];
 
@@ -448,6 +657,7 @@ function renderBody(el, query) {
       <div
         class="emoji-picker-section"
         data-cat="recent"
+        data-rendered="true"
       >
         <div class="emoji-picker-section-title">
           Frequently Used
@@ -455,7 +665,9 @@ function renderBody(el, query) {
 
         <div class="emoji-picker-grid">
           ${recents
-            .map(item => emojiButtonHtml(item))
+            .map(item =>
+              emojiButtonHtml(item)
+            )
             .join('')}
         </div>
       </div>
@@ -463,32 +675,22 @@ function renderBody(el, query) {
   }
 
   // ---- Categories ----
+  //
+  // Only section headers/placeholders are
+  // created here. The actual emoji buttons
+  // are generated when each section approaches
+  // the viewport.
 
   for (const cat of CATEGORIES) {
-    const items = EMOJI.filter(
-      item => item.cat === cat.id
+    sections.push(
+      createCategorySection(cat)
     );
-
-    sections.push(`
-      <div
-        class="emoji-picker-section"
-        data-cat="${cat.id}"
-      >
-        <div class="emoji-picker-section-title">
-          ${cat.name}
-        </div>
-
-        <div class="emoji-picker-grid">
-          ${items
-            .map(item => emojiButtonHtml(item))
-            .join('')}
-        </div>
-      </div>
-    `);
   }
 
   body.innerHTML =
     sections.join('');
+
+  observeLazySections(el);
 }
 
 function emojiButtonHtml(item) {
@@ -499,14 +701,17 @@ function emojiButtonHtml(item) {
       data-id="${item.id}"
       title="${item.name}"
     >
-      ${item.char}
+      ${emojiChar(item, currentSkin)}
     </button>
   `;
 }
 
 // ---------------- Positioning ----------------
 
-function positionPicker(el, anchorEl) {
+function positionPicker(
+  el,
+  anchorEl
+) {
   const rect =
     anchorEl.getBoundingClientRect();
 
@@ -515,8 +720,11 @@ function positionPicker(el, anchorEl) {
 
   const margin = 8;
 
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
+  const vw =
+    window.innerWidth;
+
+  const vh =
+    window.innerHeight;
 
   // Prefer opening upward from the trigger.
   // Flip to below only if there isn't enough room above.
@@ -541,7 +749,8 @@ function positionPicker(el, anchorEl) {
       margin
   );
 
-  let left = rect.left;
+  let left =
+    rect.left;
 
   left = Math.min(
     Math.max(
@@ -582,6 +791,10 @@ function handleDocumentKeydown(e) {
 /**
  * Opens the shared picker anchored near `anchorEl`.
  *
+ * Emoji data is dynamically imported the first time
+ * this function is called. The picker itself is also
+ * created only after the data is available.
+ *
  * `onSelect(char)` is called with the chosen emoji's
  * native character, already carrying the selected
  * skin-tone modifier when applicable.
@@ -589,7 +802,7 @@ function handleDocumentKeydown(e) {
  * What happens with the character is entirely up to
  * the caller.
  */
-export function openEmojiPicker({
+export async function openEmojiPicker({
   anchorEl,
   onSelect
 }) {
@@ -600,8 +813,13 @@ export function openEmojiPicker({
     return;
   }
 
+  // Load the large emoji dataset only when
+  // the picker is actually needed.
+  await loadEmojiData();
+
   if (!pickerEl) {
-    pickerEl = buildPicker();
+    pickerEl =
+      buildPicker();
 
     document.body.appendChild(
       pickerEl
@@ -622,13 +840,16 @@ export function openEmojiPicker({
     !anchorEl.dataset.emojiAnchorId
   ) {
     anchorEl.dataset.emojiAnchorId =
-      String(Math.random()).slice(2);
+      String(
+        Math.random()
+      ).slice(2);
   }
 
   pickerEl.dataset.anchorId =
     anchorEl.dataset.emojiAnchorId;
 
-  onSelectCallback = onSelect;
+  onSelectCallback =
+    onSelect;
 
   // Reset search on every open.
   const searchInput =
@@ -642,7 +863,9 @@ export function openEmojiPicker({
     .querySelector(
       '.emoji-picker-skin-menu'
     )
-    .classList.remove('active');
+    .classList.remove(
+      'active'
+    );
 
   renderBody(
     pickerEl,

@@ -2796,35 +2796,13 @@ function minContrastAcross(stops, textHex) {
   );
 }
 
-// Picks the text color (dark or light) whose worst contrast across
-// every gradient stop is highest.
 export function pickOwnBubbleTextColor(stops) {
   const darkContrast =
     minContrastAcross(stops, TEXT_DARK);
 
-  const lightContrast =
-    minContrastAcross(stops, TEXT_LIGHT);
-
-  /*
-   * Prefer white text unless the gradient is clearly light.
-   *
-   * This avoids switching to dark text because of a single
-   * relatively bright gradient stop.
-   */
-  if (lightContrast >= 4.5) {
-    return TEXT_LIGHT;
-  }
-
-  if (darkContrast >= 4.5) {
-    return TEXT_DARK;
-  }
-
-  /*
-   * When neither choice reaches the normal contrast target,
-   * prefer white. This keeps dark/medium bubbles from
-   * unexpectedly getting black text.
-   */
-  return TEXT_LIGHT;
+  return darkContrast >= 5.0
+    ? TEXT_DARK
+    : TEXT_LIGHT;
 }
 
 

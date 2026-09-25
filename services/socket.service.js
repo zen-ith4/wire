@@ -61,6 +61,20 @@ function emitChatMessageDeleted(id) {
   );
 }
 
+// Read receipts ("seen" ticks) — told only to the original sender
+// (the one whose messages just got read), never broadcast, and only
+// ever called by dm.controller.js when markRead() actually found
+// unread messages AND the reader currently has "Send Read Receipts"
+// enabled. See services/dm.service.js's markRead for why this can
+// never fire for a message read while the setting was off.
+function emitDmMessagesSeen({ sender_id, reader_id, message_ids, seen_at }) {
+  emit(
+    `user:${sender_id}`,
+    'dm-messages-seen',
+    { reader_id, message_ids, seen_at }
+  );
+}
+
 function emitDirectMessageDeleted(message) {
   emit(
     `user:${message.sender_id}`,
@@ -129,6 +143,7 @@ module.exports = {
   emitNewDirectMessage,
   emitChatMessageDeleted,
   emitDirectMessageDeleted,
+  emitDmMessagesSeen,
   emitChatReactionUpdate,
   emitDirectReactionUpdate,
   emitProfileAvatarUpdate,

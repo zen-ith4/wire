@@ -8,7 +8,19 @@ const VALID_COLUMNS = {
     bio: "bio TEXT",
     avatar_path: "avatar_path TEXT",
     banner_path: "banner_path TEXT",
-    accent_color: "accent_color TEXT DEFAULT NULL"
+    accent_color: "accent_color TEXT DEFAULT NULL",
+
+    // Presence & read-receipt privacy (see services/user.service.js and
+    // config/socket.js). Both default to enabled so existing accounts
+    // keep today's behavior after upgrading.
+    show_last_seen: "show_last_seen INTEGER NOT NULL DEFAULT 1",
+    send_read_receipts: "send_read_receipts INTEGER NOT NULL DEFAULT 1",
+
+    // Persisted so "Last seen" survives a server restart / the user
+    // simply never having connected since upgrading. Online/offline
+    // itself stays in-memory only (services/presence.service.js) —
+    // this is only the timestamp of their last disconnect.
+    last_seen_at: "last_seen_at TEXT DEFAULT NULL"
   },
 
   folders: {
@@ -30,7 +42,16 @@ const VALID_COLUMNS = {
     reply_to_id: "reply_to_id INTEGER",
     is_voice_message: "is_voice_message INTEGER NOT NULL DEFAULT 0",
     attachment_width: "attachment_width INTEGER",
-    attachment_height: "attachment_height INTEGER"
+    attachment_height: "attachment_height INTEGER",
+
+    // Read-receipt ("seen tick") visible to the SENDER. Distinct from
+    // read_at (below): read_at is the recipient's own read/unread
+    // state and is always set when they open the conversation;
+    // seen_at is only ever set alongside it when the recipient had
+    // "Send Read Receipts" enabled at that moment, so disabling the
+    // setting can never retroactively hide or reveal anything (see
+    // dm.service.js's markRead).
+    seen_at: "seen_at TEXT DEFAULT NULL"
   }
 };
 

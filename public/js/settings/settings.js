@@ -117,18 +117,21 @@ window.addEventListener(
  * These requests are independent, so run them in parallel.
  */
 async function fetchSettingsData() {
-  const [me, security] =
+  const [me, security, privacy] =
     await Promise.all([
       api('/api/me'),
-      api('/api/settings/security')
+      api('/api/settings/security'),
+      api('/api/settings/privacy')
     ]);
 
   return {
     me,
     security,
+    privacy,
     sig: JSON.stringify([
       me,
-      security
+      security,
+      privacy
     ])
   };
 }
@@ -273,7 +276,8 @@ export async function renderSettings(opts) {
 
     const {
       me,
-      security
+      security,
+      privacy
     } = data;
 
     /*
@@ -316,6 +320,7 @@ export async function renderSettings(opts) {
       renderSettingsHtml({
         me,
         security,
+        privacy,
         hardwareAccelerationEnabled,
         activeCategoryId
       });
@@ -352,7 +357,8 @@ export async function renderSettings(opts) {
         case 'security':
           bindSecuritySettings({
             me,
-            security
+            security,
+            privacy
           });
           break;
 
@@ -379,6 +385,7 @@ export async function renderSettings(opts) {
           {
             me,
             security,
+            privacy,
             hardwareAccelerationEnabled
           }
         )

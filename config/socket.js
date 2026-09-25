@@ -7,6 +7,11 @@ const { setupChatSocket } = require('../sockets/chat.socket');
 const { setupDmSocket } = require('../sockets/dm.socket');
 const { setIo } = require('../services/socket.service');
 const { markOnline, markOffline, getOnlineUserIds } = require('../services/presence.service');
+const {
+  isShowLastSeenEnabled,
+  filterVisiblePresenceIds,
+  recordLastSeen,
+} = require('../services/user.service');
 
 function setupSocketIO(server) {
   const io = new Server(server, {
@@ -75,15 +80,23 @@ function setupSocketIO(server) {
     // Presence: only announce "online" the first time this user's
     // connection count goes from 0 -> 1 (they might have several
     // tabs/devices open — we don't want each one flipping the status).
+    // markOnline() itself always ref-counts the real connection; the
+    // "Show Last Seen & Online Status" setting only gates whether that
+    // change is ever broadcast to anyone else (see filterVisiblePresenceIds
+    // below for the snapshot side of the same rule).
     const justCameOnline = markOnline(userId);
-    if (justCameOnline) {
+    if (justCameOnline && isShowLastSeenEnabled(userId)) {
       socket.to('chat').emit('presence:online', { user_id: userId });
     }
 
     // A newly-connected client has no way to know who was already
     // online before it connected — Socket.IO events only describe
     // changes going forward — so seed it with the current snapshot.
-    socket.emit('presence:snapshot', { online_user_ids: getOnlineUserIds() });
+    // Filtered the same way live events are: a user with presence
+    // hidden must never appear online through this endpoint either.
+    socket.emit('presence:snapshot', {
+      online_user_ids: filterVisiblePresenceIds(getOnlineUserIds()),
+    });
 
     setupChatSocket(io, socket);
     setupDmSocket(io, socket);
@@ -93,7 +106,15 @@ function setupSocketIO(server) {
 
       const justWentOffline = markOffline(userId);
       if (justWentOffline) {
-        socket.to('chat').emit('presence:offline', { user_id: userId });
+        // Recorded unconditionally — visibility of this value to other
+        // users is enforced at read time (findUserById / getUserProfile),
+        // not by refusing to persist it. That way re-enabling the
+        // setting later immediately shows an accurate "Last seen".
+        const lastSeenAt = recordLastSeen(userId);
+
+        if (isShowLastSeenEnabled(userId)) {
+          socket.to('chat').emit('presence:offline', { user_id: userId, last_seen_at: lastSeenAt });
+        }
       }
     });
 

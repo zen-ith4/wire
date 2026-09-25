@@ -5,6 +5,14 @@ const {
   disableEmail2FA: disableEmail2FAService
 } = require('../services/settings.service');
 
+const {
+  getPrivacySettings,
+  updatePrivacySettings
+} = require('../services/user.service');
+
+const { isOnline } = require('../services/presence.service');
+const { emit } = require('../services/socket.service');
+
 
 async function getSecurity(req, res) {
   const userId = req.user.id;
@@ -185,9 +193,62 @@ async function disableEmail2FA(req, res) {
 }
 
 
+// GET /api/settings/privacy
+async function getPrivacy(req, res) {
+  const settings = getPrivacySettings(req.user.id);
+  return res.json(settings);
+}
+
+
+// PUT /api/settings/privacy
+//
+// Each field is independent (see updatePrivacySettings): sending only
+// one of them leaves the other untouched, so disabling "Send Read
+// Receipts" can never accidentally disable "Show Last Seen" or vice
+// versa.
+async function updatePrivacy(req, res) {
+  const body = req.body || {};
+
+  const updates = {};
+  if (typeof body.show_last_seen === 'boolean') {
+    updates.show_last_seen = body.show_last_seen;
+  }
+  if (typeof body.send_read_receipts === 'boolean') {
+    updates.send_read_receipts = body.send_read_receipts;
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return res.status(400).json({
+      error: 'No valid privacy settings provided'
+    });
+  }
+
+  const result = updatePrivacySettings(req.user.id, updates);
+
+  // If Show Last Seen changed while the user is currently online,
+  // reflect that immediately rather than waiting for their next
+  // connect/disconnect — other connected clients should stop (or
+  // start) seeing this user's presence in real time, same as any
+  // other presence event (see config/socket.js).
+  if ('show_last_seen' in updates && isOnline(req.user.id)) {
+    if (result.show_last_seen) {
+      emit('chat', 'presence:online', { user_id: req.user.id });
+    } else {
+      // No last_seen_at here: hiding presence must not hand out a
+      // timestamp in the same event that's supposed to hide them.
+      emit('chat', 'presence:offline', { user_id: req.user.id, last_seen_at: null });
+    }
+  }
+
+  return res.json(result);
+}
+
+
 module.exports = {
   getSecurity,
   enableEmail2FA,
   verifyEmail2FA,
-  disableEmail2FA
+  disableEmail2FA,
+  getPrivacy,
+  updatePrivacy
 };

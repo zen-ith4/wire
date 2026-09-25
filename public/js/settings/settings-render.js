@@ -1065,7 +1065,7 @@ function renderProfile(me) {
 // Security
 // ============================================================
 
-function renderSecurity(security) {
+function renderSecurity(security, privacy) {
   const emailFeatureEnabled =
     Boolean(
       security?.email_enabled
@@ -1075,6 +1075,12 @@ function renderSecurity(security) {
     Boolean(
       security?.email_2fa_enabled
     );
+
+  const showLastSeenEnabled =
+    privacy?.show_last_seen !== false;
+
+  const sendReadReceiptsEnabled =
+    privacy?.send_read_receipts !== false;
 
   return `
     <div class="settings-section">
@@ -1314,6 +1320,88 @@ function renderSecurity(security) {
       }
 
     </div>
+
+
+    <!-- ============================================================
+         Privacy
+         ============================================================ -->
+
+    <div class="settings-section">
+
+      <div class="settings-section-title">
+        Privacy
+      </div>
+
+      <!-- Show Last Seen & Online Status -->
+
+      <div class="settings-row">
+
+        <div>
+          <div class="settings-row-label">
+            Show Last Seen &amp; Online Status
+          </div>
+
+          <div class="settings-row-sublabel">
+            When off, other people can't see when you're online or your last seen time
+          </div>
+        </div>
+
+        <button
+          type="button"
+          class="switch${
+            showLastSeenEnabled
+              ? ' on'
+              : ''
+          }"
+          id="show-last-seen-toggle"
+          role="switch"
+          aria-checked="${showLastSeenEnabled}"
+          aria-label="Show Last Seen &amp; Online Status">
+
+          <span class="switch-thumb"></span>
+
+        </button>
+
+      </div>
+
+      <!-- Send Read Receipts -->
+
+      <div class="settings-row">
+
+        <div>
+          <div class="settings-row-label">
+            Send Read Receipts
+          </div>
+
+          <div class="settings-row-sublabel">
+            When off, other people won't see a "read" tick on messages you've read
+          </div>
+        </div>
+
+        <button
+          type="button"
+          class="switch${
+            sendReadReceiptsEnabled
+              ? ' on'
+              : ''
+          }"
+          id="send-read-receipts-toggle"
+          role="switch"
+          aria-checked="${sendReadReceiptsEnabled}"
+          aria-label="Send Read Receipts">
+
+          <span class="switch-thumb"></span>
+
+        </button>
+
+      </div>
+
+      <div
+        id="privacy-settings-error"
+        class="field-error">
+      </div>
+
+    </div>
   `;
 }
 
@@ -1405,7 +1493,7 @@ export const SETTINGS_CATEGORIES = [
   {
     id: 'security',
     label: 'Security & Privacy',
-    sublabel: 'Password and two-factor authentication',
+    sublabel: 'Password, two-factor authentication, and privacy',
     icon: ICONS.shield || ''
   },
   {
@@ -1501,6 +1589,7 @@ export function renderCategoryBodyHtml(
   {
     me,
     security,
+    privacy,
     hardwareAccelerationEnabled
   }
 ) {
@@ -1536,7 +1625,7 @@ export function renderCategoryBodyHtml(
       return renderMessageSounds();
 
     case 'security':
-      return renderSecurity(security);
+      return renderSecurity(security, privacy);
 
     case 'account':
       return renderAccount();
@@ -1568,6 +1657,7 @@ export function renderCategoryBodyHtml(
 export function renderSettingsHtml({
   me,
   security,
+  privacy,
   hardwareAccelerationEnabled,
   activeCategoryId
 }) {
@@ -1583,6 +1673,7 @@ export function renderSettingsHtml({
           {
             me,
             security,
+            privacy,
             hardwareAccelerationEnabled
           }
         )

@@ -21,7 +21,12 @@ const {
 } = require('../services/dm.service');
 const { findUserById } = require('../services/user.service');
 const { toggleReaction, getReactionsForMessage, getReactionsForMessages } = require('../services/reaction.service');
-const { emitNewDirectMessage, emitDirectMessageDeleted, emitDirectReactionUpdate } = require('../services/socket.service');
+const {
+  emitNewDirectMessage,
+  emitDirectMessageDeleted,
+  emitDirectReactionUpdate,
+  emitDmMessagesSeen,
+} = require('../services/socket.service');
 const { clampLimit, withDmFlags, withReactions } = require('../utils/helpers');
 
 // Accepts whatever the client sent for reply_to_id and normalizes it
@@ -99,11 +104,26 @@ function getUnreadCountHandler(req, res) {
   res.json({ count });
 }
 
+// Emits exactly one real-time event to the original sender covering
+// every message this call just marked read — never one event per
+// message, and never anything at all when the reader has read
+// receipts turned off (see dm.service.js's markRead).
+function emitSeenReceiptIfAny(peerId, myId, result) {
+  if (result.receiptsEnabled && result.messageIds.length > 0) {
+    emitDmMessagesSeen({
+      sender_id: peerId,
+      reader_id: myId,
+      message_ids: result.messageIds,
+      seen_at: result.timestamp,
+    });
+  }
+}
+
 function getRecentMessagesHandler(req, res) {
   const peerId = parseInt(req.params.peerId);
   const limit = clampLimit(req.query.limit);
   const messages = getRecentDmMessages(req.user.id, peerId, limit);
-  markRead(peerId, req.user.id);
+  emitSeenReceiptIfAny(peerId, req.user.id, markRead(peerId, req.user.id));
   const reactions = getReactionsForMessages('dm', messages.map(m => m.id));
   res.json(withReactions(withDmFlags(messages), reactions));
 }
@@ -122,7 +142,7 @@ function getMessagesSinceHandler(req, res) {
   const since = typeof req.query.since === 'string' ? req.query.since : '1970-01-01T00:00:00.000Z';
   const limit = clampLimit(req.query.limit, 100, 200);
   const messages = getDmMessagesSince(req.user.id, peerId, since, limit);
-  markRead(peerId, req.user.id);
+  emitSeenReceiptIfAny(peerId, req.user.id, markRead(peerId, req.user.id));
   const reactions = getReactionsForMessages('dm', messages.map(m => m.id));
   res.json(withReactions(withDmFlags(messages), reactions));
 }

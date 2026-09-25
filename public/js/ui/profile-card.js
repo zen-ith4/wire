@@ -11,7 +11,7 @@
 import { api } from '../core/api.js';
 import { escapeHtml, escapeAttr, loadingState, formatBytes } from '../core/utils.js';
 import { avatarHtml, bannerHtml } from './avatar.js';
-import { isUserOnline, onPresenceChange } from '../chat/presence.js';
+import { isUserOnline, setUserOnline, setLastSeenAt, onPresenceChange, getPresenceStatusText } from '../chat/presence.js';
 import { getCurrentUser } from '../core/auth.js';
 import { navigate } from '../core/router.js';
 import { pushOverlay, closeOverlay } from '../core/navigation.js';
@@ -47,6 +47,17 @@ export async function openProfileCard(userId) {
     // The person may have clicked a different avatar (or closed the
     // card) before this resolved — don't overwrite with stale data.
     if (openProfileId !== id) return;
+
+    // The server-side fetch is more authoritative than whatever
+    // presence.js's local Set/Map happened to already know (it only
+    // reflects live socket events seen so far this session) — sync it
+    // in so the live listener below repaints correctly afterwards too.
+    if (profile.online) {
+      setUserOnline(profile.id);
+    } else {
+      setLastSeenAt(profile.id, profile.last_seen_at || null);
+    }
+
     renderProfileCard(profile);
   } catch (e) {
     if (openProfileId !== id) return;
@@ -69,7 +80,7 @@ function renderProfileCard(profile) {
       <div>
         <div class="profile-card-name">${escapeHtml(profile.username)}</div>
         <div class="profile-card-status${isUserOnline(profile.id) ? ' online' : ''}" data-presence-user="${profile.id}">
-          ${isUserOnline(profile.id) ? 'Online' : 'Offline'}
+          ${getPresenceStatusText(profile.id)}
         </div>
         ${profile.is_admin ? `<span class="profile-card-badge">Administrator</span>` : ''}
       </div>
@@ -145,8 +156,7 @@ onPresenceChange((changedUserId) => {
 
   const statusEl = document.querySelector(`.profile-card-status[data-presence-user="${openProfileId}"]`);
   if (statusEl) {
-    const online = isUserOnline(openProfileId);
-    statusEl.textContent = online ? 'Online' : 'Offline';
-    statusEl.classList.toggle('online', online);
+    statusEl.textContent = getPresenceStatusText(openProfileId);
+    statusEl.classList.toggle('online', isUserOnline(openProfileId));
   }
 });

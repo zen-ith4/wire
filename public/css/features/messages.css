@@ -805,6 +805,25 @@ input.conv-search-input:focus{
   color:var(--muted2);
 }
 
+/* ---------- Read-receipt ticks (own DM messages only) ---------- */
+
+.dm-ticks{
+  display:inline-flex;
+  align-items:center;
+  color:var(--muted2);
+  line-height:0;
+}
+
+.dm-ticks svg{
+  width:14px;
+  height:14px;
+  display:block;
+}
+
+.dm-ticks.seen{
+  color:var(--message-accent, var(--accent));
+}
+
 
 /* ================================================================
    MESSAGE ACTIONS
@@ -1804,6 +1823,24 @@ input.conv-search-input:focus{
 .chat-msg--joined-prev.is-context-open.own > .chat-time-side{
   right:34px;
   transform:translateX(100%);
+}
+
+.dm-ticks-side{
+  display:none;
+}
+
+.chat-msg--joined-prev.is-context-open.own > .dm-ticks-side{
+  position:absolute;
+  top:0;
+  height:30px;
+  display:flex;
+  align-items:center;
+  right:34px;
+  transform:translateX(calc(100% + 34px));
+  pointer-events:none;
+  user-select:none;
+  -webkit-user-select:none;
+  animation:motion-fade-in var(--motion-fast) var(--motion-ease);
 }
 
 

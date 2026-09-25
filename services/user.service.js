@@ -40,6 +40,8 @@ function findUserById(id) {
         avatar_path,
         banner_path,
         accent_color,
+        show_last_seen,
+        last_seen_at,
         created_at
       FROM users
       WHERE id = ?
@@ -384,6 +386,140 @@ function updateAccentColor(userId, accentColor) {
       accentColor,
       userId
     );
+}
+
+
+// ============================================================
+// Presence & read-receipt privacy
+//
+// show_last_seen / send_read_receipts are independent booleans (see
+// migrations.js). All reads below default to `true` when the row is
+// somehow missing (e.g. a race with account deletion) rather than
+// silently leaking nothing or throwing mid-request.
+// ============================================================
+
+function getPrivacySettings(userId) {
+  const row = getDb()
+    .prepare(`
+      SELECT show_last_seen, send_read_receipts
+      FROM users
+      WHERE id = ?
+    `)
+    .get(userId);
+
+  if (!row) {
+    const error = new Error('User not found');
+    error.code = 'USER_NOT_FOUND';
+    throw error;
+  }
+
+  return {
+    show_last_seen: row.show_last_seen !== 0,
+    send_read_receipts: row.send_read_receipts !== 0,
+  };
+}
+
+
+function updatePrivacySettings(userId, { show_last_seen, send_read_receipts } = {}) {
+  const current = getPrivacySettings(userId);
+
+  const next = {
+    show_last_seen:
+      typeof show_last_seen === 'boolean'
+        ? show_last_seen
+        : current.show_last_seen,
+    send_read_receipts:
+      typeof send_read_receipts === 'boolean'
+        ? send_read_receipts
+        : current.send_read_receipts,
+  };
+
+  getDb()
+    .prepare(`
+      UPDATE users
+      SET show_last_seen = ?, send_read_receipts = ?
+      WHERE id = ?
+    `)
+    .run(
+      next.show_last_seen ? 1 : 0,
+      next.send_read_receipts ? 1 : 0,
+      userId
+    );
+
+  return next;
+}
+
+
+function isShowLastSeenEnabled(userId) {
+  const row = getDb()
+    .prepare('SELECT show_last_seen FROM users WHERE id = ?')
+    .get(userId);
+
+  return !row || row.show_last_seen !== 0;
+}
+
+
+function isSendReadReceiptsEnabled(userId) {
+  const row = getDb()
+    .prepare('SELECT send_read_receipts FROM users WHERE id = ?')
+    .get(userId);
+
+  return !row || row.send_read_receipts !== 0;
+}
+
+
+// Given a list of currently-online user ids, returns only the ones
+// who allow their presence to be seen — used to build the
+// 'presence:snapshot' a newly-connected socket receives (see
+// config/socket.js). Keeps the "never leak through an alternative
+// event/endpoint" rule in one place instead of re-checking per id.
+function filterVisiblePresenceIds(userIds) {
+  if (!Array.isArray(userIds) || userIds.length === 0) {
+    return [];
+  }
+
+  const placeholders = userIds.map(() => '?').join(',');
+
+  return getDb()
+    .prepare(`
+      SELECT id FROM users
+      WHERE id IN (${placeholders}) AND show_last_seen != 0
+    `)
+    .all(...userIds)
+    .map(row => row.id);
+}
+
+
+// Called once a user's *last* socket disconnects (see
+// services/presence.service.js's markOffline / config/socket.js).
+// Always recorded regardless of the privacy setting — hiding it from
+// other users happens at read time (getLastSeenIfVisible below), not
+// by refusing to store it, so re-enabling the setting later shows an
+// accurate value immediately instead of "never".
+function recordLastSeen(userId) {
+  const now = new Date().toISOString();
+
+  getDb()
+    .prepare('UPDATE users SET last_seen_at = ? WHERE id = ?')
+    .run(now, userId);
+
+  return now;
+}
+
+
+// The one place that decides whether `viewerId` may see `userId`'s
+// last-seen timestamp: always visible to the user themselves, only
+// visible to anyone else when show_last_seen is enabled.
+function getLastSeenIfVisible(userId, viewerId) {
+  const row = getDb()
+    .prepare('SELECT last_seen_at, show_last_seen FROM users WHERE id = ?')
+    .get(userId);
+
+  if (!row) return null;
+  if (Number(userId) === Number(viewerId)) return row.last_seen_at || null;
+  if (row.show_last_seen === 0) return null;
+
+  return row.last_seen_at || null;
 }
 
 
@@ -762,6 +898,15 @@ module.exports = {
   setUserAdmin,
   updateBio,
   updateAccentColor,
+
+  getPrivacySettings,
+  updatePrivacySettings,
+  isShowLastSeenEnabled,
+  isSendReadReceiptsEnabled,
+  filterVisiblePresenceIds,
+  recordLastSeen,
+  getLastSeenIfVisible,
+
   updateAvatar,
   updateBanner,
   updatePassword,

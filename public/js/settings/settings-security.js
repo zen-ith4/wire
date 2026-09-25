@@ -579,6 +579,130 @@ function createEmail2FAController() {
 
 
 // ============================================================
+// Privacy
+//
+// Two independent server-backed toggles (see controllers/settings.
+// controller.js's PUT /api/settings/privacy) — each write only ever
+// carries the one key that changed, so toggling one can never
+// accidentally touch the other. Same optimistic-then-persist pattern
+// as bindBubbleAccent() in settings-appearance.js, except this is
+// account-scoped rather than local, so a failed write must roll the
+// switch back rather than just leaving it flipped.
+// ============================================================
+
+async function togglePrivacySetting(toggle, key) {
+  const next =
+    !toggle.classList.contains(
+      'on'
+    );
+
+  toggle.classList.toggle(
+    'on',
+    next
+  );
+
+  toggle.setAttribute(
+    'aria-checked',
+    String(next)
+  );
+
+  toggle.disabled = true;
+
+  const errorElement =
+    document.getElementById(
+      'privacy-settings-error'
+    );
+
+  if (errorElement) {
+    errorElement.textContent = '';
+  }
+
+  try {
+    // This write makes the cached settings data stale (see settings.js).
+    window.dispatchEvent(new Event('wire:settings-stale'));
+
+    await api(
+      '/api/settings/privacy',
+      {
+        method: 'PUT',
+
+        headers: {
+          'Content-Type':
+            'application/json'
+        },
+
+        body: JSON.stringify({
+          [key]: next
+        })
+      }
+    );
+
+  } catch (error) {
+    console.error(
+      '[Settings] Failed to update privacy setting:',
+      error
+    );
+
+    // Roll back the optimistic flip — the server never applied it.
+    toggle.classList.toggle(
+      'on',
+      !next
+    );
+
+    toggle.setAttribute(
+      'aria-checked',
+      String(!next)
+    );
+
+    const message =
+      error.message ||
+      'Failed to update privacy setting';
+
+    if (errorElement) {
+      errorElement.textContent = message;
+    } else {
+      showToast(message, 'error');
+    }
+
+  } finally {
+    toggle.disabled = false;
+  }
+}
+
+function createPrivacyController() {
+  const showLastSeenToggle =
+    document.getElementById(
+      'show-last-seen-toggle'
+    );
+
+  const sendReadReceiptsToggle =
+    document.getElementById(
+      'send-read-receipts-toggle'
+    );
+
+  if (showLastSeenToggle) {
+    showLastSeenToggle.addEventListener(
+      'click',
+      () => togglePrivacySetting(
+        showLastSeenToggle,
+        'show_last_seen'
+      )
+    );
+  }
+
+  if (sendReadReceiptsToggle) {
+    sendReadReceiptsToggle.addEventListener(
+      'click',
+      () => togglePrivacySetting(
+        sendReadReceiptsToggle,
+        'send_read_receipts'
+      )
+    );
+  }
+}
+
+
+// ============================================================
 // Public binder
 // ============================================================
 
@@ -587,4 +711,6 @@ export function bindSecuritySettings() {
     changePassword;
 
   createEmail2FAController();
+
+  createPrivacyController();
 }

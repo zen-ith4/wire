@@ -14,7 +14,9 @@ const {
   updatePassword: updateUserPassword,
   changePasswordWithIdentity,
   getStorageUsage,
+  isShowLastSeenEnabled,
 } = require('../services/user.service');
+const { isOnline } = require('../services/presence.service');
 
 const { comparePassword } = require('../utils/password');
 const { AVATAR_MIME_MAP } = require('../config/multer');
@@ -573,6 +575,14 @@ function getUserProfile(req, res) {
     });
   }
 
+  // Presence is only ever visible to the user themselves, or to
+  // others when this user has "Show Last Seen & Online Status"
+  // enabled — never through this endpoint, or any other, when it's
+  // off. See services/user.service.js / config/socket.js for the
+  // same rule applied to the live socket events.
+  const isSelf = Number(user.id) === Number(req.user.id);
+  const presenceVisible = isSelf || isShowLastSeenEnabled(user.id);
+
   res.json({
     id: user.id,
     username: user.username,
@@ -582,6 +592,8 @@ function getUserProfile(req, res) {
     has_banner: !!user.banner_path,
     accent_color: user.accent_color || null,
     created_at: user.created_at,
+    online: presenceVisible ? isOnline(user.id) : false,
+    last_seen_at: presenceVisible ? (user.last_seen_at || null) : null,
     storage_used: getStorageUsage(user.id)
   });
 }

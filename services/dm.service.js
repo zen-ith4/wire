@@ -6,7 +6,7 @@ const { getDb } = require('../config/database');
 const DM_SELECT = `
   SELECT dm.id, dm.sender_id, dm.recipient_id, su.username AS sender_username,
          su.accent_color, su.avatar_path AS sender_avatar_path,
-         dm.content, dm.created_at AS timestamp, dm.read_at,
+         dm.content, dm.created_at AS timestamp, dm.read_at, dm.seen_at,
          dm.attachment_name, dm.attachment_size, dm.attachment_mime,
          dm.attachment_width, dm.attachment_height,
          dm.is_voice_message,
@@ -149,11 +149,62 @@ function getTotalUnread(userId) {
   ).get(userId).c;
 }
 
+// Marks every unread message from `peerId` to `myId` as read.
+//
+// read_at (this user's own read/unread state, drives their unread
+// badge and the "New messages" boundary) is always set — reading is
+// something that actually happened, and it's never shown to anyone
+// but `myId` themselves.
+//
+// seen_at (the read RECEIPT the sender sees as a double check-mark)
+// is only ever set alongside it when `myId` currently has "Send Read
+// Receipts" enabled. Because that check happens at the moment of
+// reading, not at display time, later flipping the setting can never
+// retroactively create or erase a receipt for a message that was
+// already read under the old setting — see the requirement in
+// controllers/dm.controller.js's callers.
+//
+// Returns which message ids actually transitioned (for the caller to
+// emit a single real-time event for, or none at all — see
+// dm.controller.js), never touching rows that were already read.
 function markRead(peerId, myId) {
-  getDb().prepare(`
-    UPDATE direct_messages SET read_at = ?
+  const db = getDb();
+
+  const unreadIds = db.prepare(`
+    SELECT id FROM direct_messages
     WHERE sender_id = ? AND recipient_id = ? AND read_at IS NULL
-  `).run(new Date().toISOString(), peerId, myId);
+  `).all(peerId, myId).map(row => row.id);
+
+  if (unreadIds.length === 0) {
+    return { messageIds: [], receiptsEnabled: false, timestamp: null };
+  }
+
+  const receiptsRow = db.prepare(
+    'SELECT send_read_receipts FROM users WHERE id = ?'
+  ).get(myId);
+  const receiptsEnabled = !receiptsRow || receiptsRow.send_read_receipts !== 0;
+
+  const now = new Date().toISOString();
+  const placeholders = unreadIds.map(() => '?').join(',');
+
+  const setReadAt = db.prepare(`
+    UPDATE direct_messages SET read_at = ?
+    WHERE id IN (${placeholders})
+  `);
+  const setSeenAt = db.prepare(`
+    UPDATE direct_messages SET seen_at = ?
+    WHERE id IN (${placeholders})
+  `);
+
+  const tx = db.transaction(() => {
+    setReadAt.run(now, ...unreadIds);
+    if (receiptsEnabled) {
+      setSeenAt.run(now, ...unreadIds);
+    }
+  });
+  tx();
+
+  return { messageIds: unreadIds, receiptsEnabled, timestamp: now };
 }
 
 function getRecentDmMessages(userId, peerId, limit) {

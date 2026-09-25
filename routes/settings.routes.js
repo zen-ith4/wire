@@ -14,7 +14,9 @@ const {
   getSecurity,
   enableEmail2FA,
   verifyEmail2FA,
-  disableEmail2FA
+  disableEmail2FA,
+  getPrivacy,
+  updatePrivacy
 } = require('../controllers/settings.controller');
 
 
@@ -22,6 +24,20 @@ router.get(
   '/security',
   authenticate,
   asyncHandler(getSecurity)
+);
+
+
+router.get(
+  '/privacy',
+  authenticate,
+  asyncHandler(getPrivacy)
+);
+
+
+router.put(
+  '/privacy',
+  authenticate,
+  asyncHandler(updatePrivacy)
 );
 
 

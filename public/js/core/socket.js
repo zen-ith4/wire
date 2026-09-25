@@ -23,6 +23,7 @@ import {
   showDmTyping,
   hideDmTyping,
   clearAllDmTyping,
+  markDmMessagesSeen,
 } from '../chat/dm.js';
 
 import {
@@ -235,6 +236,14 @@ export function initSocket(token) {
     handleDmStopTyping
   );
 
+  // Read receipts ("seen" ticks) — see services/socket.service.js's
+  // emitDmMessagesSeen. Only ever received here as the original
+  // sender of the messages named in the payload.
+  socket.on(
+    'dm-messages-seen',
+    handleDmMessagesSeen
+  );
+
   // Presence
   socket.on(
     'presence:snapshot',
@@ -268,14 +277,18 @@ export function initSocket(token) {
 
   socket.on(
     'presence:offline',
-    ({ user_id } = {}) => {
+    ({ user_id, last_seen_at } = {}) => {
       socketLog(
         'PRESENCE OFFLINE:',
         user_id
       );
 
       if (user_id != null) {
-        setUserOffline(user_id);
+        // A real disconnect carries the timestamp that was just
+        // recorded; a live "I just hid my presence" event (settings
+        // change while online) carries last_seen_at: null instead, so
+        // this correctly blanks out anything shown for them too.
+        setUserOffline(user_id, last_seen_at ?? null);
       }
     }
   );
@@ -438,6 +451,18 @@ function handleDmStopTyping({
   sender_id
 }) {
   hideDmTyping(sender_id);
+}
+
+function handleDmMessagesSeen({
+  reader_id,
+  message_ids,
+  seen_at
+} = {}) {
+  if (reader_id == null || !Array.isArray(message_ids) || message_ids.length === 0) {
+    return;
+  }
+
+  markDmMessagesSeen({ reader_id, message_ids, seen_at });
 }
 
 function handleProfileAvatarUpdated({

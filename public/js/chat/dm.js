@@ -53,7 +53,11 @@ import {
 import { getSocket } from '../core/socket.js';
 import {
   isUserOnline,
-  onPresenceChange
+  setUserOnline,
+  onPresenceChange,
+  getPresenceStatusText,
+  setLastSeenAt,
+  refreshPresenceDisplay
 } from './presence.js';
 import { createComposer } from './composer.js';
 import { setMessageAccent } from './message-accent.js';
@@ -463,14 +467,13 @@ onPresenceChange((changedUserId) => {
 
   const statusEl = document.getElementById('dm-thread-status');
   if (!statusEl) return;
-  const online = isUserOnline(dmActivePeer.id);
-  statusEl.textContent = online ? 'Online' : 'Offline';
-  statusEl.classList.toggle('online', online);
+  statusEl.textContent = getPresenceStatusText(dmActivePeer.id);
+  statusEl.classList.toggle('online', isUserOnline(dmActivePeer.id));
 });
 
 // Same live-sync approach for the "New message" picker's status lines
 // (the .presence-dot on each row's avatar already updates itself via
-// avatar.js's own listener — this just keeps the "Online"/"Offline"
+// avatar.js's own listener — this just keeps the "Online"/"Last seen…"
 // text next to it in sync too, without re-rendering the whole list).
 onPresenceChange((changedUserId) => {
   const selector =
@@ -479,11 +482,32 @@ onPresenceChange((changedUserId) => {
       : `.dm-picker-status[data-user-id="${changedUserId}"]`;
 
   document.querySelectorAll(selector).forEach((el) => {
-    const online = isUserOnline(el.dataset.userId);
-    el.textContent = online ? 'Online' : 'Offline';
-    el.classList.toggle('online', online);
+    el.textContent = getPresenceStatusText(el.dataset.userId);
+    el.classList.toggle('online', isUserOnline(el.dataset.userId));
   });
 });
+
+// Background fetch of a peer's presence for whichever surface (DM
+// thread header, profile card) just rendered from local state alone.
+// Local state (the presence.js Set/Map) only knows what live socket
+// events have said since this session started, so a peer who was
+// already offline before we connected has no last-seen time yet
+// without this — see /api/me/:userId in me.controller.js, the same
+// endpoint the profile card already uses.
+async function refreshPeerPresence(peerId) {
+  try {
+    const profile = await api(`/api/me/${peerId}`);
+    if (profile.online) {
+      setUserOnline(peerId);
+    } else {
+      setLastSeenAt(peerId, profile.last_seen_at || null);
+    }
+    refreshPresenceDisplay(peerId);
+  } catch (e) {
+    // Best-effort only — the header/card already shows whatever local
+    // state had, so a failed refresh just means it stays as-is.
+  }
+}
 
 // ---------- Typing indicator ----------
 function renderDmTyping(usernames) {
@@ -854,7 +878,7 @@ function renderDmPickerRows(filter = '') {
           <div class="dm-picker-info">
             <div class="dm-picker-name">${escapeHtml(u.username)}</div>
             <div class="dm-picker-status${online ? ' online' : ''}" data-user-id="${u.id}">${
-              online ? 'Online' : 'Offline'
+              getPresenceStatusText(u.id)
             }</div>
           </div>
         </div>
@@ -1340,7 +1364,7 @@ thread.innerHTML = `
           <div class="chat-top-status${
             isUserOnline(peerId) ? ' online' : ''
           }" id="dm-thread-status">${
-            isUserOnline(peerId) ? 'Online' : 'Offline'
+            getPresenceStatusText(peerId)
           }</div>
         </div>
       </div>
@@ -1368,6 +1392,12 @@ thread.innerHTML = `
       </div>
     </div>
   `;
+
+  // Fire-and-forget: fills in "Last seen …" for a peer who was
+  // already offline before this session's socket connected (nothing
+  // live has told us their last-seen time yet). Header/dot already
+  // rendered correctly from local state above either way.
+  refreshPeerPresence(peerId);
 
   if (dmComposer) dmComposer.destroy();
 
@@ -1755,6 +1785,21 @@ function buildLoadMoreEl(onClick) {
   return row;
 }
 
+// Read-receipt ticks — own messages only. Single check = sent
+// (the message exists), double check = seen_at is set (the recipient
+// actually read it while they had "Send Read Receipts" enabled — see
+// services/dm.service.js's markRead). There is deliberately no
+// separate "delivered" state: this architecture has no reliable ack
+// that a specific device received the socket emit, and a live
+// message-list overhaul is not the place to invent one, so showing
+// only sent/seen avoids faking a delivery status we can't verify.
+function dmTicksHtml(msg, own, variant = '') {
+  if (!own) return '';
+  const seen = !!msg.seen_at;
+  const cls = ['dm-ticks', variant, seen ? 'seen' : ''].filter(Boolean).join(' ');
+  return `<span class="${cls}" title="${seen ? 'Read' : 'Sent'}" aria-label="${seen ? 'Read' : 'Sent'}">${seen ? ICONS.checkDouble : ICONS.check}</span>`;
+}
+
 function buildDmMessageEl(msg, currentUser) {
   const own =
     currentUser && Number(msg.sender_id) === Number(currentUser.id);
@@ -1774,6 +1819,7 @@ function buildDmMessageEl(msg, currentUser) {
       <div class="chat-meta">
         <span class="chat-sender">${escapeHtml(msg.sender_username)}</span>
         <time class="chat-time" datetime="${escapeAttr(msg.timestamp)}" title="${escapeAttr(formatFullDateTime(msg.timestamp))}">${formatTime(msg.timestamp)}</time>
+        ${dmTicksHtml(msg, own)}
       </div>
       ${buildReplyQuoteHtml(msg, 'dm')}
       ${
@@ -1802,6 +1848,7 @@ function buildDmMessageEl(msg, currentUser) {
       ${renderReactionsRow(msg, 'dm')}
     </div>
     <time class="chat-time chat-time-side" datetime="${escapeAttr(msg.timestamp)}" title="${escapeAttr(formatFullDateTime(msg.timestamp))}" aria-hidden="true">${formatTime(msg.timestamp)}</time>
+    ${dmTicksHtml(msg, own, 'dm-ticks-side')}
   `;
 
   if (
@@ -2105,6 +2152,43 @@ export async function addDmMessage(msg) {
   if (wasAtBottom || isOwnMessage) {
     container.scrollTop = container.scrollHeight;
     if (dmEntry) dmEntry.atBottom = true;
+  }
+}
+
+// ---------- Read receipts ----------
+// Received via the 'dm-messages-seen' socket event (core/socket.js) —
+// only ever describes messages *we* sent to `reader_id`, so there is
+// no sender/recipient ambiguity to resolve here.
+export function markDmMessagesSeen({ reader_id, message_ids, seen_at }) {
+  const peerId = Number(reader_id);
+  const entry = dmCache.get(peerId);
+  if (!entry) return;
+
+  let changedIds = [];
+  for (const id of message_ids) {
+    const msg = entry.byId.get(Number(id));
+    if (msg && !msg.seen_at) {
+      msg.seen_at = seen_at || new Date().toISOString();
+      changedIds.push(msg.id);
+    }
+  }
+  if (changedIds.length === 0) return;
+
+  const isActiveConversation = dmActivePeer && Number(dmActivePeer.id) === peerId;
+  if (!isActiveConversation) return;
+
+  const container = document.getElementById('dm-messages');
+  if (!container) return;
+
+  for (const id of changedIds) {
+    const row = container.querySelector(`.chat-msg[data-msg-id="${id}"]`);
+    if (!row) continue;
+    row.querySelectorAll('.dm-ticks').forEach((ticksEl) => {
+      ticksEl.classList.add('seen');
+      ticksEl.innerHTML = ICONS.checkDouble;
+      ticksEl.title = 'Read';
+      ticksEl.setAttribute('aria-label', 'Read');
+    });
   }
 }
 

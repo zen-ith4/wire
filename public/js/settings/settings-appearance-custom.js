@@ -378,7 +378,9 @@ export function renderCustomBackgroundSection() {
             </select>
           </label>
 
-          <label>
+          <label
+            id="custom-bg-position-phone-row"
+            ${isPhoneLayout() ? '' : 'hidden'}>
             Position on phones
             <select id="custom-bg-position-phone" data-cbg="phonePosition" aria-label="Background position on phones">
               ${phonePositionOptions}
@@ -1058,18 +1060,34 @@ function setupPreview() {
   document.addEventListener('visibilitychange', syncPreviewPlayback, { signal });
   window.addEventListener(PLAYBACK_RETRY_EVENT, syncPreviewPlayback, { signal });
 
-  // Phone <-> desktop layout: a different preview, not a resize.
+  // Phone <-> desktop layout: a different preview, not a resize. Also
+  // the one thing that decides whether "Position on phones" is shown
+  // at all — toggle it live so resizing the window (or rotating) never
+  // needs Settings to be closed and reopened to catch up.
   try {
     window
       .matchMedia(PHONE_LAYOUT_QUERY)
       .addEventListener(
         'change',
-        () => renderPreview({ rebuild: true }),
+        () => {
+          renderPreview({ rebuild: true });
+          syncPhonePositionVisibility();
+        },
         { signal }
       );
   } catch {
     // Older WebViews.
   }
+}
+
+// "Position on phones" only makes sense once the app is actually in its
+// mobile layout (bottom-nav instead of sidebar) — same query as the CSS
+// that switches navigation (responsive.css) and as PHONE_LAYOUT_QUERY
+// above. Keeping the option around but disabled would still invite
+// desktop users to fiddle with a setting they can't see the effect of.
+function syncPhonePositionVisibility() {
+  const row = $('custom-bg-position-phone-row');
+  if (row) row.hidden = !isPhoneLayout();
 }
 
 function syncCustomBackgroundUi() {
@@ -1139,6 +1157,7 @@ function syncCustomBackgroundUi() {
   setSelect($('custom-bg-fit'), prefs.fit);
   setSelect($('custom-bg-position'), prefs.position);
   setSelect($('custom-bg-position-phone'), prefs.phonePosition);
+  syncPhonePositionVisibility();
   setSwitch($('custom-bg-animate'), prefs.animate);
 
   renderPreview();

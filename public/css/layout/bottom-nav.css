@@ -23,7 +23,11 @@
      them while its tabs stay clear of the cutout. */
   padding:0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   margin:0 calc(-1 * env(safe-area-inset-right)) 0 calc(-1 * env(safe-area-inset-left));
-  background:rgba(var(--ink-rgb), .72);
+  /* Same "Sidebar & top bar" surface the desktop sidebar reads
+     (appearance-surfaces.js): on phones this bar *is* that control's
+     target, not the (hidden) desktop sidebar. */
+  background:rgba(var(--ink-rgb), var(--sf-sidebar-alpha, .72));
+  backdrop-filter:var(--sf-sidebar-filter,none);-webkit-backdrop-filter:var(--sf-sidebar-filter,none);
   border-top:1px solid var(--border);
   user-select:none;
 }

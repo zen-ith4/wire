@@ -36,7 +36,6 @@ import {
   FIT_OPTIONS,
   LIMITS,
   PHONE_LAYOUT_QUERY,
-  PHONE_POSITION_SAME,
   PLAYBACK_RETRY_EVENT,
   POSITION_OPTIONS,
   applyCandidate,
@@ -88,10 +87,7 @@ function fillPercent(value, min, max) {
 }
 
 function formatValue(unit, value) {
-  if (unit === 'px') return `${value}px`;
-  if (unit === 'deg') return `${value}°`;
-
-  return `${value}%`;
+  return unit === 'px' ? `${value}px` : `${value}%`;
 }
 
 /**
@@ -107,12 +103,14 @@ export function sliderRow({
   value,
   unit = '%',
   attrs = '',
-  disabled = false
+  disabled = false,
+  hidden = false
 }) {
   return `
     <div
       class="appearance-slider-row${disabled ? ' is-disabled' : ''}"
-      data-slider-row="${id}">
+      data-slider-row="${id}"
+      ${hidden ? 'hidden' : ''}>
 
       <div>
         <div class="settings-row-label">
@@ -138,7 +136,7 @@ export function sliderRow({
           style="--sound-volume:${fillPercent(value, min, max)}%"
           aria-label="${escapeHtml(label)}"
           ${attrs}
-          ${disabled ? 'disabled' : ''}>
+          ${disabled || hidden ? 'disabled' : ''}>
 
         <output
           class="sound-volume-value"
@@ -205,6 +203,18 @@ function reflectSlider(input) {
   setSlider(input, Number(input.value));
 }
 
+// Whether the Background blur control would currently do nothing.
+// A CSS filter on a *playing* <video> forces many mobile
+// browsers/WebViews off their hardware decode path onto a slow,
+// software-composited one — dropped frames, stutter, sometimes a
+// frozen or black frame.
+//
+// Scoped to video only: a still image or a GIF (always drawn as
+// <img>, never <video>) blurs normally.
+function isVideoBlurHidden(kind, prefs) {
+  return kind === 'video' && isLiteDevice() && shouldPlayAnimation(prefs);
+}
+
 // ============================================================
 // Custom background — markup
 // ============================================================
@@ -217,27 +227,17 @@ export function renderCustomBackgroundSection() {
     o => `
       <option value="${o.id}"${o.id === prefs.fit ? ' selected' : ''}>
         ${escapeHtml(o.label)}
-      </option>`
+      </option>
+    `
   ).join('');
 
   const positionOptions = POSITION_OPTIONS.map(
     o => `
       <option value="${o.id}"${o.id === prefs.position ? ' selected' : ''}>
         ${escapeHtml(o.label)}
-      </option>`
+      </option>
+    `
   ).join('');
-
-  const phonePositionOptions = [
-    { id: PHONE_POSITION_SAME, label: 'Same as desktop' },
-    ...POSITION_OPTIONS
-  ]
-    .map(
-      o => `
-      <option value="${o.id}"${o.id === prefs.phonePosition ? ' selected' : ''}>
-        ${escapeHtml(o.label)}
-      </option>`
-    )
-    .join('');
 
   return `
     <div
@@ -364,30 +364,28 @@ export function renderCustomBackgroundSection() {
           max: LIMITS.blur.max,
           value: prefs.blur,
           unit: 'px',
-          attrs: 'data-cbg="blur"'
+          attrs: 'data-cbg="blur"',
+          hidden: isVideoBlurHidden(prefs.kind, prefs)
         })}
 
         <div class="custom-bg-selects">
           <label>
             Fit
-            <select id="custom-bg-fit" data-cbg="fit" aria-label="Background fit">
+            <select
+              id="custom-bg-fit"
+              data-cbg="fit"
+              aria-label="Background fit">
               ${fitOptions}
             </select>
           </label>
 
           <label>
             Position
-            <select id="custom-bg-position" data-cbg="position" aria-label="Background position">
+            <select
+              id="custom-bg-position"
+              data-cbg="position"
+              aria-label="Background position">
               ${positionOptions}
-            </select>
-          </label>
-
-          <label
-            id="custom-bg-position-phone-row"
-            ${isPhoneLayout() ? '' : 'hidden'}>
-            Position on phones
-            <select id="custom-bg-position-phone" data-cbg="phonePosition" aria-label="Background position on phones">
-              ${phonePositionOptions}
             </select>
           </label>
         </div>
@@ -398,7 +396,9 @@ export function renderCustomBackgroundSection() {
           ${prefs.animated ? '' : 'hidden'}>
 
           <div>
-            <div class="settings-row-label" id="custom-bg-animate-label">
+            <div
+              class="settings-row-label"
+              id="custom-bg-animate-label">
               ${prefs.kind === 'video' ? 'Play video' : 'Play animation'}
             </div>
 
@@ -501,10 +501,15 @@ export function renderAdvancedAppearanceSection() {
 
       <summary class="settings-advanced-summary">
         <span>
-          <span class="settings-row-label" style="display:block">
+          <span
+            class="settings-row-label"
+            style="display:block">
             Advanced
           </span>
-          <span class="settings-row-sublabel" style="display:block">
+
+          <span
+            class="settings-row-sublabel"
+            style="display:block">
             Transparency and blur for each part of the interface
           </span>
         </span>
@@ -526,7 +531,9 @@ export function renderAdvancedAppearanceSection() {
 
             <div class="settings-row-sublabel">
               Master switch. Turn off to save battery and GPU
-              ${lite ? '— blur is also capped on this device and paused behind animated backgrounds' : ''}
+              ${lite
+                ? '— blur is also capped on this device and paused behind animated backgrounds'
+                : ''}
             </div>
           </div>
 
@@ -604,6 +611,7 @@ function setStatus(message, isError = false) {
 // The handler below writes the same value back, which is harmless.
 function setSelect(el, value) {
   if (!el || el.value === value) return;
+
   el.value = value;
   el.dispatchEvent(new Event('change'));
 }
@@ -616,6 +624,7 @@ function setSelect(el, value) {
 //            device's own viewport, showing a real-size chat that
 //            is scaled down as a whole, so what you see here is
 //            what the conversation will look like.
+//
 // "Phone" is the app's own bottom-navigation layout query, not a
 // device list, so a narrow desktop window gets it too and no phone
 // resolution is hard-coded.
@@ -632,6 +641,7 @@ const PHONE_SCREEN = `
 
     <div class="cbg-pv-status">
       <span>9:41</span>
+
       <span class="cbg-pv-status-icons">
         <span class="cbg-pv-signal"></span>
         <span class="cbg-pv-battery"></span>
@@ -639,8 +649,12 @@ const PHONE_SCREEN = `
     </div>
 
     <div class="cbg-pv-header">
-      <span class="cbg-pv-back">${ICONS.chevronLeft || '‹'}</span>
+      <span class="cbg-pv-back">
+        ${ICONS.chevronLeft || '‹'}
+      </span>
+
       <span class="cbg-pv-avatar">A</span>
+
       <span>
         <div class="cbg-pv-name">Alex</div>
         <div class="cbg-pv-sub">online</div>
@@ -649,18 +663,22 @@ const PHONE_SCREEN = `
 
     <div class="cbg-pv-messages">
       <div class="cbg-pv-day">Today</div>
+
       <div class="cbg-pv-bubble">
         Hey! Did you see the new background?
         <span class="cbg-pv-time">9:38</span>
       </div>
+
       <div class="cbg-pv-bubble is-own">
         Just set it up. Is the text easy to read?
         <span class="cbg-pv-time">9:39</span>
       </div>
+
       <div class="cbg-pv-bubble">
         Looks great, and messages stay clear on top of it.
         <span class="cbg-pv-time">9:40</span>
       </div>
+
       <div class="cbg-pv-bubble is-own">
         Perfect, thanks!
         <span class="cbg-pv-time">9:41</span>
@@ -771,11 +789,14 @@ function applyPreviewVars(preview, state, phone) {
     {
       src: state.mode === 'img' ? state.src : null,
       playing: state.playing,
+
       // The desktop preview is a fraction of the screen, the phone
       // one is the screen scaled by previewScale: shrink the blur
       // by the same factor so it reads the same.
-      blurScale: phone ? previewScale : 0.3,
-      phone
+      //
+      // Position is global now, so buildBackgroundVars needs no
+      // phone-specific position value.
+      blurScale: phone ? previewScale : 0.3
     }
   );
 
@@ -802,13 +823,17 @@ function layoutPreview() {
     ]) {
       preview.style.removeProperty(name);
     }
+
     return;
   }
 
   const vw = Math.max(240, window.innerWidth || 390);
   const vh = Math.max(240, window.innerHeight || 780);
 
-  const ratio = Math.min(2.4, Math.max(0.36, vw / vh));
+  const ratio = Math.min(
+    2.4,
+    Math.max(0.36, vw / vh)
+  );
 
   // 6px of frame ring on each side.
   const room = Math.max(60, wrap.clientWidth - 12);
@@ -819,11 +844,30 @@ function layoutPreview() {
 
   previewScale = width / vw;
 
-  preview.style.setProperty('--pv-w', `${Math.round(width)}px`);
-  preview.style.setProperty('--pv-h', `${Math.round(height)}px`);
-  preview.style.setProperty('--pv-vw', `${Math.round(vw)}px`);
-  preview.style.setProperty('--pv-vh', `${Math.round(vw / ratio)}px`);
-  preview.style.setProperty('--pv-k', previewScale.toFixed(4));
+  preview.style.setProperty(
+    '--pv-w',
+    `${Math.round(width)}px`
+  );
+
+  preview.style.setProperty(
+    '--pv-h',
+    `${Math.round(height)}px`
+  );
+
+  preview.style.setProperty(
+    '--pv-vw',
+    `${Math.round(vw)}px`
+  );
+
+  preview.style.setProperty(
+    '--pv-vh',
+    `${Math.round(vw / ratio)}px`
+  );
+
+  preview.style.setProperty(
+    '--pv-k',
+    previewScale.toFixed(4)
+  );
 }
 
 function disposePreviewVideo() {
@@ -925,7 +969,9 @@ function buildPreview(preview, state, phone) {
 
   if (state.mode === 'none') {
     const empty = document.createElement('div');
+
     empty.className = 'custom-bg-preview-empty';
+
     empty.textContent =
       state.prefs.hasImage && !state.prefs.enabled
         ? 'Custom background is off'
@@ -942,7 +988,11 @@ function buildPreview(preview, state, phone) {
 
   if (state.mode === 'video') {
     media = createBackgroundVideo();
-    if (state.poster) media.poster = state.poster;
+
+    if (state.poster) {
+      media.poster = state.poster;
+    }
+
     previewVideo = media;
   } else {
     media = document.createElement('img');
@@ -956,7 +1006,10 @@ function buildPreview(preview, state, phone) {
   preview.appendChild(surface);
 
   if (phone) {
-    preview.insertAdjacentHTML('beforeend', PHONE_SCREEN);
+    preview.insertAdjacentHTML(
+      'beforeend',
+      PHONE_SCREEN
+    );
     return;
   }
 
@@ -994,7 +1047,9 @@ function renderPreview({ rebuild = false } = {}) {
 
   layoutPreview();
 
-  if (state.src) applyPreviewVars(preview, state, phone);
+  if (state.src) {
+    applyPreviewVars(preview, state, phone);
+  }
 
   const info = candidate
     ? describeBackground(candidate)
@@ -1036,14 +1091,19 @@ function setupPreview() {
   if (!preview || !wrap) return;
 
   previewAbort = new AbortController();
+
   const { signal } = previewAbort;
 
-  // Visible on screen? (also fires when Settings is closed and the
-  // element is removed, which is what lets the decoder go.)
+  // Visible on screen? Also fires when Settings is closed and the
+  // element is removed, which is what lets the decoder go.
   if (typeof IntersectionObserver === 'function') {
     previewIO = new IntersectionObserver(entries => {
       const last = entries[entries.length - 1];
-      previewVisible = last.isIntersecting && preview.isConnected;
+
+      previewVisible =
+        last.isIntersecting &&
+        preview.isConnected;
+
       syncPreviewPlayback();
     });
 
@@ -1053,45 +1113,69 @@ function setupPreview() {
   }
 
   if (typeof ResizeObserver === 'function') {
-    previewRO = new ResizeObserver(scheduleRenderPreview);
+    previewRO = new ResizeObserver(
+      scheduleRenderPreview
+    );
+
     previewRO.observe(wrap);
   }
 
-  window.addEventListener('resize', scheduleRenderPreview, { signal });
-  window.addEventListener('orientationchange', scheduleRenderPreview, { signal });
-  window.visualViewport?.addEventListener('resize', scheduleRenderPreview, { signal });
+  window.addEventListener(
+    'resize',
+    scheduleRenderPreview,
+    { signal }
+  );
 
-  document.addEventListener('visibilitychange', syncPreviewPlayback, { signal });
-  window.addEventListener(PLAYBACK_RETRY_EVENT, syncPreviewPlayback, { signal });
+  window.addEventListener(
+    'orientationchange',
+    scheduleRenderPreview,
+    { signal }
+  );
 
-  // Phone <-> desktop layout: a different preview, not a resize. Also
-  // the one thing that decides whether "Position on phones" is shown
-  // at all — toggle it live so resizing the window (or rotating) never
-  // needs Settings to be closed and reopened to catch up.
+  window.visualViewport?.addEventListener(
+    'resize',
+    scheduleRenderPreview,
+    { signal }
+  );
+
+  document.addEventListener(
+    'visibilitychange',
+    syncPreviewPlayback,
+    { signal }
+  );
+
+  window.addEventListener(
+    PLAYBACK_RETRY_EVENT,
+    syncPreviewPlayback,
+    { signal }
+  );
+
+  // Phone <-> desktop layout changes the preview shape.
   try {
     window
       .matchMedia(PHONE_LAYOUT_QUERY)
       .addEventListener(
         'change',
-        () => {
-          renderPreview({ rebuild: true });
-          syncPhonePositionVisibility();
-        },
+        () => renderPreview({ rebuild: true }),
         { signal }
       );
   } catch {
     // Older WebViews.
   }
-}
 
-// "Position on phones" only makes sense once the app is actually in its
-// mobile layout (bottom-nav instead of sidebar) — same query as the CSS
-// that switches navigation (responsive.css) and as PHONE_LAYOUT_QUERY
-// above. Keeping the option around but disabled would still invite
-// desktop users to fiddle with a setting they can't see the effect of.
-function syncPhonePositionVisibility() {
-  const row = $('custom-bg-position-phone-row');
-  if (row) row.hidden = !isPhoneLayout();
+  // Gaining/losing a coarse pointer changes whether the Blur
+  // control applies to a video background.
+  try {
+    window
+      .matchMedia('(pointer: coarse)')
+      .addEventListener(
+        'change',
+        syncCustomBackgroundUi,
+        { signal }
+      );
+  } catch {
+    // Older WebViews.
+  }
 }
 
 function syncCustomBackgroundUi() {
@@ -1100,16 +1184,28 @@ function syncCustomBackgroundUi() {
   const usable = on || Boolean(candidate);
 
   const toggle = $('custom-bg-toggle');
+
   setSwitch(toggle, on);
-  if (toggle) toggle.disabled = !prefs.hasImage;
+
+  if (toggle) {
+    toggle.disabled = !prefs.hasImage;
+  }
 
   const controls = $('custom-bg-controls');
+
   if (controls) {
-    controls.hidden = !(prefs.hasImage || candidate);
-    controls.classList.toggle('is-off', !usable);
+    controls.hidden =
+      !(prefs.hasImage || candidate);
+
+    controls.classList.toggle(
+      'is-off',
+      !usable
+    );
 
     controls
-      .querySelectorAll('input[type="range"], select, .switch, button')
+      .querySelectorAll(
+        'input[type="range"], select, .switch, button'
+      )
       .forEach(el => {
         el.disabled = !usable;
       });
@@ -1117,14 +1213,15 @@ function syncCustomBackgroundUi() {
 
   $('custom-bg-apply').hidden = !candidate;
   $('custom-bg-cancel').hidden = !candidate;
-  $('custom-bg-remove').hidden = !prefs.hasImage || Boolean(candidate);
+
+  $('custom-bg-remove').hidden =
+    !prefs.hasImage || Boolean(candidate);
 
   $('custom-bg-file-label').textContent =
     prefs.hasImage || candidate
       ? 'Replace background…'
       : 'Choose image or video…';
 
-  // Which kind is selected, and what it is.
   const info = candidate
     ? describeBackground(candidate)
     : getBackgroundInfo();
@@ -1136,33 +1233,91 @@ function syncCustomBackgroundUi() {
 
     if (info) {
       const badge = $('custom-bg-type-badge');
+
       badge.textContent = info.label;
       badge.dataset.kind = info.kind;
-      badge.classList.toggle('is-off', !candidate && !on);
 
-      $('custom-bg-type-note').textContent = candidate
-        ? [info.detail, 'not applied yet'].filter(Boolean).join(' · ')
-        : on
-          ? info.detail
-          : 'Off';
+      badge.classList.toggle(
+        'is-off',
+        !candidate && !on
+      );
+
+      $('custom-bg-type-note').textContent =
+        candidate
+          ? [info.detail, 'not applied yet']
+              .filter(Boolean)
+              .join(' · ')
+          : on
+            ? info.detail
+            : 'Off';
     }
   }
 
-  const kind = candidate ? candidate.kind : prefs.kind;
-  const animated = candidate ? candidate.animated : prefs.animated;
+  const kind = candidate
+    ? candidate.kind
+    : prefs.kind;
 
-  $('custom-bg-animate-row').hidden = !animated;
+  const animated = candidate
+    ? candidate.animated
+    : prefs.animated;
+
+  $('custom-bg-animate-row').hidden =
+    !animated;
+
   $('custom-bg-animate-label').textContent =
-    kind === 'video' ? 'Play video' : 'Play animation';
+    kind === 'video'
+      ? 'Play video'
+      : 'Play animation';
 
-  setSlider($('custom-bg-opacity'), prefs.opacity);
-  setSlider($('custom-bg-dim'), prefs.dim);
-  setSlider($('custom-bg-blur'), prefs.blur);
-  setSelect($('custom-bg-fit'), prefs.fit);
-  setSelect($('custom-bg-position'), prefs.position);
-  setSelect($('custom-bg-position-phone'), prefs.phonePosition);
-  syncPhonePositionVisibility();
-  setSwitch($('custom-bg-animate'), prefs.animate);
+  // Hide Background blur rather than leave it visibly doing
+  // nothing. The stored value is untouched.
+  const blurHidden =
+    isVideoBlurHidden(kind, prefs);
+
+  const blurInput = $('custom-bg-blur');
+  const blurRow =
+    blurInput?.closest(
+      '.appearance-slider-row'
+    );
+
+  if (blurRow) {
+    blurRow.hidden = blurHidden;
+  }
+
+  if (blurInput) {
+    blurInput.disabled =
+      blurHidden || !usable;
+  }
+
+  setSlider(
+    $('custom-bg-opacity'),
+    prefs.opacity
+  );
+
+  setSlider(
+    $('custom-bg-dim'),
+    prefs.dim
+  );
+
+  setSlider(
+    $('custom-bg-blur'),
+    prefs.blur
+  );
+
+  setSelect(
+    $('custom-bg-fit'),
+    prefs.fit
+  );
+
+  setSelect(
+    $('custom-bg-position'),
+    prefs.position
+  );
+
+  setSwitch(
+    $('custom-bg-animate'),
+    prefs.animate
+  );
 
   renderPreview();
 }
@@ -1189,7 +1344,6 @@ function bindCustomBackground() {
   candidate = null;
   previewKey = null;
 
-  // Live layer finished loading / changed elsewhere.
   if (changeHandler) {
     window.removeEventListener(
       CUSTOM_BG_CHANGE_EVENT,
@@ -1202,145 +1356,230 @@ function bindCustomBackground() {
     syncCustomBackgroundUi();
   };
 
-  window.addEventListener(CUSTOM_BG_CHANGE_EVENT, changeHandler);
+  window.addEventListener(
+    CUSTOM_BG_CHANGE_EVENT,
+    changeHandler
+  );
 
   setupPreview();
 
   let pickSeq = 0;
 
   // --- pick a file ---
-  $('custom-bg-file').addEventListener('change', async event => {
-    const input = event.target;
-    const file = input.files && input.files[0];
+  $('custom-bg-file').addEventListener(
+    'change',
+    async event => {
+      const input = event.target;
+      const file =
+        input.files && input.files[0];
 
-    input.value = '';
+      input.value = '';
 
-    if (!file) return;
+      if (!file) return;
 
-    const mine = ++pickSeq;
+      const mine = ++pickSeq;
 
-    setStatus(
-      /^video\//.test(file.type) || /\.(mp4|m4v|mov|webm)$/i.test(file.name)
-        ? 'Checking video…'
-        : 'Preparing image…'
-    );
+      setStatus(
+        /^video\//.test(file.type) ||
+        /\.(mp4|m4v|mov|webm)$/i.test(file.name)
+          ? 'Checking video…'
+          : 'Preparing image…'
+      );
 
-    try {
-      const next = await prepareCandidate(file);
+      try {
+        const next =
+          await prepareCandidate(file);
 
-      // A newer pick started while this one was being checked.
-      if (mine !== pickSeq || !$('custom-bg-block')) {
-        releaseCandidate(next);
+        if (
+          mine !== pickSeq ||
+          !$('custom-bg-block')
+        ) {
+          releaseCandidate(next);
+          return;
+        }
+
+        discardCandidate();
+        candidate = next;
+
+        setStatus(
+          'Preview only — choose Apply to use it.'
+        );
+
+        syncCustomBackgroundUi();
+      } catch (error) {
+        if (mine !== pickSeq) return;
+
+        const message =
+          error?.message ||
+          "Couldn't read that file.";
+
+        setStatus(message, true);
+        showToast(message, 'error');
+      }
+    }
+  );
+
+  // --- apply / cancel / remove ---
+  $('custom-bg-apply').addEventListener(
+    'click',
+    async () => {
+      if (!candidate) return;
+
+      const button =
+        $('custom-bg-apply');
+
+      button.disabled = true;
+      setStatus('Saving…');
+
+      try {
+        await applyCandidate(candidate);
+
+        discardCandidate();
+        setStatus('');
+
+        showToast(
+          'Background applied',
+          'success'
+        );
+      } catch (error) {
+        const message =
+          saveErrorMessage(error);
+
+        setStatus(message, true);
+        showToast(message, 'error');
+      } finally {
+        button.disabled = false;
+        syncCustomBackgroundUi();
+      }
+    }
+  );
+
+  $('custom-bg-cancel').addEventListener(
+    'click',
+    () => {
+      discardCandidate();
+      setStatus('');
+      syncCustomBackgroundUi();
+    }
+  );
+
+  $('custom-bg-remove').addEventListener(
+    'click',
+    async () => {
+      discardCandidate();
+
+      await removeCustomBackground();
+
+      setStatus('');
+
+      showToast(
+        'Custom background removed'
+      );
+
+      syncCustomBackgroundUi();
+    }
+  );
+
+  // --- enable / disable ---
+  $('custom-bg-toggle').addEventListener(
+    'click',
+    () => {
+      const prefs =
+        getCustomBackgroundPrefs();
+
+      if (!prefs.hasImage) return;
+
+      const next = !prefs.enabled;
+
+      setSwitch(
+        $('custom-bg-toggle'),
+        next
+      );
+
+      setCustomBackgroundPrefs({
+        enabled: next
+      });
+
+      if (!next) {
+        syncCustomBackgroundUi();
+      }
+    }
+  );
+
+  // --- live controls ---
+  block.addEventListener(
+    'input',
+    event => {
+      const el = event.target;
+      const key = el.dataset?.cbg;
+
+      if (
+        !key ||
+        el.type !== 'range'
+      ) {
         return;
       }
 
-      discardCandidate();
-      candidate = next;
+      reflectSlider(el);
 
-      setStatus('Preview only — choose Apply to use it.');
-      syncCustomBackgroundUi();
-    } catch (error) {
-      if (mine !== pickSeq) return;
+      setCustomBackgroundPrefs({
+        [key]: Number(el.value)
+      });
 
-      const message =
-        error?.message || "Couldn't read that file.";
-
-      setStatus(message, true);
-      showToast(message, 'error');
+      renderPreview();
     }
-  });
+  );
 
-  // --- apply / cancel / remove ---
-  $('custom-bg-apply').addEventListener('click', async () => {
-    if (!candidate) return;
+  block.addEventListener(
+    'change',
+    event => {
+      const el = event.target;
+      const key = el.dataset?.cbg;
 
-    const button = $('custom-bg-apply');
-    button.disabled = true;
-    setStatus('Saving…');
+      if (
+        !key ||
+        el.tagName !== 'SELECT'
+      ) {
+        return;
+      }
 
-    try {
-      await applyCandidate(candidate);
+      setCustomBackgroundPrefs({
+        [key]: el.value
+      });
 
-      discardCandidate();
-      setStatus('');
-      showToast('Background applied', 'success');
-    } catch (error) {
-      const message = saveErrorMessage(error);
+      renderPreview();
+    }
+  );
 
-      setStatus(message, true);
-      showToast(message, 'error');
-    } finally {
-      button.disabled = false;
+  $('custom-bg-animate').addEventListener(
+    'click',
+    () => {
+      const next =
+        !getCustomBackgroundPrefs().animate;
+
+      setSwitch(
+        $('custom-bg-animate'),
+        next
+      );
+
+      setCustomBackgroundPrefs({
+        animate: next
+      });
+
+      // Motion turning on/off also changes whether
+      // Background blur currently does anything for
+      // video backgrounds, so use the full sync.
       syncCustomBackgroundUi();
     }
-  });
+  );
 
-  $('custom-bg-cancel').addEventListener('click', () => {
-    discardCandidate();
-    setStatus('');
-    syncCustomBackgroundUi();
-  });
-
-  $('custom-bg-remove').addEventListener('click', async () => {
-    discardCandidate();
-
-    await removeCustomBackground();
-
-    setStatus('');
-    showToast('Custom background removed');
-    syncCustomBackgroundUi();
-  });
-
-  // --- enable / disable ---
-  $('custom-bg-toggle').addEventListener('click', () => {
-    const prefs = getCustomBackgroundPrefs();
-    if (!prefs.hasImage) return;
-
-    const next = !prefs.enabled;
-
-    setSwitch($('custom-bg-toggle'), next);
-    setCustomBackgroundPrefs({ enabled: next });
-
-    // Turning off is immediate; turning on finishes (and notifies)
-    // once the image has loaded.
-    if (!next) syncCustomBackgroundUi();
-  });
-
-  // --- live controls ---
-  block.addEventListener('input', event => {
-    const el = event.target;
-    const key = el.dataset?.cbg;
-
-    if (!key || el.type !== 'range') return;
-
-    reflectSlider(el);
-    setCustomBackgroundPrefs({ [key]: Number(el.value) });
-    renderPreview();
-  });
-
-  block.addEventListener('change', event => {
-    const el = event.target;
-    const key = el.dataset?.cbg;
-
-    if (!key || el.tagName !== 'SELECT') return;
-
-    setCustomBackgroundPrefs({ [key]: el.value });
-    renderPreview();
-  });
-
-  $('custom-bg-animate').addEventListener('click', () => {
-    const next = !getCustomBackgroundPrefs().animate;
-
-    setSwitch($('custom-bg-animate'), next);
-    setCustomBackgroundPrefs({ animate: next });
-
-    renderPreview({ rebuild: true });
-  });
-
-  $('custom-bg-reset-controls').addEventListener('click', () => {
-    resetBackgroundControls();
-    syncCustomBackgroundUi();
-  });
+  $('custom-bg-reset-controls').addEventListener(
+    'click',
+    () => {
+      resetBackgroundControls();
+      syncCustomBackgroundUi();
+    }
+  );
 
   syncCustomBackgroundUi();
 }
@@ -1351,107 +1590,186 @@ function syncAdvancedUi() {
   const master = getBlurAll();
   const blurMax = getBlurMax();
 
-  setSwitch($('adv-blur-all'), master);
+  setSwitch(
+    $('adv-blur-all'),
+    master
+  );
 
   for (const surface of SURFACES) {
-    const state = getSurfaceState(surface.id);
-    const blurActive = master && state.blurOn;
+    const state =
+      getSurfaceState(surface.id);
 
-    const toggle = $(`sf-${surface.id}-blur-on`);
-    setSwitch(toggle, state.blurOn);
-    if (toggle) toggle.disabled = !master;
+    const blurActive =
+      master && state.blurOn;
+
+    const toggle =
+      $(`sf-${surface.id}-blur-on`);
+
+    setSwitch(
+      toggle,
+      state.blurOn
+    );
+
+    if (toggle) {
+      toggle.disabled = !master;
+    }
 
     setSlider(
       $(`sf-${surface.id}-transparency`),
       state.transparency
     );
 
-    const blur = $(`sf-${surface.id}-blur`);
-    if (blur) blur.max = String(blurMax);
-    setSlider(blur, Math.min(state.blur, blurMax), {
-      disabled: !blurActive
-    });
+    const blur =
+      $(`sf-${surface.id}-blur`);
+
+    if (blur) {
+      blur.max = String(blurMax);
+    }
+
+    setSlider(
+      blur,
+      Math.min(state.blur, blurMax),
+      {
+        disabled: !blurActive
+      }
+    );
   }
 }
 
 function bindAdvanced() {
-  const root = $('advanced-appearance');
+  const root =
+    $('advanced-appearance');
+
   if (!root) return;
 
-  $('adv-blur-all').addEventListener('click', () => {
-    setBlurAll(!getBlurAll());
-    syncAdvancedUi();
-  });
+  $('adv-blur-all').addEventListener(
+    'click',
+    () => {
+      setBlurAll(!getBlurAll());
+      syncAdvancedUi();
+    }
+  );
 
-  root.addEventListener('input', event => {
-    const el = event.target;
-    const id = el.dataset?.sf;
+  root.addEventListener(
+    'input',
+    event => {
+      const el = event.target;
+      const id = el.dataset?.sf;
 
-    if (!id || el.type !== 'range') return;
+      if (
+        !id ||
+        el.type !== 'range'
+      ) {
+        return;
+      }
 
-    reflectSlider(el);
-    setSurface(id, { [el.dataset.sfKey]: Number(el.value) });
-  });
+      reflectSlider(el);
 
-  root.addEventListener('click', event => {
-    const el = event.target.closest('.switch[data-sf]');
-    if (!el || el.disabled) return;
+      setSurface(
+        id,
+        {
+          [el.dataset.sfKey]:
+            Number(el.value)
+        }
+      );
+    }
+  );
 
-    const id = el.dataset.sf;
-    const next = !el.classList.contains('on');
+  root.addEventListener(
+    'click',
+    event => {
+      const el =
+        event.target.closest(
+          '.switch[data-sf]'
+        );
 
-    setSurface(id, { blurOn: next });
-    syncAdvancedUi();
-  });
+      if (!el || el.disabled) return;
 
-  $('adv-reset').addEventListener('click', () => {
-    resetSurfaces();
-    syncAdvancedUi();
-    showToast('Advanced appearance reset');
-  });
+      const id = el.dataset.sf;
+      const next =
+        !el.classList.contains('on');
+
+      setSurface(
+        id,
+        { blurOn: next }
+      );
+
+      syncAdvancedUi();
+    }
+  );
+
+  $('adv-reset').addEventListener(
+    'click',
+    () => {
+      resetSurfaces();
+      syncAdvancedUi();
+
+      showToast(
+        'Advanced appearance reset'
+      );
+    }
+  );
 }
 
 // ---------------- reset all ----------------
 
 function bindResetAll() {
-  const button = $('appearance-reset-all');
+  const button =
+    $('appearance-reset-all');
+
   if (!button) return;
 
-  button.addEventListener('click', async () => {
-    const confirmed = await showConfirm(
-      'This resets theme, background, message style, message colors, font, animations, ' +
-        'your custom background and all advanced settings on this device. ' +
-        'Your accent color is not changed.',
-      {
-        title: 'Reset all appearance settings?',
-        confirmText: 'Reset all',
-        cancelText: 'Cancel',
-        danger: true
-      }
-    );
+  button.addEventListener(
+    'click',
+    async () => {
+      const confirmed =
+        await showConfirm(
+          'This resets theme, background, message style, message colors, font, animations, ' +
+          'your custom background and all advanced settings on this device. ' +
+          'Your accent color is not changed.',
+          {
+            title:
+              'Reset all appearance settings?',
+            confirmText: 'Reset all',
+            cancelText: 'Cancel',
+            danger: true
+          }
+        );
 
-    if (!confirmed) return;
+      if (!confirmed) return;
 
-    discardCandidate();
+      discardCandidate();
 
-    await resetCustomBackground();
-    resetSurfaces();
+      await resetCustomBackground();
+      resetSurfaces();
 
-    applyTheme('dark');
-    applyAmbientLevel(DEFAULT_AMBIENT_LEVEL);
-    applyBackgroundTheme(DEFAULT_BACKGROUND_ID);
-    applyMessageBubbleStyle(DEFAULT_BUBBLE_STYLE);
-    resetOwnBubbleGradient();
-    applyUseAccentForBubbles(true);
-    applyAnimationsEnabled(false);
-    applyFontFamily(DEFAULT_FONT_ID);
-    repaintAllMessageAccents();
+      applyTheme('dark');
+      applyAmbientLevel(
+        DEFAULT_AMBIENT_LEVEL
+      );
+      applyBackgroundTheme(
+        DEFAULT_BACKGROUND_ID
+      );
+      applyMessageBubbleStyle(
+        DEFAULT_BUBBLE_STYLE
+      );
+      resetOwnBubbleGradient();
+      applyUseAccentForBubbles(true);
+      applyAnimationsEnabled(false);
+      applyFontFamily(DEFAULT_FONT_ID);
 
-    showToast('Appearance reset', 'success');
+      repaintAllMessageAccents();
 
-    // Repaint the page so every control shows the new values.
-    await renderSettings();
-  });
+      showToast(
+        'Appearance reset',
+        'success'
+      );
+
+      // Repaint the page so every control
+      // shows the new values.
+      await renderSettings();
+    }
+  );
 }
 
 export function bindCustomAppearance() {

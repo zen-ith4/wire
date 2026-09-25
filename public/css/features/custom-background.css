@@ -64,16 +64,6 @@
   -webkit-appearance:none;
 }
 
-/* Phones (bottom-nav layout) can crop the background differently
-   from desktop: --cbg-pos-phone is the desktop position unless the
-   user picked another one. */
-@media (max-width:900px), (max-height:480px) and (orientation:landscape){
-  #custom-bg img,
-  #custom-bg video{
-    object-position:var(--cbg-pos-phone, var(--cbg-pos, 50% 50%));
-  }
-}
-
 /* Dimming veil: tinted with the theme's own base color so it
    darkens in dark mode and lightens in light mode, keeping text
    contrast on either theme. */
@@ -106,7 +96,7 @@
         rgba(var(--void-rgb), var(--cbg-dim, .4)),
         rgba(var(--void-rgb), var(--cbg-dim, .4))
       ),
-      var(--cbg-url, none) var(--cbg-pos-phone, var(--cbg-pos, 50% 50%)) / var(--cbg-size, cover) no-repeat;
+      var(--cbg-url, none) var(--cbg-pos, 50% 50%) / var(--cbg-size, cover) no-repeat;
     opacity:var(--cbg-opacity, 1);
     filter:var(--cbg-filter, none);
     transform:var(--cbg-scale, none);
@@ -133,18 +123,10 @@
     width:var(--dm-bg-w, 100vw);
     height:var(--dm-bg-h, 100vh);
   }
-
-  .cbg-thread-layer video{
-    object-position:var(--cbg-pos-phone, var(--cbg-pos, 50% 50%));
-  }
 }
 
 /* ---------- Settings: custom background block ---------- */
 
-/* `display` on a component class (.btn, .custom-bg-type) would
-   otherwise beat the [hidden] attribute, leaving Apply / Cancel /
-   Remove visible when there is nothing to apply, cancel or remove.
-   Same rule the Files pane uses. */
 #custom-bg-block [hidden]{
   display:none !important;
 }
@@ -156,7 +138,6 @@
   gap:20px;
 }
 
-/* Which kind of background is selected: Image / GIF / Video. */
 .custom-bg-type{
   display:flex;
   flex-wrap:wrap;
@@ -205,8 +186,6 @@
   overflow-wrap:anywhere;
 }
 
-/* Holds the preview so the phone-shaped one can be centred and
-   sized from JS without ever exceeding the column. */
 .custom-bg-preview-wrap{
   display:flex;
   justify-content:center;
@@ -242,7 +221,6 @@
   color:var(--muted);
 }
 
-/* Sample bubbles so readability can be judged before applying. */
 .custom-bg-sample{
   position:relative;
   max-width:70%;
@@ -274,7 +252,6 @@
   cursor:pointer;
 }
 
-/* Visually hidden but still focusable and labelled. */
 .custom-bg-file-input{
   position:absolute;
   width:1px;
@@ -427,7 +404,6 @@
     0 0 0 5px rgba(var(--ink2-rgb), .92),
     0 0 0 6px var(--border),
     0 14px 30px rgba(0, 0, 0, .25);
-  /* Keeps the scaled chat from ever being scrollable or focusable. */
   contain:paint;
 }
 

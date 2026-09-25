@@ -7,7 +7,7 @@
 //
 // Where things live
 //   - Settings (enabled, kind, opacity, dim, blur, fit, position,
-//     phonePosition, animate, and a "has a background" flag): one
+//     animate, and a "has a background" flag): one
 //     JSON object in localStorage under `wire-custom-bg`, the same
 //     store every other appearance preference uses (see theme.js).
 //   - The media itself: IndexedDB (`wire-appearance` / `assets`).
@@ -103,11 +103,6 @@ export const POSITION_OPTIONS = [
 // "video" = a clip. `animated` is derived from it (see sanitize).
 export const KINDS = ['image', 'gif', 'video'];
 
-// Phone position: same as desktop, or its own crop. Lets a wide
-// photo/clip keep its subject in view on a tall screen without
-// changing how it looks on desktop.
-export const PHONE_POSITION_SAME = 'same';
-
 export const DEFAULTS = Object.freeze({
   enabled: false,
   hasImage: false,
@@ -119,7 +114,6 @@ export const DEFAULTS = Object.freeze({
   blur: 0,
   fit: 'cover',
   position: 'center',
-  phonePosition: PHONE_POSITION_SAME,
   animate: true
 });
 
@@ -129,7 +123,6 @@ const CONTROL_KEYS = [
   'blur',
   'fit',
   'position',
-  'phonePosition',
   'animate'
 ];
 
@@ -194,12 +187,6 @@ function sanitize(raw) {
     position: POSITION_OPTIONS.some(o => o.id === p.position)
       ? p.position
       : DEFAULTS.position,
-
-    phonePosition:
-      p.phonePosition === PHONE_POSITION_SAME ||
-      POSITION_OPTIONS.some(o => o.id === p.phonePosition)
-        ? p.phonePosition
-        : DEFAULTS.phonePosition,
 
     animate: p.animate !== false
   };
@@ -937,7 +924,6 @@ const VAR_KEYS = [
   '--cbg-dim',
   '--cbg-fit',
   '--cbg-pos',
-  '--cbg-pos-phone',
   '--cbg-filter',
   '--cbg-scale',
   '--cbg-url',
@@ -963,14 +949,14 @@ function positionCss(id) {
  * live layer (set on <html>) and the Settings preview (set on the
  * preview element), so the two can never look different.
  *
+ * Position is global — the same crop on desktop and on phones —
+ * so there is nothing here for the caller to pick between.
+ *
  * blurScale shrinks the blur radius for a small preview.
- * phone      the preview shows the phone crop: --cbg-pos carries
- *            the phone position instead of the desktop one. (The
- *            live layer switches between the two in CSS.)
  */
 export function buildBackgroundVars(
   prefs,
-  { src, playing, blurScale = 1, phone = false }
+  { src, playing, blurScale = 1 }
 ) {
   let blur = prefs.blur;
 
@@ -981,18 +967,11 @@ export function buildBackgroundVars(
 
   const px = Math.round(blur * blurScale * 10) / 10;
 
-  const desktop = positionCss(prefs.position);
-  const onPhone =
-    prefs.phonePosition === PHONE_POSITION_SAME
-      ? desktop
-      : positionCss(prefs.phonePosition);
-
   return {
     '--cbg-opacity': String(prefs.opacity / 100),
     '--cbg-dim': String(prefs.dim / 100),
     '--cbg-fit': prefs.fit,
-    '--cbg-pos': phone ? onPhone : desktop,
-    '--cbg-pos-phone': onPhone,
+    '--cbg-pos': positionCss(prefs.position),
     '--cbg-filter': px > 0 ? `blur(${px}px)` : 'none',
     '--cbg-scale':
       px > 0

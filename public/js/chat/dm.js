@@ -1554,6 +1554,85 @@ function renderDmMessagesFromCache() {
 }
 
 // ---------- Sync cached conversation ----------
+// ---------- Live read receipts for an already-open conversation ----------
+//
+// Root cause this exists to fix: marking a peer's messages read (and
+// telling them via a seen receipt) only ever happened in
+// getRecentMessagesHandler/getMessagesSinceHandler on the server —
+// i.e. only when a REST call fetches messages, which on the client
+// only happens from loadRecentDm()/syncDmMessagesSince() when a
+// conversation is opened or reopened. A message pushed live over the
+// socket while that same conversation was already open landed in
+// addDmMessage() above, which only ever touched the local cache/DOM —
+// it never told the server anything, so read_at/seen_at (and the
+// unread counts derived from them) stayed stale until the thread was
+// closed and reopened. This calls the exact same server path
+// (markRead() + the conditional dm-messages-seen emit — see
+// controllers/dm.controller.js's getMessagesSinceHandler) for that
+// live case, instead of waiting for the next reopen.
+//
+// One in-flight request per peer, not one per message: the server's
+// markRead() marks every currently-unread message from that peer in
+// one go, not just whichever one triggered the call, so a single
+// request already covers an entire burst — this just avoids firing
+// five near-simultaneous, redundant requests for a 5-message burst.
+// No timer involved: a call that arrives mid-flight is simply
+// remembered and re-run once, immediately after the current one
+// settles, which still covers anything that arrived in between.
+const liveReadMark = {
+  peerId: null,
+  inFlight: false,
+  pending: false
+};
+
+async function markActiveConversationReadLive(peerId) {
+  if (liveReadMark.peerId !== peerId) {
+    // Switched conversations mid-flight — a pending re-run for the
+    // previous peer is no longer relevant.
+    liveReadMark.peerId = peerId;
+    liveReadMark.pending = false;
+  }
+
+  if (liveReadMark.inFlight) {
+    liveReadMark.pending = true;
+    return;
+  }
+
+  liveReadMark.inFlight = true;
+
+  try {
+    // `since` = right now always yields zero rows here — the message
+    // that triggered this call already arrived (and was rendered) via
+    // the socket push, so this call's only effect is the server-side
+    // read-marking side effect, not a resync/refetch of the thread.
+    // Privacy (send_read_receipts) is enforced entirely server-side
+    // in markRead() — nothing here needs to know or check it.
+    await api(
+      `/api/dm/messages/${peerId}/since?since=${encodeURIComponent(new Date().toISOString())}&limit=1`
+    );
+
+    // The sidebar/badge were already refreshed once, with the
+    // pre-mark-read (stale) count, by handleDirectMessage right when
+    // the message arrived (see core/socket.js) — refresh them again
+    // now that the server-side unread count has actually changed.
+    void loadDmConversations();
+    void refreshUnreadBadge();
+  } catch (e) {
+    console.error('Failed to mark live DM messages as read:', e);
+  } finally {
+    liveReadMark.inFlight = false;
+
+    if (liveReadMark.pending) {
+      liveReadMark.pending = false;
+      // liveReadMark.peerId, not the closure's `peerId` — if the
+      // active conversation changed while this call was in flight,
+      // the pending re-run must follow it, not re-target the peer
+      // this particular call started out for.
+      void markActiveConversationReadLive(liveReadMark.peerId);
+    }
+  }
+}
+
 async function syncDmMessagesSince() {
   if (!dmActivePeer || !dmEntry || dmEntry.messages.length === 0) return;
 
@@ -2114,6 +2193,18 @@ export async function addDmMessage(msg) {
       entry.unreadFromId = decrypted.id;
     }
     return;
+  }
+
+  // This message just arrived while its conversation is the one the
+  // user is actively viewing — the recipient has, in effect, already
+  // read it. Tell the server now rather than waiting for the thread
+  // to be closed and reopened (openDmConversation()'s call to
+  // syncDmMessagesSince() below is the only other place that does
+  // this, which is exactly why it previously only ever caught up on
+  // reopen). Skipped for our own outgoing messages, which don't need
+  // marking read against our own inbox.
+  if (Number(decrypted.sender_id) !== Number(currentUser.id)) {
+    void markActiveConversationReadLive(peerId);
   }
 
   const container = document.getElementById('dm-messages');

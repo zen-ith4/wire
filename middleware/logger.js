@@ -1,47 +1,51 @@
-function sanitizeUrl(req) {
-  const url = new URL(
-    req.originalUrl || req.url,
-    'http://localhost'
-  );
+function sanitizePath(req) {
+  // Log only the URL pathname.
+  // Query strings may contain filenames, paths, tokens, IDs,
+  // search terms, or other user-controlled/private data.
+  return req.path || '/';
+}
 
-  for (const param of [
-    'token',
-    'access_token',
-    'refresh_token'
-  ]) {
-    url.searchParams.delete(param);
+
+function getUserLabel(req) {
+  if (req.user?.id !== undefined && req.user?.id !== null) {
+    return `USER:${req.user.id}`;
   }
 
-  return url.pathname + url.search;
+  return 'GUEST';
+}
+
+
+function getClientIp(req) {
+  // Keep the existing Express-resolved IP.
+  // Do not log forwarded headers directly because they can contain
+  // user-controlled values and may expose unnecessary network data.
+  return req.ip || '-';
 }
 
 
 function logger(req, res, next) {
-
-  const start = Date.now();
+  const start = process.hrtime.bigint();
 
   res.on('finish', () => {
+    const durationMs =
+      Number(process.hrtime.bigint() - start) / 1_000_000;
 
-    const duration = Date.now() - start;
-
-    const user =
-      req.user
-        ? `USER:${req.user.id}`
-        : 'GUEST';
-
-    const ip =
-      req.ip || '-';
+    const timestamp = new Date().toISOString();
+    const ip = getClientIp(req);
+    const user = getUserLabel(req);
+    const method = req.method;
+    const path = sanitizePath(req);
+    const status = res.statusCode;
 
     console.log(
-      `[${new Date().toISOString()}]`,
+      `[${timestamp}]`,
       ip,
       user,
-      req.method,
-      sanitizeUrl(req),
-      res.statusCode,
-      `${duration}ms`
+      method,
+      path,
+      status,
+      `${Math.round(durationMs)}ms`
     );
-
   });
 
   next();

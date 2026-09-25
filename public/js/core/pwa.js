@@ -11,6 +11,14 @@
 // - The page reloads once after a replacement worker takes control, so the
 //   user automatically starts using the new application shell.
 // - The first-ever SW installation never reloads the page.
+//
+// updateServiceWorker() is the one entry point that actually triggers a
+// version check against the server (registration.update()). It is exported
+// so the Electron update-confirmation flow (see core/app.js) can call it
+// once the user explicitly agrees to update — it is never called on their
+// behalf. If it's invoked before the delayed registration above has
+// completed, the request is queued and runs as soon as the registration
+// becomes available, instead of being dropped.
 // ============================================================
 
 import { isNativeApp } from './server.js';
@@ -19,6 +27,8 @@ const UPDATE_CHECK_MS = 60 * 60 * 1000;
 
 let hasExistingController = false;
 let swReloading = false;
+let swRegistration = null;
+let pendingUpdateRequested = false;
 
 function whenIdle(fn) {
   if ('requestIdleCallback' in window) {
@@ -120,7 +130,22 @@ export function registerServiceWorker() {
         scope: '/',
         updateViaCache: 'none'
       })
-      .then(watchForUpdates)
+      .then((registration) => {
+        watchForUpdates(registration);
+
+        swRegistration = registration;
+
+        /*
+         * updateServiceWorker() may have already been called (e.g. from
+         * the Electron "Update" confirmation) before this registration
+         * resolved. Honor that request now instead of dropping it.
+         */
+        if (pendingUpdateRequested) {
+          pendingUpdateRequested = false;
+
+          registration.update().catch(() => {});
+        }
+      })
       .catch((e) => {
         console.warn('[SW] Registration failed:', e);
       });
@@ -135,4 +160,27 @@ export function registerServiceWorker() {
       { once: true }
     );
   }
+}
+
+/**
+ * Explicitly requests a Service Worker update check.
+ *
+ * This is the only place (besides the existing hourly background check)
+ * that calls registration.update(). It must only ever be invoked after
+ * the user has explicitly agreed to update — see the Electron
+ * "app-update:available" confirmation flow in core/app.js.
+ *
+ * If the delayed registration above hasn't completed yet, the request is
+ * queued and performed as soon as the registration becomes available.
+ */
+export function updateServiceWorker() {
+  if (swRegistration) {
+    return swRegistration.update().catch((e) => {
+      console.warn('[SW] Update check failed:', e);
+    });
+  }
+
+  pendingUpdateRequested = true;
+
+  return Promise.resolve();
 }

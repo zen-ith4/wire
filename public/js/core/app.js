@@ -54,7 +54,8 @@ import {
 
 import '../ui/profile-card.js';
 import '../media/image-viewer.js';
-import { registerServiceWorker } from './pwa.js';
+import { registerServiceWorker, updateServiceWorker } from './pwa.js';
+import { showConfirm } from '../ui/confirm.js';
 
 import {
   initNotificationClickRouting,
@@ -672,6 +673,62 @@ registerServiceWorker();
 
 initNotificationClickRouting();
 
+/*
+ * Electron update notifications.
+ *
+ * This listener must be registered immediately on page load,
+ * before bootstrap/login initialization, so the Electron main
+ * process cannot send the event before the renderer is ready.
+ *
+ * 'app-update:available' only means the remote server is running a
+ * newer Wire version than what's currently cached — it is NOT a
+ * signal to update the cached Service Worker right away. The user
+ * must explicitly confirm; only then is updateServiceWorker()
+ * (core/pwa.js) called. If they decline, the current cached version
+ * keeps being used and nothing happens.
+ */
+
+if (window.electronAPI?.isElectron) {
+
+  /*
+   * Tracks the server version a confirmation is currently open for,
+   * so a repeated event for that same version (the main process may
+   * re-check and re-send) doesn't stack a second dialog on top.
+   */
+  let pendingUpdateVersion = null;
+
+  window.electronAPI.onUpdateAvailable(
+    ({ currentVersion, serverVersion }) => {
+
+      console.log(
+        `New version available: ${serverVersion} (current: ${currentVersion})`
+      );
+
+      if (pendingUpdateVersion === serverVersion) {
+        return;
+      }
+
+      pendingUpdateVersion = serverVersion;
+
+      showConfirm(
+        `Current version: ${currentVersion}. Available version: ` +
+          `${serverVersion}. Update the cached application now?`,
+        {
+          title: `New version ${serverVersion} is available`,
+          confirmText: 'Update',
+          cancelText: 'Not now',
+          danger: false
+        }
+      ).then((updateConfirmed) => {
+        pendingUpdateVersion = null;
+
+        if (updateConfirmed) {
+          updateServiceWorker();
+        }
+      });
+    }
+  );
+}
 
 bootstrap().catch(err => {
 
@@ -685,7 +742,6 @@ bootstrap().catch(err => {
     'error'
   );
 });
-
 
 /* =========================================================
  * Global error handling

@@ -192,6 +192,102 @@ function testServerReachable(serverUrl, timeoutMs = 7000) {
   });
 }
 
+/**
+ * Checks whether the connected server has a newer Wire version.
+ *
+ * This is intentionally non-fatal: a failed version check must never
+ * prevent the app from connecting to the server.
+ */
+function checkServerVersion(serverUrl) {
+  return new Promise((resolve) => {
+    let settled = false;
+
+    const request = net.request({
+      method: 'GET',
+      url: serverUrl + '/api/version',
+    });
+
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
+
+    const timer = setTimeout(() => {
+      request.abort();
+      finish(null);
+    }, 5000);
+
+    request.on('response', (response) => {
+      let body = '';
+
+      response.on('data', (chunk) => {
+        body += chunk.toString();
+      });
+
+      response.on('end', () => {
+        clearTimeout(timer);
+
+        if (response.statusCode !== 200) {
+          finish(null);
+          return;
+        }
+
+        try {
+          const data = JSON.parse(body);
+
+          if (typeof data.version !== 'string' || !data.version) {
+            finish(null);
+            return;
+          }
+
+          finish(data.version);
+        } catch {
+          finish(null);
+        }
+      });
+
+      response.on('error', () => {
+        clearTimeout(timer);
+        finish(null);
+      });
+    });
+
+    request.on('error', () => {
+      clearTimeout(timer);
+      finish(null);
+    });
+
+    request.end();
+  });
+}
+
+function isNewerVersion(serverVersion, clientVersion) {
+  const parse = (version) => {
+    const match = String(version).trim().match(/^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/);
+
+    if (!match) return null;
+
+    return [
+      Number(match[1]),
+      Number(match[2]),
+      Number(match[3]),
+    ];
+  };
+
+  const server = parse(serverVersion);
+  const client = parse(clientVersion);
+
+  if (!server || !client) return false;
+
+  for (let i = 0; i < 3; i++) {
+    if (server[i] > client[i]) return true;
+    if (server[i] < client[i]) return false;
+  }
+
+  return false;
+}
+
 // ---------------------------------------------------------------------------
 // Window management
 // ---------------------------------------------------------------------------
@@ -279,9 +375,27 @@ function showConnectScreen({ autoAttempt, errorMessage } = {}) {
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'connect.html'), { query });
 }
 
-function loadRemoteServer(serverUrl) {
+async function loadRemoteServer(serverUrl) {
   currentServerOrigin = serverUrl;
   mainWindow.loadURL(serverUrl);
+
+  const serverVersion = await checkServerVersion(serverUrl);
+  if (!serverVersion) return;
+
+  const clientVersion = app.getVersion();
+
+  if (isNewerVersion(serverVersion, clientVersion)) {
+    console.log(
+      `New Wire version available: ${serverVersion} (current: ${clientVersion})`
+    );
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('app-update:available', {
+        currentVersion: clientVersion,
+        serverVersion,
+      });
+    }
+  }
 }
 
 function buildAppMenu() {

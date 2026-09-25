@@ -87,7 +87,8 @@ async function startServer() {
     app.use('/api/share', require('./routes/share.routes'));
     app.use('/api/admin', require('./routes/admin.routes'));
     app.use('/api/admin/wireguard', require('./routes/wireguard.routes'));
-
+    app.use('/api/version', require('./routes/version.routes'));
+    
     // 6. 404 handler
     app.use((req, res) => {
       res.status(404).json({ error: 'Not found' });

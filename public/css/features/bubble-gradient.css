@@ -1,0 +1,142 @@
+/* ================================================================
+   OWN MESSAGE BUBBLE GRADIENT — colour only
+
+   Paints the bubbles the viewer sends (.chat-msg.own) with the
+   gradient set in Settings -> Appearance (see theme.js).
+
+   This file changes PAINT ONLY. It sets --bubble-background and
+   --bubble-color, which the existing variant rules in messages.css
+   already consume. It never sets border-radius, padding, margin,
+   size or spacing, so all four bubble variants keep their exact
+   shape.
+
+   Selectors are written so they apply to:
+     - the real chat (the attribute sits on <html>), and
+     - the live preview inside Settings (the attribute sits on the
+       preview box), without the real chat's rule ever reaching
+       the preview. The preview can therefore show the default look
+       while a draft has the gradient switched off.
+   Rules load after messages.css (see main.css), so at equal
+   specificity these win the cascade.
+   ================================================================ */
+
+
+/* Text and background on own bubbles */
+
+:root[data-own-gradient="on"] .chat-msg.own .chat-bubble:not(.own-bubble-preview .chat-bubble),
+.own-bubble-preview[data-own-gradient="on"] .chat-msg.own .chat-bubble{
+  --bubble-background:var(--own-bubble-gradient);
+  --bubble-color:var(--own-bubble-text);
+}
+
+/* Clean has its own :hover background; keep the gradient on hover */
+
+:root[data-own-gradient="on"] .chat-msg.own .chat-bubble:hover:not(.own-bubble-preview .chat-bubble),
+.own-bubble-preview[data-own-gradient="on"] .chat-msg.own .chat-bubble:hover{
+  background:var(--own-bubble-gradient);
+}
+
+/* Links inside a gradient bubble keep the bubble's text color so
+   the default blue never becomes hard to read on a coloured fill */
+
+:root[data-own-gradient="on"] .chat-msg.own .chat-bubble .chat-link:not(.own-bubble-preview .chat-bubble .chat-link),
+.own-bubble-preview[data-own-gradient="on"] .chat-msg.own .chat-bubble .chat-link{
+  color:inherit;
+  text-decoration-color:currentColor;
+}
+
+
+/* ================================================================
+   SETTINGS — own-message colours block
+   ================================================================ */
+
+.own-gradient-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+}
+
+/* Live preview: a small two-message chat, in the surface colour
+   the real chat uses. Pointer events are off so it only displays. */
+
+.own-bubble-preview{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  padding:14px 12px;
+  border-radius:var(--radius-lg);
+  border:1px solid var(--border);
+  background:var(--void);
+  pointer-events:none;
+  min-width:0;
+  overflow:hidden;
+}
+
+.own-bubble-preview .chat-msg{
+  max-width:80%;
+}
+
+.own-bubble-preview .chat-msg-content{
+  min-width:0;
+}
+
+.own-gradient-controls{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+
+.own-gradient-controls[hidden]{
+  display:none;
+}
+
+.own-gradient-stops{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+
+.own-gradient-stop{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  min-width:0;
+}
+
+.own-gradient-color{
+  flex-shrink:0;
+  width:36px;
+  height:30px;
+  padding:2px;
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  background:var(--ink2);
+  cursor:pointer;
+}
+
+.own-gradient-stop-position{
+  flex:1;
+  min-width:0;
+}
+
+.own-gradient-stop-position .sound-volume-control{
+  min-width:0;
+}
+
+.own-gradient-actions{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:8px;
+}
+
+.own-gradient-status{
+  font-size:12px;
+  color:var(--muted2);
+  margin-left:auto;
+}
+
+.own-gradient-status:empty{
+  display:none;
+}

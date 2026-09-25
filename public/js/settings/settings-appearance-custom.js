@@ -27,7 +27,8 @@ import {
   applyFontFamily,
   applyMessageBubbleStyle,
   applyTheme,
-  applyUseAccentForBubbles
+  applyUseAccentForBubbles,
+  resetOwnBubbleGradient
 } from './theme.js';
 
 import {
@@ -87,14 +88,17 @@ function fillPercent(value, min, max) {
 }
 
 function formatValue(unit, value) {
-  return unit === 'px' ? `${value}px` : `${value}%`;
+  if (unit === 'px') return `${value}px`;
+  if (unit === 'deg') return `${value}°`;
+
+  return `${value}%`;
 }
 
 /**
  * One labelled slider row. `attrs` are extra data-* attributes the
  * binder uses to route the change (e.g. data-cbg="opacity").
  */
-function sliderRow({
+export function sliderRow({
   id,
   label,
   hint = '',
@@ -145,7 +149,7 @@ function sliderRow({
   `;
 }
 
-function switchButton({ id, on, label, attrs = '', disabled = false }) {
+export function switchButton({ id, on, label, attrs = '', disabled = false }) {
   return `
     <button
       type="button"
@@ -161,13 +165,13 @@ function switchButton({ id, on, label, attrs = '', disabled = false }) {
   `;
 }
 
-function setSwitch(el, on) {
+export function setSwitch(el, on) {
   if (!el) return;
   el.classList.toggle('on', on);
   el.setAttribute('aria-checked', String(on));
 }
 
-function setSlider(input, value, { disabled } = {}) {
+export function setSlider(input, value, { disabled } = {}) {
   if (!input) return;
 
   input.value = String(value);
@@ -1415,7 +1419,7 @@ function bindResetAll() {
 
   button.addEventListener('click', async () => {
     const confirmed = await showConfirm(
-      'This resets theme, background, message style, font, animations, ' +
+      'This resets theme, background, message style, message colors, font, animations, ' +
         'your custom background and all advanced settings on this device. ' +
         'Your accent color is not changed.',
       {
@@ -1437,6 +1441,7 @@ function bindResetAll() {
     applyAmbientLevel(DEFAULT_AMBIENT_LEVEL);
     applyBackgroundTheme(DEFAULT_BACKGROUND_ID);
     applyMessageBubbleStyle(DEFAULT_BUBBLE_STYLE);
+    resetOwnBubbleGradient();
     applyUseAccentForBubbles(true);
     applyAnimationsEnabled(false);
     applyFontFamily(DEFAULT_FONT_ID);

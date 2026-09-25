@@ -1,0 +1,1062 @@
+diff -ruN a/css/features/bubble-gradient.css b/css/features/bubble-gradient.css
+--- a/css/features/bubble-gradient.css	1970-01-01 00:00:00.000000000 +0000
++++ b/css/features/bubble-gradient.css	2026-09-25 04:01:13.790960431 +0000
+@@ -0,0 +1,142 @@
++/* ================================================================
++   OWN MESSAGE BUBBLE GRADIENT — colour only
++
++   Paints the bubbles the viewer sends (.chat-msg.own) with the
++   gradient set in Settings -> Appearance (see theme.js).
++
++   This file changes PAINT ONLY. It sets --bubble-background and
++   --bubble-color, which the existing variant rules in messages.css
++   already consume. It never sets border-radius, padding, margin,
++   size or spacing, so all four bubble variants keep their exact
++   shape.
++
++   Selectors are written so they apply to:
++     - the real chat (the attribute sits on <html>), and
++     - the live preview inside Settings (the attribute sits on the
++       preview box), without the real chat's rule ever reaching
++       the preview. The preview can therefore show the default look
++       while a draft has the gradient switched off.
++   Rules load after messages.css (see main.css), so at equal
++   specificity these win the cascade.
++   ================================================================ */
++
++
++/* Text and background on own bubbles */
++
++:root[data-own-gradient="on"] .chat-msg.own .chat-bubble:not(.own-bubble-preview .chat-bubble),
++.own-bubble-preview[data-own-gradient="on"] .chat-msg.own .chat-bubble{
++  --bubble-background:var(--own-bubble-gradient);
++  --bubble-color:var(--own-bubble-text);
++}
++
++/* Clean has its own :hover background; keep the gradient on hover */
++
++:root[data-own-gradient="on"] .chat-msg.own .chat-bubble:hover:not(.own-bubble-preview .chat-bubble),
++.own-bubble-preview[data-own-gradient="on"] .chat-msg.own .chat-bubble:hover{
++  background:var(--own-bubble-gradient);
++}
++
++/* Links inside a gradient bubble keep the bubble's text color so
++   the default blue never becomes hard to read on a coloured fill */
++
++:root[data-own-gradient="on"] .chat-msg.own .chat-bubble .chat-link:not(.own-bubble-preview .chat-bubble .chat-link),
++.own-bubble-preview[data-own-gradient="on"] .chat-msg.own .chat-bubble .chat-link{
++  color:inherit;
++  text-decoration-color:currentColor;
++}
++
++
++/* ================================================================
++   SETTINGS — own-message colours block
++   ================================================================ */
++
++.own-gradient-head{
++  display:flex;
++  align-items:center;
++  justify-content:space-between;
++  gap:16px;
++}
++
++/* Live preview: a small two-message chat, in the surface colour
++   the real chat uses. Pointer events are off so it only displays. */
++
++.own-bubble-preview{
++  display:flex;
++  flex-direction:column;
++  gap:8px;
++  padding:14px 12px;
++  border-radius:var(--radius-lg);
++  border:1px solid var(--border);
++  background:var(--void);
++  pointer-events:none;
++  min-width:0;
++  overflow:hidden;
++}
++
++.own-bubble-preview .chat-msg{
++  max-width:80%;
++}
++
++.own-bubble-preview .chat-msg-content{
++  min-width:0;
++}
++
++.own-gradient-controls{
++  display:flex;
++  flex-direction:column;
++  gap:12px;
++}
++
++.own-gradient-controls[hidden]{
++  display:none;
++}
++
++.own-gradient-stops{
++  display:flex;
++  flex-direction:column;
++  gap:8px;
++}
++
++.own-gradient-stop{
++  display:flex;
++  align-items:center;
++  gap:10px;
++  min-width:0;
++}
++
++.own-gradient-color{
++  flex-shrink:0;
++  width:36px;
++  height:30px;
++  padding:2px;
++  border:1px solid var(--border);
++  border-radius:var(--radius);
++  background:var(--ink2);
++  cursor:pointer;
++}
++
++.own-gradient-stop-position{
++  flex:1;
++  min-width:0;
++}
++
++.own-gradient-stop-position .sound-volume-control{
++  min-width:0;
++}
++
++.own-gradient-actions{
++  display:flex;
++  flex-wrap:wrap;
++  align-items:center;
++  gap:8px;
++}
++
++.own-gradient-status{
++  font-size:12px;
++  color:var(--muted2);
++  margin-left:auto;
++}
++
++.own-gradient-status:empty{
++  display:none;
++}
+diff -ruN a/css/main.css b/css/main.css
+--- a/css/main.css	2026-09-25 04:01:13.770822142 +0000
++++ b/css/main.css	2026-09-25 04:01:13.792414968 +0000
+@@ -31,6 +31,7 @@
+ /* Features */
+ @import url("features/files.css");
+ @import url("features/messages.css");
++@import url("features/bubble-gradient.css");
+ @import url("features/image-viewer.css");
+ @import url("features/settings.css");
+ @import url("features/custom-background.css");
+diff -ruN a/js/core/app.js b/js/core/app.js
+--- a/js/core/app.js	2026-09-25 04:01:13.780132692 +0000
++++ b/js/core/app.js	2026-09-25 04:01:13.801815109 +0000
+@@ -32,7 +32,8 @@
+   initBackgroundTheme,
+   initAnimations,
+   initFontFamily,
+-  initMessageBubbleStyle
++  initMessageBubbleStyle,
++  initOwnBubbleGradient
+ } from '../settings/theme.js';
+ 
+ import { initSurfaces } from '../settings/appearance-surfaces.js';
+@@ -387,6 +388,7 @@
+   initFontFamily();
+ 
+   initMessageBubbleStyle();
++  initOwnBubbleGradient();
+ 
+   /*
+    * Advanced appearance overrides (CSS variables only) and the
+diff -ruN a/js/settings/settings-appearance-custom.js b/js/settings/settings-appearance-custom.js
+--- a/js/settings/settings-appearance-custom.js	2026-09-25 04:01:13.778396271 +0000
++++ b/js/settings/settings-appearance-custom.js	2026-09-25 04:01:13.799957458 +0000
+@@ -27,7 +27,8 @@
+   applyFontFamily,
+   applyMessageBubbleStyle,
+   applyTheme,
+-  applyUseAccentForBubbles
++  applyUseAccentForBubbles,
++  resetOwnBubbleGradient
+ } from './theme.js';
+ 
+ import {
+@@ -87,14 +88,17 @@
+ }
+ 
+ function formatValue(unit, value) {
+-  return unit === 'px' ? `${value}px` : `${value}%`;
++  if (unit === 'px') return `${value}px`;
++  if (unit === 'deg') return `${value}°`;
++
++  return `${value}%`;
+ }
+ 
+ /**
+  * One labelled slider row. `attrs` are extra data-* attributes the
+  * binder uses to route the change (e.g. data-cbg="opacity").
+  */
+-function sliderRow({
++export function sliderRow({
+   id,
+   label,
+   hint = '',
+@@ -145,7 +149,7 @@
+   `;
+ }
+ 
+-function switchButton({ id, on, label, attrs = '', disabled = false }) {
++export function switchButton({ id, on, label, attrs = '', disabled = false }) {
+   return `
+     <button
+       type="button"
+@@ -161,13 +165,13 @@
+   `;
+ }
+ 
+-function setSwitch(el, on) {
++export function setSwitch(el, on) {
+   if (!el) return;
+   el.classList.toggle('on', on);
+   el.setAttribute('aria-checked', String(on));
+ }
+ 
+-function setSlider(input, value, { disabled } = {}) {
++export function setSlider(input, value, { disabled } = {}) {
+   if (!input) return;
+ 
+   input.value = String(value);
+@@ -1415,7 +1419,7 @@
+ 
+   button.addEventListener('click', async () => {
+     const confirmed = await showConfirm(
+-      'This resets theme, background, message style, font, animations, ' +
++      'This resets theme, background, message style, message colors, font, animations, ' +
+         'your custom background and all advanced settings on this device. ' +
+         'Your accent color is not changed.',
+       {
+@@ -1437,6 +1441,7 @@
+     applyAmbientLevel(DEFAULT_AMBIENT_LEVEL);
+     applyBackgroundTheme(DEFAULT_BACKGROUND_ID);
+     applyMessageBubbleStyle(DEFAULT_BUBBLE_STYLE);
++    resetOwnBubbleGradient();
+     applyUseAccentForBubbles(true);
+     applyAnimationsEnabled(false);
+     applyFontFamily(DEFAULT_FONT_ID);
+diff -ruN a/js/settings/settings-appearance.js b/js/settings/settings-appearance.js
+--- a/js/settings/settings-appearance.js	2026-09-25 04:01:13.778094327 +0000
++++ b/js/settings/settings-appearance.js	2026-09-25 04:01:13.799664183 +0000
+@@ -41,6 +41,10 @@
+   bindCustomAppearance
+ } from './settings-appearance-custom.js';
+ 
++import {
++  bindOwnBubbleGradient
++} from './settings-bubble-gradient.js';
++
+ // ============================================================
+ // Message bubble style
+ //
+@@ -953,6 +957,7 @@
+   bindBubbleAccent();
+   bindAnimations();
+   bindCustomAppearance();
++  bindOwnBubbleGradient();
+ 
+   if (
+     window.electronAPI?.isElectron
+diff -ruN a/js/settings/settings-bubble-gradient.js b/js/settings/settings-bubble-gradient.js
+--- a/js/settings/settings-bubble-gradient.js	1970-01-01 00:00:00.000000000 +0000
++++ b/js/settings/settings-bubble-gradient.js	2026-09-25 04:01:13.800347569 +0000
+@@ -0,0 +1,459 @@
++// ============================================================
++// Settings → Appearance: "My message colors"
++//
++// Controls for the gradient painted on the bubbles the viewer
++// sends. State and persistence live in theme.js; this file only
++// renders the block and turns clicks into edits.
++//
++// Editing works on a DRAFT copy. The live preview shows the draft,
++// and nothing is stored until Save is pressed. Discard drops the
++// draft; Reset restores Wire's default colors immediately.
++// ============================================================
++
++import { ICONS } from '../icons.js';
++import { escapeHtml, showToast } from '../core/utils.js';
++
++import {
++  OWN_BUBBLE_GRADIENT_LIMITS,
++  applyOwnBubbleGradient,
++  buildOwnBubbleGradientVars,
++  contrastTextFor,
++  getCurrentAccentHex,
++  getOwnBubbleGradient,
++  getOwnBubbleTextContrast,
++  getUseAccentForBubbles,
++  mixHex,
++  normalizeOwnBubbleGradient,
++  resetOwnBubbleGradient,
++  rgbStringFromHex
++} from './theme.js';
++
++import {
++  setSlider,
++  setSwitch,
++  sliderRow,
++  switchButton
++} from './settings-appearance-custom.js';
++
++const { minStops, maxStops } = OWN_BUBBLE_GRADIENT_LIMITS;
++
++let saved = null;
++let draft = null;
++
++function $(id) {
++  return document.getElementById(id);
++}
++
++function sameConfig(a, b) {
++  return (
++    JSON.stringify(normalizeOwnBubbleGradient(a)) ===
++    JSON.stringify(normalizeOwnBubbleGradient(b))
++  );
++}
++
++// ---------------- markup ----------------
++
++function stopsHtml(stops) {
++  return stops
++    .map((stop, index) => `
++      <div class="own-gradient-stop">
++
++        <input
++          type="color"
++          class="own-gradient-color"
++          value="${escapeHtml(stop.color)}"
++          data-og-color="${index}"
++          aria-label="Color ${index + 1}"
++          title="Color ${index + 1}">
++
++        <div class="own-gradient-stop-position">
++          <div class="sound-volume-control">
++            <input
++              type="range"
++              class="sound-slider"
++              id="own-gradient-pos-${index}"
++              min="0"
++              max="100"
++              step="1"
++              value="${stop.position}"
++              data-unit="%"
++              data-og-position="${index}"
++              style="--sound-volume:${stop.position}%"
++              aria-label="Color ${index + 1} position">
++
++            <output
++              class="sound-volume-value"
++              for="own-gradient-pos-${index}">${stop.position}%</output>
++          </div>
++        </div>
++
++        <button
++          type="button"
++          class="btn btn-sm btn-ghost"
++          data-og-remove="${index}"
++          aria-label="Remove color ${index + 1}"
++          title="Remove color"
++          ${stops.length <= minStops ? 'disabled' : ''}>
++          ${ICONS.close || '×'}
++        </button>
++
++      </div>
++    `)
++    .join('');
++}
++
++export function renderOwnBubbleGradientSection() {
++  const config = getOwnBubbleGradient();
++
++  return `
++    <div
++      class="settings-row settings-row-column"
++      id="own-bubble-gradient-block">
++
++      <div class="own-gradient-head">
++        <div>
++          <div class="settings-row-label">
++            My message colors
++          </div>
++
++          <div class="settings-row-sublabel">
++            Give the bubbles you send a gradient. Messages from
++            others are not changed.
++          </div>
++        </div>
++
++        ${switchButton({
++          id: 'own-gradient-toggle',
++          on: config.enabled,
++          label: 'Use a gradient for my message bubbles'
++        })}
++      </div>
++
++      <div
++        class="own-bubble-preview"
++        id="own-bubble-preview"
++        role="img"
++        aria-label="Preview of your message bubbles">
++
++        <div class="chat-msg">
++          <div class="chat-msg-content">
++            <div class="chat-bubble">Hey, how's it going?</div>
++          </div>
++        </div>
++
++        <div class="chat-msg own">
++          <div class="chat-msg-content">
++            <div class="chat-bubble">Going great, thanks!</div>
++          </div>
++        </div>
++
++      </div>
++
++      <div
++        class="own-gradient-controls"
++        id="own-gradient-controls"
++        ${config.enabled ? '' : 'hidden'}>
++
++        ${sliderRow({
++          id: 'own-gradient-angle',
++          label: 'Direction',
++          hint: 'The angle the colors flow along',
++          min: OWN_BUBBLE_GRADIENT_LIMITS.minAngle,
++          max: OWN_BUBBLE_GRADIENT_LIMITS.maxAngle,
++          value: config.angle,
++          unit: 'deg',
++          attrs: 'data-og="angle"'
++        })}
++
++        <div>
++          <div class="settings-row-label">
++            Colors
++          </div>
++
++          <div class="settings-row-sublabel">
++            Use ${minStops} to ${maxStops} colors. Each position sets
++            where that color sits along the gradient.
++          </div>
++        </div>
++
++        <div
++          class="own-gradient-stops"
++          id="own-gradient-stops">
++          ${stopsHtml(config.stops)}
++        </div>
++
++        <div>
++          <button
++            type="button"
++            class="btn btn-sm"
++            id="own-gradient-add">
++            Add color
++          </button>
++        </div>
++
++      </div>
++
++      <div class="own-gradient-actions">
++
++        <button
++          type="button"
++          class="btn btn-sm btn-primary"
++          id="own-gradient-save">
++          Save colors
++        </button>
++
++        <button
++          type="button"
++          class="btn btn-sm"
++          id="own-gradient-discard">
++          Discard
++        </button>
++
++        <button
++          type="button"
++          class="btn btn-sm btn-ghost"
++          id="own-gradient-reset">
++          Reset to default
++        </button>
++
++        <span
++          class="own-gradient-status"
++          id="own-gradient-status"
++          role="status"
++          aria-live="polite"></span>
++
++      </div>
++
++    </div>
++  `;
++}
++
++// ---------------- sync ----------------
++
++// Paints the draft into the preview. Uses the same CSS values the
++// real chat will use, and the viewer's accent for the incoming
++// bubble, so what is shown is what will be saved.
++function applyPreview() {
++  const preview = $('own-bubble-preview');
++  if (!preview) return;
++
++  const config = normalizeOwnBubbleGradient(draft);
++
++  if (config.enabled) {
++    const vars = buildOwnBubbleGradientVars(config);
++
++    preview.dataset.ownGradient = 'on';
++    preview.style.setProperty('--own-bubble-gradient', vars.gradient);
++    preview.style.setProperty('--own-bubble-text', vars.text);
++  } else {
++    delete preview.dataset.ownGradient;
++    preview.style.removeProperty('--own-bubble-gradient');
++    preview.style.removeProperty('--own-bubble-text');
++  }
++
++  if (getUseAccentForBubbles()) {
++    const rgb = rgbStringFromHex(getCurrentAccentHex());
++
++    preview.style.setProperty('--message-accent', `rgb(${rgb})`);
++    preview.style.setProperty('--message-accent-contrast', contrastTextFor(rgb));
++  } else {
++    preview.style.removeProperty('--message-accent');
++    preview.style.removeProperty('--message-accent-contrast');
++  }
++}
++
++// WCAG minimum for large text / UI. Below this the message text may be
++// hard to read, so the user gets a warning (saving is still allowed).
++const MIN_READABLE_CONTRAST = 3;
++
++function syncActions() {
++  const dirty = !sameConfig(draft, saved);
++
++  ['own-gradient-save', 'own-gradient-discard'].forEach(id => {
++    const button = $(id);
++    if (button) button.disabled = !dirty;
++  });
++
++  const messages = [];
++
++  if (dirty) {
++    messages.push('Unsaved changes');
++  }
++
++  if (
++    draft.enabled &&
++    getOwnBubbleTextContrast(draft) < MIN_READABLE_CONTRAST
++  ) {
++    messages.push('Text may be hard to read with these colors');
++  }
++
++  const status = $('own-gradient-status');
++  if (status) {
++    status.textContent = messages.join(' · ');
++  }
++}
++
++function syncStops() {
++  const list = $('own-gradient-stops');
++  if (list) {
++    list.innerHTML = stopsHtml(draft.stops);
++  }
++
++  const add = $('own-gradient-add');
++  if (add) {
++    add.disabled = draft.stops.length >= maxStops;
++  }
++}
++
++// Full refresh of every control from the draft. Used for structural
++// changes; typing/dragging uses the lighter update in the input
++// handler so the color picker keeps its focus.
++function syncUi() {
++  setSwitch($('own-gradient-toggle'), draft.enabled);
++
++  const controls = $('own-gradient-controls');
++  if (controls) controls.hidden = !draft.enabled;
++
++  setSlider($('own-gradient-angle'), draft.angle);
++
++  syncStops();
++  syncActions();
++  applyPreview();
++}
++
++// ---------------- edits ----------------
++
++function addStop() {
++  if (draft.stops.length >= maxStops) return;
++
++  const sorted = [...draft.stops].sort(
++    (a, b) => a.position - b.position
++  );
++
++  // New color goes halfway between the last two stops.
++  const [before, after] = sorted.slice(-2);
++
++  draft.stops.push({
++    color: mixHex(before.color, after.color, 0.5),
++    position: Math.round((before.position + after.position) / 2)
++  });
++}
++
++function removeStop(index) {
++  if (draft.stops.length <= minStops) return;
++  draft.stops.splice(index, 1);
++}
++
++function saveDraft() {
++  const config = normalizeOwnBubbleGradient(draft);
++
++  applyOwnBubbleGradient(config);
++
++  saved = config;
++  draft = normalizeOwnBubbleGradient(config);
++
++  syncUi();
++  showToast('Message colors saved', 'success');
++}
++
++function discardDraft() {
++  draft = normalizeOwnBubbleGradient(saved);
++  syncUi();
++}
++
++function resetToDefault() {
++  resetOwnBubbleGradient();
++
++  saved = getOwnBubbleGradient();
++  draft = normalizeOwnBubbleGradient(saved);
++
++  syncUi();
++  showToast('Message colors reset', 'success');
++}
++
++// ---------------- binding ----------------
++
++export function bindOwnBubbleGradient() {
++  const block = $('own-bubble-gradient-block');
++  if (!block) return;
++
++  saved = getOwnBubbleGradient();
++  draft = normalizeOwnBubbleGradient(saved);
++
++  syncUi();
++
++  block.addEventListener('click', event => {
++    if (event.target.closest('#own-gradient-toggle')) {
++      draft.enabled = !draft.enabled;
++      syncUi();
++      return;
++    }
++
++    if (event.target.closest('#own-gradient-add')) {
++      addStop();
++      syncUi();
++      return;
++    }
++
++    const remove = event.target.closest('[data-og-remove]');
++
++    if (remove) {
++      removeStop(Number(remove.dataset.ogRemove));
++      syncUi();
++      return;
++    }
++
++    if (event.target.closest('#own-gradient-save')) {
++      saveDraft();
++      return;
++    }
++
++    if (event.target.closest('#own-gradient-discard')) {
++      discardDraft();
++      return;
++    }
++
++    if (event.target.closest('#own-gradient-reset')) {
++      resetToDefault();
++    }
++  });
++
++  block.addEventListener('input', event => {
++    const target = event.target;
++
++    if (target.id === 'own-gradient-angle') {
++      draft.angle = Number(target.value);
++      setSlider(target, draft.angle);
++
++    } else if (target.matches('[data-og-color]')) {
++      draft.stops[Number(target.dataset.ogColor)].color =
++        target.value.toUpperCase();
++
++    } else if (target.matches('[data-og-position]')) {
++      const index = Number(target.dataset.ogPosition);
++
++      draft.stops[index].position = Number(target.value);
++      setSlider(target, draft.stops[index].position);
++
++    } else {
++      return;
++    }
++
++    syncActions();
++    applyPreview();
++  });
++
++  // `change` fires when a slider is released or a color picker
++  // closes. Re-sorting here (not on `input`) keeps the list stable
++  // while dragging, then shows colors in gradient order.
++  block.addEventListener('change', event => {
++    if (!event.target.matches('[data-og-position], [data-og-color]')) {
++      return;
++    }
++
++    draft.stops.sort((a, b) => a.position - b.position);
++    syncStops();
++    syncActions();
++    applyPreview();
++  });
++}
+diff -ruN a/js/settings/settings-render.js b/js/settings/settings-render.js
+--- a/js/settings/settings-render.js	2026-09-25 04:01:13.778591244 +0000
++++ b/js/settings/settings-render.js	2026-09-25 04:01:13.800150326 +0000
+@@ -29,6 +29,10 @@
+ } from './settings-appearance-custom.js';
+ 
+ import {
++  renderOwnBubbleGradientSection
++} from './settings-bubble-gradient.js';
++
++import {
+   getDmNotificationsEnabled
+ } from '../notifications/notification-manager.js';
+ import { renderMessageSounds } from './settings-message-sounds.js';
+@@ -605,6 +609,11 @@
+       </div>
+ 
+ 
++      <!-- My message colors (own-bubble gradient) -->
++
++      ${renderOwnBubbleGradientSection()}
++
++
+       <!-- Interface font -->
+ 
+       <div class="settings-row">
+diff -ruN a/js/settings/theme.js b/js/settings/theme.js
+--- a/js/settings/theme.js	2026-09-25 04:01:13.777501773 +0000
++++ b/js/settings/theme.js	2026-09-25 04:01:13.799079129 +0000
+@@ -2636,6 +2636,294 @@
+ 
+ 
+ // ============================================================
++// Own message bubble gradient
++//
++// Paints the bubbles the viewer SENDS (.chat-msg.own) with a
++// linear gradient. It only replaces the background paint of the
++// existing bubble variants (filled / soft / outline / clean).
++// Bubble shape, radius, padding and spacing stay in messages.css;
++// see css/features/bubble-gradient.css for the override rules.
++//
++// State: { enabled, angle, stops: [{ color, position }] }
++//   enabled  false = Wire's normal bubble colors (the default)
++//   angle    gradient direction in degrees (0-360)
++//   stops    2-4 colors, each with a 0-100 position along the line
++//
++// Applied on <html> as:
++//   --own-bubble-gradient   linear-gradient(...)
++//   --own-bubble-text       readable text color for that gradient
++//   data-own-gradient="on" switches the override rules on
++// ============================================================
++
++const OWN_BUBBLE_GRADIENT_STORAGE_KEY = 'wire-own-bubble-gradient';
++
++export const OWN_BUBBLE_GRADIENT_LIMITS = {
++  minStops: 2,
++  maxStops: 4,
++  minAngle: 0,
++  maxAngle: 360,
++  defaultAngle: 135
++};
++
++const TEXT_DARK = '#16161A';
++const TEXT_LIGHT = '#FFFFFF';
++
++
++function isHexColor(value) {
++  return (
++    typeof value === 'string' &&
++    /^#[0-9a-fA-F]{6}$/.test(value)
++  );
++}
++
++
++function clampNumber(value, min, max) {
++  return Math.min(max, Math.max(min, value));
++}
++
++
++export function mixHex(hex, otherHex, amount) {
++  const a = hexToRgb(hex);
++  const b = hexToRgb(otherHex);
++
++  const channel = (from, to) =>
++    Math.round(from + (to - from) * amount)
++      .toString(16)
++      .padStart(2, '0');
++
++  return (
++    '#' +
++    channel(a.r, b.r) +
++    channel(a.g, b.g) +
++    channel(a.b, b.b)
++  ).toUpperCase();
++}
++
++
++// Fresh default state. Its two starting colors come from the
++// viewer's current accent, so switching the gradient on gives a
++// sensible starting point that matches the rest of the app.
++export function createDefaultOwnBubbleGradient() {
++  const accent = getCurrentAccentHex().toUpperCase();
++
++  return {
++    enabled: false,
++    angle: OWN_BUBBLE_GRADIENT_LIMITS.defaultAngle,
++    stops: [
++      { color: accent, position: 0 },
++      { color: mixHex(accent, '#FFFFFF', 0.3), position: 100 }
++    ]
++  };
++}
++
++
++// Validates untrusted input (storage or UI state) and returns a
++// clean copy. Stops are sorted by position so the CSS gradient is
++// always monotonic. Anything unusable falls back to the default.
++export function normalizeOwnBubbleGradient(input) {
++  if (!input || typeof input !== 'object') {
++    return createDefaultOwnBubbleGradient();
++  }
++
++  const stops = Array.isArray(input.stops)
++    ? input.stops
++        .filter(stop =>
++          stop &&
++          isHexColor(stop.color) &&
++          Number.isFinite(Number(stop.position))
++        )
++        .slice(0, OWN_BUBBLE_GRADIENT_LIMITS.maxStops)
++        .map(stop => ({
++          color: stop.color.toUpperCase(),
++          position: clampNumber(
++            Math.round(Number(stop.position)),
++            0,
++            100
++          )
++        }))
++        .sort((a, b) => a.position - b.position)
++    : [];
++
++  if (stops.length < OWN_BUBBLE_GRADIENT_LIMITS.minStops) {
++    return createDefaultOwnBubbleGradient();
++  }
++
++  const angle = Number(input.angle);
++
++  return {
++    enabled: input.enabled === true,
++    angle: Number.isFinite(angle)
++      ? clampNumber(Math.round(angle), 0, 360)
++      : OWN_BUBBLE_GRADIENT_LIMITS.defaultAngle,
++    stops
++  };
++}
++
++
++function relativeLuminance(hex) {
++  const { r, g, b } = hexToRgb(hex);
++
++  const [R, G, B] = [r, g, b].map(value => {
++    const channel = value / 255;
++
++    return channel <= 0.03928
++      ? channel / 12.92
++      : ((channel + 0.055) / 1.055) ** 2.4;
++  });
++
++  return 0.2126 * R + 0.7152 * G + 0.0722 * B;
++}
++
++
++function contrastRatio(lumA, lumB) {
++  const light = Math.max(lumA, lumB);
++  const dark = Math.min(lumA, lumB);
++
++  return (light + 0.05) / (dark + 0.05);
++}
++
++
++// Lowest contrast between `textHex` and any gradient stop. Text is
++// only as readable as its worst point on the gradient.
++function minContrastAcross(stops, textHex) {
++  return Math.min(
++    ...stops.map(stop =>
++      contrastRatio(
++        relativeLuminance(stop.color),
++        relativeLuminance(textHex)
++      )
++    )
++  );
++}
++
++// Picks the text color (dark or light) whose worst contrast across
++// every gradient stop is highest.
++export function pickOwnBubbleTextColor(stops) {
++  return minContrastAcross(stops, TEXT_DARK) >=
++    minContrastAcross(stops, TEXT_LIGHT)
++    ? TEXT_DARK
++    : TEXT_LIGHT;
++}
++
++
++// Contrast ratio of the text color that will be used for this
++// config, measured at the gradient's least readable point.
++export function getOwnBubbleTextContrast(config) {
++  const { stops } = normalizeOwnBubbleGradient(config);
++  const text = pickOwnBubbleTextColor(stops);
++
++  return minContrastAcross(stops, text);
++}
++
++
++// CSS values for a (normalized) config. Shared by the real apply
++// step and the settings preview so both paint identically.
++export function buildOwnBubbleGradientVars(config) {
++  const normalized = normalizeOwnBubbleGradient(config);
++
++  const stops = normalized.stops
++    .map(stop => `${stop.color} ${stop.position}%`)
++    .join(', ');
++
++  return {
++    gradient: `linear-gradient(${normalized.angle}deg, ${stops})`,
++    text: pickOwnBubbleTextColor(normalized.stops)
++  };
++}
++
++
++export function getOwnBubbleGradient() {
++  const saved =
++    safeGetStorage(
++      OWN_BUBBLE_GRADIENT_STORAGE_KEY
++    );
++
++  if (saved === null) {
++    return createDefaultOwnBubbleGradient();
++  }
++
++  try {
++    return normalizeOwnBubbleGradient(
++      JSON.parse(saved)
++    );
++  } catch {
++    return createDefaultOwnBubbleGradient();
++  }
++}
++
++
++export function applyOwnBubbleGradient(
++  config,
++  { persist = true } = {}
++) {
++  const value =
++    normalizeOwnBubbleGradient(config);
++
++  const root =
++    document.documentElement;
++
++  if (value.enabled) {
++    const vars =
++      buildOwnBubbleGradientVars(value);
++
++    root.style.setProperty(
++      '--own-bubble-gradient',
++      vars.gradient
++    );
++
++    root.style.setProperty(
++      '--own-bubble-text',
++      vars.text
++    );
++
++    root.dataset.ownGradient = 'on';
++
++  } else {
++    root.style.removeProperty(
++      '--own-bubble-gradient'
++    );
++
++    root.style.removeProperty(
++      '--own-bubble-text'
++    );
++
++    delete root.dataset.ownGradient;
++  }
++
++  if (persist) {
++    safeSetStorage(
++      OWN_BUBBLE_GRADIENT_STORAGE_KEY,
++      JSON.stringify(value)
++    );
++  }
++
++  return value;
++}
++
++
++export function resetOwnBubbleGradient() {
++  return applyOwnBubbleGradient(
++    createDefaultOwnBubbleGradient()
++  );
++}
++
++
++export function initOwnBubbleGradient() {
++  const config =
++    getOwnBubbleGradient();
++
++  applyOwnBubbleGradient(
++    config,
++    {
++      persist: false
++    }
++  );
++
++  return config;
++}
++
++
++// ============================================================
+ // Animations (global appearance toggle)
+ // ============================================================
+ 

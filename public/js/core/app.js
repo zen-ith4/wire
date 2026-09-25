@@ -32,7 +32,8 @@ import {
   initBackgroundTheme,
   initAnimations,
   initFontFamily,
-  initMessageBubbleStyle
+  initMessageBubbleStyle,
+  initOwnBubbleGradient
 } from '../settings/theme.js';
 
 import { initSurfaces } from '../settings/appearance-surfaces.js';
@@ -387,6 +388,7 @@ async function bootstrap() {
   initFontFamily();
 
   initMessageBubbleStyle();
+  initOwnBubbleGradient();
 
   /*
    * Advanced appearance overrides (CSS variables only) and the

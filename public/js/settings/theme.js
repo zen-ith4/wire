@@ -2636,6 +2636,294 @@ export function initMessageBubbleStyle() {
 
 
 // ============================================================
+// Own message bubble gradient
+//
+// Paints the bubbles the viewer SENDS (.chat-msg.own) with a
+// linear gradient. It only replaces the background paint of the
+// existing bubble variants (filled / soft / outline / clean).
+// Bubble shape, radius, padding and spacing stay in messages.css;
+// see css/features/bubble-gradient.css for the override rules.
+//
+// State: { enabled, angle, stops: [{ color, position }] }
+//   enabled  false = Wire's normal bubble colors (the default)
+//   angle    gradient direction in degrees (0-360)
+//   stops    2-4 colors, each with a 0-100 position along the line
+//
+// Applied on <html> as:
+//   --own-bubble-gradient   linear-gradient(...)
+//   --own-bubble-text       readable text color for that gradient
+//   data-own-gradient="on" switches the override rules on
+// ============================================================
+
+const OWN_BUBBLE_GRADIENT_STORAGE_KEY = 'wire-own-bubble-gradient';
+
+export const OWN_BUBBLE_GRADIENT_LIMITS = {
+  minStops: 2,
+  maxStops: 4,
+  minAngle: 0,
+  maxAngle: 360,
+  defaultAngle: 135
+};
+
+const TEXT_DARK = '#16161A';
+const TEXT_LIGHT = '#FFFFFF';
+
+
+function isHexColor(value) {
+  return (
+    typeof value === 'string' &&
+    /^#[0-9a-fA-F]{6}$/.test(value)
+  );
+}
+
+
+function clampNumber(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+
+export function mixHex(hex, otherHex, amount) {
+  const a = hexToRgb(hex);
+  const b = hexToRgb(otherHex);
+
+  const channel = (from, to) =>
+    Math.round(from + (to - from) * amount)
+      .toString(16)
+      .padStart(2, '0');
+
+  return (
+    '#' +
+    channel(a.r, b.r) +
+    channel(a.g, b.g) +
+    channel(a.b, b.b)
+  ).toUpperCase();
+}
+
+
+// Fresh default state. Its two starting colors come from the
+// viewer's current accent, so switching the gradient on gives a
+// sensible starting point that matches the rest of the app.
+export function createDefaultOwnBubbleGradient() {
+  const accent = getCurrentAccentHex().toUpperCase();
+
+  return {
+    enabled: false,
+    angle: OWN_BUBBLE_GRADIENT_LIMITS.defaultAngle,
+    stops: [
+      { color: accent, position: 0 },
+      { color: mixHex(accent, '#FFFFFF', 0.3), position: 100 }
+    ]
+  };
+}
+
+
+// Validates untrusted input (storage or UI state) and returns a
+// clean copy. Stops are sorted by position so the CSS gradient is
+// always monotonic. Anything unusable falls back to the default.
+export function normalizeOwnBubbleGradient(input) {
+  if (!input || typeof input !== 'object') {
+    return createDefaultOwnBubbleGradient();
+  }
+
+  const stops = Array.isArray(input.stops)
+    ? input.stops
+        .filter(stop =>
+          stop &&
+          isHexColor(stop.color) &&
+          Number.isFinite(Number(stop.position))
+        )
+        .slice(0, OWN_BUBBLE_GRADIENT_LIMITS.maxStops)
+        .map(stop => ({
+          color: stop.color.toUpperCase(),
+          position: clampNumber(
+            Math.round(Number(stop.position)),
+            0,
+            100
+          )
+        }))
+        .sort((a, b) => a.position - b.position)
+    : [];
+
+  if (stops.length < OWN_BUBBLE_GRADIENT_LIMITS.minStops) {
+    return createDefaultOwnBubbleGradient();
+  }
+
+  const angle = Number(input.angle);
+
+  return {
+    enabled: input.enabled === true,
+    angle: Number.isFinite(angle)
+      ? clampNumber(Math.round(angle), 0, 360)
+      : OWN_BUBBLE_GRADIENT_LIMITS.defaultAngle,
+    stops
+  };
+}
+
+
+function relativeLuminance(hex) {
+  const { r, g, b } = hexToRgb(hex);
+
+  const [R, G, B] = [r, g, b].map(value => {
+    const channel = value / 255;
+
+    return channel <= 0.03928
+      ? channel / 12.92
+      : ((channel + 0.055) / 1.055) ** 2.4;
+  });
+
+  return 0.2126 * R + 0.7152 * G + 0.0722 * B;
+}
+
+
+function contrastRatio(lumA, lumB) {
+  const light = Math.max(lumA, lumB);
+  const dark = Math.min(lumA, lumB);
+
+  return (light + 0.05) / (dark + 0.05);
+}
+
+
+// Lowest contrast between `textHex` and any gradient stop. Text is
+// only as readable as its worst point on the gradient.
+function minContrastAcross(stops, textHex) {
+  return Math.min(
+    ...stops.map(stop =>
+      contrastRatio(
+        relativeLuminance(stop.color),
+        relativeLuminance(textHex)
+      )
+    )
+  );
+}
+
+// Picks the text color (dark or light) whose worst contrast across
+// every gradient stop is highest.
+export function pickOwnBubbleTextColor(stops) {
+  return minContrastAcross(stops, TEXT_DARK) >=
+    minContrastAcross(stops, TEXT_LIGHT)
+    ? TEXT_DARK
+    : TEXT_LIGHT;
+}
+
+
+// Contrast ratio of the text color that will be used for this
+// config, measured at the gradient's least readable point.
+export function getOwnBubbleTextContrast(config) {
+  const { stops } = normalizeOwnBubbleGradient(config);
+  const text = pickOwnBubbleTextColor(stops);
+
+  return minContrastAcross(stops, text);
+}
+
+
+// CSS values for a (normalized) config. Shared by the real apply
+// step and the settings preview so both paint identically.
+export function buildOwnBubbleGradientVars(config) {
+  const normalized = normalizeOwnBubbleGradient(config);
+
+  const stops = normalized.stops
+    .map(stop => `${stop.color} ${stop.position}%`)
+    .join(', ');
+
+  return {
+    gradient: `linear-gradient(${normalized.angle}deg, ${stops})`,
+    text: pickOwnBubbleTextColor(normalized.stops)
+  };
+}
+
+
+export function getOwnBubbleGradient() {
+  const saved =
+    safeGetStorage(
+      OWN_BUBBLE_GRADIENT_STORAGE_KEY
+    );
+
+  if (saved === null) {
+    return createDefaultOwnBubbleGradient();
+  }
+
+  try {
+    return normalizeOwnBubbleGradient(
+      JSON.parse(saved)
+    );
+  } catch {
+    return createDefaultOwnBubbleGradient();
+  }
+}
+
+
+export function applyOwnBubbleGradient(
+  config,
+  { persist = true } = {}
+) {
+  const value =
+    normalizeOwnBubbleGradient(config);
+
+  const root =
+    document.documentElement;
+
+  if (value.enabled) {
+    const vars =
+      buildOwnBubbleGradientVars(value);
+
+    root.style.setProperty(
+      '--own-bubble-gradient',
+      vars.gradient
+    );
+
+    root.style.setProperty(
+      '--own-bubble-text',
+      vars.text
+    );
+
+    root.dataset.ownGradient = 'on';
+
+  } else {
+    root.style.removeProperty(
+      '--own-bubble-gradient'
+    );
+
+    root.style.removeProperty(
+      '--own-bubble-text'
+    );
+
+    delete root.dataset.ownGradient;
+  }
+
+  if (persist) {
+    safeSetStorage(
+      OWN_BUBBLE_GRADIENT_STORAGE_KEY,
+      JSON.stringify(value)
+    );
+  }
+
+  return value;
+}
+
+
+export function resetOwnBubbleGradient() {
+  return applyOwnBubbleGradient(
+    createDefaultOwnBubbleGradient()
+  );
+}
+
+
+export function initOwnBubbleGradient() {
+  const config =
+    getOwnBubbleGradient();
+
+  applyOwnBubbleGradient(
+    config,
+    {
+      persist: false
+    }
+  );
+
+  return config;
+}
+
+
+// ============================================================
 // Animations (global appearance toggle)
 // ============================================================
 

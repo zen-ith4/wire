@@ -29,6 +29,10 @@ import {
 } from './settings-appearance-custom.js';
 
 import {
+  renderOwnBubbleGradientSection
+} from './settings-bubble-gradient.js';
+
+import {
   getDmNotificationsEnabled
 } from '../notifications/notification-manager.js';
 import { renderMessageSounds } from './settings-message-sounds.js';
@@ -603,6 +607,11 @@ function renderAppearance({
         </div>
 
       </div>
+
+
+      <!-- My message colors (own-bubble gradient) -->
+
+      ${renderOwnBubbleGradientSection()}
 
 
       <!-- Interface font -->

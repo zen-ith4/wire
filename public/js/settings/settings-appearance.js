@@ -41,6 +41,10 @@ import {
   bindCustomAppearance
 } from './settings-appearance-custom.js';
 
+import {
+  bindOwnBubbleGradient
+} from './settings-bubble-gradient.js';
+
 // ============================================================
 // Message bubble style
 //
@@ -953,6 +957,7 @@ export async function bindAppearanceSettings({
   bindBubbleAccent();
   bindAnimations();
   bindCustomAppearance();
+  bindOwnBubbleGradient();
 
   if (
     window.electronAPI?.isElectron

@@ -1,8 +1,8 @@
 /* ---------- Toasts ---------- */
 .toast{position:fixed;top:20px;top:calc(20px + env(safe-area-inset-top));left:50%;
  width:max-content;max-width:calc(100vw - 32px);
- transform:translateX(-50%);z-index:1000;padding:11px 18px;
- border-radius:var(--radius);font-size:13px;font-weight:500;
+ transform:translateX(-50%);z-index:1000;padding:calc(11px * var(--wire-density-scale)) calc(18px * var(--wire-density-scale));
+ border-radius:var(--radius);font-size:calc(13px * var(--wire-font-scale));font-weight:500;
 background:rgba(var(--ink2-rgb),.92);
   backdrop-filter:blur(12px);
   border:1px solid var(--border);

@@ -13,7 +13,7 @@
   display:flex;
   position:relative;
   z-index:1;
-  padding:20px;
+  padding:calc(20px * var(--wire-density-scale));
 }
 
 .login-card{
@@ -30,7 +30,7 @@
   width:48px;
   height:48px;
   border-radius:var(--radius-lg);
-  margin:0 auto 18px;
+  margin:0 auto calc(18px * var(--wire-density-scale));
 
   display:flex;
   align-items:center;
@@ -55,25 +55,25 @@
 }
 
 .login-card h1{
-  font-size:18px;
+  font-size:calc(18px * var(--wire-font-scale));
   line-height:1.35;
-  margin:0 0 6px;
+  margin:0 0 calc(6px * var(--wire-density-scale));
   font-weight:600;
   letter-spacing:-.01em;
   color:var(--text);
 }
 
 .login-card p.hint{
-  font-size:13px;
+  font-size:calc(13px * var(--wire-font-scale));
   line-height:1.5;
   color:var(--muted);
-  margin:0 0 24px;
+  margin:0 0 calc(24px * var(--wire-density-scale));
 }
 
 .login-card form{
   display:flex;
   flex-direction:column;
-  gap:10px;
+  gap:calc(10px * var(--wire-density-scale));
 }
 
 /* ---------- Auth Inputs ---------- */
@@ -81,7 +81,7 @@
   width:100%;
   box-sizing:border-box;
 
-  padding:11px 14px;
+  padding:calc(11px * var(--wire-density-scale)) calc(14px * var(--wire-density-scale));
 
   background:rgb(var(--surface));
   color:var(--text);
@@ -156,7 +156,7 @@
 .login-card .btn{
   width:100%;
   justify-content:center;
-  padding:11px;
+  padding:calc(11px * var(--wire-density-scale));
 
   transition:
     transform .15s ease,
@@ -175,15 +175,15 @@
 .auth-remember-me{
   display:flex;
   align-items:center;
-  gap:8px;
+  gap:calc(8px * var(--wire-density-scale));
 
-  font-size:12.5px;
+  font-size:calc(12.5px * var(--wire-font-scale));
   color:var(--muted);
 
   cursor:pointer;
   user-select:none;
 
-  margin-top:-2px;
+  margin-top:-calc(2px * var(--wire-density-scale));
 }
 
 .auth-remember-me input{
@@ -205,16 +205,16 @@
 /* ---------- Validation Error ---------- */
 .field-error{
   color:#D6A3A3;
-  font-size:12.5px;
+  font-size:calc(12.5px * var(--wire-font-scale));
   line-height:1.4;
   min-height:16px;
-  margin-top:10px;
+  margin-top:calc(10px * var(--wire-density-scale));
 }
 
 /* ---------- Register / Login Switch ---------- */
 .auth-switch{
-  margin-top:14px;
-  font-size:12.5px;
+  margin-top:calc(14px * var(--wire-density-scale));
+  font-size:calc(12.5px * var(--wire-font-scale));
   line-height:1.5;
   color:var(--muted);
 }
@@ -256,17 +256,17 @@
    persistence. Styled as a quiet footnote below .auth-switch, on
    purpose: it should read as secondary to the actual sign-in form. */
 .auth-server-row{
-  margin-top:14px;
-  padding-top:14px;
+  margin-top:calc(14px * var(--wire-density-scale));
+  padding-top:calc(14px * var(--wire-density-scale));
   border-top:1px solid rgb(var(--border) / .5);
 
   display:flex;
   align-items:center;
   justify-content:center;
   flex-wrap:wrap;
-  gap:5px;
+  gap:calc(5px * var(--wire-density-scale));
 
-  font-size:12px;
+  font-size:calc(12px * var(--wire-font-scale));
   line-height:1.5;
   color:var(--muted);
 }

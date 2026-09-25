@@ -19,7 +19,11 @@ import {
   getUseAccentForBubbles,
   getAnimationsEnabled,
   getCurrentBackgroundTheme,
-  getBackgroundPreviewCss
+  getBackgroundPreviewCss,
+  DENSITY_OPTIONS,
+  getUIDensity,
+  FONT_SIZE_OPTIONS,
+  getFontSize
 } from './theme.js';
 
 import {
@@ -193,6 +197,67 @@ function renderAppearance({
   const currentTheme =
     getCurrentTheme();
 
+  const currentDensity =
+    getUIDensity();
+
+  const densityLabels = {
+    compact: 'Compact',
+    default: 'Default',
+    comfortable: 'Comfortable'
+  };
+
+  const densityToggleHtml =
+    Object.keys(DENSITY_OPTIONS)
+      .map(id => `
+        <button
+          type="button"
+          class="theme-toggle-btn${
+            id === currentDensity
+              ? ' selected'
+              : ''
+          }"
+          data-density="${id}"
+          aria-pressed="${
+            id === currentDensity
+          }">
+          <span>${
+            densityLabels[id] || id
+          }</span>
+        </button>
+      `)
+      .join('');
+
+  const currentFontSize =
+    getFontSize();
+
+  const fontSizeLabels = {
+    small: 'Small',
+    default: 'Default',
+    large: 'Large',
+    'extra-large': 'Extra Large'
+  };
+
+  const fontSizeToggleHtml =
+    Object.keys(FONT_SIZE_OPTIONS)
+      .map(id => `
+        <button
+          type="button"
+          class="theme-toggle-btn${
+            id === currentFontSize
+              ? ' selected'
+              : ''
+          }"
+          data-font-size="${id}"
+          aria-pressed="${
+            id === currentFontSize
+          }">
+          <span>${
+            fontSizeLabels[id] || id
+          }</span>
+        </button>
+      `)
+      .join('');
+
   const currentBackgroundId =
     getCurrentBackgroundTheme();
 
@@ -294,6 +359,57 @@ function renderAppearance({
             <span>Light</span>
 
           </button>
+
+        </div>
+
+      </div>
+
+
+      <!-- UI Density -->
+
+      <div class="settings-row settings-row-column">
+
+        <div>
+          <div class="settings-row-label">
+            UI density
+          </div>
+
+          <div class="settings-row-sublabel">
+            Adjust spacing throughout the app without
+            changing the visual design
+          </div>
+        </div>
+
+        <div
+          class="theme-toggle"
+          id="density-toggle">
+
+          ${densityToggleHtml}
+
+        </div>
+
+      </div>
+
+
+      <!-- Font size -->
+
+      <div class="settings-row settings-row-column">
+
+        <div>
+          <div class="settings-row-label">
+            Font size
+          </div>
+
+          <div class="settings-row-sublabel">
+            Adjust the size of text throughout the app
+          </div>
+        </div>
+
+        <div
+          class="theme-toggle"
+          id="font-size-toggle">
+
+          ${fontSizeToggleHtml}
 
         </div>
 

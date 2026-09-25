@@ -67,7 +67,7 @@
 /* ---- Category list ---- */
 
 .settings-category-card{
-  padding:8px;
+  padding:calc(8px * var(--wire-density-scale));
 }
 
 .settings-category-list{
@@ -78,10 +78,10 @@
 .settings-category-row{
   display:flex;
   align-items:center;
-  gap:14px;
+  gap:calc(14px * var(--wire-density-scale));
   width:100%;
   min-height:52px;
-  padding:10px;
+  padding:calc(10px * var(--wire-density-scale));
   border-radius:var(--radius);
   background:transparent;
   border:none;
@@ -128,18 +128,18 @@
   min-width:0;
   display:flex;
   flex-direction:column;
-  gap:2px;
+  gap:calc(2px * var(--wire-density-scale));
 }
 
 .settings-category-row-label{
-  font-size:13.5px;
+  font-size:calc(13.5px * var(--wire-font-scale));
   font-weight:500;
   color:var(--text);
   letter-spacing:-0.01em;
 }
 
 .settings-category-row-sublabel{
-  font-size:11.5px;
+  font-size:calc(11.5px * var(--wire-font-scale));
   color:var(--muted2);
   font-weight:430;
   overflow:hidden;
@@ -159,23 +159,23 @@
 .settings-category-header{
   display:flex;
   align-items:center;
-  gap:10px;
-  margin-bottom:20px;
+  gap:calc(10px * var(--wire-density-scale));
+  margin-bottom:calc(20px * var(--wire-density-scale));
   flex-wrap:wrap;
 }
 
 .settings-category-back{
   display:flex;
   align-items:center;
-  gap:4px;
+  gap:calc(4px * var(--wire-density-scale));
   min-height:36px;
-  padding:7px 10px 7px 6px;
+  padding:calc(7px * var(--wire-density-scale)) calc(10px * var(--wire-density-scale)) calc(7px * var(--wire-density-scale)) calc(6px * var(--wire-density-scale));
   border-radius:var(--radius);
   background:transparent;
   border:none;
   cursor:pointer;
   color:var(--muted);
-  font-size:13px;
+  font-size:calc(13px * var(--wire-font-scale));
   font-weight:500;
   flex-shrink:0;
   transition:
@@ -198,7 +198,7 @@
 }
 
 .settings-category-header-title{
-  font-size:11px;
+  font-size:calc(11px * var(--wire-font-scale));
   font-weight:550;
   text-transform:uppercase;
   letter-spacing:.06em;
@@ -215,8 +215,8 @@
 }
 
 .settings-section{
-  margin-bottom:32px;
-  padding-bottom:28px;
+  margin-bottom:calc(32px * var(--wire-density-scale));
+  padding-bottom:calc(28px * var(--wire-density-scale));
   border-bottom:1px solid var(--border-soft);
 }
 
@@ -227,20 +227,20 @@
 }
 
 .settings-section-title{
-  font-size:11px;
+  font-size:calc(11px * var(--wire-font-scale));
   font-weight:550;
   text-transform:uppercase;
   letter-spacing:.06em;
   color:var(--muted2);
-  margin-bottom:16px;
+  margin-bottom:calc(16px * var(--wire-density-scale));
 }
 
 .settings-row{
   display:flex;
   align-items:center;
   justify-content:space-between;
-  padding:10px 0;
-  gap:20px;
+  padding:calc(10px * var(--wire-density-scale)) 0;
+  gap:calc(20px * var(--wire-density-scale));
   min-height:44px;
 }
 
@@ -249,24 +249,24 @@
 }
 
 .settings-row-label{
-  font-size:13.5px;
+  font-size:calc(13.5px * var(--wire-font-scale));
   font-weight:460;
   color:var(--text);
   letter-spacing:-0.01em;
 }
 
 .settings-row-sublabel{
-  font-size:11.5px;
+  font-size:calc(11.5px * var(--wire-font-scale));
   color:var(--muted2);
   font-weight:430;
-  margin-top:1px;
+  margin-top:calc(1px * var(--wire-density-scale));
 }
 
 .settings-label{
-  font-size:12px;
+  font-size:calc(12px * var(--wire-font-scale));
   font-weight:550;
   color:var(--muted);
-  margin-bottom:8px;
+  margin-bottom:calc(8px * var(--wire-density-scale));
   display:block;
 }
 
@@ -280,7 +280,7 @@
   align-items:center;
   justify-content:center;
   font-weight:600;
-  font-size:24px;
+  font-size:calc(24px * var(--wire-font-scale));
   color:var(--muted);
   flex-shrink:0;
   position:relative;
@@ -288,7 +288,7 @@
 
 .settings-avatar-actions{
   display:flex;
-  gap:8px;
+  gap:calc(8px * var(--wire-density-scale));
 }
 
 
@@ -298,7 +298,7 @@
 
 .accent-swatches{
   display:flex;
-  gap:10px;
+  gap:calc(10px * var(--wire-density-scale));
   flex-wrap:wrap;
 }
 
@@ -347,11 +347,11 @@
 .custom-accent-control{
   display:flex;
   align-items:center;
-  gap:10px;
+  gap:calc(10px * var(--wire-density-scale));
   background:var(--ink2);
   border:1px solid var(--border);
   border-radius:var(--radius);
-  padding:6px 8px;
+  padding:calc(6px * var(--wire-density-scale)) calc(8px * var(--wire-density-scale));
 }
 
 .custom-accent-swatch-wrap{
@@ -415,7 +415,7 @@
 
 .ambient-levels{
   display:flex;
-  gap:6px;
+  gap:calc(6px * var(--wire-density-scale));
 }
 
 .ambient-level-btn{
@@ -426,7 +426,7 @@
   border:1px solid var(--border);
   background:var(--ink2);
   color:var(--muted);
-  font-size:11.5px;
+  font-size:calc(11.5px * var(--wire-font-scale));
   font-weight:600;
   display:flex;
   align-items:center;
@@ -457,20 +457,21 @@
 
 .theme-toggle{
   display:flex;
-  gap:6px;
+  gap:calc(6px * var(--wire-density-scale));
+  flex-wrap:wrap;
 }
 
 .theme-toggle-btn{
   display:flex;
   align-items:center;
-  gap:6px;
+  gap:calc(6px * var(--wire-density-scale));
   cursor:pointer;
-  padding:7px 14px;
+  padding:calc(7px * var(--wire-density-scale)) calc(14px * var(--wire-density-scale));
   border-radius:var(--radius);
   border:1px solid var(--border);
   background:var(--ink2);
   color:var(--muted);
-  font-size:13px;
+  font-size:calc(13px * var(--wire-font-scale));
   font-weight:500;
   transition:
     background var(--ease-fast),
@@ -501,22 +502,22 @@
 .settings-row-column{
   flex-direction:column;
   align-items:stretch;
-  gap:10px;
+  gap:calc(10px * var(--wire-density-scale));
 }
 
 .bg-swatches{
   display:flex;
   flex-wrap:wrap;
-  gap:6px;
+  gap:calc(6px * var(--wire-density-scale));
 }
 
 .bg-swatch{
   display:flex;
   flex-direction:column;
   align-items:center;
-  gap:4px;
+  gap:calc(4px * var(--wire-density-scale));
   width:58px;
-  padding:5px 3px 6px;
+  padding:calc(5px * var(--wire-density-scale)) calc(3px * var(--wire-density-scale)) calc(6px * var(--wire-density-scale));
   cursor:pointer;
   background:transparent;
   border:1px solid transparent;
@@ -589,7 +590,7 @@
 }
 
 .bg-swatch-name{
-  font-size:10px;
+  font-size:calc(10px * var(--wire-font-scale));
   font-weight:500;
   color:var(--muted);
   text-align:center;
@@ -610,9 +611,9 @@
    ================================================================ */
 
 .bg-more-wrap{
-  margin-top:4px;
+  margin-top:calc(4px * var(--wire-density-scale));
   border-top:1px solid var(--border-soft);
-  padding-top:8px;
+  padding-top:calc(8px * var(--wire-density-scale));
 }
 
 .bg-more-toggle{
@@ -620,13 +621,13 @@
   display:flex;
   align-items:center;
   justify-content:center;
-  gap:7px;
-  padding:8px 10px;
+  gap:calc(7px * var(--wire-density-scale));
+  padding:calc(8px * var(--wire-density-scale)) calc(10px * var(--wire-density-scale));
   border:1px solid transparent;
   border-radius:var(--radius);
   background:transparent;
   color:var(--muted);
-  font-size:11.5px;
+  font-size:calc(11.5px * var(--wire-font-scale));
   font-weight:500;
   cursor:pointer;
   transition:
@@ -653,7 +654,7 @@
   display:flex;
   align-items:center;
   justify-content:center;
-  font-size:13px;
+  font-size:calc(13px * var(--wire-font-scale));
   line-height:1;
   transform:rotate(0deg);
   transition:transform .2s ease;
@@ -676,7 +677,7 @@
 .bg-swatches-more{
   display:flex;
   flex-wrap:wrap;
-  gap:6px;
+  gap:calc(6px * var(--wire-density-scale));
   max-height:0;
   overflow:hidden;
   opacity:0;
@@ -693,7 +694,7 @@
 .bg-swatches-more.is-open{
   max-height:1200px;
   opacity:1;
-  padding-top:8px;
+  padding-top:calc(8px * var(--wire-density-scale));
   transform:translateY(0);
   pointer-events:auto;
 }
@@ -769,7 +770,7 @@
 .bubble-style-options{
   display:grid;
   grid-template-columns:repeat(4,minmax(0,1fr));
-  gap:8px;
+  gap:calc(8px * var(--wire-density-scale));
   width:100%;
 }
 
@@ -779,14 +780,14 @@
   flex-direction:column;
   align-items:center;
   justify-content:center;
-  gap:7px;
-  padding:9px 7px;
+  gap:calc(7px * var(--wire-density-scale));
+  padding:calc(9px * var(--wire-density-scale)) calc(7px * var(--wire-density-scale));
   border:1px solid var(--border);
   border-radius:var(--radius);
   background:var(--ink2);
   color:var(--muted);
   cursor:pointer;
-  font-size:10.5px;
+  font-size:calc(10.5px * var(--wire-font-scale));
   font-weight:500;
   transition:
     background var(--ease-fast),
@@ -829,7 +830,7 @@
   width:100%;
   max-width:100px;
   min-height:42px;
-  padding:4px 0;
+  padding:calc(4px * var(--wire-density-scale)) 0;
   overflow:hidden;
 }
 
@@ -866,10 +867,10 @@
   min-width:48px;
   max-width:78px;
   min-height:24px;
-  padding:5px 9px;
+  padding:calc(5px * var(--wire-density-scale)) calc(9px * var(--wire-density-scale));
   border-radius:10px;
   color:var(--text);
-  font-size:9.5px;
+  font-size:calc(9.5px * var(--wire-font-scale));
   line-height:1.2;
   font-weight:500;
   white-space:nowrap;
@@ -939,7 +940,7 @@
   border:0;
   border-left:3px solid var(--accent-border);
   border-radius:3px;
-  padding-left:8px;
+  padding-left:calc(8px * var(--wire-density-scale));
   color:var(--text);
   box-shadow:none;
 }
@@ -965,13 +966,13 @@
   min-width:150px;
   max-width:190px;
   cursor:pointer;
-  font-size:12.5px;
+  font-size:calc(12.5px * var(--wire-font-scale));
   font-weight:500;
   color:var(--text);
   background:var(--ink2);
   border:1px solid var(--border);
   border-radius:var(--radius);
-  padding:7px 30px 7px 10px;
+  padding:calc(7px * var(--wire-density-scale)) calc(30px * var(--wire-density-scale)) calc(7px * var(--wire-density-scale)) calc(10px * var(--wire-density-scale));
   transition:
     background var(--ease-fast),
     border-color var(--ease-fast),
@@ -1050,7 +1051,7 @@
 }
 
 .profile-banner-settings-wrap{
-  margin:0 0 28px;
+  margin:0 0 calc(28px * var(--wire-density-scale));
 }
 
 .profile-banner{
@@ -1067,7 +1068,7 @@
   right:14px;
   bottom:14px;
   display:flex;
-  gap:8px;
+  gap:calc(8px * var(--wire-density-scale));
   flex-wrap:wrap;
   justify-content:flex-end;
 }
@@ -1088,7 +1089,7 @@
   }
 
   .bg-more-toggle{
-    padding:9px 10px;
+    padding:calc(9px * var(--wire-density-scale)) calc(10px * var(--wire-density-scale));
   }
 
   .bubble-style-options{
@@ -1101,7 +1102,7 @@
   }
 
   .settings-row{
-    gap:12px;
+    gap:calc(12px * var(--wire-density-scale));
   }
 }
 
@@ -1116,7 +1117,7 @@
 .sound-volume-control{
   display:flex;
   align-items:center;
-  gap:12px;
+  gap:calc(12px * var(--wire-density-scale));
   flex:0 1 240px;
   min-width:0;
 }
@@ -1124,7 +1125,7 @@
 .sound-volume-value{
   min-width:40px;
   text-align:right;
-  font-size:12px;
+  font-size:calc(12px * var(--wire-font-scale));
   font-weight:500;
   color:var(--muted);
   font-variant-numeric:tabular-nums;
@@ -1179,7 +1180,7 @@
   appearance:none;
   width:16px;
   height:16px;
-  margin-top:-6px;
+  margin-top:-calc(6px * var(--wire-density-scale));
   border-radius:50%;
   border:2px solid rgb(var(--indigo));
   background:var(--ink2);
@@ -1206,8 +1207,8 @@
 /* Per-kind cards */
 
 .sound-card{
-  margin-top:14px;
-  padding:14px;
+  margin-top:calc(14px * var(--wire-density-scale));
+  padding:calc(14px * var(--wire-density-scale));
   border:1px solid var(--border-soft);
   border-radius:var(--radius-lg);
 }
@@ -1216,8 +1217,8 @@
   display:flex;
   align-items:flex-start;
   justify-content:space-between;
-  gap:12px;
-  margin-bottom:12px;
+  gap:calc(12px * var(--wire-density-scale));
+  margin-bottom:calc(12px * var(--wire-density-scale));
 }
 
 .sound-card-title{
@@ -1228,14 +1229,14 @@
   display:flex;
   flex-wrap:wrap;
   align-items:baseline;
-  gap:6px;
-  margin-top:8px;
-  font-size:12px;
+  gap:calc(6px * var(--wire-density-scale));
+  margin-top:calc(8px * var(--wire-density-scale));
+  font-size:calc(12px * var(--wire-font-scale));
   min-width:0;
 }
 
 .sound-current-label{
-  font-size:10.5px;
+  font-size:calc(10.5px * var(--wire-font-scale));
   font-weight:550;
   text-transform:uppercase;
   letter-spacing:.06em;
@@ -1251,13 +1252,13 @@
 .sound-options{
   display:grid;
   grid-template-columns:repeat(2,minmax(0,1fr));
-  gap:8px;
+  gap:calc(8px * var(--wire-density-scale));
 }
 
 .sound-option{
   display:flex;
   align-items:stretch;
-  gap:6px;
+  gap:calc(6px * var(--wire-density-scale));
   min-width:0;
 }
 
@@ -1266,15 +1267,15 @@
   min-width:0;
   display:flex;
   align-items:center;
-  gap:10px;
-  padding:9px 10px;
+  gap:calc(10px * var(--wire-density-scale));
+  padding:calc(9px * var(--wire-density-scale)) calc(10px * var(--wire-density-scale));
   border:1px solid var(--border);
   border-radius:var(--radius);
   background:var(--ink2);
   color:var(--muted);
   cursor:pointer;
   text-align:left;
-  font-size:12.5px;
+  font-size:calc(12.5px * var(--wire-font-scale));
   font-weight:500;
   transition:
     background var(--ease-fast),
@@ -1340,17 +1341,17 @@
   display:flex;
   flex-direction:column;
   min-width:0;
-  gap:1px;
+  gap:calc(1px * var(--wire-density-scale));
 }
 
 .sound-option-name{
-  font-size:12.5px;
+  font-size:calc(12.5px * var(--wire-font-scale));
   font-weight:500;
 }
 
 .sound-option-sub,
 .sound-option-meta{
-  font-size:11px;
+  font-size:calc(11px * var(--wire-font-scale));
   font-weight:430;
   color:var(--muted2);
   overflow:hidden;
@@ -1412,28 +1413,28 @@
   grid-column:1 / -1;
   display:flex;
   flex-wrap:wrap;
-  gap:8px;
+  gap:calc(8px * var(--wire-density-scale));
 }
 
 .sound-error{
-  margin-top:10px;
-  padding:9px 12px;
+  margin-top:calc(10px * var(--wire-density-scale));
+  padding:calc(9px * var(--wire-density-scale)) calc(12px * var(--wire-density-scale));
   border:1px solid rgba(var(--red),.3);
   border-radius:var(--radius);
   background:rgba(var(--red),.1);
   color:#D6A3A3;
-  font-size:12px;
+  font-size:calc(12px * var(--wire-font-scale));
   line-height:1.4;
 }
 
 .sound-footnote{
-  margin-top:14px;
-  font-size:11.5px;
+  margin-top:calc(14px * var(--wire-density-scale));
+  font-size:calc(11.5px * var(--wire-font-scale));
   color:var(--muted2);
 }
 
 .sound-reset-row{
-  margin-top:10px;
+  margin-top:calc(10px * var(--wire-density-scale));
   display:flex;
   justify-content:flex-start;
 }
@@ -1449,6 +1450,6 @@
   }
 
   .sound-card{
-    padding:12px;
+    padding:calc(12px * var(--wire-density-scale));
   }
 }

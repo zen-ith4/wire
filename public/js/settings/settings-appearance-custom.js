@@ -21,6 +21,8 @@ import {
   DEFAULT_BACKGROUND_ID,
   DEFAULT_BUBBLE_STYLE,
   DEFAULT_FONT_ID,
+  DEFAULT_DENSITY_ID,
+  DEFAULT_FONT_SIZE_ID,
   applyAmbientLevel,
   applyAnimationsEnabled,
   applyBackgroundTheme,
@@ -28,6 +30,8 @@ import {
   applyMessageBubbleStyle,
   applyTheme,
   applyUseAccentForBubbles,
+  applyUIDensity,
+  applyFontSize,
   resetOwnBubbleGradient
 } from './theme.js';
 
@@ -1724,7 +1728,8 @@ function bindResetAll() {
     async () => {
       const confirmed =
         await showConfirm(
-          'This resets theme, background, message style, message colors, font, animations, ' +
+          'This resets theme, background, message style, message colors, font, font size, ' +
+          'UI density, animations, ' +
           'your custom background and all advanced settings on this device. ' +
           'Your accent color is not changed.',
           {
@@ -1757,6 +1762,8 @@ function bindResetAll() {
       applyUseAccentForBubbles(true);
       applyAnimationsEnabled(false);
       applyFontFamily(DEFAULT_FONT_ID);
+      applyUIDensity(DEFAULT_DENSITY_ID);
+      applyFontSize(DEFAULT_FONT_SIZE_ID);
 
       repaintAllMessageAccents();
 

@@ -85,7 +85,7 @@
   content:"";
   position:absolute;
   inset:0;
-  padding:1px;
+  padding:calc(1px * var(--wire-density-scale));
 
   border-radius:inherit;
 
@@ -148,7 +148,7 @@
   content:"";
   position:absolute;
   inset:0;
-  padding:1px;
+  padding:calc(1px * var(--wire-density-scale));
 
   border-radius:inherit;
 
@@ -278,7 +278,7 @@
   content:"";
   position:absolute;
   inset:0;
-  padding:1px;
+  padding:calc(1px * var(--wire-density-scale));
 
   border-radius:inherit;
 
@@ -331,7 +331,7 @@
   content:"";
   position:absolute;
   inset:0;
-  padding:1px;
+  padding:calc(1px * var(--wire-density-scale));
 
   border-radius:inherit;
 
@@ -393,14 +393,14 @@
   display:flex;
   align-items:center;
   justify-content:space-between;
-  gap:16px;
+  gap:calc(16px * var(--wire-density-scale));
 }
 
 .own-bubble-preview {
   display:flex;
   flex-direction:column;
-  gap:8px;
-  padding:14px 12px;
+  gap:calc(8px * var(--wire-density-scale));
+  padding:calc(14px * var(--wire-density-scale)) calc(12px * var(--wire-density-scale));
   border-radius:var(--radius-lg);
   border:1px solid var(--border);
   background:var(--void);
@@ -420,7 +420,7 @@
 .own-gradient-controls {
   display:flex;
   flex-direction:column;
-  gap:12px;
+  gap:calc(12px * var(--wire-density-scale));
 }
 
 .own-gradient-controls[hidden] {
@@ -430,13 +430,13 @@
 .own-gradient-stops {
   display:flex;
   flex-direction:column;
-  gap:8px;
+  gap:calc(8px * var(--wire-density-scale));
 }
 
 .own-gradient-stop {
   display:flex;
   align-items:center;
-  gap:10px;
+  gap:calc(10px * var(--wire-density-scale));
   min-width:0;
 }
 
@@ -444,7 +444,7 @@
   flex-shrink:0;
   width:36px;
   height:30px;
-  padding:2px;
+  padding:calc(2px * var(--wire-density-scale));
   border:1px solid var(--border);
   border-radius:var(--radius);
   background:var(--ink2);
@@ -464,11 +464,11 @@
   display:flex;
   flex-wrap:wrap;
   align-items:center;
-  gap:8px;
+  gap:calc(8px * var(--wire-density-scale));
 }
 
 .own-gradient-status {
-  font-size:12px;
+  font-size:calc(12px * var(--wire-font-scale));
   color:var(--muted2);
   margin-left:auto;
 }

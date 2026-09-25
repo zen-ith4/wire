@@ -22,7 +22,13 @@ import {
   applyFontFamily,
   BUBBLE_STYLES,
   getMessageBubbleStyle,
-  applyMessageBubbleStyle
+  applyMessageBubbleStyle,
+  DENSITY_OPTIONS,
+  getUIDensity,
+  applyUIDensity,
+  FONT_SIZE_OPTIONS,
+  getFontSize,
+  applyFontSize
 } from './theme.js';
 
 import {
@@ -145,6 +151,138 @@ function bindFont() {
       applyFontFamily(
         select.value
       );
+    }
+  );
+}
+
+// ============================================================
+// UI Density
+// ============================================================
+
+function bindUIDensity() {
+  const container =
+    document.getElementById(
+      'density-toggle'
+    );
+
+  if (!container) return;
+
+  const syncButtons = current => {
+    container
+      .querySelectorAll(
+        '.theme-toggle-btn'
+      )
+      .forEach(button => {
+        const selected =
+          button.dataset.density ===
+          current;
+
+        button.classList.toggle(
+          'selected',
+          selected
+        );
+
+        button.setAttribute(
+          'aria-pressed',
+          String(selected)
+        );
+      });
+  };
+
+  syncButtons(getUIDensity());
+
+  container.addEventListener(
+    'click',
+    event => {
+      const button =
+        event.target.closest(
+          '.theme-toggle-btn'
+        );
+
+      if (!button) return;
+
+      const density =
+        button.dataset.density;
+
+      if (
+        !Object.hasOwn(
+          DENSITY_OPTIONS,
+          density
+        )
+      ) {
+        return;
+      }
+
+      const applied =
+        applyUIDensity(density);
+
+      syncButtons(applied);
+    }
+  );
+}
+
+// ============================================================
+// Font size
+// ============================================================
+
+function bindFontSize() {
+  const container =
+    document.getElementById(
+      'font-size-toggle'
+    );
+
+  if (!container) return;
+
+  const syncButtons = current => {
+    container
+      .querySelectorAll(
+        '.theme-toggle-btn'
+      )
+      .forEach(button => {
+        const selected =
+          button.dataset.fontSize ===
+          current;
+
+        button.classList.toggle(
+          'selected',
+          selected
+        );
+
+        button.setAttribute(
+          'aria-pressed',
+          String(selected)
+        );
+      });
+  };
+
+  syncButtons(getFontSize());
+
+  container.addEventListener(
+    'click',
+    event => {
+      const button =
+        event.target.closest(
+          '.theme-toggle-btn'
+        );
+
+      if (!button) return;
+
+      const size =
+        button.dataset.fontSize;
+
+      if (
+        !Object.hasOwn(
+          FONT_SIZE_OPTIONS,
+          size
+        )
+      ) {
+        return;
+      }
+
+      const applied =
+        applyFontSize(size);
+
+      syncButtons(applied);
     }
   );
 }
@@ -946,6 +1084,8 @@ export async function bindAppearanceSettings({
   hardwareAccelerationEnabled
 }) {
   bindTheme();
+  bindUIDensity();
+  bindFontSize();
   bindAccentPresets();
   bindCustomAccent();
   bindAmbient();

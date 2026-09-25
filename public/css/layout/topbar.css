@@ -4,7 +4,7 @@
   display:flex;
   align-items:center;
   justify-content:space-between;
-  padding:0 24px;
+  padding:0 calc(24px * var(--wire-density-scale));
   position:relative;
   z-index:5;
 
@@ -14,7 +14,7 @@
 }
 
 .topbar-title{
-  font-size:14px;
+  font-size:calc(14px * var(--wire-font-scale));
   font-weight:550;
   color:var(--text);
   letter-spacing:-0.01em;

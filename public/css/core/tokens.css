@@ -78,6 +78,31 @@
   --motion-slow:0ms;
   --motion-ease:linear;
 
+  /* ---- Global "UI Density" appearance setting ----
+     Every padding/margin/gap value throughout the app that should
+     respond to density is written as calc(Npx * var(--wire-density-scale))
+     instead of a literal px value (see settings/theme.js —
+     applyUIDensity() sets this on <html>). Defaults to 1, which
+     collapses every one of those calc()s back to the exact literal
+     px value it replaced, so Default density is pixel-identical to
+     the app's appearance before this setting existed. Compact/
+     Comfortable just change this one number. Sizes that aren't
+     spacing (icon/avatar dimensions, border-radius, font-size, ...)
+     never reference this variable and are untouched by density. */
+  --wire-density-scale:1;
+
+  /* ---- Global "Font Size" appearance setting ----
+     Every font-size declaration throughout the app is written as
+     calc(Npx * var(--wire-font-scale)) instead of a literal px value
+     (see settings/theme.js — applyFontSize()). Defaults to 1, so
+     Default font size is pixel-identical to the app's appearance
+     before this setting existed. line-height throughout the app is
+     already unitless (a multiplier of the element's own font-size),
+     so it scales together with this automatically and the existing
+     type hierarchy (headings vs. body vs. labels) is preserved at
+     every size. */
+  --wire-font-scale:1;
+
   /* RGB triplets of the flat panel colors above, for rgba() use on
      glass surfaces (sidebar/topbar/cards) that need to stay
      translucent so the global atmospheric background layer

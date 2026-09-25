@@ -5,7 +5,7 @@
 .audio-player {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: calc(4px * var(--wire-density-scale));
 
   width: 360px;
   min-width: 360px;
@@ -17,8 +17,8 @@
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-lg);
 
-  padding: 8px 10px;
-  margin-top: 6px;
+  padding: calc(8px * var(--wire-density-scale)) calc(10px * var(--wire-density-scale));
+  margin-top: calc(6px * var(--wire-density-scale));
 
   overflow: hidden;
 
@@ -39,7 +39,7 @@
   min-width: 0;
   height: 18px;
 
-  gap: 6px;
+  gap: calc(6px * var(--wire-density-scale));
 }
 
 .audio-player-title {
@@ -47,7 +47,7 @@
   width: 0;
   min-width: 0;
 
-  font-size: 13px;
+  font-size: calc(13px * var(--wire-font-scale));
   font-weight: 550;
 
   color: var(--text);
@@ -63,7 +63,7 @@
 .audio-player-duration {
   flex: 0 0 auto;
 
-  font-size: 11px;
+  font-size: calc(11px * var(--wire-font-scale));
 
   color: var(--muted2);
 
@@ -91,7 +91,7 @@
 
   height: 36px;
 
-  gap: 7px;
+  gap: calc(7px * var(--wire-density-scale));
 }
 
 /* ================================================================
@@ -324,7 +324,7 @@
 
   flex-basis: 55px;
 
-  margin-left: 6px;
+  margin-left: calc(6px * var(--wire-density-scale));
 
   opacity: 1;
 
@@ -398,7 +398,7 @@
   width: 10px;
   height: 10px;
 
-  margin-top: -3px;
+  margin-top: -calc(3px * var(--wire-density-scale));
 
   border: 0;
 
@@ -476,7 +476,7 @@
   opacity: 0.7;
 
   margin: 0;
-  padding: 2px;
+  padding: calc(2px * var(--wire-density-scale));
 
   border: 0;
 
@@ -506,9 +506,9 @@
 
   align-items: center;
 
-  gap: 4px;
+  gap: calc(4px * var(--wire-density-scale));
 
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--wire-font-scale));
 
   color: var(--red);
 

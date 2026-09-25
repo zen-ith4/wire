@@ -105,6 +105,8 @@ const BUBBLE_STYLE_STORAGE_KEY = 'wire-message-bubble-style';
 const BACKGROUND_STORAGE_KEY = 'wire-background-theme';
 const ANIMATIONS_STORAGE_KEY = 'wire-animations';
 const FONT_STORAGE_KEY = 'wire-font-family';
+const DENSITY_STORAGE_KEY = 'wire-ui-density';
+const FONT_SIZE_STORAGE_KEY = 'wire-font-size';
 
 
 // ============================================================
@@ -3091,4 +3093,181 @@ export function initFontFamily() {
   );
 
   return font;
+}
+
+
+// ============================================================
+// UI Density
+// ============================================================
+//
+// One authoritative source: the --wire-density-scale custom
+// property on <html>. Every padding/margin/gap throughout the CSS
+// is written as calc(Npx * var(--wire-density-scale)) (see
+// core/tokens.css), so this module only has to (1) read + validate
+// the stored id, (2) persist it and (3) update that one property —
+// exactly the pattern used for Interface font/--wire-font-family
+// above and Font Size/--wire-font-scale below.
+//
+
+export const DEFAULT_DENSITY_ID = 'default';
+
+export const DENSITY_OPTIONS = {
+  compact: 0.8,
+  default: 1,
+  comfortable: 1.15
+};
+
+export function getUIDensity() {
+  const saved =
+    safeGetStorage(
+      DENSITY_STORAGE_KEY
+    );
+
+  return Object.hasOwn(
+    DENSITY_OPTIONS,
+    saved
+  )
+    ? saved
+    : DEFAULT_DENSITY_ID;
+}
+
+
+export function applyUIDensity(
+  density,
+  { persist = true } = {}
+) {
+  const value =
+    Object.hasOwn(
+      DENSITY_OPTIONS,
+      density
+    )
+      ? density
+      : DEFAULT_DENSITY_ID;
+
+  const root =
+    document.documentElement;
+
+  root.style.setProperty(
+    '--wire-density-scale',
+    String(
+      DENSITY_OPTIONS[value]
+    )
+  );
+
+  root.dataset.density =
+    value;
+
+  if (persist) {
+    safeSetStorage(
+      DENSITY_STORAGE_KEY,
+      value
+    );
+  }
+
+  return value;
+}
+
+
+export function initUIDensity() {
+  const density =
+    getUIDensity();
+
+  applyUIDensity(
+    density,
+    {
+      persist: false
+    }
+  );
+
+  return density;
+}
+
+
+// ============================================================
+// Font Size
+// ============================================================
+//
+// One authoritative source: the --wire-font-scale custom property
+// on <html>. Every font-size throughout the CSS is written as
+// calc(Npx * var(--wire-font-scale)) (see core/tokens.css), so a
+// single scale multiplies every existing size proportionally —
+// preserving the current type hierarchy (headings stay larger than
+// body text, labels stay distinct from secondary text, etc.)
+// without needing a separate override per element. This is
+// independent of and unaffected by UI Density above, and vice
+// versa: each writes only its own custom property.
+//
+
+export const DEFAULT_FONT_SIZE_ID = 'default';
+
+export const FONT_SIZE_OPTIONS = {
+  small: 0.9,
+  default: 1,
+  large: 1.125,
+  'extra-large': 1.25
+};
+
+export function getFontSize() {
+  const saved =
+    safeGetStorage(
+      FONT_SIZE_STORAGE_KEY
+    );
+
+  return Object.hasOwn(
+    FONT_SIZE_OPTIONS,
+    saved
+  )
+    ? saved
+    : DEFAULT_FONT_SIZE_ID;
+}
+
+
+export function applyFontSize(
+  size,
+  { persist = true } = {}
+) {
+  const value =
+    Object.hasOwn(
+      FONT_SIZE_OPTIONS,
+      size
+    )
+      ? size
+      : DEFAULT_FONT_SIZE_ID;
+
+  const root =
+    document.documentElement;
+
+  root.style.setProperty(
+    '--wire-font-scale',
+    String(
+      FONT_SIZE_OPTIONS[value]
+    )
+  );
+
+  root.dataset.fontSize =
+    value;
+
+  if (persist) {
+    safeSetStorage(
+      FONT_SIZE_STORAGE_KEY,
+      value
+    );
+  }
+
+  return value;
+}
+
+
+export function initFontSize() {
+  const size =
+    getFontSize();
+
+  applyFontSize(
+    size,
+    {
+      persist: false
+    }
+  );
+
+  return size;
 }

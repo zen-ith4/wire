@@ -1,4 +1,4 @@
-.badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:550;padding:3px 9px;border-radius:99px;}
+.badge{display:inline-flex;align-items:center;gap:calc(5px * var(--wire-density-scale));font-size:calc(11px * var(--wire-font-scale));font-weight:550;padding:calc(3px * var(--wire-density-scale)) calc(9px * var(--wire-density-scale));border-radius:99px;}
 .badge-green{background:rgba(var(--green),.15);color:#A9C7B4;}
 .badge-red{background:rgba(var(--red),.15);color:#D6A3A3;}
 .badge-dot{width:6px;height:6px;border-radius:50%;background:currentColor;}

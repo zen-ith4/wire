@@ -63,19 +63,19 @@
 
 /* ---- Settings (features/settings.css) ---- */
 @media (max-width:1100px){
-  .content{padding:24px;}
+  .content{padding:calc(24px * var(--wire-density-scale));}
   .settings-shell{max-width:500px;}
 }
 @media (max-width:520px){
   .profile-banner-wrap{aspect-ratio:2.2/1;}
-  .profile-banner-actions{right:10px;bottom:10px;gap:6px;}
+  .profile-banner-actions{right:10px;bottom:10px;gap:calc(6px * var(--wire-density-scale));}
 }
 
 /* ---- Settings categories (features/settings.css) ---- */
 @media (max-width:760px){
-  .settings-category-row{gap:12px;min-height:56px;}
+  .settings-category-row{gap:calc(12px * var(--wire-density-scale));min-height:56px;}
   .settings-category-row-icon{width:34px;height:34px;}
-  .settings-category-header{margin-bottom:16px;}
+  .settings-category-header{margin-bottom:calc(16px * var(--wire-density-scale));}
 }
 
 /* ---- Image viewer (features/image-viewer.css) ----
@@ -106,7 +106,7 @@
   }
 
   .bottom-nav{display:flex;}
-  button.topbar-more-btn{display:flex;width:40px;height:40px;margin-right:-8px;}
+  button.topbar-more-btn{display:flex;width:40px;height:40px;margin-right:-calc(8px * var(--wire-density-scale));}
   .more-menu.open{display:block;}
 
   /* On-screen keyboard up (ui/mobile-shell.js sets html.kb-open while a
@@ -119,13 +119,13 @@
 @media (max-width:900px){
   /* The bar is in flow under .content, so unlike the old floating
      layout this needs no extra bottom room to clear it. */
-  .content{padding:20px 16px 24px;}
+  .content{padding:calc(20px * var(--wire-density-scale)) calc(16px * var(--wire-density-scale)) calc(24px * var(--wire-density-scale));}
   .topbar{
-    padding:0 16px;
+    padding:0 calc(16px * var(--wire-density-scale));
     padding-top:env(safe-area-inset-top);
     height:calc(var(--topbar-height) + env(safe-area-inset-top));
   }
-  .card{padding:16px;}
+  .card{padding:calc(16px * var(--wire-density-scale));}
 
   /* ---- Modals ----
      Keep clear of the notch / gesture bar, and never taller than the
@@ -134,13 +134,13 @@
      didn't — it's the *large* viewport on mobile browsers). */
   .modal{
     padding:
-      calc(12px + env(safe-area-inset-top))
-      calc(12px + env(safe-area-inset-right))
-      calc(12px + env(safe-area-inset-bottom))
-      calc(12px + env(safe-area-inset-left));
+      calc(calc(12px * var(--wire-density-scale)) + env(safe-area-inset-top))
+      calc(calc(12px * var(--wire-density-scale)) + env(safe-area-inset-right))
+      calc(calc(12px * var(--wire-density-scale)) + env(safe-area-inset-bottom))
+      calc(calc(12px * var(--wire-density-scale)) + env(safe-area-inset-left));
   }
-  .modal-content{padding:20px;max-height:100%;}
-  .confirm-modal-content{padding:20px;}
+  .modal-content{padding:calc(20px * var(--wire-density-scale));max-height:100%;}
+  .confirm-modal-content{padding:calc(20px * var(--wire-density-scale));}
 
   /* ---- Touch target fixes ----
      Message action buttons are NOT forced visible here any more: the
@@ -162,7 +162,7 @@
   .chat-input-area textarea,
   input.conv-search-input,
   input.emoji-picker-search{
-    font-size:16px;
+    font-size:calc(16px * var(--wire-font-scale));
   }
 
   /* Same for every other text field (settings, admin, forms, login). */
@@ -172,7 +172,7 @@
   input[type=search],
   input[type=number],
   textarea{
-    font-size:16px;
+    font-size:calc(16px * var(--wire-font-scale));
   }
 }
 
@@ -182,20 +182,20 @@
    there is no strip to clear — the composer sits right on it. */
 @media (max-width:900px){
   .composer-wrapper{
-    margin:0 12px 12px;
+    margin:0 calc(12px * var(--wire-density-scale)) calc(12px * var(--wire-density-scale));
   }
-  .chat-messages{padding:14px 12px;gap:3px;}
-  .chat-top-bar.chat-header-glass + .chat-messages{padding-top:70px;}
+  .chat-messages{padding:calc(14px * var(--wire-density-scale)) calc(12px * var(--wire-density-scale));gap:3px;}
+  .chat-top-bar.chat-header-glass + .chat-messages{padding-top:calc(70px * var(--wire-density-scale));}
   .chat-top-bar.chat-header-glass{left:12px;right:12px;}
   .chat-msg{max-width:88%;}
-  .dm-thread-header,.chat-top-bar{padding:10px 14px;}
+  .dm-thread-header,.chat-top-bar{padding:calc(10px * var(--wire-density-scale)) calc(14px * var(--wire-density-scale));}
 }
 
 /* Narrow phones: five controls share the composer row, which left the
    textarea too thin for even its placeholder ("Type a message…" wrapped
    and got clipped). Slightly tighter buttons/gaps give the text room. */
 @media (max-width:480px){
-  .chat-input-area{gap:4px;padding:8px;}
+  .chat-input-area{gap:calc(4px * var(--wire-density-scale));padding:8px;}
   .chat-input-area .btn-icon,
   .composer-mic-btn{width:36px;height:36px;}
   .chat-input-area .btn-send{width:38px;height:38px;}
@@ -203,8 +203,8 @@
   .chat-input-area textarea::placeholder{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 }
 @media (max-width:340px){
-  .composer-wrapper{margin-left:8px;margin-right:8px;}
-  .chat-input-area{padding:8px 6px;}
+  .composer-wrapper{margin-left:calc(8px * var(--wire-density-scale));margin-right:8px;}
+  .chat-input-area{padding:calc(8px * var(--wire-density-scale)) calc(6px * var(--wire-density-scale));}
   .chat-input-area .btn-icon,
   .composer-mic-btn{width:34px;height:34px;}
 }
@@ -217,11 +217,11 @@
    regardless of width. */
 @media (max-height:480px) and (orientation:landscape){
   :root{--topbar-height:40px;--bottom-nav-height:44px;}
-  .topbar{padding:0 14px;padding-top:env(safe-area-inset-top);}
-  .chat-empty-state{padding:24px 20px;gap:10px;}
-  .composer-wrapper{margin:0 10px 8px;}
+  .topbar{padding:0 calc(14px * var(--wire-density-scale));padding-top:env(safe-area-inset-top);}
+  .chat-empty-state{padding:calc(24px * var(--wire-density-scale)) calc(20px * var(--wire-density-scale));gap:10px;}
+  .composer-wrapper{margin:0 calc(10px * var(--wire-density-scale)) calc(8px * var(--wire-density-scale));}
 
-  .bottom-nav-item{flex-direction:row;gap:8px;}
+  .bottom-nav-item{flex-direction:row;gap:calc(8px * var(--wire-density-scale));}
   .bottom-nav-icon{padding:0;}
   .bottom-nav-item svg{width:20px;height:20px;}
   .bottom-nav-item.active .bottom-nav-icon{background:none;}
@@ -245,31 +245,31 @@
   .files-layout:not(.has-folders) .files-sidebar{display:flex;}
 
   .files-back{display:inline-flex;}
-  .files-header{gap:4px;padding:6px 8px 6px 4px;min-height:56px;}
+  .files-header{gap:calc(4px * var(--wire-density-scale));padding:6px 8px 6px 4px;min-height:56px;}
   .files-crumb-btn,
-  .files-crumb-text{font-size:14px;padding:6px;}
+  .files-crumb-text{font-size:calc(14px * var(--wire-font-scale));padding:calc(6px * var(--wire-density-scale));}
   .files-crumb-btn{min-height:40px;}
   .files-crumb.is-root .files-crumb-btn,
   .files-crumb.is-root .files-crumb-text{max-width:12ch;}
-  .files-upload{min-height:44px;padding:0 14px;}
-  .files-main > .upload-progress{margin:10px 12px 0;}
+  .files-upload{min-height:44px;padding:0 calc(14px * var(--wire-density-scale));}
+  .files-main > .upload-progress{margin:calc(10px * var(--wire-density-scale)) calc(12px * var(--wire-density-scale)) 0;}
 
-  .files-newbtn{min-height:44px;padding:0 14px;}
+  .files-newbtn{min-height:44px;padding:0 calc(14px * var(--wire-density-scale));}
   .files-newfolder-row .files-input,
   .files-btn-sm{min-height:44px;}
-  .files-folder-scroll{padding:8px 8px calc(8px + env(safe-area-inset-bottom, 0px));}
+  .files-folder-scroll{padding:calc(8px * var(--wire-density-scale)) calc(8px * var(--wire-density-scale)) calc(calc(8px * var(--wire-density-scale)) + env(safe-area-inset-bottom, 0px));}
   .files-folder-main{min-height:64px;}
   .files-action{width:44px;height:44px;}
 
   .files-toolbar{display:flex;}
-  .files-body{padding:4px 8px calc(16px + env(safe-area-inset-bottom, 0px));}
+  .files-body{padding:calc(4px * var(--wire-density-scale)) calc(8px * var(--wire-density-scale)) calc(calc(16px * var(--wire-density-scale)) + env(safe-area-inset-bottom, 0px));}
   .files-list-head{display:none;}
-  .files-list{margin-top:4px;}
-  .files-row{grid-template-columns:minmax(0,1fr) auto;min-height:64px;padding:2px 0 2px 8px;column-gap:4px;}
+  .files-list{margin-top:calc(4px * var(--wire-density-scale));}
+  .files-row{grid-template-columns:minmax(0,1fr) auto;min-height:64px;padding:calc(2px * var(--wire-density-scale)) 0 calc(2px * var(--wire-density-scale)) calc(8px * var(--wire-density-scale));column-gap:4px;}
   .files-row-size,
   .files-row-date{display:none;}
   .files-row-meta{display:block;}
-  .files-row-chevron{padding-right:14px;}
+  .files-row-chevron{padding-right:calc(14px * var(--wire-density-scale));}
   .files-only-phone{display:inline-flex;}
 }
 @media (max-width:480px){
@@ -289,12 +289,12 @@
     animation:files-sheet-in var(--motion-base) var(--motion-ease);
   }
   .files-dialog--modal .files-dialog-panel::before{
-    content:"";display:block;flex-shrink:0;width:38px;height:4px;margin:8px auto 0;
+    content:"";display:block;flex-shrink:0;width:38px;height:4px;margin:calc(8px * var(--wire-density-scale)) auto 0;
     border-radius:99px;background:var(--border);
   }
-  .fd-head{padding-top:8px;}
-  .fd-body{padding:14px 16px;}
-  .fd-foot{padding:10px 16px;padding-bottom:calc(10px + env(safe-area-inset-bottom, 0px));}
+  .fd-head{padding-top:calc(8px * var(--wire-density-scale));}
+  .fd-body{padding:calc(14px * var(--wire-density-scale)) calc(16px * var(--wire-density-scale));}
+  .fd-foot{padding:calc(10px * var(--wire-density-scale)) calc(16px * var(--wire-density-scale));padding-bottom:calc(10px + env(safe-area-inset-bottom, 0px));}
   .fd-foot .fd-btn{flex:1;}
 
   /* people rows: name on top, controls on their own full-width line */
@@ -313,36 +313,36 @@
 
 /* ---- Files viewer + share-link page on phones ---- */
 @media (max-width:760px){
-  .fv-bar{gap:2px;padding-left:calc(4px + env(safe-area-inset-left, 0px));padding-right:calc(4px + env(safe-area-inset-right, 0px));}
-  .fv-stage{padding:8px calc(8px + env(safe-area-inset-right, 0px)) calc(8px + env(safe-area-inset-bottom, 0px)) calc(8px + env(safe-area-inset-left, 0px));}
+  .fv-bar{gap:calc(2px * var(--wire-density-scale));padding-left:calc(4px + env(safe-area-inset-left, 0px));padding-right:calc(calc(4px * var(--wire-density-scale)) + env(safe-area-inset-right, 0px));}
+  .fv-stage{padding:calc(8px * var(--wire-density-scale)) calc(calc(8px * var(--wire-density-scale)) + env(safe-area-inset-right, 0px)) calc(calc(8px * var(--wire-density-scale)) + env(safe-area-inset-bottom, 0px)) calc(calc(8px * var(--wire-density-scale)) + env(safe-area-inset-left, 0px));}
   .fv-nav{width:44px;height:44px;}
   .fv-prev{left:calc(6px + env(safe-area-inset-left, 0px));}
   .fv-next{right:calc(6px + env(safe-area-inset-right, 0px));}
-  .fa{padding:22px 16px 18px;gap:16px;}
+  .fa{padding:calc(22px * var(--wire-density-scale)) calc(16px * var(--wire-density-scale)) calc(18px * var(--wire-density-scale));gap:16px;}
   .fa-art{width:80px;height:80px;border-radius:20px;}
-  .sv-wrap{padding:20px 12px;}
+  .sv-wrap{padding:calc(20px * var(--wire-density-scale)) calc(12px * var(--wire-density-scale));}
   .sv-actions .sv-btn{flex:1 1 100%;}
 }
 /* Share-link landing page in short landscape screens (~275-305px of content
    height): the portrait card is 365-420px tall, so lay it out as one
    compact row — icon on the left, details and actions on the right. */
 @media (max-height:480px) and (orientation:landscape){
-  .sv-wrap{padding:8px 16px;}
+  .sv-wrap{padding:calc(8px * var(--wire-density-scale)) calc(16px * var(--wire-density-scale));}
   .sv-card--file,
   .sv-card--error{
     display:grid;grid-template-columns:auto minmax(0,1fr);
     grid-template-areas:"tile title" "tile meta" "tile from" "tile actions" "tile link";
-    column-gap:20px;row-gap:2px;align-items:center;justify-items:start;
-    max-width:600px;padding:14px 20px;text-align:left;
+    column-gap:calc(20px * var(--wire-density-scale));row-gap:2px;align-items:center;justify-items:start;
+    max-width:600px;padding:calc(14px * var(--wire-density-scale)) calc(20px * var(--wire-density-scale));text-align:left;
   }
   .sv-card--error{grid-template-areas:"tile title" "tile text" "tile actions";}
   .sv-card > .files-tile,
   .sv-card > .sv-icon{grid-area:tile;align-self:center;}
-  .sv-card > .sv-title{grid-area:title;margin:0;font-size:16px;-webkit-line-clamp:2;}
+  .sv-card > .sv-title{grid-area:title;margin:0;font-size:calc(16px * var(--wire-font-scale));-webkit-line-clamp:2;}
   .sv-card > .sv-meta{grid-area:meta;}
   .sv-card > .sv-from{grid-area:from;}
   .sv-card > .sv-text{grid-area:text;}
-  .sv-card > .sv-actions{grid-area:actions;justify-content:flex-start;margin-top:8px;width:auto;}
+  .sv-card > .sv-actions{grid-area:actions;justify-content:flex-start;margin-top:calc(8px * var(--wire-density-scale));width:auto;}
   .sv-card > .sv-link{grid-area:link;margin:0;min-height:44px;padding:0;}
   .sv-actions .sv-btn{flex:0 0 auto;}
 }
@@ -350,10 +350,10 @@
 /* Landscape phones: little vertical room — drop the artwork and tighten. */
 @media (max-height:480px) and (orientation:landscape){
   .fa-art{display:none;}
-  .fa{padding:14px 16px;gap:10px;}
+  .fa{padding:calc(14px * var(--wire-density-scale)) calc(16px * var(--wire-density-scale));gap:10px;}
   .fa-play{width:56px;height:56px;}
   .fa-skip{width:44px;height:44px;}
-  .fv-bar{padding-top:calc(4px + env(safe-area-inset-top, 0px));padding-bottom:4px;}
+  .fv-bar{padding-top:calc(calc(4px * var(--wire-density-scale)) + env(safe-area-inset-top, 0px));padding-bottom:4px;}
   .files-header{min-height:48px;}
   .files-dialog--modal .files-dialog-panel{max-height:100vh;max-height:100dvh;}
 }

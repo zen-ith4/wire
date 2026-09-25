@@ -1,5 +1,5 @@
 .content {
-  flex:1;overflow-y:auto;min-height:0;padding:24px 28px 60px;position:relative;z-index:1;
+  flex:1;overflow-y:auto;min-height:0;padding:calc(24px * var(--wire-density-scale)) calc(28px * var(--wire-density-scale)) calc(60px * var(--wire-density-scale));position:relative;z-index:1;
   /* This is its own independent scroll region — without `contain`,
      over-scrolling past its top/bottom edge (e.g. a fast flick on
      touch) "chains" into scrolling whatever's behind/around it

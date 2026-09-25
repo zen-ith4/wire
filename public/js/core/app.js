@@ -33,7 +33,9 @@ import {
   initAnimations,
   initFontFamily,
   initMessageBubbleStyle,
-  initOwnBubbleGradient
+  initOwnBubbleGradient,
+  initUIDensity,
+  initFontSize
 } from '../settings/theme.js';
 
 import { initSurfaces } from '../settings/appearance-surfaces.js';
@@ -387,6 +389,9 @@ async function bootstrap() {
   initAnimations();
 
   initFontFamily();
+
+  initUIDensity();
+  initFontSize();
 
   initMessageBubbleStyle();
   initOwnBubbleGradient();

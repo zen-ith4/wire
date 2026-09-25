@@ -11,8 +11,8 @@
 }
 
 .brand{
-  display:flex;align-items:center;gap:10px;
-  padding:18px 20px 16px;
+  display:flex;align-items:center;gap:calc(10px * var(--wire-density-scale));
+  padding:calc(18px * var(--wire-density-scale)) calc(20px * var(--wire-density-scale)) calc(16px * var(--wire-density-scale));
   border-bottom:1px solid var(--border);
   flex-shrink:0;
 }
@@ -21,7 +21,7 @@
   width:26px;height:26px;border-radius:6px;flex-shrink:0;
   background:rgb(var(--indigo));
   display:flex;align-items:center;justify-content:center;
-  color:var(--text);font-weight:700;font-size:12px;
+  color:var(--text);font-weight:700;font-size:calc(12px * var(--wire-font-scale));
   overflow:hidden;
 }
 
@@ -30,7 +30,7 @@
 }
 
 .brand-name{
-  font-size:15px;font-weight:600;
+  font-size:calc(15px * var(--wire-font-scale));font-weight:600;
   letter-spacing:-0.02em;
   color:var(--text);
   white-space:nowrap;
@@ -44,8 +44,8 @@
 .sidebar-resize-handle{
   flex-shrink:0;
   width:5px;
-  margin-left:-2px;
-  margin-right:-3px;
+  margin-left:-calc(2px * var(--wire-density-scale));
+  margin-right:-calc(3px * var(--wire-density-scale));
   position:relative;
   z-index:11;
   cursor:col-resize;
@@ -83,34 +83,34 @@ body.sidebar-resizing *{
 
 .nav-group-label,
 .nav-section-label{
-  font-size:10px;
+  font-size:calc(10px * var(--wire-font-scale));
   font-weight:550;
   text-transform:uppercase;
   letter-spacing:.06em;
   color:var(--muted2);
-  padding:14px 20px 8px;
+  padding:calc(14px * var(--wire-density-scale)) calc(20px * var(--wire-density-scale)) calc(8px * var(--wire-density-scale));
 }
 
 #nav-links{
   display:flex;
   flex-direction:column;
-  gap:1px;
-  padding:6px 10px;
+  gap:calc(1px * var(--wire-density-scale));
+  padding:calc(6px * var(--wire-density-scale)) calc(10px * var(--wire-density-scale));
 }
 
 .sidebar > #nav-links:first-of-type{
-  padding-top:10px;
+  padding-top:calc(10px * var(--wire-density-scale));
 }
 
 .nav-link{
   display:flex;
   align-items:center;
-  gap:10px;
-  padding:9px 12px;
+  gap:calc(10px * var(--wire-density-scale));
+  padding:calc(9px * var(--wire-density-scale)) calc(12px * var(--wire-density-scale));
   border-radius:var(--radius);
   cursor:pointer;
   color:var(--muted);
-  font-size:13.5px;
+  font-size:calc(13.5px * var(--wire-font-scale));
   font-weight:500;
   letter-spacing:-0.01em;
   white-space:nowrap;
@@ -160,7 +160,7 @@ body.sidebar-resizing *{
   background:rgba(var(--indigo),.16);
   color:var(--text);
   border:1px solid rgba(var(--indigo),.3);
-  font-size:10.5px;
+  font-size:calc(10.5px * var(--wire-font-scale));
   font-weight:600;
   border-radius:99px;
   min-width:17px;
@@ -168,12 +168,12 @@ body.sidebar-resizing *{
   display:flex;
   align-items:center;
   justify-content:center;
-  padding:0 5px;
+  padding:0 calc(5px * var(--wire-density-scale));
 }
 
 .sidebar-footer{
   margin-top:auto;
-  padding:10px;
+  padding:calc(10px * var(--wire-density-scale));
 }
 
 .sidebar-footer .nav-link{
@@ -193,8 +193,8 @@ body.sidebar-resizing *{
 .sidebar-profile{
   display:flex;
   align-items:center;
-  gap:10px;
-  padding:8px;
+  gap:calc(10px * var(--wire-density-scale));
+  padding:calc(8px * var(--wire-density-scale));
   border-radius:var(--radius);
   cursor:pointer;
   transition:background var(--ease-fast);
@@ -214,13 +214,13 @@ body.sidebar-resizing *{
   display:flex;
   align-items:center;
   justify-content:center;
-  font-size:11px;
+  font-size:calc(11px * var(--wire-font-scale));
   font-weight:550;
   color:var(--muted);
 }
 
 .sidebar-profile-name{
-  font-size:12.5px;
+  font-size:calc(12.5px * var(--wire-font-scale));
   font-weight:550;
   color:var(--text);
   white-space:nowrap;
@@ -238,8 +238,8 @@ body.sidebar-resizing *{
 
 :root.sidebar-collapsed .brand{
   justify-content:center;
-  padding-left:10px;
-  padding-right:10px;
+  padding-left:calc(10px * var(--wire-density-scale));
+  padding-right:calc(10px * var(--wire-density-scale));
 }
 
 :root.sidebar-collapsed .brand-name{
@@ -247,8 +247,8 @@ body.sidebar-resizing *{
 }
 
 :root.sidebar-collapsed #nav-links{
-  padding-left:8px;
-  padding-right:8px;
+  padding-left:calc(8px * var(--wire-density-scale));
+  padding-right:calc(8px * var(--wire-density-scale));
 }
 
 :root.sidebar-collapsed .nav-group-label,
@@ -259,8 +259,8 @@ body.sidebar-resizing *{
 :root.sidebar-collapsed .nav-link{
   justify-content:center;
   gap:0;
-  padding-left:10px;
-  padding-right:10px;
+  padding-left:calc(10px * var(--wire-density-scale));
+  padding-right:calc(10px * var(--wire-density-scale));
 }
 
 :root.sidebar-collapsed .nav-link span,
@@ -277,13 +277,13 @@ body.sidebar-resizing *{
 }
 
 :root.sidebar-collapsed .sidebar-footer{
-  padding:8px;
+  padding:calc(8px * var(--wire-density-scale));
 }
 
 :root.sidebar-collapsed .sidebar-profile{
   justify-content:center;
   gap:0;
-  padding:8px;
+  padding:calc(8px * var(--wire-density-scale));
 }
 
 :root.sidebar-collapsed .sidebar-profile-name{

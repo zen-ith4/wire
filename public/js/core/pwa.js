@@ -8,15 +8,16 @@
 //   cache never competes with the app's own start-up requests.
 // - A newly installed worker is activated immediately after its shell has
 //   been fully verified and precached.
-// - The page reloads once after the new worker takes control, so the user
-//   automatically starts using the new application shell.
+// - The page reloads once after a replacement worker takes control, so the
+//   user automatically starts using the new application shell.
+// - The first-ever SW installation never reloads the page.
 // ============================================================
 
 import { isNativeApp } from './server.js';
 
 const UPDATE_CHECK_MS = 60 * 60 * 1000;
 
-let reloadAfterUpdate = false;
+let hasExistingController = false;
 let swReloading = false;
 
 function whenIdle(fn) {
@@ -29,62 +30,55 @@ function whenIdle(fn) {
 
 function watchForControllerChange() {
   /*
-   * controllerchange is emitted when a newly activated worker takes control
-   * of the current page.
+   * Capture this BEFORE registration.
    *
-   * The first SW installation normally has no previous controller, so there
-   * is nothing to reload for. We only reload after we explicitly know that
-   * this is a replacement.
+   * First-ever installation:
+   *   controller === null
+   *
+   * Existing application already controlled by a SW:
+   *   controller !== null
+   *
+   * Only the second case should trigger an automatic reload.
    */
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (!reloadAfterUpdate || swReloading) {
-      return;
-    }
+  hasExistingController = Boolean(
+    navigator.serviceWorker.controller
+  );
 
-    swReloading = true;
-    window.location.reload();
-  });
+  navigator.serviceWorker.addEventListener(
+    'controllerchange',
+    () => {
+      /*
+       * First installation must not reload the current page.
+       *
+       * Replacement installation must reload exactly once.
+       */
+      if (!hasExistingController || swReloading) {
+        return;
+      }
+
+      swReloading = true;
+
+      window.location.reload();
+    }
+  );
 }
 
 function watchForUpdates(registration) {
   /*
-   * Only a replacement needs a hand-off.
+   * The SW itself handles:
    *
-   * The first installation has no existing controller and therefore should
-   * not reload the page.
+   *   precache()
+   *       ↓
+   *   skipWaiting()
+   *       ↓
+   *   activate
+   *       ↓
+   *   clients.claim()
+   *
+   * We only need to monitor registration.update() for long-lived pages.
+   *
+   * controllerchange above handles the actual hand-off and reload.
    */
-  const handle = (worker) => {
-    if (!worker || !navigator.serviceWorker.controller) {
-      return;
-    }
-
-    /*
-     * The SW itself now calls skipWaiting() after the entire shell has
-     * installed successfully, so we no longer need to wait for the page
-     * to become hidden.
-     *
-     * Mark this as a replacement before the controller changes.
-     */
-    reloadAfterUpdate = true;
-  };
-
-  if (registration.waiting) {
-    handle(registration.waiting);
-  }
-
-  registration.addEventListener('updatefound', () => {
-    const installing = registration.installing;
-
-    if (!installing) {
-      return;
-    }
-
-    installing.addEventListener('statechange', () => {
-      if (installing.state === 'installed') {
-        handle(installing);
-      }
-    });
-  });
 
   /*
    * Long-lived tabs/PWAs: look for a new version when the app comes back to
@@ -98,6 +92,7 @@ function watchForUpdates(registration) {
       Date.now() - lastCheck > UPDATE_CHECK_MS
     ) {
       lastCheck = Date.now();
+
       registration.update().catch(() => {});
     }
   });
@@ -114,8 +109,8 @@ export function registerServiceWorker() {
   }
 
   /*
-   * Listen before registration so we cannot miss a controllerchange caused
-   * by a fast installation/activation.
+   * Register the controllerchange listener before registration so a fast
+   * install/activation cannot be missed.
    */
   watchForControllerChange();
 

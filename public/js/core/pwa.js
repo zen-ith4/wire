@@ -6,14 +6,18 @@
 // - Skipped anywhere a worker cannot run (file://, insecure http, ...).
 // - Registered after the page has loaded and gone idle, so installing the
 //   cache never competes with the app's own start-up requests.
-// - Updates are picked up on the next launch. When a new version has been
-//   installed it is activated the next time the page is hidden; the running
-//   page is never reloaded (a reload would force the E2EE unlock again).
+// - A newly installed worker is activated immediately after its shell has
+//   been fully verified and precached.
+// - The page reloads once after the new worker takes control, so the user
+//   automatically starts using the new application shell.
 // ============================================================
 
 import { isNativeApp } from './server.js';
 
 const UPDATE_CHECK_MS = 60 * 60 * 1000;
+
+let reloadAfterUpdate = false;
+let swReloading = false;
 
 function whenIdle(fn) {
   if ('requestIdleCallback' in window) {
@@ -23,43 +27,71 @@ function whenIdle(fn) {
   }
 }
 
-function activateWhenHidden(worker) {
-  const activate = () => worker.postMessage({ type: 'SKIP_WAITING' });
-
-  if (document.visibilityState === 'hidden') {
-    activate();
-    return;
-  }
-
-  const onChange = () => {
-    if (document.visibilityState === 'hidden') {
-      document.removeEventListener('visibilitychange', onChange);
-      activate();
+function watchForControllerChange() {
+  /*
+   * controllerchange is emitted when a newly activated worker takes control
+   * of the current page.
+   *
+   * The first SW installation normally has no previous controller, so there
+   * is nothing to reload for. We only reload after we explicitly know that
+   * this is a replacement.
+   */
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!reloadAfterUpdate || swReloading) {
+      return;
     }
-  };
-  document.addEventListener('visibilitychange', onChange);
+
+    swReloading = true;
+    window.location.reload();
+  });
 }
 
 function watchForUpdates(registration) {
-  // Only a *replacement* needs the hand-off; the very first install has no
-  // controller yet and simply becomes active.
+  /*
+   * Only a replacement needs a hand-off.
+   *
+   * The first installation has no existing controller and therefore should
+   * not reload the page.
+   */
   const handle = (worker) => {
-    if (worker && navigator.serviceWorker.controller) activateWhenHidden(worker);
+    if (!worker || !navigator.serviceWorker.controller) {
+      return;
+    }
+
+    /*
+     * The SW itself now calls skipWaiting() after the entire shell has
+     * installed successfully, so we no longer need to wait for the page
+     * to become hidden.
+     *
+     * Mark this as a replacement before the controller changes.
+     */
+    reloadAfterUpdate = true;
   };
 
-  if (registration.waiting) handle(registration.waiting);
+  if (registration.waiting) {
+    handle(registration.waiting);
+  }
 
   registration.addEventListener('updatefound', () => {
     const installing = registration.installing;
-    if (!installing) return;
+
+    if (!installing) {
+      return;
+    }
+
     installing.addEventListener('statechange', () => {
-      if (installing.state === 'installed') handle(installing);
+      if (installing.state === 'installed') {
+        handle(installing);
+      }
     });
   });
 
-  // Long-lived tabs/PWAs: look for a new version when the app comes back to
-  // the foreground, at most once an hour.
+  /*
+   * Long-lived tabs/PWAs: look for a new version when the app comes back to
+   * the foreground, at most once an hour.
+   */
   let lastCheck = Date.now();
+
   document.addEventListener('visibilitychange', () => {
     if (
       document.visibilityState === 'visible' &&
@@ -81,16 +113,31 @@ export function registerServiceWorker() {
     return;
   }
 
+  /*
+   * Listen before registration so we cannot miss a controllerchange caused
+   * by a fast installation/activation.
+   */
+  watchForControllerChange();
+
   const start = () => {
     navigator.serviceWorker
-      .register('/sw.js', { scope: '/', updateViaCache: 'none' })
+      .register('/sw.js', {
+        scope: '/',
+        updateViaCache: 'none'
+      })
       .then(watchForUpdates)
-      .catch((e) => console.warn('[SW] Registration failed:', e));
+      .catch((e) => {
+        console.warn('[SW] Registration failed:', e);
+      });
   };
 
   if (document.readyState === 'complete') {
     whenIdle(start);
   } else {
-    window.addEventListener('load', () => whenIdle(start), { once: true });
+    window.addEventListener(
+      'load',
+      () => whenIdle(start),
+      { once: true }
+    );
   }
 }

@@ -41,8 +41,9 @@
  *   If anything fails, installation fails and the currently active worker
  *   remains untouched.
  *
- *   The new worker is NOT automatically activated. The application decides
- *   when it is safe to switch workers.
+ *   After a successful install, the new worker activates immediately.
+ *   The controlled application detects the controller change and reloads
+ *   once so the new shell is used automatically.
  * ========================================================================== */
 
 importScripts('/sw-manifest.js');
@@ -81,9 +82,8 @@ async function sha256Hex(buffer) {
 /**
  * Download and verify the complete application shell.
  *
- * Important:
- *   Nothing from this version becomes active until the entire shell has
- *   installed successfully.
+ * Nothing from this version becomes active until the entire shell has
+ * installed successfully.
  */
 async function precache() {
   const cache = await caches.open(SHELL_CACHE);
@@ -93,9 +93,9 @@ async function precache() {
       const existing = await cache.match(url);
 
       /*
-       * Entries already written by this install were verified before they
-       * were stored. Reusing them also allows an interrupted installation
-       * to resume instead of downloading the entire shell again.
+       * Entries already written by this install were verified before
+       * being stored. Reusing them allows an interrupted installation
+       * to resume without downloading everything again.
        */
       if (existing) {
         return;
@@ -103,8 +103,7 @@ async function precache() {
 
       /*
        * Bypass the browser HTTP cache. The manifest represents the exact
-       * deployment currently being installed, so we need the server's
-       * current bytes.
+       * deployment currently being installed.
        */
       const response = await fetch(
         new Request(url, {
@@ -121,13 +120,7 @@ async function precache() {
       }
 
       /*
-       * Verify the actual bytes before putting them into the versioned
-       * cache. This protects against:
-       *
-       *   - incomplete deployments
-       *   - stale CDN/proxy responses
-       *   - rewritten HTML
-       *   - manifest/server mismatches
+       * Verify the actual bytes before storing them.
        */
       const body = await response.clone().arrayBuffer();
       const actualHash = await sha256Hex(body);
@@ -146,16 +139,29 @@ async function precache() {
 
 self.addEventListener('install', (event) => {
   /*
-   * Deliberately do NOT call skipWaiting() here.
+   * Important:
    *
-   * The currently running application remains on the old worker until
-   * js/core/pwa.js decides that switching is safe.
+   * Do NOT call skipWaiting() before precache() succeeds.
+   *
+   * If installation fails, this worker must never become active.
    */
   event.waitUntil(
-    precache().catch((error) => {
-      console.error('[Wire SW] installation failed:', error);
-      throw error;
-    })
+    (async () => {
+      try {
+        await precache();
+
+        /*
+         * The entire shell is now verified and stored.
+         *
+         * Activate this worker immediately instead of waiting for all
+         * existing tabs to close.
+         */
+        await self.skipWaiting();
+      } catch (error) {
+        console.error('[Wire SW] installation failed:', error);
+        throw error;
+      }
+    })()
   );
 });
 
@@ -183,25 +189,14 @@ self.addEventListener('activate', (event) => {
       );
 
       /*
-       * Once activated, make this worker control currently open clients.
+       * Take control of currently open clients immediately.
+       *
+       * This causes controllerchange in the page.
        */
       await self.clients.claim();
     })()
   );
 });
-
-
-// =============================================================== messaging ==
-
-self.addEventListener('message', (event) => {
-  if (
-    event.data &&
-    event.data.type === 'SKIP_WAITING'
-  ) {
-    self.skipWaiting();
-  }
-});
-
 
 // ================================================================= helpers ==
 
@@ -214,9 +209,9 @@ async function fromShell(path, request) {
   }
 
   /*
-   * This should only happen if something went unexpectedly wrong with the
-   * install/cache. Falling back to the network is preferable to returning
-   * an empty response.
+   * This should only happen if something went unexpectedly wrong with
+   * the install/cache. Falling back to the network is preferable to
+   * returning an empty response.
    */
   return fetch(request);
 }
@@ -251,18 +246,10 @@ async function staleWhileRevalidate(event, cacheName) {
     .catch(() => null);
 
   if (cached) {
-    /*
-     * Keep the background cache update alive even if the fetch handler
-     * itself has already returned the cached response.
-     */
     event.waitUntil(refresh);
-
     return cached;
   }
 
-  /*
-   * No cached copy exists. Wait for the network request.
-   */
   const response = await refresh;
 
   return response || Response.error();
@@ -290,12 +277,6 @@ async function cacheFirst(event, cacheName) {
     response.ok ||
     response.type === 'opaque'
   ) {
-    /*
-     * Do not leave cache.put() as an untracked promise.
-     *
-     * The fetch response can be returned immediately, while waitUntil()
-     * keeps the cache write alive for the lifetime of the event.
-     */
     event.waitUntil(
       cache.put(
         request,
@@ -315,10 +296,6 @@ self.addEventListener('fetch', (event) => {
 
   /*
    * Only plain GET requests belong to this worker.
-   *
-   * This automatically leaves:
-   *   POST / PUT / PATCH / DELETE / etc.
-   * untouched.
    */
   if (request.method !== 'GET') {
     return;
@@ -326,8 +303,6 @@ self.addEventListener('fetch', (event) => {
 
   /*
    * Range requests are deliberately never intercepted.
-   *
-   * This is important for media/video/audio/download behavior.
    */
   if (request.headers.has('range')) {
     return;
@@ -346,8 +321,6 @@ self.addEventListener('fetch', (event) => {
 
       /*
        * Only the actual application shell gets offline navigation support.
-       *
-       * Other paths remain the server's responsibility.
        */
       if (
         url.pathname === '/' ||
@@ -367,8 +340,7 @@ self.addEventListener('fetch', (event) => {
     /*
      * Only exact manifest entries are handled.
      *
-     * Query-string URLs intentionally bypass the shell cache because they
-     * are not part of the manifest's canonical asset set.
+     * Query-string URLs intentionally bypass the shell cache.
      */
     if (
       !url.search &&
@@ -380,14 +352,7 @@ self.addEventListener('fetch', (event) => {
     }
 
     /*
-     * Everything else goes directly to the network:
-     *
-     *   /api/*
-     *   /socket.io/*
-     *   /media/*
-     *   uploads/downloads
-     *   unknown routes
-     *   anything not present in the manifest
+     * Everything else goes directly to the network.
      */
     return;
   }

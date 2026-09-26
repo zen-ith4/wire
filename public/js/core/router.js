@@ -610,6 +610,29 @@ export function initRouter() {
   );
 }
 
+/*
+ * Clears the router's in-memory state so a later initRouter() call
+ * (after a failed/aborted startup falls back to the login screen and
+ * the user retries) is treated as a fresh initialization instead of
+ * being ignored by the routerInitialized guard above.
+ *
+ * Intentionally does NOT unregister the window 'hashchange' listener
+ * or the Android Back button listener: those are page-level and safe
+ * to leave attached (re-attaching would just create duplicates), and
+ * once currentView is cleared here, initRouter()'s next run repopulates
+ * navigationStack/currentView from scratch before anything else can
+ * read them.
+ */
+export function resetRouter() {
+  routerInitialized = false;
+  currentView = null;
+  navigationStack = [];
+
+  console.log(
+    '[router] resetRouter(): state cleared'
+  );
+}
+
 // -------------------------------------------------------------------------
 // Loading -> content animation
 // -------------------------------------------------------------------------

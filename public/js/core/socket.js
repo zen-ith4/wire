@@ -340,6 +340,40 @@ export function getSocket() {
   return socket;
 }
 
+/*
+ * Tears down the singleton Socket.IO connection, if one was opened.
+ *
+ * Used when startup is aborted after initSocket() already ran (e.g. a
+ * later step in startApplication() throws) and the app is falling back
+ * to the login screen: without this, the old socket would keep running
+ * in the background with stale/duplicate listeners, AND initSocket()'s
+ * own singleton guard ("if (socket) return socket;") would silently
+ * refuse to create a new connection on the next successful startup.
+ */
+export function disconnectSocket() {
+  if (!socket) {
+    return;
+  }
+
+  socketLog('Disconnecting and tearing down socket instance...');
+
+  try {
+    socket.removeAllListeners();
+    socket.disconnect();
+  } catch (err) {
+    socketError('Error while tearing down socket:', err);
+  }
+
+  socket = null;
+
+  // Mirror the same cleanup the 'disconnect' handler does, in case the
+  // socket was torn down before ever reaching a connected state (so
+  // that handler never got a chance to run).
+  clearAllChatTyping();
+  clearAllDmTyping();
+  setOnlineSnapshot([]);
+}
+
 function handleChatMessage(message) {
   const container =
     document.getElementById('chat-messages');

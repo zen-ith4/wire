@@ -418,6 +418,70 @@ export async function initializeIdentity(
   }
 }
 
+/*
+ * Runs initializeIdentity() with a couple of automatic retries.
+ *
+ * Used right after a fresh registration: the account and session are
+ * already valid at that point (register() has already called
+ * setToken()/setCurrentUser()), so a failure here is almost always
+ * something transient — slow IndexedDB, a brief network hiccup on the
+ * identity-key upload, a race with another tab — rather than a real,
+ * permanent problem. Retrying a couple of times before giving up saves
+ * the user from an avoidable "please sign in again" round trip.
+ *
+ * Each retry re-does the GET /api/me/identity-key check, so if an
+ * earlier attempt's createIdentity() actually succeeded server-side
+ * before failing locally, the retry correctly takes the "restore"
+ * branch instead of trying to create a second identity.
+ */
+async function initializeIdentityWithRetries(
+  password,
+  options = {},
+  attempts = 3
+) {
+  let lastError = null;
+
+  /*
+   * Deliberately does not take/call an onSuccess callback: this
+   * function's job is identity setup only, so nothing here can
+   * accidentally catch a later, unrelated failure (e.g. the caller's
+   * post-identity app-startup step throwing) and mistake it for, or
+   * retry it as, an identity-setup failure.
+   */
+  for (
+    let attempt = 1;
+    attempt <= attempts;
+    attempt++
+  ) {
+
+    try {
+
+      await initializeIdentity(
+        password,
+        null,
+        options
+      );
+
+      lastError = null;
+
+      break;
+
+    } catch (err) {
+
+      lastError = err;
+
+      console.warn(
+        `[Identity] initializeIdentity attempt ${attempt}/${attempts} failed:`,
+        err
+      );
+    }
+  }
+
+  if (lastError) {
+    throw lastError;
+  }
+}
+
 /* =========================================================
  * Login
  * ========================================================= */
@@ -878,11 +942,15 @@ function renderVerification(
         errorEl.textContent = '';
       }
 
+      let verified = false;
+
       try {
         await verifyEmail(
           verification.userId,
           code
         );
+
+        verified = true;
 
         const password =
           verification.password;
@@ -896,7 +964,14 @@ function renderVerification(
           );
         }
 
-        await initializeIdentity(
+        /*
+         * verifyEmail() has already set a valid token/currentUser.
+         * From here, identity setup is the same separate, retriable
+         * step as in the direct-registration path above (see
+         * initializeIdentityWithRetries()), so a failure here must not
+         * be reported as an "Email verification failed" error either.
+         */
+        await initializeIdentityWithRetries(
           password
         );
 
@@ -910,9 +985,39 @@ function renderVerification(
 
       } catch (error) {
         console.error(
-          'Email verification failed:',
+          verified
+            ? 'Account verified, but identity setup failed:'
+            : 'Email verification failed:',
           error
         );
+
+        if (verified) {
+
+          /*
+           * The account is verified and the session is valid — route
+           * to a normal sign-in screen, which retries the exact same
+           * initializeIdentity() call, rather than leaving the user
+           * stuck on the verification form.
+           */
+          pendingVerification = null;
+
+          renderLogin(
+            onSuccess
+          );
+
+          const retryErrorEl =
+            document.getElementById(
+              'auth-error'
+            );
+
+          if (retryErrorEl) {
+            retryErrorEl.textContent =
+              "Your account was created, but we couldn't finish " +
+              'setting up encryption. Please sign in to try again.';
+          }
+
+          return;
+        }
 
         if (errorEl) {
           errorEl.textContent =
@@ -1732,16 +1837,57 @@ function renderAuthCard(
           return;
         }
 
-        await initializeIdentity(
-          password,
-          async () => {
-            if (
-              typeof onSuccess === 'function'
-            ) {
-              await onSuccess();
-            }
+        /*
+         * The account was just created and register() has already
+         * called setToken()/setCurrentUser(): the session is fully
+         * valid, server-side and client-side, from this point on.
+         *
+         * Everything past here (the E2EE identity keypair) is a
+         * separate step with its own failure handling — a failure
+         * here is NOT a registration failure, and must never be
+         * reported or left in a state that looks like one.
+         */
+        try {
+
+          await initializeIdentityWithRetries(
+            password
+          );
+
+        } catch (identityError) {
+
+          console.error(
+            'Account created, but identity setup failed:',
+            identityError
+          );
+
+          /*
+           * The account exists and localStorage already has a valid
+           * token/currentUser (set by register() above) — the user is
+           * technically already signed in. Route them to a normal
+           * sign-in screen, which calls this exact same
+           * initializeIdentity() and can retry it cleanly, instead of
+           * leaving them stuck on the registration form with a
+           * misleading "Registration failed" and no way forward
+           * except a manual page refresh.
+           */
+
+          renderLogin(
+            onSuccess
+          );
+
+          const retryErrorEl =
+            document.getElementById(
+              'auth-error'
+            );
+
+          if (retryErrorEl) {
+            retryErrorEl.textContent =
+              "Your account was created, but we couldn't finish " +
+              'setting up encryption. Please sign in to try again.';
           }
-        );
+
+          return;
+        }
 
         if (passwordInput) {
           passwordInput.value = '';
@@ -1749,6 +1895,20 @@ function renderAuthCard(
 
         if (confirmInput) {
           confirmInput.value = '';
+        }
+
+        /*
+         * Registration AND identity setup both succeeded at this
+         * point. Anything onSuccess() does from here (mounting the
+         * app) is a separate concern again — see app.js's
+         * startApplicationSafely()/hideApp() for how a failure there
+         * is handled — so it's intentionally called outside the
+         * try/catch above rather than being folded into it.
+         */
+        if (
+          typeof onSuccess === 'function'
+        ) {
+          await onSuccess();
         }
 
         return;

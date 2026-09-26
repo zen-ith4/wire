@@ -1,6 +1,6 @@
-import { initRouter, navigate } from './router.js';
+import { initRouter, navigate, resetRouter } from './router.js';
 
-import { initSocket } from './socket.js';
+import { initSocket, disconnectSocket } from './socket.js';
 
 import {
   getToken,
@@ -319,6 +319,73 @@ function showApp(user) {
 }
 
 
+/*
+ * Symmetric inverse of showApp().
+ *
+ * Used whenever startApplication() has to be aborted after showApp()
+ * already ran (a later step — router, socket, etc. — threw) and the UI
+ * is falling back to the login/unlock screen. Without this, #app is
+ * left visible but half-initialized (no working router/socket/nav),
+ * overlapping the re-shown login card until the user manually
+ * refreshes the page.
+ *
+ * Safe to call even if showApp()/startApplication() never ran, or only
+ * partially ran: every step it undoes is itself a no-op when there is
+ * nothing to undo (no socket open, router never initialized, etc.).
+ */
+function hideApp() {
+
+  const loginWrap =
+    document.getElementById(
+      'login-wrap'
+    );
+
+
+  const app =
+    document.getElementById(
+      'app'
+    );
+
+
+  if (app) {
+
+    app.style.display =
+      'none';
+  }
+
+
+  if (loginWrap) {
+
+    loginWrap.style.display =
+      'flex';
+  }
+
+
+  // Close any socket connection opened by startApplication() and let
+  // initSocket() create a fresh one next time instead of silently
+  // no-op'ing on its singleton guard.
+  disconnectSocket();
+
+  // Let initRouter() run again from scratch instead of being ignored
+  // by its own "already initialized" guard.
+  resetRouter();
+
+  // Nav is rebuilt from scratch by buildNav() on the next showApp(),
+  // but clear it now so nothing stale is visible if #app is ever
+  // shown again before that happens.
+  const navContainer =
+    document.getElementById(
+      'nav-links'
+    );
+
+  if (navContainer) {
+
+    navContainer.innerHTML =
+      '';
+  }
+}
+
+
 /* =========================================================
  * Global helpers
  * ========================================================= */
@@ -347,23 +414,116 @@ async function startApplication(
 
   showApp(user);
 
-  initSocket(token);
-
-  initRouter();
-
   /*
-   * Routing is only safe once the app shell above is mounted.
+   * Each step below is independent. A single non-critical step
+   * failing (e.g. push registration on a browser without permission,
+   * or a transient socket connect error) must not abort the whole
+   * startup and leave the user stuck on a half-initialized #app — so
+   * each gets its own try/catch, logs, and continues.
    *
-   * A notification tapped from a cold start is held by
-   * notification-manager.js until this exact point.
+   * initRouter() is the one genuinely fatal step: without a working
+   * router nothing in #app can be navigated to, so its failure is
+   * re-thrown, which aborts startApplication() and lets the caller
+   * (startApplicationSafely()) tear #app back down and fall back to
+   * the login/unlock screen.
    */
-  markAppReadyForNotificationNavigation();
 
-  initPushRegistration();
+  try {
+    initSocket(token);
+  } catch (err) {
+    console.error(
+      '[startApplication] initSocket failed (non-fatal):',
+      err
+    );
+  }
 
-  startAutoEnhance();
+  try {
+    initRouter();
+  } catch (err) {
+    console.error(
+      '[startApplication] initRouter failed (fatal):',
+      err
+    );
 
-  initDragDrop();
+    throw err;
+  }
+
+  try {
+    /*
+     * Routing is only safe once the app shell above is mounted.
+     *
+     * A notification tapped from a cold start is held by
+     * notification-manager.js until this exact point.
+     */
+    markAppReadyForNotificationNavigation();
+  } catch (err) {
+    console.error(
+      '[startApplication] markAppReadyForNotificationNavigation failed (non-fatal):',
+      err
+    );
+  }
+
+  try {
+    initPushRegistration();
+  } catch (err) {
+    console.error(
+      '[startApplication] initPushRegistration failed (non-fatal):',
+      err
+    );
+  }
+
+  try {
+    startAutoEnhance();
+  } catch (err) {
+    console.error(
+      '[startApplication] startAutoEnhance failed (non-fatal):',
+      err
+    );
+  }
+
+  try {
+    initDragDrop();
+  } catch (err) {
+    console.error(
+      '[startApplication] initDragDrop failed (non-fatal):',
+      err
+    );
+  }
+}
+
+
+/*
+ * Wraps startApplication() so that any FATAL failure (currently, only
+ * initRouter() throwing) tears #app back down via hideApp() before the
+ * error is re-thrown to the caller.
+ *
+ * This matters because several callers of startApplication() are
+ * onSuccess callbacks handed to renderLogin()/renderUnlock() that run
+ * later, driven by auth.js's own form submit handlers — not by
+ * bootstrap()'s try/catch below. Without this wrapper, a failure there
+ * would leave #app visible and half-initialized while auth.js's catch
+ * writes an error message into the (now hidden) login/unlock card.
+ * hideApp() re-shows that card, so the error becomes visible again
+ * instead of the user seeing a stale/broken screen.
+ */
+async function startApplicationSafely(
+  user,
+  token
+) {
+
+  try {
+
+    await startApplication(
+      user,
+      token
+    );
+
+  } catch (err) {
+
+    hideApp();
+
+    throw err;
+  }
 }
 
 
@@ -477,7 +637,7 @@ async function bootstrap() {
         );
 
 
-        await startApplication(
+        await startApplicationSafely(
           user,
           currentToken
         );
@@ -550,7 +710,7 @@ async function bootstrap() {
          * No second accent initialization is necessary.
          */
 
-        await startApplication(
+        await startApplicationSafely(
           me,
           token
         );
@@ -576,7 +736,7 @@ async function bootstrap() {
            * before the unlock screen appeared.
            */
 
-          await startApplication(
+          await startApplicationSafely(
             me,
             token
           );
@@ -591,7 +751,7 @@ async function bootstrap() {
      * Identity is already unlocked.
      * ------------------------------------------------------ */
 
-    await startApplication(
+    await startApplicationSafely(
       me,
       token
     );
@@ -609,6 +769,16 @@ async function bootstrap() {
       console.error(
         err
       );
+
+
+      /*
+       * showApp() may already have run (e.g. startApplication()
+       * reached showApp() and initSocket() before initRouter()
+       * threw). Tear #app back down before showing the login
+       * screen so it isn't left visible but half-initialized
+       * behind/alongside the re-shown login card.
+       */
+      hideApp();
 
 
       showToast(
@@ -648,7 +818,7 @@ async function bootstrap() {
           );
 
 
-          await startApplication(
+          await startApplicationSafely(
             user,
             currentToken
           );

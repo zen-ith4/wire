@@ -11,7 +11,7 @@
 // ============================================================
 
 import { ICONS } from '../icons.js';
-import { getMediaSrcUrl } from './mediaToken.js';
+import { getMediaSrcUrl, refreshMediaSrcUrl } from './mediaToken.js';
 import { resolveServerUrl } from '../core/server.js';
 
 // ======================================================
@@ -2049,10 +2049,76 @@ export async function renderVoiceMessage(
         );
 
       if (
+        resp.status === 401 &&
+        !tokenRefreshAttempted
+      ) {
+        tokenRefreshAttempted =
+          true;
+
+        try {
+          const freshUrl =
+            resolveServerUrl(
+              await refreshMediaSrcUrl(
+                scope,
+                msg.id
+              )
+            );
+
+          diagnostics.tokenRefreshed =
+            true;
+
+          attachmentUrl =
+            freshUrl;
+
+          audio.src =
+            freshUrl;
+
+          errorEl.style.display =
+            'none';
+
+          console.log(
+            'Voice message media token had expired; refreshed and retrying:',
+            diagnostics
+          );
+
+          retryLoadAndResume();
+
+          /*
+           * Let the reload play out through the normal
+           * loadedmetadata/error events (retryLoadAndResume() above,
+           * or — if it fails again — this same function, re-entered
+           * with tokenRefreshAttempted already true so it falls
+           * straight through to an accurate message instead of
+           * retrying forever).
+           */
+          return;
+
+        } catch (refreshError) {
+          diagnostics.tokenRefreshError =
+            refreshError?.message;
+
+          /*
+           * api() (see core/api.js) only throws exactly this message
+           * when the server told us the *login* session/token itself
+           * is invalid or expired — as opposed to this attachment's
+           * short-lived media token, or some other failure (denied
+           * access, attachment gone, etc.) on the media-token
+           * endpoint. Only that specific case is a real "please sign
+           * in again".
+           */
+          userMessage =
+            refreshError?.message ===
+            'Session expired'
+              ? 'Your session has expired — refresh the page and sign in again'
+              : "This voice message's link expired and couldn't be " +
+                'refreshed. Try reopening the conversation.';
+        }
+      } else if (
         resp.status === 401
       ) {
         userMessage =
-          'Your session has expired — refresh the page and sign in again';
+          "This voice message's link expired and couldn't be " +
+          'refreshed. Try reopening the conversation.';
       } else if (
         resp.status === 403
       ) {
@@ -2136,6 +2202,126 @@ export async function renderVoiceMessage(
   let networkRetryTimer =
     null;
 
+  /*
+   * The token embedded in attachmentUrl/audio.src is a short-lived
+   * (~90s) media-scoped token minted when this player was created —
+   * see mediaToken.js. It is NOT the login session token, so it can
+   * (and, for a message opened a while before playback is attempted,
+   * routinely will) expire on its own well before the actual login
+   * session does. Guards a single automatic "get a fresh one and
+   * retry" attempt so a genuinely broken/permission-denied attachment
+   * doesn't retry forever.
+   */
+  let tokenRefreshAttempted =
+    false;
+
+  /*
+   * Reloads the (possibly just-reassigned) audio.src and restores
+   * playback position/state once the new metadata is available.
+   *
+   * Shared by the network-error retry below and by the token-refresh
+   * retry in diagnoseAndShowError(): both cases are "the underlying
+   * request should work now, pick back up where we left off",
+   * differing only in why the previous attempt failed.
+   */
+  function retryLoadAndResume() {
+    const rawCurrentTime =
+      audio.currentTime;
+
+    const resumeAt =
+      Number.isFinite(
+        rawCurrentTime
+      )
+        ? Math.max(
+            0,
+            rawCurrentTime
+          )
+        : 0;
+
+    const wasPlaying =
+      intendedPlaying;
+
+    setPlayerState(
+      'loading'
+    );
+
+    const onRetryMetadata =
+      () => {
+        const duration =
+          audio.duration;
+
+        if (
+          Number.isFinite(
+            resumeAt
+          ) &&
+          Number.isFinite(
+            duration
+          ) &&
+          duration > 0
+        ) {
+          const target =
+            Math.min(
+              resumeAt,
+              duration
+            );
+
+          try {
+            audio.currentTime =
+              target;
+          } catch (error) {
+            console.warn(
+              'Failed to restore voice message position after retry:',
+              error
+            );
+          }
+        }
+
+        if (
+          wasPlaying
+        ) {
+          play();
+        } else {
+          updateProgress();
+          updateTimeLabel();
+        }
+      };
+
+    audio.addEventListener(
+      'loadedmetadata',
+      onRetryMetadata,
+      {
+        once: true,
+      }
+    );
+
+    /*
+     * Keep retry behavior unchanged.
+     * Here load() is intentional because we are explicitly
+     * restarting a failed media request.
+     */
+    try {
+      audio.load();
+    } catch (error) {
+      console.error(
+        'Voice message retry load failed:',
+        error
+      );
+
+      audio.removeEventListener(
+        'loadedmetadata',
+        onRetryMetadata
+      );
+
+      setPlayerState(
+        'error'
+      );
+
+      diagnoseAndShowError(
+        audio.error
+      );
+    }
+  }
+
   audio.addEventListener(
     'error',
     () => {
@@ -2150,22 +2336,6 @@ export async function renderVoiceMessage(
           MAX_NETWORK_RETRIES
       ) {
         networkRetryCount += 1;
-
-        const rawCurrentTime =
-          audio.currentTime;
-
-        const resumeAt =
-          Number.isFinite(
-            rawCurrentTime
-          )
-            ? Math.max(
-                0,
-                rawCurrentTime
-              )
-            : 0;
-
-        const wasPlaying =
-          intendedPlaying;
 
         setPlayerState(
           'loading'
@@ -2194,81 +2364,7 @@ export async function renderVoiceMessage(
                 return;
               }
 
-              const onRetryMetadata =
-                () => {
-                  const duration =
-                    audio.duration;
-
-                  if (
-                    Number.isFinite(
-                      resumeAt
-                    ) &&
-                    Number.isFinite(
-                      duration
-                    ) &&
-                    duration > 0
-                  ) {
-                    const target =
-                      Math.min(
-                        resumeAt,
-                        duration
-                      );
-
-                    try {
-                      audio.currentTime =
-                        target;
-                    } catch (error) {
-                      console.warn(
-                        'Failed to restore voice message position after retry:',
-                        error
-                      );
-                    }
-                  }
-
-                  if (
-                    wasPlaying
-                  ) {
-                    play();
-                  } else {
-                    updateProgress();
-                    updateTimeLabel();
-                  }
-                };
-
-              audio.addEventListener(
-                'loadedmetadata',
-                onRetryMetadata,
-                {
-                  once: true,
-                }
-              );
-
-              /*
-               * Keep retry behavior unchanged.
-               * Here load() is intentional because we are explicitly
-               * restarting a failed media request.
-               */
-              try {
-                audio.load();
-              } catch (error) {
-                console.error(
-                  'Voice message retry load failed:',
-                  error
-                );
-
-                audio.removeEventListener(
-                  'loadedmetadata',
-                  onRetryMetadata
-                );
-
-                setPlayerState(
-                  'error'
-                );
-
-                diagnoseAndShowError(
-                  audio.error
-                );
-              }
+              retryLoadAndResume();
             },
             800 *
               networkRetryCount

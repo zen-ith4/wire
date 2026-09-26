@@ -71,3 +71,25 @@ export async function getMediaSrcUrl(scope, id) {
 export function clearMediaTokenCache() {
   tokenCache.clear();
 }
+
+/**
+ * Forces a brand-new, non-cached media token and returns a fresh src
+ * URL built from it — for when playback fails because the token baked
+ * into the element's `src` at render time has since expired (the
+ * ~90s TTL is intentionally short; a message opened a while before the
+ * user gets around to pressing play is the normal, expected case, not
+ * an error).
+ *
+ * Propagates whatever error `api()` throws for the underlying
+ * `.../media-token` request: in particular, a real expired/invalid
+ * *login* session surfaces as `Error('Session expired')` (see
+ * core/api.js), which callers can check for to tell "the media token
+ * needed a refresh" apart from "the user needs to log in again" —
+ * those are different failures and should show different messages.
+ */
+export async function refreshMediaSrcUrl(scope, id) {
+  const key = `${scope}:${id}`;
+  tokenCache.delete(key);
+
+  return getMediaSrcUrl(scope, id);
+}

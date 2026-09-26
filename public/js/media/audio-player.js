@@ -1,6 +1,6 @@
 import { ICONS } from '../icons.js';
 import { escapeAttr, escapeHtml } from '../core/utils.js';
-import { getMediaSrcUrl } from './mediaToken.js';
+import { getMediaSrcUrl, refreshMediaSrcUrl } from './mediaToken.js';
 import { resolveServerUrl } from '../core/server.js';
 
 // ======================================================
@@ -869,7 +869,157 @@ export async function renderAudio(msg, scope, containerEl) {
 
   // ====================================================
   // ERRORS
+  //
+  // The token embedded in attachmentUrl/audio.src is a short-lived
+  // (~90s) media-scoped token minted when this player was created —
+  // see mediaToken.js. It is NOT the login session token, so a
+  // message opened a while before the user gets around to pressing
+  // play will routinely, harmlessly, have it expire before playback
+  // even starts. That surfaces here only as a generic MediaError (no
+  // HTTP status is exposed to the 'error' event), so a quick
+  // Range-request re-fetch is needed to find out whether that's what
+  // actually happened before giving up and showing "Failed to load
+  // audio".
   // ====================================================
+
+  let tokenRefreshAttempted =
+    false;
+
+  async function attemptTokenRefreshAndRetry() {
+    let resp;
+
+    try {
+      resp = await fetch(
+        attachmentUrl,
+        {
+          headers: {
+            Range: 'bytes=0-1',
+          },
+        }
+      );
+    } catch (fetchError) {
+      console.error(
+        '[Audio] Diagnostic re-fetch failed:',
+        fetchError
+      );
+
+      return false;
+    }
+
+    if (resp.status !== 401) {
+      return false;
+    }
+
+    try {
+      const freshUrl =
+        resolveServerUrl(
+          await refreshMediaSrcUrl(
+            scope,
+            msg.id
+          )
+        );
+
+      console.log(
+        '[Audio] Media token had expired; refreshed and retrying:',
+        { messageId }
+      );
+
+      attachmentUrl =
+        freshUrl;
+
+      const resumeAt =
+        Number.isFinite(
+          audio.currentTime
+        )
+          ? Math.max(
+              0,
+              audio.currentTime
+            )
+          : 0;
+
+      const wasPlaying =
+        intendedPlaying;
+
+      setLoading(true);
+
+      const onRetryMetadata =
+        () => {
+          const duration =
+            audio.duration;
+
+          if (
+            Number.isFinite(
+              resumeAt
+            ) &&
+            Number.isFinite(
+              duration
+            ) &&
+            duration > 0
+          ) {
+            try {
+              audio.currentTime =
+                Math.min(
+                  resumeAt,
+                  duration
+                );
+            } catch (error) {
+              console.warn(
+                'Failed to restore audio position after token refresh:',
+                error
+              );
+            }
+          }
+
+          if (
+            wasPlaying
+          ) {
+            intendedPlaying = true;
+
+            audio.play().catch(
+              (error) => {
+                intendedPlaying = false;
+
+                console.error(
+                  'Audio resume after token refresh failed:',
+                  error
+                );
+              }
+            );
+          }
+        };
+
+      audio.addEventListener(
+        'loadedmetadata',
+        onRetryMetadata,
+        {
+          once: true,
+        }
+      );
+
+      audio.src =
+        freshUrl;
+
+      audio.load();
+
+      return true;
+
+    } catch (refreshError) {
+      /*
+       * api() (see core/api.js) only throws exactly 'Session expired'
+       * when the *login* session/token itself is invalid or expired —
+       * as opposed to this attachment's short-lived media token, or
+       * some other failure (denied access, attachment gone, etc.) on
+       * the media-token endpoint. Either way, the retry didn't work,
+       * so fall through to the generic error box below.
+       */
+      console.error(
+        '[Audio] Media token refresh failed:',
+        refreshError
+      );
+
+      return false;
+    }
+  }
 
   audio.addEventListener(
     'error',
@@ -887,6 +1037,22 @@ export async function renderAudio(msg, scope, containerEl) {
           src: audio.currentSrc
         }
       );
+
+      if (!tokenRefreshAttempted) {
+        tokenRefreshAttempted =
+          true;
+
+        attemptTokenRefreshAndRetry().then(
+          (recovered) => {
+            if (!recovered) {
+              errorEl.style.display =
+                'flex';
+            }
+          }
+        );
+
+        return;
+      }
 
       errorEl.style.display =
         'flex';

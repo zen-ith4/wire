@@ -1853,67 +1853,150 @@ input.conv-search-input:focus{
 }
 
 
-/* ---------- Timestamp of a right-clicked grouped message ---------- */
+/* ---------- Timestamp of a grouped message ----------
+   Revealed with no click required:
+     - desktop: hovering the row (mouse leaves -> hides again). A
+       right-click does NOT reveal it by itself — only the context
+       menu opens; if the pointer happens to still be over the row
+       that's the :hover rule below doing it, not the click.
+     - touch: tapping the row (which sets .is-actions-open, same as
+       it always has). Scoped to hover:none so this never fires from
+       a desktop right-click, which also sets .is-actions-open to open
+       the menu but must not reveal the timestamp/seen indicator. */
 
 .chat-time-side{
   display:none;
-}
-
-.chat-msg--joined-prev.is-context-open{
-  position:relative;
-}
-
-.chat-msg--joined-prev.is-context-open.own > .chat-time-side{
-  position:absolute;
-  top:0;
-  height:auto;
-  display:flex;
-  flex-direction:column;
-  align-items:flex-end;
-  gap:2px;
-  white-space:nowrap;
-  pointer-events:none;
-  user-select:none;
-  -webkit-user-select:none;
-  animation:motion-fade-in var(--motion-fast) var(--motion-ease);
-
-  right:34px;
-  transform:translateX(100%);
-}
-.chat-msg--joined-prev.is-context-open:not(.own) > .chat-time-side{
-  left:34px;
-  transform:translateX(-100%);
-}
-
-.chat-msg--joined-prev.is-context-open.own > .chat-time-side{
-  right:34px;
-  transform:translateX(100%);
 }
 
 .dm-ticks-side{
   display:none;
 }
 
-.chat-msg--joined-prev.is-context-open.own > .dm-ticks-side{
-  position:absolute;
-  top:18px;
-  height:auto;
-  display:flex;
-  align-items:center;
+/* Touch only: tapping the row reveals it. */
+@media (hover:none){
+  .chat-msg--joined-prev.is-actions-open{
+    position:relative;
+  }
 
-  right:34px;
-  transform:translateX(100%);
+  .chat-msg--joined-prev.is-actions-open.own > .chat-time-side{
+    position:absolute;
+    top:0;
+    height:auto;
+    display:flex;
+    flex-direction:column;
+    align-items:flex-end;
+    gap:2px;
+    white-space:nowrap;
+    pointer-events:none;
+    user-select:none;
+    -webkit-user-select:none;
+    animation:motion-fade-in var(--motion-fast) var(--motion-ease);
 
-  pointer-events:none;
-  user-select:none;
-  animation:motion-fade-in var(--motion-fast) var(--motion-ease);
+    right:34px;
+    transform:translateX(100%);
+  }
+
+  .chat-msg--joined-prev.is-actions-open:not(.own) > .chat-time-side{
+    position:absolute;
+    top:0;
+    height:auto;
+    display:flex;
+    flex-direction:column;
+    align-items:flex-end;
+    gap:2px;
+    white-space:nowrap;
+    pointer-events:none;
+    user-select:none;
+    -webkit-user-select:none;
+    animation:motion-fade-in var(--motion-fast) var(--motion-ease);
+
+    left:34px;
+    transform:translateX(-100%);
+  }
+
+  .chat-msg--joined-prev.is-actions-open.own > .dm-ticks-side{
+    position:absolute;
+    top:18px;
+    height:auto;
+    display:flex;
+    align-items:center;
+
+    right:34px;
+    transform:translateX(100%);
+
+    pointer-events:none;
+    user-select:none;
+    animation:motion-fade-in var(--motion-fast) var(--motion-ease);
+  }
+}
+
+/* Desktop only: hovering the row reveals the same elements. This is
+   the ONLY thing that reveals it on desktop — right-clicking does not,
+   on its own, add or rely on any class here. */
+@media (hover:hover){
+  .chat-msg--joined-prev:hover{
+    position:relative;
+  }
+
+  .chat-msg--joined-prev:hover.own > .chat-time-side{
+    position:absolute;
+    top:0;
+    height:auto;
+    display:flex;
+    flex-direction:column;
+    align-items:flex-end;
+    gap:2px;
+    white-space:nowrap;
+    pointer-events:none;
+    user-select:none;
+    -webkit-user-select:none;
+    animation:motion-fade-in var(--motion-fast) var(--motion-ease);
+
+    right:34px;
+    transform:translateX(100%);
+  }
+
+  .chat-msg--joined-prev:hover:not(.own) > .chat-time-side{
+    position:absolute;
+    top:0;
+    height:auto;
+    display:flex;
+    flex-direction:column;
+    align-items:flex-end;
+    gap:2px;
+    white-space:nowrap;
+    pointer-events:none;
+    user-select:none;
+    -webkit-user-select:none;
+    animation:motion-fade-in var(--motion-fast) var(--motion-ease);
+
+    left:34px;
+    transform:translateX(-100%);
+  }
+
+  .chat-msg--joined-prev:hover.own > .dm-ticks-side{
+    position:absolute;
+    top:18px;
+    height:auto;
+    display:flex;
+    align-items:center;
+
+    right:34px;
+    transform:translateX(100%);
+
+    pointer-events:none;
+    user-select:none;
+    animation:motion-fade-in var(--motion-fast) var(--motion-ease);
+  }
 }
 
 /* ================================================================
    MESSAGE ACTION BAR
    ----------------------------------------------------------------
    Desktop:
-     - right-click positions the bar at the pointer.
+     - right-click positions the bar at the pointer, opening to the
+       left for my own messages and to the right for the other
+       person's (see placeActionBar() in tap-reveal.js).
    Mobile:
      - tap positions the bar beside the actual message body.
      - incoming -> right side of bubble

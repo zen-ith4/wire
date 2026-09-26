@@ -12,8 +12,11 @@
 //     right).
 // Both add .is-actions-open (+ .is-actions-armed) to the row (CSS in
 // features/messages.css shows the bar for rows carrying them); at most
-// one row is open. A right-clicked row also gets .is-context-open,
-// which is what lets a grouped DM row show its own timestamp.
+// one row is open. A right-clicked row also gets .is-context-open (kept
+// for any code that inspects it), but a grouped DM row's timestamp/seen
+// indicator no longer depends on it: on desktop it shows on :hover, and
+// on touch it shows whenever .is-actions-open is set (see
+// features/messages.css).
 //
 // One delegated listener per message-list element (the element is
 // rebuilt on every render, so nothing accumulates).
@@ -87,8 +90,12 @@ function getMessageBody(row) {
  * visible message list. The bar stays where CSS puts it; this only sets
  * a translate (--menu-dx / --menu-dy) so nothing in the flow moves.
  *
- *   anchor {x, y}  desktop: top-left corner at the pointer; flips to the
- *                  left of / above the pointer when it would not fit.
+ *   anchor {x, y}  desktop: opens to the left of the pointer for my own
+ *                  (right-aligned) messages and to the right of it for
+ *                  the other person's (left-aligned) messages, so it
+ *                  never lands on top of the timestamp/seen column.
+ *                  Flips to the other side, or above the pointer, only
+ *                  when the intended side would not fit.
  *
  *   no anchor      touch: beside the actual message body, on the side
  *                  opposite the sender:
@@ -115,13 +122,28 @@ export function placeActionBar(row, container, anchor = null) {
 
   if (anchor) {
     // Desktop/context-menu behavior:
-    // corner just off the pointer, mirrored when there is no room.
-    left = anchor.x + POINTER_GAP;
-    top = anchor.y + POINTER_GAP;
+    // opens to the side that keeps it clear of the timestamp/seen
+    // column next to the bubble — leftward (bar's right edge at the
+    // pointer) for my own, right-aligned messages, rightward (bar's
+    // left edge at the pointer) for the other person's, left-aligned
+    // messages. Still anchored to the actual click position, just
+    // expanding the opposite direction. Only flips to the other side
+    // when the intended side truly has no room (viewport collision).
+    const own = row.classList.contains('own');
 
-    if (left + r.width > b.right - EDGE_GAP) {
+    if (own) {
       left = anchor.x - POINTER_GAP - r.width;
+      if (left < b.left + EDGE_GAP) {
+        left = anchor.x + POINTER_GAP;
+      }
+    } else {
+      left = anchor.x + POINTER_GAP;
+      if (left + r.width > b.right - EDGE_GAP) {
+        left = anchor.x - POINTER_GAP - r.width;
+      }
     }
+
+    top = anchor.y + POINTER_GAP;
 
     if (top + r.height > b.bottom - EDGE_GAP) {
       top = anchor.y - POINTER_GAP - r.height;

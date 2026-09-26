@@ -463,8 +463,69 @@ input.conv-search-input:focus{
   -webkit-overflow-scrolling:touch;
 }
 
-.chat-top-bar.chat-header-glass + .chat-messages{
+.chat-top-bar.chat-header-glass + .chat-messages,
+.chat-top-bar.chat-header-glass + .chat-messages-wrap > .chat-messages{
   padding-top:calc(76px * var(--wire-density-scale));
+}
+
+/* Wraps #dm-messages so the jump-to-latest button can float over the
+   message area (position:absolute against this wrapper) without
+   living inside the scrollable element itself — #dm-messages gets its
+   innerHTML replaced wholesale on reload/resync, which would otherwise
+   wipe the button out. */
+.chat-messages-wrap{
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  min-height:0;
+  position:relative;
+}
+.chat-messages-wrap > .chat-messages{
+  flex:1;
+}
+
+.jump-to-latest-btn{
+  position:absolute;
+  right:calc(20px * var(--wire-density-scale));
+  bottom:calc(16px * var(--wire-density-scale));
+  width:38px;
+  height:38px;
+  border-radius:50%;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:var(--ink2);
+  border:1px solid var(--border);
+  color:var(--text);
+  box-shadow:0 4px 14px rgba(0,0,0,.22);
+  cursor:pointer;
+  opacity:0;
+  transform:translateY(8px) scale(.92);
+  pointer-events:none;
+  transition:opacity var(--ease-fast), transform var(--ease-fast), background var(--ease-fast);
+  z-index:15;
+}
+.jump-to-latest-btn.visible{
+  opacity:1;
+  transform:translateY(0) scale(1);
+  pointer-events:auto;
+}
+.jump-to-latest-btn:hover{
+  background:var(--hover);
+}
+.jump-to-latest-btn .unread-dot{
+  position:absolute;
+  top:-1px;
+  right:-1px;
+  width:10px;
+  height:10px;
+  border-radius:50%;
+  background:var(--text);
+  border:2px solid var(--ink2);
+  display:none;
+}
+.jump-to-latest-btn.has-new .unread-dot{
+  display:block;
 }
 
 .chat-msg{

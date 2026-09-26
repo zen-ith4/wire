@@ -87,6 +87,13 @@ const dmConvMap = new Map();
 let dmPreparedConvs = [];
 let dmConvsLoaded = false;
 
+// IntersectionObserver that auto-triggers loadOlderDm() when the
+// "Load older messages" row scrolls near the top of #dm-messages —
+// see attachLoadMoreObserver()/observeLoadMoreRowIfPresent() below.
+// One instance per open thread; torn down/recreated whenever the
+// thread is rebuilt (new conversation, or logout).
+let dmLoadMoreObserver = null;
+
 window.addEventListener('wire:logout', () => {
   dmCache.clear();
   dmConvMap.clear();
@@ -94,6 +101,8 @@ window.addEventListener('wire:logout', () => {
   dmConvsLoaded = false;
   dmActivePeer = null;
   dmEntry = null;
+  dmLoadMoreObserver?.disconnect();
+  dmLoadMoreObserver = null;
 });
 
 // Keep cached DM messages in step with reaction changes so reopening a
@@ -161,6 +170,60 @@ function saveDmScrollState() {
   dmEntry.scrollTop = container.scrollTop;
   dmEntry.atBottom = isNearBottom(container);
 }
+
+// ---------- Auto-load older messages on scroll ----------
+// Reuses the exact same "Load older messages" row/click handler
+// (buildLoadMoreEl(loadOlderDm)) as the sentinel: rather than a
+// parallel scroll-position/pixel-threshold system, we just watch that
+// row with IntersectionObserver and invoke the same callback the
+// button already used. loadOlderDm()'s own canLoadMoreDm() guard
+// (entry.loadingOlder / entry.hasMore) is what actually prevents
+// duplicate/concurrent requests — the observer may fire more than
+// once while the row is in view.
+function attachLoadMoreObserver(container) {
+  dmLoadMoreObserver?.disconnect();
+  dmLoadMoreObserver = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) void loadOlderDm();
+      }
+    },
+    // Root margin on top only: fires a bit before the row is actually
+    // on-screen so the next page is ready by the time the user gets
+    // there, without needing a hard-coded scrollTop threshold.
+    { root: container, rootMargin: '200px 0px 0px 0px', threshold: 0 }
+  );
+  observeLoadMoreRowIfPresent(container);
+}
+
+function observeLoadMoreRowIfPresent(container) {
+  if (!dmLoadMoreObserver || !container) return;
+  // There is ever only one load-more row at a time, so disconnecting
+  // before re-observing is enough — no stale targets pile up.
+  dmLoadMoreObserver.disconnect();
+  const row = container.querySelector('#chat-load-more-row');
+  if (row) dmLoadMoreObserver.observe(row);
+}
+
+// ---------- Floating "jump to latest" button ----------
+function refreshJumpToLatestButton() {
+  const btn = document.getElementById('dm-jump-latest');
+  if (!btn || !dmEntry) return;
+
+  btn.classList.toggle('visible', !dmEntry.atBottom);
+  // Reaching the bottom clears any "new messages" indicator — there's
+  // nothing unread left below the fold at that point.
+  if (dmEntry.atBottom) btn.classList.remove('has-new');
+}
+
+window.dmJumpToLatest = function () {
+  const container = document.getElementById('dm-messages');
+  if (!container || !dmEntry) return;
+
+  container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+  dmEntry.atBottom = true;
+  refreshJumpToLatestButton();
+};
 
 // The unread marker belongs to one visit of a conversation: it is
 // computed when the messages are fetched (or when a message arrives
@@ -1369,7 +1432,13 @@ thread.innerHTML = `
         </div>
       </div>
     </div>
-    <div class="chat-messages" id="dm-messages">${loadingState()}</div>
+    <div class="chat-messages-wrap">
+      <div class="chat-messages" id="dm-messages">${loadingState()}</div>
+      <button type="button" class="jump-to-latest-btn" id="dm-jump-latest" title="Jump to latest" aria-label="Jump to latest messages" onclick="window.dmJumpToLatest()">
+        ${ICONS.arrowDown}
+        <span class="unread-dot" aria-hidden="true"></span>
+      </button>
+    </div>
     <div class="typing-indicator" id="dm-typing-indicator"></div>
     <div class="composer-wrapper">
       <div class="reply-preview-bar" id="dm-reply-preview"></div>
@@ -1475,9 +1544,12 @@ thread.innerHTML = `
     'scroll',
     () => {
       if (dmEntry) dmEntry.atBottom = isNearBottom(container);
+      refreshJumpToLatestButton();
     },
     { passive: true }
   );
+
+  attachLoadMoreObserver(container);
 
   if (dmEntry.initialized) {
     renderDmMessagesFromCache();
@@ -1551,6 +1623,8 @@ function renderDmMessagesFromCache() {
   container.appendChild(frag);
 
   container.scrollTop = dmEntry.atBottom ? container.scrollHeight : dmEntry.scrollTop;
+  observeLoadMoreRowIfPresent(container);
+  refreshJumpToLatestButton();
 }
 
 // ---------- Sync cached conversation ----------
@@ -1753,6 +1827,8 @@ async function loadRecentDm() {
     container.appendChild(frag);
     container.scrollTop = container.scrollHeight;
     entry.atBottom = true;
+    observeLoadMoreRowIfPresent(container);
+    refreshJumpToLatestButton();
   } catch (e) {
     if (dmEntry !== entry) return;
     container.innerHTML = emptyState(ICONS.empty, 'Failed to load', escapeHtml(e.message));
@@ -1784,6 +1860,7 @@ async function loadOlderDm() {
 
     if (messages.length === 0) {
       entry.hasMore = false;
+      observeLoadMoreRowIfPresent(container);
       return;
     }
 
@@ -1843,10 +1920,17 @@ async function loadOlderDm() {
       });
     }
     container.scrollTop = oldTop + (container.scrollHeight - prevHeight);
+    observeLoadMoreRowIfPresent(container);
   } catch (e) {
     entry.loadingOlder = false;
     if (dmEntry !== entry) return;
     if (btnRow) btnRow.querySelector('.load-more-btn').textContent = 'Load older messages';
+    // Stop auto-triggering on this row after a failure — it's still
+    // sitting at the top of the viewport (that's what triggered this
+    // call), so the observer would otherwise refire immediately in a
+    // retry loop. The visible button is the fallback: a manual click
+    // calls loadOlderDm() directly, bypassing the observer entirely.
+    dmLoadMoreObserver?.disconnect();
     showToast(e.message, 'error');
   }
 }
@@ -2243,6 +2327,12 @@ export async function addDmMessage(msg) {
   if (wasAtBottom || isOwnMessage) {
     container.scrollTop = container.scrollHeight;
     if (dmEntry) dmEntry.atBottom = true;
+    refreshJumpToLatestButton();
+  } else {
+    // User is reading scrollback — leave their position alone (don't
+    // forcibly scroll them down) but flag the jump-to-latest button so
+    // they know something new arrived below.
+    document.getElementById('dm-jump-latest')?.classList.add('has-new');
   }
 }
 

@@ -185,7 +185,8 @@
     margin:0 calc(12px * var(--wire-density-scale)) calc(12px * var(--wire-density-scale));
   }
   .chat-messages{padding:calc(14px * var(--wire-density-scale)) calc(12px * var(--wire-density-scale));gap:3px;}
-  .chat-top-bar.chat-header-glass + .chat-messages{padding-top:calc(70px * var(--wire-density-scale));}
+  .chat-top-bar.chat-header-glass + .chat-messages,
+  .chat-top-bar.chat-header-glass + .chat-messages-wrap > .chat-messages{padding-top:calc(70px * var(--wire-density-scale));}
   .chat-top-bar.chat-header-glass{left:12px;right:12px;}
   .chat-msg{max-width:88%;}
   .dm-thread-header,.chat-top-bar{padding:calc(10px * var(--wire-density-scale)) calc(14px * var(--wire-density-scale));}

@@ -40,6 +40,7 @@ import {
   getDmNotificationsEnabled
 } from '../notifications/notification-manager.js';
 import { renderMessageSounds } from './settings-message-sounds.js';
+import { renderShortcuts } from './settings-shortcuts.js';
 
 
 // ============================================================
@@ -1622,6 +1623,12 @@ export const SETTINGS_CATEGORIES = [
     icon: ICONS.shield || ''
   },
   {
+    id: 'keyboard-shortcuts',
+    label: 'Keyboard Shortcuts',
+    sublabel: 'View and customize shortcuts',
+    icon: ICONS.keyboard || ''
+  },
+  {
     id: 'account',
     label: 'Account',
     sublabel: 'Sign out of this device',
@@ -1751,6 +1758,9 @@ export function renderCategoryBodyHtml(
 
     case 'security':
       return renderSecurity(security, privacy);
+
+    case 'keyboard-shortcuts':
+      return renderShortcuts();
 
     case 'account':
       return renderAccount();

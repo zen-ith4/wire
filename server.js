@@ -88,6 +88,7 @@ async function startServer() {
     app.use('/api/admin', require('./routes/admin.routes'));
     app.use('/api/admin/wireguard', require('./routes/wireguard.routes'));
     app.use('/api/version', require('./routes/version.routes'));
+    app.use('/api/apk', require('./routes/apk.routes'));
     
     // 6. 404 handler
     app.use((req, res) => {

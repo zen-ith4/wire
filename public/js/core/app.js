@@ -26,6 +26,8 @@ import { startAutoEnhance } from '../ui/ui-enhance.js';
 
 import { initDragDrop } from '../files/dragdrop.js';
 
+import { initKeyboardShortcuts } from './shortcuts.js';
+
 import {
   initAccent,
   initTheme,
@@ -56,7 +58,14 @@ import {
 
 import '../ui/profile-card.js';
 import '../media/image-viewer.js';
-import { registerServiceWorker, updateServiceWorker } from './pwa.js';
+
+import {
+  registerServiceWorker,
+  updateServiceWorker
+} from './pwa.js';
+
+import { initAndroidUpdateCheck } from './appUpdate.js';
+
 import { showConfirm } from '../ui/confirm.js';
 
 import {
@@ -323,15 +332,11 @@ function showApp(user) {
  * Symmetric inverse of showApp().
  *
  * Used whenever startApplication() has to be aborted after showApp()
- * already ran (a later step — router, socket, etc. — threw) and the UI
- * is falling back to the login/unlock screen. Without this, #app is
- * left visible but half-initialized (no working router/socket/nav),
- * overlapping the re-shown login card until the user manually
- * refreshes the page.
+ * already ran (a later step — router, socket, etc. — threw) and the
+ * UI is falling back to the login/unlock screen.
  *
- * Safe to call even if showApp()/startApplication() never ran, or only
- * partially ran: every step it undoes is itself a no-op when there is
- * nothing to undo (no socket open, router never initialized, etc.).
+ * Safe to call even if showApp()/startApplication() never ran, or
+ * only partially ran.
  */
 function hideApp() {
 
@@ -361,22 +366,18 @@ function hideApp() {
   }
 
 
-  // Close any socket connection opened by startApplication() and let
-  // initSocket() create a fresh one next time instead of silently
-  // no-op'ing on its singleton guard.
+  // Close any socket connection opened by startApplication().
   disconnectSocket();
 
-  // Let initRouter() run again from scratch instead of being ignored
-  // by its own "already initialized" guard.
+  // Allow initRouter() to run again from scratch.
   resetRouter();
 
-  // Nav is rebuilt from scratch by buildNav() on the next showApp(),
-  // but clear it now so nothing stale is visible if #app is ever
-  // shown again before that happens.
+
   const navContainer =
     document.getElementById(
       'nav-links'
     );
+
 
   if (navContainer) {
 
@@ -414,18 +415,12 @@ async function startApplication(
 
   showApp(user);
 
+
   /*
-   * Each step below is independent. A single non-critical step
-   * failing (e.g. push registration on a browser without permission,
-   * or a transient socket connect error) must not abort the whole
-   * startup and leave the user stuck on a half-initialized #app — so
-   * each gets its own try/catch, logs, and continues.
+   * Each step below is independent. A single non-critical
+   * step failing must not abort the whole startup.
    *
-   * initRouter() is the one genuinely fatal step: without a working
-   * router nothing in #app can be navigated to, so its failure is
-   * re-thrown, which aborts startApplication() and lets the caller
-   * (startApplicationSafely()) tear #app back down and fall back to
-   * the login/unlock screen.
+   * initRouter() is the one genuinely fatal step.
    */
 
   try {
@@ -437,6 +432,7 @@ async function startApplication(
     );
   }
 
+
   try {
     initRouter();
   } catch (err) {
@@ -447,6 +443,7 @@ async function startApplication(
 
     throw err;
   }
+
 
   try {
     /*
@@ -463,6 +460,7 @@ async function startApplication(
     );
   }
 
+
   try {
     initPushRegistration();
   } catch (err) {
@@ -471,6 +469,7 @@ async function startApplication(
       err
     );
   }
+
 
   try {
     startAutoEnhance();
@@ -481,6 +480,7 @@ async function startApplication(
     );
   }
 
+
   try {
     initDragDrop();
   } catch (err) {
@@ -489,22 +489,23 @@ async function startApplication(
       err
     );
   }
+
+
+  try {
+    initKeyboardShortcuts();
+  } catch (err) {
+    console.error(
+      '[startApplication] initKeyboardShortcuts failed (non-fatal):',
+      err
+    );
+  }
 }
 
 
 /*
- * Wraps startApplication() so that any FATAL failure (currently, only
- * initRouter() throwing) tears #app back down via hideApp() before the
- * error is re-thrown to the caller.
- *
- * This matters because several callers of startApplication() are
- * onSuccess callbacks handed to renderLogin()/renderUnlock() that run
- * later, driven by auth.js's own form submit handlers — not by
- * bootstrap()'s try/catch below. Without this wrapper, a failure there
- * would leave #app visible and half-initialized while auth.js's catch
- * writes an error message into the (now hidden) login/unlock card.
- * hideApp() re-shows that card, so the error becomes visible again
- * instead of the user seeing a stale/broken screen.
+ * Wraps startApplication() so that any FATAL failure
+ * tears #app back down via hideApp() before the error
+ * is re-thrown to the caller.
  */
 async function startApplicationSafely(
   user,
@@ -556,12 +557,10 @@ async function bootstrap() {
   initMessageBubbleStyle();
   initOwnBubbleGradient();
 
+
   /*
-   * Advanced appearance overrides (CSS variables only) and the
-   * local custom background. Both are device-local, so they are
-   * applied here with the other local appearance settings — before
-   * login and independent of the Settings screen. The background
-   * touches IndexedDB only if it is enabled and has an image.
+   * Advanced appearance overrides and the local
+   * custom background.
    */
 
   initSurfaces();
@@ -595,10 +594,6 @@ async function bootstrap() {
 
   /*
    * No account session.
-   *
-   * Login will authenticate the account and,
-   * inside auth.js, initialize the E2EE identity
-   * using the SAME account password.
    */
 
   if (!token) {
@@ -624,12 +619,8 @@ async function bootstrap() {
 
 
         /*
-         * The authenticated user's accent is now
-         * available from the server/login response.
-         *
-         * Apply it BEFORE creating the application UI.
-         *
-         * No localStorage fallback is used for accent.
+         * Apply the authenticated user's accent
+         * before creating the application UI.
          */
 
         initAccent(
@@ -667,10 +658,6 @@ async function bootstrap() {
 
     /*
      * Database accent is the account-level source of truth.
-     *
-     * IMPORTANT:
-     * This happens before showApp(), initRouter(),
-     * socket initialization and any authenticated UI.
      */
 
     initAccent(
@@ -680,18 +667,12 @@ async function bootstrap() {
 
     /* ------------------------------------------------------
      * Identity state
-     *
-     * The identity is intentionally kept only in memory.
      * ------------------------------------------------------ */
 
     if (!isIdentityUnlocked()) {
 
       /*
-       * We already have a valid token AND /api/me has
-       * confirmed the account. We only need to unlock
-       * the local E2EE identity.
-       *
-       * First try silently using cached unlock material.
+       * Try silently using cached unlock material.
        */
 
       const autoUnlocked =
@@ -702,13 +683,6 @@ async function bootstrap() {
 
 
       if (autoUnlocked) {
-
-        /*
-         * Accent was already initialized from `me`
-         * before attempting the identity unlock.
-         *
-         * No second accent initialization is necessary.
-         */
 
         await startApplicationSafely(
           me,
@@ -727,14 +701,6 @@ async function bootstrap() {
       renderUnlock(
         me,
         async () => {
-
-          /*
-           * Unlock has completed.
-           * The user/token were already valid.
-           *
-           * The account accent was already applied
-           * before the unlock screen appeared.
-           */
 
           await startApplicationSafely(
             me,
@@ -772,12 +738,9 @@ async function bootstrap() {
 
 
       /*
-       * showApp() may already have run (e.g. startApplication()
-       * reached showApp() and initSocket() before initRouter()
-       * threw). Tear #app back down before showing the login
-       * screen so it isn't left visible but half-initialized
-       * behind/alongside the re-shown login card.
+       * Tear #app down before showing the login screen.
        */
+
       hideApp();
 
 
@@ -808,9 +771,8 @@ async function bootstrap() {
 
 
           /*
-           * Login has restored the authenticated user.
-           * Apply the server-side accent before the
-           * application UI is initialized.
+           * Apply the server-side accent before
+           * initializing the application UI.
            */
 
           initAccent(
@@ -838,38 +800,30 @@ registerServiceWorker();
 
 
 /*
+ * Android (Capacitor) only:
+ * checks the currently selected server for a newer APK.
+ *
+ * This is separate from the Service Worker and Electron
+ * update mechanisms.
+ */
+
+initAndroidUpdateCheck();
+
+
+/*
  * Registered exactly once per page load, regardless of
  * login state.
- *
- * Capacitor's plugin bridge and window.electronAPI buffer/
- * replay events fired before a listener existed, so this
- * must be initialized immediately rather than after login.
  */
 
 initNotificationClickRouting();
 
+
 /*
  * Electron update notifications.
- *
- * This listener must be registered immediately on page load,
- * before bootstrap/login initialization, so the Electron main
- * process cannot send the event before the renderer is ready.
- *
- * 'app-update:available' only means the remote server is running a
- * newer Wire version than what's currently cached — it is NOT a
- * signal to update the cached Service Worker right away. The user
- * must explicitly confirm; only then is updateServiceWorker()
- * (core/pwa.js) called. If they decline, the current cached version
- * keeps being used and nothing happens.
  */
 
 if (window.electronAPI?.isElectron) {
 
-  /*
-   * Tracks the server version a confirmation is currently open for,
-   * so a repeated event for that same version (the main process may
-   * re-check and re-send) doesn't stack a second dialog on top.
-   */
   let pendingUpdateVersion = null;
 
   window.electronAPI.onUpdateAvailable(
@@ -879,11 +833,14 @@ if (window.electronAPI?.isElectron) {
         `New version available: ${serverVersion} (current: ${currentVersion})`
       );
 
+
       if (pendingUpdateVersion === serverVersion) {
         return;
       }
 
+
       pendingUpdateVersion = serverVersion;
+
 
       showConfirm(
         `Current version: ${currentVersion}. Available version: ` +
@@ -895,7 +852,9 @@ if (window.electronAPI?.isElectron) {
           danger: false
         }
       ).then((updateConfirmed) => {
+
         pendingUpdateVersion = null;
+
 
         if (updateConfirmed) {
           updateServiceWorker();
@@ -904,6 +863,7 @@ if (window.electronAPI?.isElectron) {
     }
   );
 }
+
 
 bootstrap().catch(err => {
 
@@ -917,6 +877,7 @@ bootstrap().catch(err => {
     'error'
   );
 });
+
 
 /* =========================================================
  * Global error handling

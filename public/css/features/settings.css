@@ -1453,3 +1453,96 @@
     padding:calc(12px * var(--wire-density-scale));
   }
 }
+
+/* ================================================================
+   Keyboard shortcuts
+   ================================================================ */
+
+.shortcut-list{
+  display:flex;
+  flex-direction:column;
+}
+
+.shortcut-row-controls{
+  display:flex;
+  align-items:center;
+  gap:calc(8px * var(--wire-density-scale));
+  flex-shrink:0;
+}
+
+.shortcut-edit-btn{
+  display:inline-flex;
+  align-items:center;
+  gap:calc(4px * var(--wire-density-scale));
+  min-height:32px;
+  padding:calc(5px * var(--wire-density-scale)) calc(8px * var(--wire-density-scale));
+  border-radius:var(--radius);
+  background:var(--ink2);
+  border:1px solid var(--border);
+  color:var(--text);
+  cursor:pointer;
+  font:inherit;
+  transition:background var(--ease-fast),border-color var(--ease-fast);
+}
+
+.shortcut-edit-btn:hover{
+  background:var(--accent-bg);
+  border-color:var(--accent-border);
+}
+
+.shortcut-edit-btn:focus-visible{
+  outline:none;
+  box-shadow:0 0 0 3px var(--accent-bg);
+}
+
+.shortcut-edit-btn.recording{
+  background:var(--accent-bg);
+  border-color:rgb(var(--indigo));
+}
+
+.shortcut-key{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:20px;
+  height:20px;
+  padding:0 calc(5px * var(--wire-density-scale));
+  border-radius:calc(var(--radius) - 3px);
+  background:var(--hover);
+  color:var(--text);
+  font-family:inherit;
+  font-size:calc(11.5px * var(--wire-font-scale));
+  font-weight:550;
+  line-height:1;
+}
+
+.shortcut-key-empty{
+  background:transparent;
+  color:var(--muted2);
+  font-weight:430;
+  font-style:italic;
+  padding:0;
+}
+
+.shortcut-recording{
+  font-size:calc(12px * var(--wire-font-scale));
+  font-weight:500;
+  color:rgb(var(--indigo));
+  padding:0 calc(4px * var(--wire-density-scale));
+}
+
+.shortcut-reset-btn{
+  color:var(--muted2);
+}
+
+@media (max-width:520px){
+
+  .shortcut-row{
+    flex-wrap:wrap;
+  }
+
+  .shortcut-row-controls{
+    flex:1 1 100%;
+    justify-content:flex-start;
+  }
+}

@@ -49,6 +49,10 @@ import {
 } from './settings-message-sounds.js';
 
 import {
+  bindShortcutSettings
+} from './settings-shortcuts.js';
+
+import {
   initAccent
 } from './theme.js';
 
@@ -368,6 +372,10 @@ export async function renderSettings(opts) {
 
         case 'message-sounds':
           bindMessageSoundSettings();
+          break;
+
+        case 'keyboard-shortcuts':
+          bindShortcutSettings();
           break;
 
         case 'account':

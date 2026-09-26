@@ -1802,19 +1802,23 @@ input.conv-search-input:focus{
   position:relative;
 }
 
-.chat-msg--joined-prev.is-context-open > .chat-time-side{
+.chat-msg--joined-prev.is-context-open.own > .chat-time-side{
   position:absolute;
   top:0;
-  height:30px;
+  height:auto;
   display:flex;
-  align-items:center;
+  flex-direction:column;
+  align-items:flex-end;
+  gap:2px;
   white-space:nowrap;
   pointer-events:none;
   user-select:none;
   -webkit-user-select:none;
   animation:motion-fade-in var(--motion-fast) var(--motion-ease);
-}
 
+  right:34px;
+  transform:translateX(100%);
+}
 .chat-msg--joined-prev.is-context-open:not(.own) > .chat-time-side{
   left:34px;
   transform:translateX(-100%);
@@ -1831,18 +1835,18 @@ input.conv-search-input:focus{
 
 .chat-msg--joined-prev.is-context-open.own > .dm-ticks-side{
   position:absolute;
-  top:0;
-  height:30px;
+  top:18px;
+  height:auto;
   display:flex;
   align-items:center;
+
   right:34px;
-  transform:translateX(calc(100% + 34px));
+  transform:translateX(100%);
+
   pointer-events:none;
   user-select:none;
-  -webkit-user-select:none;
   animation:motion-fade-in var(--motion-fast) var(--motion-ease);
 }
-
 
 /* ================================================================
    MESSAGE ACTION BAR

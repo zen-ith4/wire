@@ -115,6 +115,46 @@ const constants = {
 
   DEFAULT_ADMIN_USER: process.env.DEFAULT_ADMIN_USER,
   DEFAULT_ADMIN_PASS: process.env.DEFAULT_ADMIN_PASS,
+
+  // ======================================================
+  // Android APK update (routes/apk.routes.js)
+  // ======================================================
+  //
+  // Resolved relative to THIS file's location (the backend's real
+  // project root), never process.cwd() — the process may be started
+  // from a different working directory (systemd, pm2, a parent
+  // deploy script, ...), and cwd-relative resolution would then
+  // silently look in the wrong place or, worse, let a manipulated
+  // cwd be used for path construction.
+  //
+  // APK_VERSION_NAME / APK_VERSION_CODE are deliberately NOT derived
+  // from package.json's version (used by /api/version for Electron)
+  // or from android/app/build.gradle's versionName/versionCode.
+  // Nothing in this project currently re-stamps either of those
+  // automatically when a new apk-debug.apk is dropped in, so trusting
+  // either would risk telling Android clients about a "new version"
+  // that doesn't match what's actually in the APK on disk (or vice
+  // versa — silently hiding a real update). Until a build pipeline
+  // wires these together, whoever publishes a new apk-debug.apk must
+  // also set these two env vars to match the version actually built
+  // into that APK. If APK_VERSION_NAME is unset, the APK is treated
+  // as unavailable/unpublished (see controllers/apk.controller.js)
+  // rather than guessing.
+  APK_PATH:
+    process.env.APK_PATH ||
+    path.join(__dirname, '..', 'apk-debug.apk'),
+
+  APK_VERSION_NAME: process.env.APK_VERSION_NAME || null,
+
+  APK_VERSION_CODE: process.env.APK_VERSION_CODE
+    ? Number(process.env.APK_VERSION_CODE)
+    : null,
+
+  // Must match android/app/build.gradle's applicationId so the
+  // Android client's native verification step (WireApkUpdatePlugin)
+  // can confirm the downloaded APK is really Wire before offering to
+  // install it.
+  APK_PACKAGE_ID: process.env.APK_PACKAGE_ID || 'com.wireapp.arman',
 };
 
 // Refuse configurations that are clearly unsafe for a production launch.

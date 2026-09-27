@@ -46,6 +46,9 @@ import {
   bindContextMenu
 } from './tap-reveal.js';
 import {
+  getDmTapTimestampEnabled
+} from '../settings/theme.js';
+import {
   createTypingEmitter,
   createTypingIndicator,
   wireTypingInput
@@ -451,6 +454,35 @@ async function decryptDmMessages(messages) {
       decryptDmMessage(message)
     )
   );
+}
+
+// Shared by the composer's buildTextBody (new message) and
+// buildEditBody (in-place edit) — both need the exact same
+// current-user/active-peer validation and produce the exact same
+// encrypted-payload shape for the `content` field, so there's one
+// encryption path for outgoing DM text instead of two.
+async function encryptForActivePeer(content) {
+  const currentUser = getCurrentUser();
+  if (
+    !currentUser ||
+    !Number.isInteger(Number(currentUser.id)) ||
+    Number(currentUser.id) <= 0
+  ) {
+    throw new Error('Current user is not available');
+  }
+  if (
+    !dmActivePeer ||
+    !Number.isInteger(Number(dmActivePeer.id)) ||
+    Number(dmActivePeer.id) <= 0
+  ) {
+    throw new Error('Invalid DM recipient');
+  }
+
+  const senderId = Number(currentUser.id);
+  const recipientId = Number(dmActivePeer.id);
+  const encrypted = await encryptOutgoingMessage(content, senderId, recipientId);
+
+  return JSON.stringify(encrypted);
 }
 
 async function decryptConversationPreview(
@@ -1442,6 +1474,7 @@ thread.innerHTML = `
     <div class="typing-indicator" id="dm-typing-indicator"></div>
     <div class="composer-wrapper">
       <div class="reply-preview-bar" id="dm-reply-preview"></div>
+      <div class="reply-preview-bar" id="dm-edit-preview"></div>
       <div class="attach-staging" id="dm-attach-staging"></div>
       <div class="composer-recording-bar" id="dm-recording-bar">
         <button type="button" class="composer-recording-cancel" id="dm-recording-cancel" aria-label="Cancel recording">Cancel</button>
@@ -1478,29 +1511,10 @@ thread.innerHTML = `
     sendTextUrl: '/api/dm/messages',
     uploadUrl: '/api/dm/upload',
     buildTextBody: async (content) => {
-      const currentUser = getCurrentUser();
-      if (
-        !currentUser ||
-        !Number.isInteger(Number(currentUser.id)) ||
-        Number(currentUser.id) <= 0
-      ) {
-        throw new Error('Current user is not available');
-      }
-      if (
-        !dmActivePeer ||
-        !Number.isInteger(Number(dmActivePeer.id)) ||
-        Number(dmActivePeer.id) <= 0
-      ) {
-        throw new Error('Invalid DM recipient');
-      }
-
-      const senderId = Number(currentUser.id);
       const recipientId = Number(dmActivePeer.id);
-      const encrypted = await encryptOutgoingMessage(content, senderId, recipientId);
-
       return {
         recipient_id: recipientId,
-        content: JSON.stringify(encrypted),
+        content: await encryptForActivePeer(content),
       };
     },
     buildFormExtra: (form) => form.append('recipient_id', dmActivePeer.id),
@@ -1519,6 +1533,15 @@ thread.innerHTML = `
     recordingTimeId: 'dm-recording-time',
     recordingCancelId: 'dm-recording-cancel',
     recordingStopId: 'dm-recording-stop',
+    // ---------- Edit mode ----------
+    editPreviewId: 'dm-edit-preview',
+    buildEditBody: async (content) => ({
+      content: await encryptForActivePeer(content),
+    }),
+    editUrlFor: (id) => `/api/dm/messages/${id}`,
+    onEdit: (message) => {
+      void updateDmMessage(message);
+    },
   });
 
   wirePasteImage('dm-input', (file) => dmComposer.addFiles([file]));
@@ -1976,12 +1999,25 @@ function buildDmMessageEl(msg, currentUser) {
   const messageText =
     msg.content == null ? '' : String(msg.content);
 
+  // Edit is only ever offered for the sender's own plain-text
+  // messages — never for something received, and never for an
+  // attachment (see dm.controller.js's editMessage for the matching
+  // server-side check; this is UI affordance only, not the real
+  // enforcement).
+  const canEdit =
+    own && !!messageText && !msg.has_attachment;
+
   div.innerHTML = `
     ${avatarHtml(msg.sender_id, msg.sender_username, 'chat-avatar')}
     <div class="chat-msg-content">
       <div class="chat-meta">
         <span class="chat-sender">${escapeHtml(msg.sender_username)}</span>
         <time class="chat-time" datetime="${escapeAttr(msg.timestamp)}" title="${escapeAttr(formatFullDateTime(msg.timestamp))}">${formatTime(msg.timestamp)}</time>
+        ${
+          msg.edited_at
+            ? `<span class="chat-edited-flag" title="Edited ${escapeAttr(formatFullDateTime(msg.edited_at))}">edited</span>`
+            : ''
+        }
         ${dmTicksHtml(msg, own)}
       </div>
       ${buildReplyQuoteHtml(msg, 'dm')}
@@ -1994,6 +2030,11 @@ function buildDmMessageEl(msg, currentUser) {
       <div class="chat-msg-actions" role="toolbar" aria-label="Message actions">
         <div class="chat-msg-actions-bar">
         <button type="button" class="chat-msg-reply" title="Reply" aria-label="Reply" onclick="window.replyToDmMessage(${msg.id})">${ICONS.reply}</button>
+        ${
+          canEdit
+            ? `<button type="button" class="chat-msg-edit" title="Edit message" aria-label="Edit message" onclick="window.editDmMessage(${msg.id})">${ICONS.edit}</button>`
+            : ''
+        }
         ${reactButtonHtml(msg, 'dm')}
         ${
           messageText
@@ -2100,6 +2141,17 @@ function bindDmMessageActions(container) {
     clearTimeout(armTimer);
     row.classList.toggle('is-actions-open', on);
     row.classList.remove('is-actions-armed');
+
+    // Same tap that opens the action bar also reveals a grouped row's
+    // timestamp/seen indicator (CSS in features/messages.css, scoped to
+    // touch via hover:none) — unless the user turned that off in
+    // Settings > Appearance > "Show timestamp and seen on message
+    // touch" (mobile-only; see getDmTapTimestampEnabled()/theme.js).
+    row.classList.toggle(
+      'is-timestamp-open',
+      on && getDmTapTimestampEnabled()
+    );
+
     if (on) {
       // Opposite side of the sender, kept inside the visible list.
       placeActionBar(row, container);
@@ -2373,6 +2425,76 @@ export function markDmMessagesSeen({ reader_id, message_ids, seen_at }) {
   }
 }
 
+// ---------- Edit message ----------
+// Received both from the composer's own successful PATCH (onEdit
+// config above) and from the 'dm-message-edited' socket event (see
+// core/socket.js) — same server row shape either way, so one
+// function handles both: decrypt the new content, patch the cache
+// entry in place (never remove-and-reinsert — this is the same
+// message, not a new one) and, if its conversation is open, update
+// the existing DOM row's bubble text and "edited" flag without
+// moving or re-animating the row.
+export async function updateDmMessage(msg) {
+  const currentUser = getCurrentUser();
+  if (!currentUser) return;
+
+  const peerId =
+    Number(msg.sender_id) === Number(currentUser.id)
+      ? Number(msg.recipient_id)
+      : Number(msg.sender_id);
+
+  if (!Number.isInteger(peerId) || peerId <= 0) {
+    console.error('Invalid DM peer ID:', msg);
+    return;
+  }
+
+  const entry = dmCache.get(peerId);
+  // Nothing to update if we never had this conversation/message
+  // cached — can legitimately happen for a stale/out-of-order event.
+  if (!entry || !entry.byId.has(msg.id)) return;
+
+  let decrypted;
+  try {
+    decrypted = await decryptDmMessage(msg);
+  } catch (e) {
+    console.error(`Failed to process edited DM ${msg.id}:`, e);
+    return;
+  }
+
+  entry.byId.set(msg.id, decrypted);
+  const idx = entry.messages.findIndex((m) => m.id === msg.id);
+  if (idx !== -1) entry.messages[idx] = decrypted;
+
+  const isActiveConversation = dmActivePeer && Number(dmActivePeer.id) === peerId;
+  if (!isActiveConversation) return;
+
+  const container = document.getElementById('dm-messages');
+  if (!container) return;
+
+  const row = container.querySelector(`.chat-msg[data-msg-id="${msg.id}"]`);
+  if (!row) return;
+
+  const bubble = row.querySelector('.chat-bubble');
+  const text = decrypted.content == null ? '' : String(decrypted.content);
+  if (bubble) {
+    bubble.innerHTML = linkifyHtml(text);
+  }
+
+  const meta = row.querySelector('.chat-meta');
+  if (meta && decrypted.edited_at && !meta.querySelector('.chat-edited-flag')) {
+    const flag = document.createElement('span');
+    flag.className = 'chat-edited-flag';
+    flag.title = `Edited ${formatFullDateTime(decrypted.edited_at)}`;
+    flag.textContent = 'edited';
+    const timeEl = meta.querySelector('.chat-time');
+    if (timeEl) {
+      timeEl.insertAdjacentElement('afterend', flag);
+    } else {
+      meta.appendChild(flag);
+    }
+  }
+}
+
 // ---------- Delete message ----------
 export function removeDmMessage(id) {
   for (const entry of dmCache.values()) {
@@ -2459,6 +2581,22 @@ window.replyToDmMessage = function (id) {
   const msg = dmEntry?.byId.get(id);
   if (!msg || !dmComposer) return;
   dmComposer.setReplyTo(buildReplyPreview(msg));
+};
+
+// ---------- Edit ----------
+window.editDmMessage = function (id) {
+  const currentUser = getCurrentUser();
+  const msg = dmEntry?.byId.get(id);
+  if (!msg || !dmComposer || !currentUser) return;
+
+  // Defense in depth — buildDmMessageEl already only renders this
+  // button for own, non-attachment, non-empty messages, but the
+  // handler doesn't trust the DOM/onclick argument alone.
+  if (Number(msg.sender_id) !== Number(currentUser.id)) return;
+  if (msg.has_attachment) return;
+  if (!msg.content) return;
+
+  dmComposer.setEditMessage(msg);
 };
 
 // ---------- Delete ----------

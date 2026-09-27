@@ -89,6 +89,26 @@ function emitDirectMessageDeleted(message) {
   );
 }
 
+// Same fan-out as emitDirectMessageDeleted above: both participants
+// need the update (the sender to see their own edit reflected back,
+// the recipient to get the new content in realtime), and the payload
+// is a full findDmMessageWithUser() row, so the recipient has
+// everything needed to decrypt it the same way any other incoming
+// DM is decrypted — no separate "edit payload" shape.
+function emitDirectMessageEdited(message) {
+  emit(
+    `user:${message.sender_id}`,
+    'dm-message-edited',
+    message
+  );
+
+  emit(
+    `user:${message.recipient_id}`,
+    'dm-message-edited',
+    message
+  );
+}
+
 function emitChatReactionUpdate(payload) {
   emit(
     'chat',
@@ -143,6 +163,7 @@ module.exports = {
   emitNewDirectMessage,
   emitChatMessageDeleted,
   emitDirectMessageDeleted,
+  emitDirectMessageEdited,
   emitDmMessagesSeen,
   emitChatReactionUpdate,
   emitDirectReactionUpdate,

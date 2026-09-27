@@ -224,6 +224,19 @@ function iconForFile(
  * @param {string} [config.recordingTimeId]
  * @param {string} [config.recordingCancelId]
  * @param {string} [config.recordingStopId]
+ * @param {string} [config.editPreviewId] Enables edit mode entirely —
+ *   only supplied by DM's composer today (see chat/dm.js). Omit to
+ *   keep a composer (e.g. group chat's) exactly as it was.
+ * @param {(content:string) => object|Promise<object>} [config.buildEditBody]
+ *   Same job as buildTextBody, but for the PATCH body of an in-place
+ *   edit — no reply_to_id, since a reply target isn't editable.
+ * @param {(id:number) => string} [config.editUrlFor] Builds the PATCH
+ *   URL for a given message id.
+ * @param {(message: object) => void} [config.onEdit] Called with the
+ *   server's updated message after a successful edit. Deliberately
+ *   separate from onMessage: onMessage's callers (e.g. addDmMessage)
+ *   dedupe by id and would silently no-op for a message id already
+ *   in the cache.
  */
 export function createComposer(
   config
@@ -246,11 +259,21 @@ export function createComposer(
     recordingTimeId,
     recordingCancelId,
     recordingStopId,
+    editPreviewId,
+    buildEditBody,
+    editUrlFor,
+    onEdit,
   } = config;
 
   let staged = [];
 
   let currentReply =
+    null;
+
+  // Non-null while an existing message is being edited (see
+  // setEditMessage/cancelEdit below): { id }. Mutually exclusive
+  // with currentReply — entering one clears the other.
+  let currentEdit =
     null;
 
   // Prevent one Enter action from triggering both keydown
@@ -860,6 +883,12 @@ export function createComposer(
       }
     );
 
+    // Replying and editing are mutually exclusive states of the same
+    // composer — starting one cancels the other.
+    if (currentEdit) {
+      cancelEdit();
+    }
+
     currentReply =
       replyPreview;
 
@@ -890,6 +919,229 @@ export function createComposer(
   window[
     `__composerCancelReply_${stagingId}`
   ] = clearReply;
+
+  // ==========================================================
+  // EDIT MODE
+  // ==========================================================
+  //
+  // Only wired up when the caller supplies editPreviewId/
+  // buildEditBody/editUrlFor (today: DM's composer only — see
+  // chat/dm.js). Without them setEditMessage() is a no-op, so a
+  // composer that never passes these config keys (group chat's)
+  // behaves exactly as it did before edit mode existed.
+
+  function getEditPreviewEl() {
+    return editPreviewId
+      ? document.getElementById(
+          editPreviewId
+        )
+      : null;
+  }
+
+  function getComposerWrapperEl() {
+    const input =
+      getInput();
+
+    return input
+      ? input.closest(
+          '.composer-wrapper'
+        )
+      : null;
+  }
+
+  function renderEditPreview() {
+    const el =
+      getEditPreviewEl();
+
+    if (!el) return;
+
+    if (!currentEdit) {
+      el.innerHTML = '';
+
+      el.classList.remove(
+        'active'
+      );
+
+      return;
+    }
+
+    el.classList.add(
+      'active'
+    );
+
+    // Deliberately reuses the reply-preview-* classes (same bar,
+    // icon, body and close-button styling) — this is the same kind
+    // of "composer is doing something with an existing message"
+    // affordance as the reply preview, just with a different icon/
+    // label, not a second implementation of it.
+    el.innerHTML = `
+      <div class="reply-preview-icon">
+        ${ICONS.edit}
+      </div>
+
+      <div class="reply-preview-body">
+        <div class="reply-preview-name">
+          Editing message
+        </div>
+      </div>
+
+      <button
+        type="button"
+        class="reply-preview-close"
+        title="Cancel edit"
+        onclick="window['__composerCancelEdit_${stagingId}']()"
+      >
+        ${ICONS.close}
+      </button>
+    `;
+  }
+
+  // Disables attaching/recording while editing: editing is
+  // restricted to plain text (see dm.controller.js's editMessage),
+  // so nothing staged or recorded here could ever be sent anyway.
+  function setAttachDisabled(
+    disabled
+  ) {
+    const fileInput =
+      fileInputId
+        ? document.getElementById(
+            fileInputId
+          )
+        : null;
+
+    if (fileInput) {
+      fileInput.disabled =
+        disabled;
+    }
+
+    const {
+      micBtn
+    } =
+      getRecordingEls();
+
+    if (micBtn) {
+      micBtn.disabled =
+        disabled;
+    }
+  }
+
+  function setEditMessage(
+    msg
+  ) {
+    // Composer wasn't configured for edit mode (e.g. group chat) —
+    // do nothing rather than half-enter a broken state.
+    if (
+      !editPreviewId ||
+      !buildEditBody ||
+      !editUrlFor
+    ) {
+      return;
+    }
+
+    debug(
+      'setEditMessage',
+      {
+        id: msg?.id
+      }
+    );
+
+    if (currentReply) {
+      clearReply();
+    }
+
+    currentEdit = {
+      id: msg.id
+    };
+
+    const input =
+      getInput();
+
+    if (input) {
+      input.value =
+        msg.content ||
+        '';
+
+      autoGrow();
+    }
+
+    renderEditPreview();
+
+    const wrapper =
+      getComposerWrapperEl();
+
+    if (wrapper) {
+      wrapper.classList.add(
+        'is-editing'
+      );
+    }
+
+    setAttachDisabled(
+      true
+    );
+
+    if (input) {
+      input.focus({
+        preventScroll:
+          true
+      });
+
+      const len =
+        input.value.length;
+
+      try {
+        input.setSelectionRange(
+          len,
+          len
+        );
+      } catch {
+        // Ignore — non-fatal if the browser refuses on this input
+        // state, caret position is a nicety here, not a requirement.
+      }
+    }
+  }
+
+  // Leaves edit mode WITHOUT sending anything and WITHOUT restoring
+  // the message's original text — the composer goes back to its
+  // normal, empty state exactly like canceling a reply does.
+  function cancelEdit() {
+    debug(
+      'cancelEdit'
+    );
+
+    currentEdit =
+      null;
+
+    renderEditPreview();
+
+    const wrapper =
+      getComposerWrapperEl();
+
+    if (wrapper) {
+      wrapper.classList.remove(
+        'is-editing'
+      );
+    }
+
+    setAttachDisabled(
+      false
+    );
+
+    const input =
+      getInput();
+
+    if (input) {
+      input.value =
+        '';
+
+      clearBidiCaretState();
+
+      resetTextareaHeight();
+    }
+  }
+
+  window[
+    `__composerCancelEdit_${stagingId}`
+  ] = cancelEdit;
 
   // ==========================================================
   // TEXTAREA
@@ -2335,6 +2587,74 @@ export function createComposer(
         ? input.value.trim()
         : '';
 
+    // ========================================================
+    // EDIT SUBMIT
+    // ========================================================
+    //
+    // A currentEdit in progress takes over Enter/send-button entirely
+    // — attachments are never part of an edit (see setAttachDisabled
+    // in setEditMessage), so filesToSend below is irrelevant here.
+    if (currentEdit) {
+      if (!content) {
+        debugText(
+          'SEND ABORT | empty edit'
+        );
+
+        return;
+      }
+
+      const editingId =
+        currentEdit.id;
+
+      typingEmitter.stop();
+
+      try {
+        const editBody =
+          await buildEditBody(
+            content
+          );
+
+        const message =
+          await api(
+            editUrlFor(
+              editingId
+            ),
+            {
+              method:
+                'PATCH',
+
+              headers: {
+                'Content-Type':
+                  'application/json'
+              },
+
+              body:
+                JSON.stringify(
+                  editBody
+                )
+            }
+          );
+
+        // Ends edit mode and clears the input — same "back to
+        // normal, nothing left staged" outcome as a successful
+        // reply-attached send.
+        cancelEdit();
+
+        if (onEdit) {
+          onEdit(
+            message
+          );
+        }
+      } catch (e) {
+        showToast(
+          e.message,
+          'error'
+        );
+      }
+
+      return;
+    }
+
     const filesToSend =
       staged.filter(
         item =>
@@ -3001,6 +3321,9 @@ export function createComposer(
       recorder.cancel();
     }
 
+    currentEdit =
+      null;
+
     clearBidiCaretState();
 
     window.removeEventListener(
@@ -3051,6 +3374,8 @@ export function createComposer(
     send,
     setReplyTo,
     clearReply,
+    setEditMessage,
+    cancelEdit,
     destroy
   };
 }

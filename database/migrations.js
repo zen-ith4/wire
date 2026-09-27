@@ -51,7 +51,13 @@ const VALID_COLUMNS = {
     // "Send Read Receipts" enabled at that moment, so disabling the
     // setting can never retroactively hide or reveal anything (see
     // dm.service.js's markRead).
-    seen_at: "seen_at TEXT DEFAULT NULL"
+    seen_at: "seen_at TEXT DEFAULT NULL",
+
+    // Set only when the sender edits a text DM after sending it (see
+    // dm.service.js's updateDmMessageContent). Null for every message
+    // that has never been edited, including all pre-existing rows —
+    // no backfill needed since NULL is exactly "never edited".
+    edited_at: "edited_at TEXT DEFAULT NULL"
   }
 };
 

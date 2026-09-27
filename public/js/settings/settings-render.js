@@ -18,6 +18,7 @@ import {
   getCurrentTheme,
   getUseAccentForBubbles,
   getAnimationsEnabled,
+  getDmTapTimestampEnabled,
   getCurrentBackgroundTheme,
   getBackgroundPreviewCss,
   DENSITY_OPTIONS,
@@ -25,6 +26,10 @@ import {
   FONT_SIZE_OPTIONS,
   getFontSize
 } from './theme.js';
+
+import {
+  isTouchOnlyDevice
+} from '../chat/tap-reveal.js';
 
 import {
   renderCustomBackgroundSection,
@@ -306,6 +311,9 @@ function renderAppearance({
 
   const animationsEnabled =
     getAnimationsEnabled();
+
+  const dmTapTimestampEnabled =
+    getDmTapTimestampEnabled();
 
   return `
     <div class="settings-section">
@@ -821,6 +829,47 @@ function renderAppearance({
         </button>
 
       </div>
+
+
+      <!-- Show timestamp and seen on message touch (mobile only) -->
+
+      ${
+        isTouchOnlyDevice()
+          ? `
+            <div class="settings-row">
+
+              <div>
+                <div class="settings-row-label">
+                  Show timestamp and seen on message touch
+                </div>
+
+                <div class="settings-row-sublabel">
+                  Tapping a message reveals its timestamp and seen
+                  indicator. On desktop this is always shown on hover
+                  instead.
+                </div>
+              </div>
+
+              <button
+                type="button"
+                class="switch${
+                  dmTapTimestampEnabled
+                    ? ' on'
+                    : ''
+                }"
+                id="dm-tap-timestamp-toggle"
+                role="switch"
+                aria-checked="${dmTapTimestampEnabled}"
+                aria-label="Show timestamp and seen on message touch">
+
+                <span class="switch-thumb"></span>
+
+              </button>
+
+            </div>
+          `
+          : ''
+      }
 
 
       <!-- Animations -->

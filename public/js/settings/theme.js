@@ -107,6 +107,7 @@ const ANIMATIONS_STORAGE_KEY = 'wire-animations';
 const FONT_STORAGE_KEY = 'wire-font-family';
 const DENSITY_STORAGE_KEY = 'wire-ui-density';
 const FONT_SIZE_STORAGE_KEY = 'wire-font-size';
+const DM_TAP_TIMESTAMP_STORAGE_KEY = 'wire-dm-tap-timestamp';
 
 
 // ============================================================
@@ -2562,6 +2563,53 @@ export function applyUseAccentForBubbles(
   if (persist) {
     safeSetStorage(
       BUBBLE_ACCENT_STORAGE_KEY,
+      value
+        ? 'on'
+        : 'off'
+    );
+  }
+
+  return value;
+}
+
+
+// ============================================================
+// Show timestamp & seen indicator on message touch (mobile only)
+//
+// Desktop reveals a grouped DM message's timestamp/seen indicator on
+// hover (see the hover:hover rules in features/messages.css) and is
+// never affected by this setting. On touch devices, tapping a DM
+// message opens its action bar (dm.js); this setting controls
+// whether that same tap also reveals the timestamp/seen indicator
+// (.is-timestamp-open, applied only under hover:none — see
+// features/messages.css). Defaults to on, matching the behavior
+// before this setting existed. The Settings row itself is only
+// rendered on touch devices — see isTouchOnlyDevice() in
+// chat/tap-reveal.js.
+// ============================================================
+
+export function getDmTapTimestampEnabled() {
+  const saved =
+    safeGetStorage(
+      DM_TAP_TIMESTAMP_STORAGE_KEY
+    );
+
+  return saved === null
+    ? true
+    : saved !== 'off';
+}
+
+
+export function applyDmTapTimestampEnabled(
+  enabled,
+  { persist = true } = {}
+) {
+  const value =
+    enabled !== false;
+
+  if (persist) {
+    safeSetStorage(
+      DM_TAP_TIMESTAMP_STORAGE_KEY,
       value
         ? 'on'
         : 'off'

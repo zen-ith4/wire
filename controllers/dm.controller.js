@@ -18,12 +18,14 @@ const {
   findDmMessageById,
   findDmMessageWithUser,
   deleteDmMessage,
+  updateDmMessageContent,
 } = require('../services/dm.service');
 const { findUserById } = require('../services/user.service');
 const { toggleReaction, getReactionsForMessage, getReactionsForMessages } = require('../services/reaction.service');
 const {
   emitNewDirectMessage,
   emitDirectMessageDeleted,
+  emitDirectMessageEdited,
   emitDirectReactionUpdate,
   emitDmMessagesSeen,
 } = require('../services/socket.service');
@@ -571,6 +573,70 @@ function getAttachment(req, res) {
   stream.pipe(res);
 }
 
+// Edit a DM's text content.
+//
+// SECURITY: ownership is decided entirely from req.user.id (set by
+// the `authenticate` middleware from the verified session/JWT) and
+// the message row looked up by id — never from anything the client
+// puts in the request body. There is deliberately no client-supplied
+// sender/owner field accepted here at all.
+//
+// `content` is expected to already be the same opaque, client-side
+// encrypted payload shape (JSON-stringified { encryption, senderId,
+// recipientId } — see public/js/crypto/messages/payload.js) that
+// sendMessage() above stores. This handler never decrypts it, never
+// generates its own encryption, and never accepts/produces plaintext
+// — it only ever swaps one encrypted blob for another, exactly like
+// sendMessage() already does for new messages. That also means it
+// doesn't need to independently validate the encryption envelope any
+// more than sendMessage() does: malformed content simply fails to
+// decrypt for the reader, the same failure mode as a corrupted send.
+function editMessage(req, res) {
+  const id = parseInt(req.params.messageId, 10);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: 'Invalid message id' });
+  }
+
+  const { content } = req.body || {};
+  if (!content || !content.trim()) {
+    return res.status(400).json({ error: 'Message cannot be empty' });
+  }
+
+  const msg = findDmMessageById(id);
+  if (!msg) {
+    return res.status(404).json({ error: 'Message not found' });
+  }
+
+  // Only the original sender may edit — unlike deleteMessage below,
+  // there is no admin override: editing rewrites someone's own words,
+  // which is a different thing from moderating/removing content.
+  if (msg.sender_id !== req.user.id) {
+    return res.status(403).json({ error: 'You can only edit your own messages' });
+  }
+
+  // Editing is restricted to plain text messages. The attachment
+  // itself has no edit UI/flow anywhere in this architecture, and
+  // silently allowing the caption of an attachment message to be
+  // "edited" here would let it slip into a state (edited_at set, but
+  // no general attachment-edit support elsewhere) nothing else is
+  // built to handle.
+  if (msg.attachment_path) {
+    return res.status(400).json({ error: 'Attachment messages cannot be edited' });
+  }
+
+  const trimmed = content.trim().slice(0, 2000);
+  const editedAt = new Date().toISOString();
+
+  updateDmMessageContent(id, trimmed, editedAt);
+
+  const fullMsg = findDmMessageWithUser(id);
+  fullMsg.has_attachment = !!fullMsg.attachment_name;
+  fullMsg.is_voice_message = Boolean(fullMsg.is_voice_message);
+
+  emitDirectMessageEdited(fullMsg);
+  res.json(fullMsg);
+}
+
 function deleteMessage(req, res) {
   const id = parseInt(req.params.messageId, 10);
   if (!Number.isInteger(id)) {
@@ -656,6 +722,7 @@ module.exports = {
   sendMessageWithAttachment,
   getAttachmentMediaToken,
   getAttachment,
+  editMessage,
   deleteMessage,
   toggleReaction: toggleReactionHandler,
 };

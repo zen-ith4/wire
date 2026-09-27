@@ -6,7 +6,7 @@ const { getDb } = require('../config/database');
 const DM_SELECT = `
   SELECT dm.id, dm.sender_id, dm.recipient_id, su.username AS sender_username,
          su.accent_color, su.avatar_path AS sender_avatar_path,
-         dm.content, dm.created_at AS timestamp, dm.read_at, dm.seen_at,
+         dm.content, dm.created_at AS timestamp, dm.read_at, dm.seen_at, dm.edited_at,
          dm.attachment_name, dm.attachment_size, dm.attachment_mime,
          dm.attachment_width, dm.attachment_height,
          dm.is_voice_message,
@@ -267,6 +267,21 @@ function deleteDmMessage(id) {
   return getDb().prepare('DELETE FROM direct_messages WHERE id = ?').run(id);
 }
 
+// Updates only the content + edited_at columns of an existing DM.
+// Everything else (sender_id, recipient_id, created_at, attachments,
+// reply_to_id, reactions, read/seen state) is left untouched by
+// design — editing a message's text must never disturb any of that.
+// Caller (dm.controller.js) is responsible for ownership/attachment
+// checks before calling this; `content` here is expected to already
+// be the same opaque, client-encrypted payload shape insertDmMessage
+// stores, never plaintext.
+function updateDmMessageContent(id, content, editedAt) {
+  return getDb().prepare(`
+    UPDATE direct_messages SET content = ?, edited_at = ?
+    WHERE id = ?
+  `).run(content, editedAt, id);
+}
+
 module.exports = {
   getConversations,
   getConversationsSummary,
@@ -282,4 +297,5 @@ module.exports = {
   findDmMessageById,
   findDmMessageWithUser,
   deleteDmMessage,
+  updateDmMessageContent,
 };

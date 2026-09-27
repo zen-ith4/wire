@@ -17,6 +17,7 @@ const {
   sendMessageWithAttachment,
   getAttachmentMediaToken,
   getAttachment,
+  editMessage,
   deleteMessage,
   toggleReaction,
 } = require('../controllers/dm.controller');
@@ -108,6 +109,16 @@ router.get(
   '/attachments/:messageId',
   mediaAuth,
   getAttachment
+);
+
+
+
+// Edit a DM (text messages only — see dm.controller.js)
+router.patch(
+  '/messages/:messageId',
+  authenticate,
+  chatWriteLimiter,
+  editMessage
 );
 
 

@@ -13,10 +13,11 @@
 // Both add .is-actions-open (+ .is-actions-armed) to the row (CSS in
 // features/messages.css shows the bar for rows carrying them); at most
 // one row is open. A right-clicked row also gets .is-context-open (kept
-// for any code that inspects it), but a grouped DM row's timestamp/seen
-// indicator no longer depends on it: on desktop it shows on :hover, and
-// on touch it shows whenever .is-actions-open is set (see
-// features/messages.css).
+// for any code that inspects it). A grouped DM row's timestamp/seen
+// indicator is separate from all of that: on desktop it shows only on
+// :hover (never from the right-click itself), and on touch it shows
+// only when .is-actions-open is set by a real touch tap — see the
+// hover:none / hover:hover split in features/messages.css.
 //
 // One delegated listener per message-list element (the element is
 // rebuilt on every render, so nothing accumulates).
@@ -35,6 +36,16 @@ const noHover = window.matchMedia?.('(hover: none)');
 
 export function isTouchClick(e) {
   return e.pointerType === 'touch' || (!e.pointerType && !!noHover?.matches);
+}
+
+// Whether this device has no hover capability at all (touch-only) —
+// the same test used above to decide whether a message's action bar
+// opens via hover-adjacent tap logic vs. desktop right-click. Settings
+// (settings-render.js / settings-appearance.js) uses this to show and
+// bind the "Show timestamp and seen on message touch" toggle on touch
+// devices only, and to keep it off the desktop/PC settings UI.
+export function isTouchOnlyDevice() {
+  return Boolean(noHover?.matches);
 }
 
 // ---------- Action bar placement ----------

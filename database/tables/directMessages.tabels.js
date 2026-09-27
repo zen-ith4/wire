@@ -28,6 +28,11 @@ CREATE TABLE IF NOT EXISTS direct_messages (
   -- is gone instead of losing the fact that this was a reply at all.
   reply_to_id INTEGER,
 
+  -- Set only when the sender edits this message after sending it.
+  -- NULL means never edited. See migrations.js for how this column
+  -- is added to pre-existing databases.
+  edited_at TEXT DEFAULT NULL,
+
   FOREIGN KEY (sender_id)
     REFERENCES users(id)
     ON DELETE CASCADE,

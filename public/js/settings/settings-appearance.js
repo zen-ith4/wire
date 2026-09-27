@@ -17,6 +17,8 @@ import {
   applyUseAccentForBubbles,
   getAnimationsEnabled,
   applyAnimationsEnabled,
+  getDmTapTimestampEnabled,
+  applyDmTapTimestampEnabled,
   applyBackgroundTheme,
   getFontFamily,
   applyFontFamily,
@@ -30,6 +32,10 @@ import {
   getFontSize,
   applyFontSize
 } from './theme.js';
+
+import {
+  isTouchOnlyDevice
+} from '../chat/tap-reveal.js';
 
 import {
   setCurrentUser
@@ -806,6 +812,55 @@ function bindAnimations() {
 }
 
 // ============================================================
+// Show timestamp and seen on message touch (mobile only)
+// ============================================================
+
+function bindDmTapTimestamp() {
+  const toggle =
+    document.getElementById(
+      'dm-tap-timestamp-toggle'
+    );
+
+  if (!toggle) return;
+
+  const enabled =
+    getDmTapTimestampEnabled();
+
+  toggle.classList.toggle(
+    'on',
+    enabled
+  );
+
+  toggle.setAttribute(
+    'aria-checked',
+    String(enabled)
+  );
+
+  toggle.addEventListener(
+    'click',
+    () => {
+      const next =
+        !getDmTapTimestampEnabled();
+
+      const applied =
+        applyDmTapTimestampEnabled(
+          next
+        );
+
+      toggle.classList.toggle(
+        'on',
+        applied
+      );
+
+      toggle.setAttribute(
+        'aria-checked',
+        String(applied)
+      );
+    }
+  );
+}
+
+// ============================================================
 // Hardware acceleration
 // ============================================================
 
@@ -1098,6 +1153,12 @@ export async function bindAppearanceSettings({
   bindAnimations();
   bindCustomAppearance();
   bindOwnBubbleGradient();
+
+  if (
+    isTouchOnlyDevice()
+  ) {
+    bindDmTapTimestamp();
+  }
 
   if (
     window.electronAPI?.isElectron

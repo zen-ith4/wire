@@ -954,6 +954,39 @@ input.conv-search-input:focus{
 }
 
 
+/* ---------- Edit ---------- */
+
+.chat-msg-edit{
+  width:20px;
+  height:20px;
+  border-radius:6px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  color:var(--muted2);
+  cursor:pointer;
+  background:transparent;
+  border:none;
+  opacity:0;
+  flex-shrink:0;
+  transition:
+    opacity .15s,
+    color .15s,
+    background .15s;
+}
+
+.chat-msg-edit svg{
+  width:13px;
+  height:13px;
+  flex-shrink:0;
+}
+
+.chat-msg-edit:hover{
+  background:var(--hover);
+  color:var(--text);
+}
+
+
 /* ---------- Image attachment download ---------- */
 
 .chat-msg-download{
@@ -1859,10 +1892,13 @@ input.conv-search-input:focus{
        right-click does NOT reveal it by itself — only the context
        menu opens; if the pointer happens to still be over the row
        that's the :hover rule below doing it, not the click.
-     - touch: tapping the row (which sets .is-actions-open, same as
-       it always has). Scoped to hover:none so this never fires from
-       a desktop right-click, which also sets .is-actions-open to open
-       the menu but must not reveal the timestamp/seen indicator. */
+     - touch: tapping the row sets .is-timestamp-open (dm.js), but
+       only when Settings > Appearance > "Show timestamp and seen on
+       message touch" is on (default on; that row itself is mobile
+       only — see isTouchOnlyDevice() in chat/tap-reveal.js). Scoped
+       to hover:none so this can never fire from a desktop right-click,
+       which sets .is-actions-open to open the menu but never
+       .is-timestamp-open. */
 
 .chat-time-side{
   display:none;
@@ -1872,13 +1908,13 @@ input.conv-search-input:focus{
   display:none;
 }
 
-/* Touch only: tapping the row reveals it. */
+/* Touch only: tapping the row reveals it, per the setting above. */
 @media (hover:none){
-  .chat-msg--joined-prev.is-actions-open{
+  .chat-msg--joined-prev.is-timestamp-open{
     position:relative;
   }
 
-  .chat-msg--joined-prev.is-actions-open.own > .chat-time-side{
+  .chat-msg--joined-prev.is-timestamp-open.own > .chat-time-side{
     position:absolute;
     top:0;
     height:auto;
@@ -1896,7 +1932,7 @@ input.conv-search-input:focus{
     transform:translateX(100%);
   }
 
-  .chat-msg--joined-prev.is-actions-open:not(.own) > .chat-time-side{
+  .chat-msg--joined-prev.is-timestamp-open:not(.own) > .chat-time-side{
     position:absolute;
     top:0;
     height:auto;
@@ -1914,7 +1950,7 @@ input.conv-search-input:focus{
     transform:translateX(-100%);
   }
 
-  .chat-msg--joined-prev.is-actions-open.own > .dm-ticks-side{
+  .chat-msg--joined-prev.is-timestamp-open.own > .dm-ticks-side{
     position:absolute;
     top:18px;
     height:auto;
@@ -2064,6 +2100,7 @@ input.conv-search-input:focus{
 .chat-msg-actions-bar :is(
   .chat-msg-react,
   .chat-msg-reply,
+  .chat-msg-edit,
   .chat-msg-copy,
   .chat-msg-download,
   .chat-msg-delete
@@ -2109,6 +2146,7 @@ input.conv-search-input:focus{
   .chat-msg-actions-bar :is(
     .chat-msg-react,
     .chat-msg-reply,
+    .chat-msg-edit,
     .chat-msg-copy,
     .chat-msg-download,
     .chat-msg-delete

@@ -78,6 +78,13 @@
   --motion-slow:0ms;
   --motion-ease:linear;
 
+  /* ---- Global "Animation Scale" appearance setting ----
+     Multiplier applied to --motion-fast/--motion-base/--motion-slow
+     below (see core/motion.css) once Animations is on. Defaults to 1
+     (unchanged timing); set on <html> by theme.js/applyAnimationScale()
+     alongside the density and font-size scales above. */
+  --wire-motion-scale:1;
+
   /* ---- Global "UI Density" appearance setting ----
      Every padding/margin/gap value throughout the app that should
      respond to density is written as calc(Npx * var(--wire-density-scale))

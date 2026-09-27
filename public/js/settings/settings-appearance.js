@@ -17,6 +17,9 @@ import {
   applyUseAccentForBubbles,
   getAnimationsEnabled,
   applyAnimationsEnabled,
+  ANIMATION_SCALE_OPTIONS,
+  getAnimationScale,
+  applyAnimationScale,
   getDmTapTimestampEnabled,
   applyDmTapTimestampEnabled,
   applyBackgroundTheme,
@@ -766,6 +769,22 @@ function bindBubbleAccent() {
 // Animations
 // ============================================================
 
+function syncAnimationScaleVisibility(
+  enabled
+) {
+  const row =
+    document.getElementById(
+      'animation-scale-row'
+    );
+
+  if (!row) return;
+
+  row.classList.toggle(
+    'hidden',
+    !enabled
+  );
+}
+
 function bindAnimations() {
   const toggle =
     document.getElementById(
@@ -785,6 +804,10 @@ function bindAnimations() {
   toggle.setAttribute(
     'aria-checked',
     String(enabled)
+  );
+
+  syncAnimationScaleVisibility(
+    enabled
   );
 
   toggle.addEventListener(
@@ -807,6 +830,80 @@ function bindAnimations() {
         'aria-checked',
         String(applied)
       );
+
+      syncAnimationScaleVisibility(
+        applied
+      );
+    }
+  );
+}
+
+// ============================================================
+// Animation scale
+// ============================================================
+
+function bindAnimationScale() {
+  const container =
+    document.getElementById(
+      'animation-scale-toggle'
+    );
+
+  if (!container) return;
+
+  const syncButtons = current => {
+    container
+      .querySelectorAll(
+        '.theme-toggle-btn'
+      )
+      .forEach(button => {
+        const selected =
+          button.dataset
+            .animationScale ===
+          current;
+
+        button.classList.toggle(
+          'selected',
+          selected
+        );
+
+        button.setAttribute(
+          'aria-pressed',
+          String(selected)
+        );
+      });
+  };
+
+  syncButtons(getAnimationScale());
+
+  container.addEventListener(
+    'click',
+    event => {
+      const button =
+        event.target.closest(
+          '.theme-toggle-btn'
+        );
+
+      if (!button) return;
+
+      const scale =
+        button.dataset
+          .animationScale;
+
+      if (
+        !Object.hasOwn(
+          ANIMATION_SCALE_OPTIONS,
+          scale
+        )
+      ) {
+        return;
+      }
+
+      const applied =
+        applyAnimationScale(
+          scale
+        );
+
+      syncButtons(applied);
     }
   );
 }
@@ -1151,6 +1248,7 @@ export async function bindAppearanceSettings({
 
   bindBubbleAccent();
   bindAnimations();
+  bindAnimationScale();
   bindCustomAppearance();
   bindOwnBubbleGradient();
 

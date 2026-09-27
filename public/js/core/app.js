@@ -33,6 +33,7 @@ import {
   initTheme,
   initBackgroundTheme,
   initAnimations,
+  initAnimationScale,
   initFontFamily,
   initMessageBubbleStyle,
   initOwnBubbleGradient,
@@ -548,6 +549,7 @@ async function bootstrap() {
   initBackgroundTheme();
 
   initAnimations();
+  initAnimationScale();
 
   initFontFamily();
 

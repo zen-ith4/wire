@@ -18,6 +18,8 @@ import {
   getCurrentTheme,
   getUseAccentForBubbles,
   getAnimationsEnabled,
+  ANIMATION_SCALE_OPTIONS,
+  getAnimationScale,
   getDmTapTimestampEnabled,
   getCurrentBackgroundTheme,
   getBackgroundPreviewCss,
@@ -311,6 +313,28 @@ function renderAppearance({
 
   const animationsEnabled =
     getAnimationsEnabled();
+
+  const currentAnimationScale =
+    getAnimationScale();
+
+  const animationScaleToggleHtml =
+    Object.keys(ANIMATION_SCALE_OPTIONS)
+      .map(id => `
+        <button
+          type="button"
+          class="theme-toggle-btn${
+            id === currentAnimationScale
+              ? ' selected'
+              : ''
+          }"
+          data-animation-scale="${id}"
+          aria-pressed="${
+            id === currentAnimationScale
+          }">
+          <span>${id}</span>
+        </button>
+      `)
+      .join('');
 
   const dmTapTimestampEnabled =
     getDmTapTimestampEnabled();
@@ -902,6 +926,37 @@ function renderAppearance({
           <span class="switch-thumb"></span>
 
         </button>
+
+      </div>
+
+
+      <!-- Animation scale -->
+
+      <div
+        class="settings-row settings-row-column${
+          animationsEnabled
+            ? ''
+            : ' hidden'
+        }"
+        id="animation-scale-row">
+
+        <div>
+          <div class="settings-row-label">
+            Animation speed
+          </div>
+
+          <div class="settings-row-sublabel">
+            Scale how fast the motion above plays
+          </div>
+        </div>
+
+        <div
+          class="theme-toggle"
+          id="animation-scale-toggle">
+
+          ${animationScaleToggleHtml}
+
+        </div>
 
       </div>
 

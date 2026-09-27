@@ -104,6 +104,7 @@ const BUBBLE_ACCENT_STORAGE_KEY = 'wire-bubble-accent';
 const BUBBLE_STYLE_STORAGE_KEY = 'wire-message-bubble-style';
 const BACKGROUND_STORAGE_KEY = 'wire-background-theme';
 const ANIMATIONS_STORAGE_KEY = 'wire-animations';
+const ANIMATION_SCALE_STORAGE_KEY = 'wire-animation-scale';
 const FONT_STORAGE_KEY = 'wire-font-family';
 const DENSITY_STORAGE_KEY = 'wire-ui-density';
 const FONT_SIZE_STORAGE_KEY = 'wire-font-size';
@@ -3034,6 +3035,92 @@ export function initAnimations() {
   );
 
   return enabled;
+}
+
+
+// ============================================================
+// Animation Scale
+//
+// One authoritative source: the --wire-motion-scale custom
+// property on <html>. --motion-fast/--motion-base/--motion-slow
+// in core/motion.css are written as calc(Nms * var(--wire-motion-scale))
+// so this single multiplier speeds up or slows down every existing
+// animation/transition built on the Animations system proportionally,
+// exactly the pattern used for UI Density/--wire-density-scale and
+// Font Size/--wire-font-scale above. Only meaningful while Animations
+// itself is on (--motion-* are 0ms otherwise, and 0 * anything is 0),
+// so this is safe to keep set regardless of the toggle state.
+// ============================================================
+
+export const DEFAULT_ANIMATION_SCALE_ID = '1x';
+
+export const ANIMATION_SCALE_OPTIONS = {
+  '0.5x': 0.5,
+  '1x': 1,
+  '1.5x': 1.5,
+  '2x': 2
+};
+
+export function getAnimationScale() {
+  const saved =
+    safeGetStorage(
+      ANIMATION_SCALE_STORAGE_KEY
+    );
+
+  return Object.hasOwn(
+    ANIMATION_SCALE_OPTIONS,
+    saved
+  )
+    ? saved
+    : DEFAULT_ANIMATION_SCALE_ID;
+}
+
+
+export function applyAnimationScale(
+  scale,
+  { persist = true } = {}
+) {
+  const value =
+    Object.hasOwn(
+      ANIMATION_SCALE_OPTIONS,
+      scale
+    )
+      ? scale
+      : DEFAULT_ANIMATION_SCALE_ID;
+
+  const root =
+    document.documentElement;
+
+  root.style.setProperty(
+    '--wire-motion-scale',
+    String(
+      ANIMATION_SCALE_OPTIONS[value]
+    )
+  );
+
+  if (persist) {
+    safeSetStorage(
+      ANIMATION_SCALE_STORAGE_KEY,
+      value
+    );
+  }
+
+  return value;
+}
+
+
+export function initAnimationScale() {
+  const scale =
+    getAnimationScale();
+
+  applyAnimationScale(
+    scale,
+    {
+      persist: false
+    }
+  );
+
+  return scale;
 }
 
 

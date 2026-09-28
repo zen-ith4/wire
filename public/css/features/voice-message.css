@@ -414,7 +414,7 @@
   width: 10px;
   height: 10px;
 
-  margin-top: -calc(3px * var(--wire-density-scale));
+  margin-top: calc(-1 * (3px * var(--wire-density-scale)));
 
   border: 0;
   border-radius: 50%;

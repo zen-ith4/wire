@@ -183,7 +183,7 @@
   cursor:pointer;
   user-select:none;
 
-  margin-top:-calc(2px * var(--wire-density-scale));
+  margin-top:calc(-1 * (2px * var(--wire-density-scale)));
 }
 
 .auth-remember-me input{

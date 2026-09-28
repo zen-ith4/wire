@@ -1797,6 +1797,7 @@ async function loadRecentDm() {
 
   const entry = dmEntry;
   const container = document.getElementById('dm-messages');
+  if (!container) return;
 
   try {
     const messages = await api(
@@ -1806,7 +1807,7 @@ async function loadRecentDm() {
     if (dmEntry !== entry) return;
 
     const decryptedMessages = await decryptDmMessages(messages);
-    if (dmEntry !== entry) return;
+    if (dmEntry !== entry || !container.isConnected) return;
 
     cleanupImageUrls(container, 'dm');
     container.innerHTML = '';
@@ -1853,7 +1854,7 @@ async function loadRecentDm() {
     observeLoadMoreRowIfPresent(container);
     refreshJumpToLatestButton();
   } catch (e) {
-    if (dmEntry !== entry) return;
+    if (dmEntry !== entry || !container.isConnected) return;
     container.innerHTML = emptyState(ICONS.empty, 'Failed to load', escapeHtml(e.message));
   }
 }
@@ -1865,6 +1866,8 @@ async function loadOlderDm() {
   const entry = dmEntry;
   const peerId = dmActivePeer.id;
   const container = document.getElementById('dm-messages');
+  // The thread isn't mounted (e.g. Settings is open): nothing to prepend to.
+  if (!container) return;
   const btnRow = document.getElementById('chat-load-more-row');
   if (btnRow) btnRow.querySelector('.load-more-btn').textContent = 'Loading…';
 
@@ -1889,6 +1892,9 @@ async function loadOlderDm() {
 
     const decryptedMessages = await decryptDmMessages(messages);
     if (dmEntry !== entry) return;
+    // Thread was torn down/rebuilt while we were fetching: drop this page,
+    // it will be fetched again from the fresh thread.
+    if (!container.isConnected) return;
 
     entry.oldest = decryptedMessages[0].timestamp;
     entry.hasMore = decryptedMessages.length >= 50;

@@ -346,6 +346,7 @@ async function loadRecentChat(generation) {
 async function loadOlderChat() {
   if (!chatHasMore || !chatOldest) return;
   const container = document.getElementById('chat-messages');
+  if (!container) return;
   const btnRow = document.getElementById('chat-load-more-row');
   if (btnRow) btnRow.querySelector('.load-more-btn').textContent = 'Loading…';
   try {

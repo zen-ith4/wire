@@ -1180,7 +1180,7 @@
   appearance:none;
   width:16px;
   height:16px;
-  margin-top:-calc(6px * var(--wire-density-scale));
+  margin-top:-6px; /* (track 4px - thumb 16px) / 2 */
   border-radius:50%;
   border:2px solid rgb(var(--indigo));
   background:var(--ink2);

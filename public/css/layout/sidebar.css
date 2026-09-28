@@ -44,8 +44,8 @@
 .sidebar-resize-handle{
   flex-shrink:0;
   width:5px;
-  margin-left:-calc(2px * var(--wire-density-scale));
-  margin-right:-calc(3px * var(--wire-density-scale));
+  margin-left:calc(-1 * (2px * var(--wire-density-scale)));
+  margin-right:calc(-1 * (3px * var(--wire-density-scale)));
   position:relative;
   z-index:11;
   cursor:col-resize;

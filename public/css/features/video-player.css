@@ -163,7 +163,7 @@
   background: rgb(var(--indigo));
   border: none;
   cursor: pointer;
-  margin-top: -calc(4px * var(--wire-density-scale));
+  margin-top: calc(-1 * (4px * var(--wire-density-scale)));
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
   transition: transform var(--ease-fast);
 }
@@ -210,7 +210,7 @@
   .video-seekbar::-webkit-slider-thumb {
     width: 15px;
     height: 15px;
-    margin-top: -calc(5.5px * var(--wire-density-scale));
+    margin-top: calc(-1 * (5.5px * var(--wire-density-scale)));
   }
 
   .video-seekbar::-moz-range-thumb {
@@ -272,7 +272,7 @@
   height: 12px;
   border-radius: 50%;
   background: rgb(var(--indigo));
-  margin-top: -calc(4px * var(--wire-density-scale));
+  margin-top: calc(-1 * (4px * var(--wire-density-scale)));
   cursor: pointer;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
@@ -318,7 +318,7 @@
   .video-volume-slider::-webkit-slider-thumb {
     width: 15px;
     height: 15px;
-    margin-top: -calc(5.5px * var(--wire-density-scale));
+    margin-top: calc(-1 * (5.5px * var(--wire-density-scale)));
   }
 
   .video-volume-slider::-moz-range-thumb {

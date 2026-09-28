@@ -607,23 +607,6 @@ input.conv-search-input:focus{
   position:relative;
 }
 
-.presence-dot{
-  position:absolute;
-  right:-1px;
-  bottom:-1px;
-  width:9px;
-  height:9px;
-  border-radius:50%;
-  background:var(--muted2);
-  border:2px solid rgba(13,13,17,.85);
-  transition:background .15s;
-}
-
-.presence-dot.online{
-  background:rgb(var(--green));
-}
-
-
 /* ================================================================
    MESSAGE BUBBLE STYLES
    ================================================================ */

@@ -1,6 +1,5 @@
 import { fetchBlob } from '../core/api.js';
 import { escapeHtml } from '../core/utils.js';
-import { isUserOnline, onPresenceChange } from '../chat/presence.js';
 
 // ---------------------------------------------------------------------------
 // Media Cache & Pending Requests
@@ -202,9 +201,8 @@ export async function applyAvatar(elId, userId) {
   // تا اگر آواتار موجود نبود/حذف شده بود بتوانیم برش گردانیم.
   //
   // Read/write through the dedicated .avatar-initials child instead
-  // of el.textContent directly — avatarHtml() may also render a
-  // sibling .presence-dot span inside this element, and
-  // `el.textContent = ...` would silently delete that sibling too.
+  // of el.textContent directly — `el.textContent = ...` would silently
+  // delete the child too.
   const initialsEl = el.querySelector('.avatar-initials');
   const fallbackText = initialsEl ? initialsEl.textContent : el.textContent;
 
@@ -284,21 +282,14 @@ export async function applyBanner(elId, userId) {
 
 /**
  * Generate HTML for an avatar placeholder and schedule its image load.
- * Pass showPresence=true to overlay a green/gray online status dot
- * (used in the DM list and Admin user list — omitted elsewhere, e.g.
- * chat message avatars, to avoid visual noise).
  */
-export function avatarHtml(userId, username, className = 'chat-avatar', showPresence = false) {
+export function avatarHtml(userId, username, className = 'chat-avatar') {
   const id = `avatar-${avatarSeq++}`;
   const initials = username ? username.charAt(0).toUpperCase() : '?';
 
   queueMicrotask(() => {
     applyAvatar(id, userId);
   });
-
-  const dotHtml = showPresence
-    ? `<span class="presence-dot${isUserOnline(userId) ? ' online' : ''}" data-presence-user="${userId}"></span>`
-    : '';
 
   return `
   <div
@@ -307,7 +298,7 @@ export function avatarHtml(userId, username, className = 'chat-avatar', showPres
     data-avatar-user="${Number(userId)}"
     onclick="event.stopPropagation(); window.openProfileCard(${Number(userId)})"
     title="View profile">
-    <span class="avatar-initials">${escapeHtml(initials)}</span>${dotHtml}
+    <span class="avatar-initials">${escapeHtml(initials)}</span>
   </div>`;
 }
 
@@ -353,22 +344,6 @@ export function refreshBannerEverywhere(userId) {
     .querySelectorAll(`[data-banner-user="${userId}"]`)
     .forEach(el => applyBanner(el.id, userId));
 }
-
-// Registered once for the lifetime of the app (not per avatar — see
-// the note at the top of presence.js for why). On every presence
-// change, just sync whichever dots for that user happen to be in the
-// DOM right now; a full snapshot refresh (userId === null) syncs all
-// of them.
-onPresenceChange((userId, isOnline) => {
-  const selector = userId === null
-    ? '.presence-dot'
-    : `.presence-dot[data-presence-user="${userId}"]`;
-
-  document.querySelectorAll(selector).forEach((dot) => {
-    const uid = dot.dataset.presenceUser;
-    dot.classList.toggle('online', isUserOnline(uid));
-  });
-});
 
 // ---------------------------------------------------------------------------
 // Cleanup & Abort Functions

@@ -567,9 +567,8 @@ onPresenceChange((changedUserId) => {
 });
 
 // Same live-sync approach for the "New message" picker's status lines
-// (the .presence-dot on each row's avatar already updates itself via
-// avatar.js's own listener — this just keeps the "Online"/"Last seen…"
-// text next to it in sync too, without re-rendering the whole list).
+// (this just keeps the "Online"/"Last seen…" text next to each row's
+// avatar in sync too, without re-rendering the whole list).
 onPresenceChange((changedUserId) => {
   const selector =
     changedUserId === null
@@ -775,7 +774,7 @@ function paintConvRows(preparedConvs, filter = '') {
         <div class="dm-conv ${
           dmActivePeer && dmActivePeer.id == c.peer_id ? 'active' : ''
         }" data-peer="${c.peer_id}">
-          ${avatarHtml(c.peer_id, c.username, 'conv-avatar', true)}
+          ${avatarHtml(c.peer_id, c.username, 'conv-avatar')}
           <div class="conv-info">
             <div class="dm-conv-name">${escapeHtml(c.username)}</div>
             <div class="dm-conv-preview">${escapeHtml(
@@ -969,7 +968,7 @@ function renderDmPickerRows(filter = '') {
           data-user-id="${u.id}"
           data-username="${escapeAttr(u.username)}"
           aria-selected="false">
-          ${avatarHtml(u.id, u.username, 'conv-avatar dm-picker-avatar', true)}
+          ${avatarHtml(u.id, u.username, 'conv-avatar dm-picker-avatar')}
           <div class="dm-picker-info">
             <div class="dm-picker-name">${escapeHtml(u.username)}</div>
             <div class="dm-picker-status${online ? ' online' : ''}" data-user-id="${u.id}">${

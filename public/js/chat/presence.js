@@ -6,11 +6,11 @@
 // socket events (wired in socket.js).
 //
 // Deliberately a plain Set + a *single* change-listener registration
-// (see avatar.js), not one subscription per rendered avatar — this
-// app re-renders whole views via innerHTML very frequently (see the
+// (see dm.js/profile-card.js), not one subscription per rendered avatar —
+// this app re-renders whole views via innerHTML very frequently (see the
 // rest of chat.js/dm.js/admin.js), so a per-element subscription
 // would leak one listener every single render. Consumers instead
-// just query the live DOM for `.presence-dot` elements when
+// just query the live DOM for online-status elements when
 // something changes.
 // ============================================================
 

@@ -76,7 +76,7 @@ function renderProfileCard(profile) {
       ${bannerHtml(profile.id, 'profile-banner')}
     </div>
     <div class="profile-card-header">
-      ${avatarHtml(profile.id, profile.username, 'settings-avatar-big', true)}
+      ${avatarHtml(profile.id, profile.username, 'settings-avatar-big')}
       <div>
         <div class="profile-card-name">${escapeHtml(profile.username)}</div>
         <div class="profile-card-status${isUserOnline(profile.id) ? ' online' : ''}" data-presence-user="${profile.id}">
@@ -146,9 +146,8 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// The avatar's own .presence-dot is already kept in sync by the
-// single shared subscription in avatar.js — this one just keeps the
-// "Online"/"Offline" text label live while the card is open, since
+// The avatar no longer shows an online dot — this subscription just keeps
+// the "Online"/"Offline" text label live while the card is open, since
 // that's specific to this view.
 onPresenceChange((changedUserId) => {
   if (openProfileId === null) return;

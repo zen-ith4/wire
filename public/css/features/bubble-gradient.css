@@ -3,6 +3,17 @@
 
    Existing bubble styles in messages.css remain the source of truth.
 
+   TARGET BUBBLES
+     The rules below target:
+
+       .chat-msg:is(.own, :where(:root[data-own-gradient-others="on"]) .chat-msg)
+
+     i.e. always the viewer's own bubbles (.own), plus every other
+     bubble while "Apply to Other Users' Messages" is on. :where()
+     adds no specificity, so this is exactly as specific as the old
+     `.chat-msg.own`, and the incoming bubbles reuse every rule
+     below (same variables, same gradient, same four styles).
+
    filled:
      - entire bubble surface uses the gradient.
 
@@ -31,10 +42,10 @@
    ================================================================ */
 
 :root[data-own-gradient="on"][data-bubble-style="filled"]
-  .chat-msg.own .chat-bubble,
+  .chat-msg:is(.own, :where(:root[data-own-gradient-others="on"]) .chat-msg) .chat-bubble,
 
 :root[data-own-gradient="on"]:not([data-bubble-style])
-  .chat-msg.own .chat-bubble {
+  .chat-msg:is(.own, :where(:root[data-own-gradient-others="on"]) .chat-msg) .chat-bubble {
 
   --bubble-background:var(--own-bubble-gradient);
   --bubble-color:var(--own-bubble-text);
@@ -45,7 +56,7 @@
    ================================================================ */
 
 :root[data-own-gradient="on"][data-bubble-style="soft"]
-  .chat-msg.own .chat-bubble {
+  .chat-msg:is(.own, :where(:root[data-own-gradient-others="on"]) .chat-msg) .chat-bubble {
 
   --bubble-color:var(--text);
   --bubble-border:1px solid transparent;
@@ -62,7 +73,7 @@
 /* ---------- Soft gradient surface ---------- */
 
 :root[data-own-gradient="on"][data-bubble-style="soft"]
-  .chat-msg.own .chat-bubble::after {
+  .chat-msg:is(.own, :where(:root[data-own-gradient-others="on"]) .chat-msg) .chat-bubble::after {
 
   content:"";
   position:absolute;
@@ -80,7 +91,7 @@
 /* ---------- Soft complete gradient border ---------- */
 
 :root[data-own-gradient="on"][data-bubble-style="soft"]
-  .chat-msg.own .chat-bubble::before {
+  .chat-msg:is(.own, :where(:root[data-own-gradient-others="on"]) .chat-msg) .chat-bubble::before {
 
   content:"";
   position:absolute;
@@ -110,7 +121,7 @@
 /* ---------- Keep Soft message content above overlays ---------- */
 
 :root[data-own-gradient="on"][data-bubble-style="soft"]
-  .chat-msg.own .chat-bubble > * {
+  .chat-msg:is(.own, :where(:root[data-own-gradient-others="on"]) .chat-msg) .chat-bubble > * {
 
   position:relative;
   z-index:1;
@@ -130,7 +141,7 @@
    ================================================================ */
 
 :root[data-own-gradient="on"][data-bubble-style="outline"]
-  .chat-msg.own .chat-bubble {
+  .chat-msg:is(.own, :where(:root[data-own-gradient-others="on"]) .chat-msg) .chat-bubble {
 
   --bubble-background:transparent;
   --bubble-border:1px solid transparent;
@@ -143,7 +154,7 @@
 /* Gradient border only */
 
 :root[data-own-gradient="on"][data-bubble-style="outline"]
-  .chat-msg.own .chat-bubble::after {
+  .chat-msg:is(.own, :where(:root[data-own-gradient-others="on"]) .chat-msg) .chat-bubble::after {
 
   content:"";
   position:absolute;
@@ -175,7 +186,7 @@
    ================================================================ */
 
 :root[data-own-gradient="on"][data-bubble-style="clean"]
-  .chat-msg.own .chat-bubble {
+  .chat-msg:is(.own, :where(:root[data-own-gradient-others="on"]) .chat-msg) .chat-bubble {
 
   --bubble-background:transparent;
   --bubble-border:1px solid transparent;
@@ -184,7 +195,7 @@
 
 
 :root[data-own-gradient="on"][data-bubble-style="clean"]
-  .chat-msg.own .chat-bubble::before {
+  .chat-msg:is(.own, :where(:root[data-own-gradient-others="on"]) .chat-msg) .chat-bubble::before {
 
   background:var(--own-bubble-gradient);
 }
@@ -195,7 +206,7 @@
    ================================================================ */
 
 :root[data-own-gradient="on"][data-bubble-style="clean"]
-  .chat-msg.own .chat-bubble:hover {
+  .chat-msg:is(.own, :where(:root[data-own-gradient-others="on"]) .chat-msg) .chat-bubble:hover {
 
   background:
     color-mix(
@@ -211,7 +222,7 @@
    ================================================================ */
 
 :root[data-own-gradient="on"]
-  .chat-msg.own .chat-bubble .chat-link {
+  .chat-msg:is(.own, :where(:root[data-own-gradient-others="on"]) .chat-msg) .chat-bubble .chat-link {
 
   color:inherit;
   text-decoration-color:currentColor;
@@ -227,11 +238,11 @@
 
 :root[data-bubble-style="filled"]
   .own-bubble-preview[data-own-gradient="on"]
-  .chat-msg.own .chat-bubble,
+  .chat-msg:is(.own, :where(.own-bubble-preview[data-own-gradient-others="on"]) .chat-msg) .chat-bubble,
 
 :root:not([data-bubble-style])
   .own-bubble-preview[data-own-gradient="on"]
-  .chat-msg.own .chat-bubble {
+  .chat-msg:is(.own, :where(.own-bubble-preview[data-own-gradient-others="on"]) .chat-msg) .chat-bubble {
 
   --bubble-background:var(--own-bubble-gradient);
   --bubble-color:var(--own-bubble-text);
@@ -241,7 +252,7 @@
 
 :root[data-bubble-style="soft"]
   .own-bubble-preview[data-own-gradient="on"]
-  .chat-msg.own .chat-bubble {
+  .chat-msg:is(.own, :where(.own-bubble-preview[data-own-gradient-others="on"]) .chat-msg) .chat-bubble {
 
   --bubble-color:var(--text);
   --bubble-border:1px solid transparent;
@@ -254,7 +265,7 @@
 
 :root[data-bubble-style="soft"]
   .own-bubble-preview[data-own-gradient="on"]
-  .chat-msg.own .chat-bubble::after {
+  .chat-msg:is(.own, :where(.own-bubble-preview[data-own-gradient-others="on"]) .chat-msg) .chat-bubble::after {
 
   content:"";
   position:absolute;
@@ -273,7 +284,7 @@
 
 :root[data-bubble-style="soft"]
   .own-bubble-preview[data-own-gradient="on"]
-  .chat-msg.own .chat-bubble::before {
+  .chat-msg:is(.own, :where(.own-bubble-preview[data-own-gradient-others="on"]) .chat-msg) .chat-bubble::before {
 
   content:"";
   position:absolute;
@@ -304,7 +315,7 @@
 
 :root[data-bubble-style="soft"]
   .own-bubble-preview[data-own-gradient="on"]
-  .chat-msg.own .chat-bubble > * {
+  .chat-msg:is(.own, :where(.own-bubble-preview[data-own-gradient-others="on"]) .chat-msg) .chat-bubble > * {
 
   position:relative;
   z-index:1;
@@ -314,7 +325,7 @@
 
 :root[data-bubble-style="outline"]
   .own-bubble-preview[data-own-gradient="on"]
-  .chat-msg.own .chat-bubble {
+  .chat-msg:is(.own, :where(.own-bubble-preview[data-own-gradient-others="on"]) .chat-msg) .chat-bubble {
 
   --bubble-background:transparent;
   --bubble-border:1px solid transparent;
@@ -326,7 +337,7 @@
 
 :root[data-bubble-style="outline"]
   .own-bubble-preview[data-own-gradient="on"]
-  .chat-msg.own .chat-bubble::after {
+  .chat-msg:is(.own, :where(.own-bubble-preview[data-own-gradient-others="on"]) .chat-msg) .chat-bubble::after {
 
   content:"";
   position:absolute;
@@ -357,7 +368,7 @@
 
 :root[data-bubble-style="clean"]
   .own-bubble-preview[data-own-gradient="on"]
-  .chat-msg.own .chat-bubble {
+  .chat-msg:is(.own, :where(.own-bubble-preview[data-own-gradient-others="on"]) .chat-msg) .chat-bubble {
 
   --bubble-background:transparent;
   --bubble-border:1px solid transparent;
@@ -367,7 +378,7 @@
 
 :root[data-bubble-style="clean"]
   .own-bubble-preview[data-own-gradient="on"]
-  .chat-msg.own .chat-bubble::before {
+  .chat-msg:is(.own, :where(.own-bubble-preview[data-own-gradient-others="on"]) .chat-msg) .chat-bubble::before {
 
   background:var(--own-bubble-gradient);
 }
@@ -378,7 +389,7 @@
    ================================================================ */
 
 .own-bubble-preview[data-own-gradient="on"]
-  .chat-msg.own .chat-bubble .chat-link {
+  .chat-msg:is(.own, :where(.own-bubble-preview[data-own-gradient-others="on"]) .chat-msg) .chat-bubble .chat-link {
 
   color:inherit;
   text-decoration-color:currentColor;
@@ -388,6 +399,10 @@
 /* ================================================================
    SETTINGS — OWN MESSAGE COLOURS BLOCK
    ================================================================ */
+
+.own-gradient-head[hidden] {
+  display:none;
+}
 
 .own-gradient-head {
   display:flex;

@@ -2695,8 +2695,11 @@ export function initMessageBubbleStyle() {
 // Bubble shape, radius, padding and spacing stay in messages.css;
 // see css/features/bubble-gradient.css for the override rules.
 //
-// State: { enabled, angle, stops: [{ color, position }] }
-//   enabled  false = Wire's normal bubble colors (the default)
+// State: { enabled, applyToOthers, angle, stops: [{ color, position }] }
+//   enabled        false = Wire's normal bubble colors (the default)
+//   applyToOthers  false = only the viewer's own bubbles (the default);
+//                  true  = incoming bubbles use the same gradient.
+//                  Only takes effect while `enabled` is true.
 //   angle    gradient direction in degrees (0-360)
 //   stops    2-4 colors, each with a 0-100 position along the line
 //
@@ -2704,6 +2707,7 @@ export function initMessageBubbleStyle() {
 //   --own-bubble-gradient   linear-gradient(...)
 //   --own-bubble-text       readable text color for that gradient
 //   data-own-gradient="on" switches the override rules on
+//   data-own-gradient-others="on" extends them to incoming bubbles
 // ============================================================
 
 const OWN_BUBBLE_GRADIENT_STORAGE_KEY = 'wire-own-bubble-gradient';
@@ -2759,6 +2763,7 @@ export function createDefaultOwnBubbleGradient() {
 
   return {
     enabled: false,
+    applyToOthers: false,
     angle: OWN_BUBBLE_GRADIENT_LIMITS.defaultAngle,
     stops: [
       { color: accent, position: 0 },
@@ -2803,6 +2808,7 @@ export function normalizeOwnBubbleGradient(input) {
 
   return {
     enabled: input.enabled === true,
+    applyToOthers: input.applyToOthers === true,
     angle: Number.isFinite(angle)
       ? clampNumber(Math.round(angle), 0, 360)
       : OWN_BUBBLE_GRADIENT_LIMITS.defaultAngle,
@@ -2939,6 +2945,13 @@ export function applyOwnBubbleGradient(
     );
 
     delete root.dataset.ownGradient;
+  }
+
+  // Incoming bubbles only follow when the gradient itself is on.
+  if (value.enabled && value.applyToOthers) {
+    root.dataset.ownGradientOthers = 'on';
+  } else {
+    delete root.dataset.ownGradientOthers;
   }
 
   if (persist) {

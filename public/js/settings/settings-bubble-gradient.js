@@ -2,8 +2,9 @@
 // Settings → Appearance: "My message colors"
 //
 // Controls for the gradient painted on the bubbles the viewer
-// sends. State and persistence live in theme.js; this file only
-// renders the block and turns clicks into edits.
+// sends, and optionally on incoming bubbles too. State and
+// persistence live in theme.js; this file only renders the block
+// and turns clicks into edits.
 //
 // Editing works on a DRAFT copy. The live preview shows the draft,
 // and nothing is stored until Save is pressed. Discard drops the
@@ -117,8 +118,7 @@ export function renderOwnBubbleGradientSection() {
           </div>
 
           <div class="settings-row-sublabel">
-            Give the bubbles you send a gradient. Messages from
-            others are not changed.
+            Give the bubbles you send a gradient.
           </div>
         </div>
 
@@ -126,6 +126,28 @@ export function renderOwnBubbleGradientSection() {
           id: 'own-gradient-toggle',
           on: config.enabled,
           label: 'Use a gradient for my message bubbles'
+        })}
+      </div>
+
+      <div
+        class="own-gradient-head"
+        id="own-gradient-others-row"
+        ${config.enabled ? '' : 'hidden'}>
+        <div>
+          <div class="settings-row-label">
+            Apply to Other Users' Messages
+          </div>
+
+          <div class="settings-row-sublabel">
+            Use the same gradient on messages you receive, in
+            direct messages and group chats.
+          </div>
+        </div>
+
+        ${switchButton({
+          id: 'own-gradient-others-toggle',
+          on: config.applyToOthers,
+          label: "Apply the gradient to other users' messages"
         })}
       </div>
 
@@ -251,6 +273,12 @@ function applyPreview() {
     preview.style.removeProperty('--own-bubble-text');
   }
 
+  if (config.enabled && config.applyToOthers) {
+    preview.dataset.ownGradientOthers = 'on';
+  } else {
+    delete preview.dataset.ownGradientOthers;
+  }
+
   if (getUseAccentForBubbles()) {
     const rgb = rgbStringFromHex(getCurrentAccentHex());
 
@@ -310,6 +338,10 @@ function syncStops() {
 // handler so the color picker keeps its focus.
 function syncUi() {
   setSwitch($('own-gradient-toggle'), draft.enabled);
+  setSwitch($('own-gradient-others-toggle'), draft.applyToOthers);
+
+  const othersRow = $('own-gradient-others-row');
+  if (othersRow) othersRow.hidden = !draft.enabled;
 
   const controls = $('own-gradient-controls');
   if (controls) controls.hidden = !draft.enabled;
@@ -385,6 +417,12 @@ export function bindOwnBubbleGradient() {
   block.addEventListener('click', event => {
     if (event.target.closest('#own-gradient-toggle')) {
       draft.enabled = !draft.enabled;
+      syncUi();
+      return;
+    }
+
+    if (event.target.closest('#own-gradient-others-toggle')) {
+      draft.applyToOthers = !draft.applyToOthers;
       syncUi();
       return;
     }

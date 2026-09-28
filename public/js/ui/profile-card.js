@@ -34,6 +34,10 @@ export async function openProfileCard(userId) {
   const id = Number(userId);
   openProfileId = id;
 
+  // Hide the online dots on the DM sidebar / other avatars while the card
+  // is open — the card shows the person's status as a text label instead.
+  document.querySelectorAll('.presence-dot').forEach(dot => dot.classList.add('hidden'));
+
   body.innerHTML = loadingState();
   modal.classList.add('active');
 
@@ -130,6 +134,8 @@ window.messageFromProfileCard = function(btnEl) {
 window.closeProfileCard = function() {
   document.getElementById('profile-card-modal')?.classList.remove('active');
   openProfileId = null;
+  // Re-show the online dots now that the card is gone.
+  document.querySelectorAll('.presence-dot').forEach(dot => dot.classList.remove('hidden'));
 };
 
 window.openProfileCard = openProfileCard;
@@ -146,9 +152,9 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// The avatar no longer shows an online dot — this subscription just keeps
-// the "Online"/"Offline" text label live while the card is open, since
-// that's specific to this view.
+// The DM sidebar avatars show an online dot, which is hidden while this
+// card is open; this subscription just keeps the "Online"/"Offline" text
+// label live while the card is open, since that's specific to this view.
 onPresenceChange((changedUserId) => {
   if (openProfileId === null) return;
   if (changedUserId !== null && changedUserId !== openProfileId) return;

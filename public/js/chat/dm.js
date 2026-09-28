@@ -774,7 +774,7 @@ function paintConvRows(preparedConvs, filter = '') {
         <div class="dm-conv ${
           dmActivePeer && dmActivePeer.id == c.peer_id ? 'active' : ''
         }" data-peer="${c.peer_id}">
-          ${avatarHtml(c.peer_id, c.username, 'conv-avatar')}
+          ${avatarHtml(c.peer_id, c.username, 'conv-avatar', true)}
           <div class="conv-info">
             <div class="dm-conv-name">${escapeHtml(c.username)}</div>
             <div class="dm-conv-preview">${escapeHtml(

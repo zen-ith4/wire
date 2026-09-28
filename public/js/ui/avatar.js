@@ -1,4 +1,5 @@
 import { fetchBlob } from '../core/api.js';
+import { isUserOnline, onPresenceChange } from '../chat/presence.js';
 import { escapeHtml } from '../core/utils.js';
 
 // ---------------------------------------------------------------------------
@@ -282,14 +283,21 @@ export async function applyBanner(elId, userId) {
 
 /**
  * Generate HTML for an avatar placeholder and schedule its image load.
+ * Pass showPresence=true to overlay the online/gray status dot (used on
+ * the DM sidebar and Admin user list; omitted on the profile card itself,
+ * which shows the status as text instead).
  */
-export function avatarHtml(userId, username, className = 'chat-avatar') {
+export function avatarHtml(userId, username, className = 'chat-avatar', showPresence = false) {
   const id = `avatar-${avatarSeq++}`;
   const initials = username ? username.charAt(0).toUpperCase() : '?';
 
   queueMicrotask(() => {
     applyAvatar(id, userId);
   });
+
+  const dotHtml = showPresence
+    ? `<span class="presence-dot${isUserOnline(userId) ? ' online' : ''}" data-presence-user="${userId}"></span>`
+    : '';
 
   return `
   <div
@@ -298,7 +306,7 @@ export function avatarHtml(userId, username, className = 'chat-avatar') {
     data-avatar-user="${Number(userId)}"
     onclick="event.stopPropagation(); window.openProfileCard(${Number(userId)})"
     title="View profile">
-    <span class="avatar-initials">${escapeHtml(initials)}</span>
+    <span class="avatar-initials">${escapeHtml(initials)}</span>${dotHtml}
   </div>`;
 }
 
@@ -344,6 +352,21 @@ export function refreshBannerEverywhere(userId) {
     .querySelectorAll(`[data-banner-user="${userId}"]`)
     .forEach(el => applyBanner(el.id, userId));
 }
+
+// Registered once for the lifetime of the app (not per avatar — see
+// presence.js). On every presence change, just sync whichever dots for
+// that user happen to be in the DOM right now; a full snapshot refresh
+// (userId === null) syncs all of them.
+onPresenceChange((userId, isOnline) => {
+  const selector = userId === null
+    ? '.presence-dot'
+    : `.presence-dot[data-presence-user="${userId}"]`;
+
+  document.querySelectorAll(selector).forEach((dot) => {
+    const uid = dot.dataset.presenceUser;
+    dot.classList.toggle('online', isUserOnline(uid));
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Cleanup & Abort Functions

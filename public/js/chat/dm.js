@@ -1542,6 +1542,24 @@ thread.innerHTML = `
     onEdit: (message) => {
       void updateDmMessage(message);
     },
+    // ArrowUp in an empty input: edit my most recent editable message.
+    onEditLast: () => {
+      const currentUser = getCurrentUser();
+      const messages = dmEntry?.messages;
+      if (!currentUser || !messages) return;
+
+      for (let i = messages.length - 1; i >= 0; i--) {
+        const m = messages[i];
+        if (
+          Number(m.sender_id) === Number(currentUser.id) &&
+          m.content &&
+          !m.has_attachment
+        ) {
+          window.editDmMessage(m.id);
+          return;
+        }
+      }
+    },
   });
 
   wirePasteImage('dm-input', (file) => dmComposer.addFiles([file]));
@@ -1992,14 +2010,18 @@ function dmTicksHtml(msg, own, variant = '') {
   return `<span class="${cls}" title="${seen ? 'Read' : 'Sent'}" aria-label="${seen ? 'Read' : 'Sent'}">${seen ? ICONS.checkDouble : ICONS.check}</span>`;
 }
 
-// "Edited" side indicator for grouped own messages — the same small
-// "Edited" text as the bubble's .chat-edited-flag, but scoped to the
-// side metadata column (beside the timestamp / read-receipt ticks).
-// Own-only, exactly like .dm-ticks-side: incoming messages are never
-// edited (editing is sender-only), so this is empty for them.
-function dmEditedSideHtml(msg, own) {
-  if (!own || !msg.edited_at) return '';
+// Side status for grouped (compacted) messages: the small "Edited"
+// text and, for own messages, the read-receipt ticks, kept together in
+// one container so "Edited" always sits right beside the seen icon.
+// "Edited" is shown to BOTH sides of the conversation (the recipient
+// needs to know a message was changed too); the ticks are own-only.
+function dmEditedSideHtml(msg) {
+  if (!msg.edited_at) return '';
   return `<span class="chat-edited-flag chat-edited-flag-side">Edited</span>`;
+}
+
+function dmSideStatusHtml(msg, own) {
+  return `<span class="dm-side-status" aria-hidden="true">${dmEditedSideHtml(msg)}${dmTicksHtml(msg, own, 'dm-ticks-side')}</span>`;
 }
 
 function buildDmMessageEl(msg, currentUser) {
@@ -2068,8 +2090,7 @@ function buildDmMessageEl(msg, currentUser) {
       ${renderReactionsRow(msg, 'dm')}
     </div>
     <time class="chat-time chat-time-side" datetime="${escapeAttr(msg.timestamp)}" title="${escapeAttr(formatFullDateTime(msg.timestamp))}" aria-hidden="true">${formatTime(msg.timestamp)}</time>
-    ${dmTicksHtml(msg, own, 'dm-ticks-side')}
-    ${dmEditedSideHtml(msg, own)}
+    ${dmSideStatusHtml(msg, own)}
   `;
 
   if (
@@ -2510,20 +2531,23 @@ export async function updateDmMessage(msg) {
     }
   }
 
-  // Side metadata (hover/tap column): reveal the same "Edited"
-  // indicator there for grouped own messages, so the side column shows
-  // timestamp / ticks / edited together. Rows that are not grouped never
-  // reveal the side column, so a stray element here is harmless.
-  if (
-    row.classList.contains('chat-msg--joined-prev') &&
-    decrypted.edited_at &&
-    !row.querySelector('.chat-edited-flag-side')
-  ) {
+  // Side metadata (hover/tap column) for grouped messages: put
+  // "Edited" inside the side status container, right before the read
+  // ticks, for whoever is looking (sender and recipient). This does
+  // not depend on the row being grouped at this moment — the CSS only
+  // reveals the container for grouped rows, so it is harmless otherwise.
+  if (decrypted.edited_at && !row.querySelector('.chat-edited-flag-side')) {
+    let status = row.querySelector(':scope > .dm-side-status');
+    if (!status) {
+      status = document.createElement('span');
+      status.className = 'dm-side-status';
+      status.setAttribute('aria-hidden', 'true');
+      row.appendChild(status);
+    }
     const sideFlag = document.createElement('span');
     sideFlag.className = 'chat-edited-flag chat-edited-flag-side';
     sideFlag.textContent = 'Edited';
-    sideFlag.setAttribute('aria-hidden', 'true');
-    row.appendChild(sideFlag);
+    status.insertBefore(sideFlag, status.firstChild);
   }
 }
 

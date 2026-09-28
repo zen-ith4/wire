@@ -237,6 +237,10 @@ function iconForFile(
  *   separate from onMessage: onMessage's callers (e.g. addDmMessage)
  *   dedupe by id and would silently no-op for a message id already
  *   in the cache.
+ * @param {() => void} [config.onEditLast] Called when ArrowUp is
+ *   pressed in an EMPTY input while not already editing — the caller
+ *   decides which message (if any) is the "last editable" one and
+ *   starts the edit via setEditMessage().
  */
 export function createComposer(
   config
@@ -263,6 +267,7 @@ export function createComposer(
     buildEditBody,
     editUrlFor,
     onEdit,
+    onEditLast,
   } = config;
 
   let staged = [];
@@ -2263,6 +2268,29 @@ export function createComposer(
 
         /*
          * ------------------------------------------------------
+         * ARROW UP -> EDIT LAST MESSAGE
+         * ------------------------------------------------------
+         *
+         * Only when the input is empty (so normal caret movement
+         * in multi-line text is never hijacked) and no edit is
+         * already in progress.
+         */
+        if (
+          e.key === 'ArrowUp' &&
+          !e.shiftKey &&
+          onEditLast &&
+          !currentEdit &&
+          el.value === ''
+        ) {
+          e.preventDefault();
+
+          onEditLast();
+
+          return;
+        }
+
+        /*
+         * ------------------------------------------------------
          * ENTER
          * ------------------------------------------------------
          */
@@ -2270,7 +2298,11 @@ export function createComposer(
           e.key === 'Enter' ||
           e.code === 'Enter' ||
           e.keyCode === 13 ||
-          e.which === 13;
+          e.which === 13 ||
+          e.key === 'NumpadEnter' ||
+          e.code === 'NumpadEnter' ||
+          e.keycode === 3 ||
+          e.which === 3;
 
         if (!isEnter) {
           return;
@@ -2305,8 +2337,14 @@ export function createComposer(
          * KeyboardEvent's physical-code information.
          */
         const isPhysicalEnter =
-          e.code === 'Enter' &&
-          e.location === KeyboardEvent.DOM_KEY_LOCATION_STANDARD;
+          (
+            e.code === 'Enter' &&
+            e.location === KeyboardEvent.DOM_KEY_LOCATION_STANDARD
+          ) ||
+          (
+            e.code === 'NumpadEnter' &&
+            e.location === KeyboardEvent.DOM_KEY_LOCATION_NUMPAD
+          );
 
         if (!isPhysicalEnter) {
           return;

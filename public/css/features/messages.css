@@ -1922,11 +1922,7 @@ input.conv-search-input:focus{
   display:none;
 }
 
-.dm-ticks-side{
-  display:none;
-}
-
-.chat-edited-flag-side{
+.dm-side-status{
   display:none;
 }
 
@@ -1972,36 +1968,44 @@ input.conv-search-input:focus{
     transform:translateX(-100%);
   }
 
-  .chat-msg--joined-prev.is-actions-open.own > .dm-ticks-side{
+  .chat-msg--joined-prev.is-actions-open.own > .dm-side-status{
     position:absolute;
     top:18px;
     height:auto;
     display:flex;
+    flex-direction:row;
     align-items:center;
-
+    justify-content:flex-end;
+    gap:5px;
+    white-space:nowrap;
     right:34px;
     transform:translateX(100%);
-
     pointer-events:none;
     user-select:none;
+    -webkit-user-select:none;
     animation:motion-fade-in var(--motion-fast) var(--motion-ease);
   }
-}
 
-  .chat-msg--joined-prev.is-actions-open.own > .chat-edited-flag-side{
+  .chat-msg--joined-prev.is-actions-open:not(.own) > .dm-side-status{
     position:absolute;
-    top:26px;
+    top:18px;
     height:auto;
     display:flex;
+    flex-direction:row;
     align-items:center;
-
-    right:34px;
-    transform:translateX(100%);
-
+    justify-content:flex-end;
+    gap:5px;
+    white-space:nowrap;
+    left:34px;
+    transform:translateX(-100%);
     pointer-events:none;
     user-select:none;
+    -webkit-user-select:none;
     animation:motion-fade-in var(--motion-fast) var(--motion-ease);
   }
+
+}
+
 
 /* Desktop only: hovering the row reveals the same elements. This is
    the ONLY thing that reveals it on desktop — right-clicking does not,
@@ -2047,36 +2051,44 @@ input.conv-search-input:focus{
     transform:translateX(-100%);
   }
 
-  .chat-msg--joined-prev:hover.own > .dm-ticks-side{
+  .chat-msg--joined-prev:hover.own > .dm-side-status{
     position:absolute;
     top:18px;
     height:auto;
     display:flex;
+    flex-direction:row;
     align-items:center;
-
+    justify-content:flex-end;
+    gap:5px;
+    white-space:nowrap;
     right:34px;
     transform:translateX(100%);
-
     pointer-events:none;
     user-select:none;
+    -webkit-user-select:none;
     animation:motion-fade-in var(--motion-fast) var(--motion-ease);
   }
-}
 
-  .chat-msg--joined-prev:hover.own > .chat-edited-flag-side{
+  .chat-msg--joined-prev:hover:not(.own) > .dm-side-status{
     position:absolute;
-    top:26px;
+    top:18px;
     height:auto;
     display:flex;
+    flex-direction:row;
     align-items:center;
-
-    right:34px;
-    transform:translateX(100%);
-
+    justify-content:flex-end;
+    gap:5px;
+    white-space:nowrap;
+    left:34px;
+    transform:translateX(-100%);
     pointer-events:none;
     user-select:none;
+    -webkit-user-select:none;
     animation:motion-fade-in var(--motion-fast) var(--motion-ease);
   }
+
+}
+
 
 /* ================================================================
    MESSAGE ACTION BAR

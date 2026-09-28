@@ -16,6 +16,7 @@ import {
 
 import {
   addDmMessage,
+  updateDmMessage,
   removeDmMessage,
   loadDmConversations,
   refreshUnreadBadge,
@@ -227,6 +228,11 @@ export function initSocket(token) {
   );
 
   socket.on(
+    'dm-message-edited',
+    handleDirectMessageEdited
+  );
+
+  socket.on(
     'dm:typing',
     handleDmTyping
   );
@@ -434,6 +440,15 @@ function handleDirectMessage(message) {
 
 function handleChatMessageDeleted({ id }) {
   removeChatMessage(id);
+}
+
+// The sender's own edit also arrives here (emitDirectMessageEdited
+// fans out to both sender and recipient rooms — see
+// services/socket.service.js) — updateDmMessage() is naturally a
+// no-op for a conversation/message this client doesn't have cached,
+// so there's no need to special-case "was this my own edit" here.
+function handleDirectMessageEdited(message) {
+  void updateDmMessage(message);
 }
 
 function handleDirectMessageDeleted({ id }) {

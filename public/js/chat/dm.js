@@ -1992,6 +1992,16 @@ function dmTicksHtml(msg, own, variant = '') {
   return `<span class="${cls}" title="${seen ? 'Read' : 'Sent'}" aria-label="${seen ? 'Read' : 'Sent'}">${seen ? ICONS.checkDouble : ICONS.check}</span>`;
 }
 
+// "Edited" side indicator for grouped own messages — the same small
+// "Edited" text as the bubble's .chat-edited-flag, but scoped to the
+// side metadata column (beside the timestamp / read-receipt ticks).
+// Own-only, exactly like .dm-ticks-side: incoming messages are never
+// edited (editing is sender-only), so this is empty for them.
+function dmEditedSideHtml(msg, own) {
+  if (!own || !msg.edited_at) return '';
+  return `<span class="chat-edited-flag chat-edited-flag-side">Edited</span>`;
+}
+
 function buildDmMessageEl(msg, currentUser) {
   const own =
     currentUser && Number(msg.sender_id) === Number(currentUser.id);
@@ -2021,7 +2031,7 @@ function buildDmMessageEl(msg, currentUser) {
         <time class="chat-time" datetime="${escapeAttr(msg.timestamp)}" title="${escapeAttr(formatFullDateTime(msg.timestamp))}">${formatTime(msg.timestamp)}</time>
         ${
           msg.edited_at
-            ? `<span class="chat-edited-flag" title="Edited ${escapeAttr(formatFullDateTime(msg.edited_at))}">edited</span>`
+            ? `<span class="chat-edited-flag">Edited</span>`
             : ''
         }
         ${dmTicksHtml(msg, own)}
@@ -2059,6 +2069,7 @@ function buildDmMessageEl(msg, currentUser) {
     </div>
     <time class="chat-time chat-time-side" datetime="${escapeAttr(msg.timestamp)}" title="${escapeAttr(formatFullDateTime(msg.timestamp))}" aria-hidden="true">${formatTime(msg.timestamp)}</time>
     ${dmTicksHtml(msg, own, 'dm-ticks-side')}
+    ${dmEditedSideHtml(msg, own)}
   `;
 
   if (
@@ -2490,14 +2501,29 @@ export async function updateDmMessage(msg) {
   if (meta && decrypted.edited_at && !meta.querySelector('.chat-edited-flag')) {
     const flag = document.createElement('span');
     flag.className = 'chat-edited-flag';
-    flag.title = `Edited ${formatFullDateTime(decrypted.edited_at)}`;
-    flag.textContent = 'edited';
+    flag.textContent = 'Edited';
     const timeEl = meta.querySelector('.chat-time');
     if (timeEl) {
       timeEl.insertAdjacentElement('afterend', flag);
     } else {
       meta.appendChild(flag);
     }
+  }
+
+  // Side metadata (hover/tap column): reveal the same "Edited"
+  // indicator there for grouped own messages, so the side column shows
+  // timestamp / ticks / edited together. Rows that are not grouped never
+  // reveal the side column, so a stray element here is harmless.
+  if (
+    row.classList.contains('chat-msg--joined-prev') &&
+    decrypted.edited_at &&
+    !row.querySelector('.chat-edited-flag-side')
+  ) {
+    const sideFlag = document.createElement('span');
+    sideFlag.className = 'chat-edited-flag chat-edited-flag-side';
+    sideFlag.textContent = 'Edited';
+    sideFlag.setAttribute('aria-hidden', 'true');
+    row.appendChild(sideFlag);
   }
 }
 

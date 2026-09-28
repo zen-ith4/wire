@@ -866,6 +866,12 @@ input.conv-search-input:focus{
   color:var(--muted2);
 }
 
+.chat-edited-flag{
+  font-size:calc(10.5px * var(--wire-font-scale));
+  color:var(--muted2);
+  font-style:italic;
+}
+
 /* ---------- Read-receipt ticks (own DM messages only) ---------- */
 
 .dm-ticks{
@@ -1355,6 +1361,21 @@ input.conv-search-input:focus{
 
 .composer-wrapper:focus-within{
   border-color:var(--accent-border);
+}
+
+/* Editing an existing message — see chat/composer.js's
+   setEditMessage/cancelEdit. Attach/mic are visually disabled
+   because editing is text-only (see dm.controller.js's editMessage);
+   [title="Attach"] targets just the paperclip button, not the emoji
+   trigger, which stays usable while editing. */
+.composer-wrapper.is-editing{
+  border-color:rgb(var(--indigo-2));
+}
+
+.composer-wrapper.is-editing .chat-input-area [title="Attach"],
+.composer-wrapper.is-editing .chat-input-area .composer-mic-btn{
+  opacity:.35;
+  pointer-events:none;
 }
 
 
@@ -1892,13 +1913,10 @@ input.conv-search-input:focus{
        right-click does NOT reveal it by itself — only the context
        menu opens; if the pointer happens to still be over the row
        that's the :hover rule below doing it, not the click.
-     - touch: tapping the row sets .is-timestamp-open (dm.js), but
-       only when Settings > Appearance > "Show timestamp and seen on
-       message touch" is on (default on; that row itself is mobile
-       only — see isTouchOnlyDevice() in chat/tap-reveal.js). Scoped
-       to hover:none so this can never fire from a desktop right-click,
-       which sets .is-actions-open to open the menu but never
-       .is-timestamp-open. */
+     - touch: tapping the row (which sets .is-actions-open, same as
+       it always has). Scoped to hover:none so this never fires from
+       a desktop right-click, which also sets .is-actions-open to open
+       the menu but must not reveal the timestamp/seen indicator. */
 
 .chat-time-side{
   display:none;
@@ -1908,13 +1926,17 @@ input.conv-search-input:focus{
   display:none;
 }
 
-/* Touch only: tapping the row reveals it, per the setting above. */
+.chat-edited-flag-side{
+  display:none;
+}
+
+/* Touch only: tapping the row reveals it. */
 @media (hover:none){
-  .chat-msg--joined-prev.is-timestamp-open{
+  .chat-msg--joined-prev.is-actions-open{
     position:relative;
   }
 
-  .chat-msg--joined-prev.is-timestamp-open.own > .chat-time-side{
+  .chat-msg--joined-prev.is-actions-open.own > .chat-time-side{
     position:absolute;
     top:0;
     height:auto;
@@ -1932,7 +1954,7 @@ input.conv-search-input:focus{
     transform:translateX(100%);
   }
 
-  .chat-msg--joined-prev.is-timestamp-open:not(.own) > .chat-time-side{
+  .chat-msg--joined-prev.is-actions-open:not(.own) > .chat-time-side{
     position:absolute;
     top:0;
     height:auto;
@@ -1950,7 +1972,7 @@ input.conv-search-input:focus{
     transform:translateX(-100%);
   }
 
-  .chat-msg--joined-prev.is-timestamp-open.own > .dm-ticks-side{
+  .chat-msg--joined-prev.is-actions-open.own > .dm-ticks-side{
     position:absolute;
     top:18px;
     height:auto;
@@ -1965,6 +1987,21 @@ input.conv-search-input:focus{
     animation:motion-fade-in var(--motion-fast) var(--motion-ease);
   }
 }
+
+  .chat-msg--joined-prev.is-actions-open.own > .chat-edited-flag-side{
+    position:absolute;
+    top:26px;
+    height:auto;
+    display:flex;
+    align-items:center;
+
+    right:34px;
+    transform:translateX(100%);
+
+    pointer-events:none;
+    user-select:none;
+    animation:motion-fade-in var(--motion-fast) var(--motion-ease);
+  }
 
 /* Desktop only: hovering the row reveals the same elements. This is
    the ONLY thing that reveals it on desktop — right-clicking does not,
@@ -2025,6 +2062,21 @@ input.conv-search-input:focus{
     animation:motion-fade-in var(--motion-fast) var(--motion-ease);
   }
 }
+
+  .chat-msg--joined-prev:hover.own > .chat-edited-flag-side{
+    position:absolute;
+    top:26px;
+    height:auto;
+    display:flex;
+    align-items:center;
+
+    right:34px;
+    transform:translateX(100%);
+
+    pointer-events:none;
+    user-select:none;
+    animation:motion-fade-in var(--motion-fast) var(--motion-ease);
+  }
 
 /* ================================================================
    MESSAGE ACTION BAR

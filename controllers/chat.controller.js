@@ -5,6 +5,7 @@ const constants = require('../config/constants');
 const { CHAT_MIME_MAP } = require('../config/multer');
 const { readImageDimensions } = require('../utils/imageDimensions');
 const { detectMimeFromBytes } = require('../utils/detectFileType');
+const { normalizeSniffedMime, resolveVoiceMime } = require('../utils/voiceMime');
 const { isInlineSafeMime } = require('../utils/inlineSafeMime');
 const { signMediaToken, MEDIA_TOKEN_TTL_SECONDS } = require('../utils/jwt');
 
@@ -266,27 +267,21 @@ async function sendMessageWithAttachment(req,res) {
   // *viewing* into stored XSS. The only thing we trust here is what
   // detectMimeFromBytes() finds by sniffing the file's actual magic
   // bytes on disk.
-  const sniffedMime = await detectMimeFromBytes(req.file.path);
+  const sniffedMime = normalizeSniffedMime(
+    await detectMimeFromBytes(req.file.path)
+  );
 
-  const clientClaimsVoiceRecording =
-    !!req.body?.is_voice_message && clientMime.startsWith('audio/');
+  const voiceMime = resolveVoiceMime(
+    sniffedMime,
+    clientMime,
+    req.body?.is_voice_message
+  );
 
   let mime;
 
-  if (
-    clientClaimsVoiceRecording &&
-    (sniffedMime === 'audio/webm' || sniffedMime === 'video/webm')
-  ) {
-    // .webm is a real video container too (see config/multer.js's
-    // VIDEO_MIME_MAP), and magic-byte sniffing alone can't always
-    // distinguish an audio-only recording from a video file that
-    // happens to use the same container — so this narrow case still
-    // leans on the client's own "this is a voice recording" claim.
-    // That's safe here specifically because it only ever relabels
-    // between two MIME types (audio/webm, video/webm) that are BOTH
-    // already on the inline-safe allowlist — it can never turn an
-    // unsafe file into one that gets served inline.
-    mime = 'audio/webm';
+  if (voiceMime) {
+    // Voice recording (webm / ogg / mp4 container): see utils/voiceMime.js.
+    mime = voiceMime;
   } else if (sniffedMime && isInlineSafeMime(sniffedMime)) {
     // Trust the sniffed, allowlisted type.
     mime = sniffedMime;

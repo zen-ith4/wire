@@ -4,6 +4,7 @@ const constants = require('../config/constants');
 const { CHAT_MIME_MAP } = require('../config/multer');
 const { readImageDimensions } = require('../utils/imageDimensions');
 const { detectMimeFromBytes } = require('../utils/detectFileType');
+const { normalizeSniffedMime, resolveVoiceMime } = require('../utils/voiceMime');
 const { isInlineSafeMime } = require('../utils/inlineSafeMime');
 const { signMediaToken, MEDIA_TOKEN_TTL_SECONDS } = require('../utils/jwt');
 const {
@@ -218,21 +219,21 @@ async function sendMessageWithAttachment(req, res) {
   // Content-Type nor the filename extension is trustworthy for that;
   // only detectMimeFromBytes()'s magic-byte sniff of the actual file
   // on disk is.
-  const sniffedMime = await detectMimeFromBytes(req.file.path);
+  const sniffedMime = normalizeSniffedMime(
+    await detectMimeFromBytes(req.file.path)
+  );
 
-  const clientClaimsVoiceRecording =
-    !!req.body?.is_voice_message && clientMime.startsWith('audio/');
+  const voiceMime = resolveVoiceMime(
+    sniffedMime,
+    clientMime,
+    req.body?.is_voice_message
+  );
 
   let mime;
 
-  if (
-    clientClaimsVoiceRecording &&
-    (sniffedMime === 'audio/webm' || sniffedMime === 'video/webm')
-  ) {
-    // See the identical case in chat.controller.js: this only ever
-    // relabels between two already-allowlisted types, so it can't
-    // turn an unsafe file into an inline-renderable one.
-    mime = 'audio/webm';
+  if (voiceMime) {
+    // Voice recording (webm / ogg / mp4 container): see utils/voiceMime.js.
+    mime = voiceMime;
   } else if (sniffedMime && isInlineSafeMime(sniffedMime)) {
     mime = sniffedMime;
   } else {

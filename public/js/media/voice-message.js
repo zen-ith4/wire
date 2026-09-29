@@ -1241,6 +1241,8 @@ export async function renderVoiceMessage(
       startProgressLoop();
 
       networkRetryCount = 0;
+
+      tokenRefreshAttempted = false;
     }
   );
 
@@ -1364,6 +1366,19 @@ export async function renderVoiceMessage(
       messageId
     );
 
+  /*
+   * Chrome/Edge MediaRecorder output (webm/opus) has no duration in
+   * its header, so audio.duration is Infinity forever: the time label,
+   * progress bar and seeking all silently break. The standard
+   * workaround is to seek far past the end, which forces the browser
+   * to scan the file and report the real duration, then rewind.
+   *
+   * `fixingDuration` keeps the timeupdate events caused by that
+   * temporary seek from being saved/rendered as real playback.
+   */
+  let fixingDuration =
+    false;
+
   function resolveRealDuration(
     done
   ) {
@@ -1403,6 +1418,15 @@ export async function renderVoiceMessage(
           timeoutId = null;
         }
 
+        try {
+          audio.currentTime = 0;
+        } catch {
+          // Element may not accept a seek yet; harmless.
+        }
+
+        fixingDuration =
+          false;
+
         done(resolved);
       };
 
@@ -1422,6 +1446,17 @@ export async function renderVoiceMessage(
       onDurationChange
     );
 
+    fixingDuration =
+      true;
+
+    try {
+      audio.currentTime =
+        1e101;
+    } catch {
+      finish(false);
+      return;
+    }
+
     timeoutId =
       setTimeout(
         () => {
@@ -1431,7 +1466,7 @@ export async function renderVoiceMessage(
             )
           );
         },
-        1500
+        3000
       );
   }
 
@@ -1601,6 +1636,10 @@ export async function renderVoiceMessage(
   audio.addEventListener(
     'timeupdate',
     () => {
+      if (fixingDuration) {
+        return;
+      }
+
       updateProgress();
       updateTimeLabel();
 
@@ -1751,22 +1790,8 @@ export async function renderVoiceMessage(
     }
   );
 
-  waveEl.addEventListener(
-    'touchstart',
-    (event) => {
-      if (
-        event.touches &&
-        event.touches[0]
-      ) {
-        seekToClientX(
-          event.touches[0].clientX
-        );
-      }
-    },
-    {
-      passive: true,
-    }
-  );
+  // Touch: a tap fires 'click' (handled above). Seeking on
+  // 'touchstart' made every finger-scroll across a voice bubble seek.
 
   // ====================================================
   // SPEED

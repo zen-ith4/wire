@@ -274,6 +274,20 @@ const fileUpload = multer({
 
 // ======================================================
 
+const groupAvatarUpload = createUploader({
+  dir: constants.AVATAR_DIR,
+  maxSizeMB: constants.AVATAR_MAX_MB,
+  mimeMap: AVATAR_MIME_MAP,
+  // No userPrefix: this is a group's avatar, not a user's.
+});
+
+const groupUpload = createUploader({
+  dir: constants.GROUP_UPLOAD_DIR,
+  maxSizeMB: constants.GROUP_UPLOAD_MAX_MB,
+  // Group attachment bodies are AES-GCM ciphertext (opaque bytes), so
+  // there is no file type to sniff or restrict at the multer layer.
+});
+
 module.exports = {
   AVATAR_MIME_MAP,
   CHAT_MIME_MAP,
@@ -284,4 +298,6 @@ module.exports = {
   chatUpload,
   dmUpload,
   fileUpload,
+  groupAvatarUpload,
+  groupUpload,
 };

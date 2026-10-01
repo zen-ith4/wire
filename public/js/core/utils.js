@@ -112,7 +112,7 @@ export function linkifyHtml(text) {
       // scheme-completed. escapeHtml() on both keeps this safe even
       // though URL_REGEX already excludes the characters that would
       // matter for breaking out of the href attribute.
-      result += `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" class="chat-link">${escapeHtml(trimmedUrl)}</a>`;
+      result += `<a href="${escapeHtmlAttr(href)}" target="_blank" rel="noopener noreferrer" class="chat-link">${escapeHtml(trimmedUrl)}</a>`;
       result += escapeHtml(suffix);
     } else {
       // Matched the shape of a URL but didn't resolve to a safe
@@ -235,4 +235,19 @@ export function showToast(msg, type = 'info') {
   const host = openDialogs.length ? openDialogs[openDialogs.length - 1] : document.body;
   host.appendChild(div);
   setTimeout(() => div.remove(), 3000);
+}
+
+// Escapes a value for use inside an HTML attribute (single- or double-
+// quoted). Unlike escapeAttr() above -- which is written for values that
+// get re-parsed as a JS string inside an inline onclick="" handler, and so
+// rewrites ' and \ -- this one is for plain data-*/title attributes that
+// are read back verbatim via dataset/getAttribute: the browser decodes the
+// entities, so the original string round-trips exactly.
+export function escapeHtmlAttr(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }

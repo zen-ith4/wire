@@ -48,7 +48,8 @@ function getMe(req, res) {
     has_avatar: !!user.avatar_path,
     has_banner: !!user.banner_path,
     accent_color: user.accent_color || null,
-    created_at: user.created_at
+    created_at: user.created_at,
+    groups_enabled: !!constants.GROUPS_ENABLED
   });
 }
 

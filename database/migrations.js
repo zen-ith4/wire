@@ -91,6 +91,64 @@ function runMigrations(db) {
     ON users(email)
     WHERE email IS NOT NULL
   `);
+
+  migrateMessageReactionsToAllowGroup(db);
+}
+
+/*
+ * message_reactions.message_type's CHECK constraint originally only
+ * allowed ('chat', 'dm') — group reactions (Phase 3) need 'group'
+ * added too. SQLite has no ALTER TABLE for CHECK constraints, so an
+ * existing database needs the standard SQLite rebuild: create a new
+ * table with the constraint we actually want, copy every row across
+ * unchanged, drop the old table, rename the new one into place.
+ *
+ * Detected (rather than tracked via a version number this codebase
+ * doesn't otherwise keep) by reading the table's own stored CREATE
+ * TABLE SQL back from sqlite_master and checking whether 'group' is
+ * already part of it — idempotent, and correct for both "never
+ * migrated" and "already migrated" without any extra state.
+ */
+function migrateMessageReactionsToAllowGroup(db) {
+  const row = db.prepare(`
+    SELECT sql FROM sqlite_master
+    WHERE type = 'table' AND name = 'message_reactions'
+  `).get();
+
+  // Fresh install: tables/messageReactions.tabels.js already created
+  // it with 'group' included — nothing to migrate.
+  if (!row || row.sql.includes("'group'")) return;
+
+  const transaction = db.transaction(() => {
+    db.exec(`
+      CREATE TABLE message_reactions_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        message_type TEXT NOT NULL CHECK(message_type IN ('chat', 'dm', 'group')),
+        message_id INTEGER NOT NULL,
+
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        emoji TEXT NOT NULL,
+
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+        UNIQUE(message_type, message_id, user_id, emoji)
+      );
+
+      INSERT INTO message_reactions_new
+        SELECT id, message_type, message_id, user_id, emoji, created_at
+        FROM message_reactions;
+
+      DROP TABLE message_reactions;
+
+      ALTER TABLE message_reactions_new RENAME TO message_reactions;
+
+      CREATE INDEX IF NOT EXISTS idx_message_reactions_lookup
+      ON message_reactions(message_type, message_id);
+    `);
+  });
+
+  transaction();
 }
 
 

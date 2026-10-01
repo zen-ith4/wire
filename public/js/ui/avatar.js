@@ -286,8 +286,14 @@ export async function applyBanner(elId, userId) {
  * Pass showPresence=true to overlay the online/gray status dot (used on
  * the DM sidebar and Admin user list; omitted on the profile card itself,
  * which shows the status as text instead).
+ *
+ * Pass delegated=true to render WITHOUT the inline onclick="" attribute
+ * (used by the Groups UI, which must work under a CSP with no
+ * 'unsafe-inline' in script-src). Such avatars are opened by the delegated
+ * listener at the bottom of this file. Default false keeps every existing
+ * caller's markup and click behaviour exactly as before.
  */
-export function avatarHtml(userId, username, className = 'chat-avatar', showPresence = false) {
+export function avatarHtml(userId, username, className = 'chat-avatar', showPresence = false, delegated = false) {
   const id = `avatar-${avatarSeq++}`;
   const initials = username ? username.charAt(0).toUpperCase() : '?';
 
@@ -304,11 +310,23 @@ export function avatarHtml(userId, username, className = 'chat-avatar', showPres
     class="${className} clickable-avatar"
     id="${id}"
     data-avatar-user="${Number(userId)}"
-    onclick="event.stopPropagation(); window.openProfileCard(${Number(userId)})"
+    ${delegated
+      ? 'data-avatar-action="profile"'
+      : `onclick="event.stopPropagation(); window.openProfileCard(${Number(userId)})"`}
     title="View profile">
     <span class="avatar-initials">${escapeHtml(initials)}</span>${dotHtml}
   </div>`;
 }
+
+// Click handling for avatars rendered with delegated=true (no inline
+// handler). Scoped to data-avatar-action="profile" so it can never act on,
+// or double-fire with, an avatar that still carries its own inline onclick.
+if (typeof document !== 'undefined') document.addEventListener('click', (e) => {
+  const el = e.target.closest('.clickable-avatar[data-avatar-action="profile"]');
+  if (!el) return;
+  e.stopPropagation();
+  window.openProfileCard(Number(el.dataset.avatarUser));
+});
 
 /**
  * Generate HTML for a banner placeholder and schedule its image load.

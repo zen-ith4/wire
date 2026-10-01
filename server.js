@@ -27,6 +27,7 @@ const ensureDirectories = require('./utils/ensureDirectories');
 const runSetupWizard = require('./utils/setupWizard');
 
 const { ipRestrict } = require('./middleware/ipRestrict');
+const { csp } = require('./middleware/csp');
 const { logger } = require('./middleware/logger');
 const { errorHandler } = require('./middleware/errorHandler');
 const { apiLimiter } = require('./middleware/rateLimiter');
@@ -67,6 +68,11 @@ async function startServer() {
 
     app.use(express.json());
 
+    // Content-Security-Policy on every response, static assets included,
+    // so it must run before express.static. Report-Only unless
+    // CSP_ENFORCE=true (see middleware/csp.js).
+    app.use(csp);
+
     // Static assets are served right after the IP gate.
     app.use(express.static(path.join(__dirname, 'public')));
     app.use(logger);
@@ -84,6 +90,7 @@ async function startServer() {
     app.use('/api/files', require('./routes/files.routes'));
     app.use('/api/chat', require('./routes/chat.routes'));
     app.use('/api/dm', require('./routes/dm.routes'));
+    app.use('/api/groups', require('./routes/groups.routes'));
     app.use('/api/share', require('./routes/share.routes'));
     app.use('/api/admin', require('./routes/admin.routes'));
     app.use('/api/admin/wireguard', require('./routes/wireguard.routes'));

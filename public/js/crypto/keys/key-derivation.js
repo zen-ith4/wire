@@ -13,7 +13,7 @@ const PROTOCOL_INFO = new TextEncoder().encode(
  * @param {CryptoKey} peerPublicKey
  * @returns {Promise<ArrayBuffer>}
  */
-async function deriveSharedSecret(
+export async function deriveSharedSecret(
     privateKey,
     peerPublicKey
 ) {
@@ -61,10 +61,13 @@ async function deriveSharedSecret(
  * an AES-GCM session key using HKDF-SHA-256.
  *
  * @param {ArrayBuffer} sharedSecret
+ * @param {Uint8Array} info HKDF info string (domain separation);
+ *   defaults to the DM protocol's, so existing callers are unaffected.
  * @returns {Promise<CryptoKey>}
  */
 async function deriveSessionKey(
-    sharedSecret
+    sharedSecret,
+    info = PROTOCOL_INFO
 ) {
     if (
         !(sharedSecret instanceof ArrayBuffer) ||
@@ -91,7 +94,7 @@ async function deriveSessionKey(
             name: 'HKDF',
             hash: 'SHA-256',
             salt: new Uint8Array(32),
-            info: PROTOCOL_INFO
+            info
         },
         hkdfKey,
         {
@@ -118,7 +121,8 @@ async function deriveSessionKey(
  */
 export async function deriveSessionKeyFromPeer(
     privateKey,
-    peerPublicKey
+    peerPublicKey,
+    info
 ) {
     const sharedSecret =
         await deriveSharedSecret(
@@ -128,7 +132,8 @@ export async function deriveSessionKeyFromPeer(
 
     try {
         return await deriveSessionKey(
-            sharedSecret
+            sharedSecret,
+            info
         );
     } finally {
         /*

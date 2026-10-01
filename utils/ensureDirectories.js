@@ -7,6 +7,7 @@ module.exports = function ensureDirectories() {
     constants.CHAT_UPLOAD_DIR,
     constants.DM_UPLOAD_DIR,
     constants.AVATAR_DIR,
+    constants.GROUP_UPLOAD_DIR,
   ].forEach((dir) => {
     fs.mkdirSync(dir, { recursive: true });
   });

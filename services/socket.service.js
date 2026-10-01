@@ -155,6 +155,70 @@ function emitProfileBannerUpdate(userId) {
   );
 }
 
+// ---------------------------------------------------------------
+// Groups
+// ---------------------------------------------------------------
+//
+// Unlike chat's single shared 'chat' room, a group has no room every
+// member is guaranteed to already be in — group.socket.js joins a
+// per-group room (`group:<id>`) only once a client explicitly says
+// it's viewing that group. Emitting to `user:<id>` for every current
+// member instead means these events reach every one of that user's
+// tabs/devices regardless of whether they currently have the group
+// thread open — membership changes and KDM delivery in particular
+// need to reach a device even when the group isn't the active view.
+function emitToUsers(userIds, event, payload) {
+  const io = getIo();
+  for (const userId of userIds) {
+    io.to(`user:${userId}`).emit(event, payload);
+  }
+}
+
+// A removed member's sockets must leave the group's Socket.IO room, or they
+// keep receiving room broadcasts (typing events) for a group they no longer
+// belong to. Membership is re-checked on join/emit, but an already-joined
+// socket stays in the room until told otherwise.
+function removeUserFromGroupRoom(userId, groupId) {
+  getIo().in(`user:${userId}`).socketsLeave(`group:${groupId}`);
+}
+
+function emitNewGroupMessage(groupId, message, memberUserIds) {
+  emitToUsers(memberUserIds, 'new-group-message', message);
+}
+
+function emitGroupMessageDeleted(groupId, payload, memberUserIds) {
+  emitToUsers(memberUserIds, 'group-message-deleted', payload);
+}
+
+function emitGroupReactionUpdate(groupId, payload, memberUserIds) {
+  emitToUsers(memberUserIds, 'group-reaction-update', payload);
+}
+
+// notifyUserIds intentionally includes anyone who just left/was
+// removed, in addition to remaining members — a departing member's
+// other devices still need to know they no longer belong (e.g. to
+// stop trying to decrypt/rotate for a group they've left), even
+// though they won't receive anything sent to the group afterward.
+function emitGroupMembershipChanged(groupId, payload, notifyUserIds) {
+  emitToUsers(notifyUserIds, 'group:membership-changed', {
+    group_id: groupId,
+    ...payload,
+  });
+}
+
+// Carries no key material — just tells the named recipients' other
+// devices "you have undelivered KDMs, go drain your mailbox" (see
+// controllers/groups.controller.js's drainKdmsHandler). Delivering
+// the actual wrapped_key only ever happens over the authenticated
+// REST drain endpoint, never over the socket itself.
+function emitGroupKdmDelivered(groupId, recipientUserIds) {
+  emitToUsers(recipientUserIds, 'group:kdm-delivered', { group_id: groupId });
+}
+
+function emitGroupUpdated(memberUserIds, payload) {
+  emitToUsers(memberUserIds, 'group:updated', payload);
+}
+
 module.exports = {
   setIo,
   getIo,
@@ -169,4 +233,11 @@ module.exports = {
   emitDirectReactionUpdate,
   emitProfileAvatarUpdate,
   emitProfileBannerUpdate,
+  emitNewGroupMessage,
+  emitGroupMessageDeleted,
+  emitGroupReactionUpdate,
+  emitGroupMembershipChanged,
+  removeUserFromGroupRoom,
+  emitGroupKdmDelivered,
+  emitGroupUpdated,
 };

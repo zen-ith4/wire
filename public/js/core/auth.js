@@ -53,6 +53,24 @@ export function getCurrentUser() {
 
 export function setCurrentUser(user) {
   currentUser = user;
+
+  // Login responses are hand-built field-by-field (see login()/
+  // verifyTwoFactor() etc. below) and don't carry groups_enabled the way
+  // GET /api/me does -- refresh just that flag here instead of touching
+  // every login code path on the server. Fire-and-forget: the nav simply
+  // renders without the Groups entry until this resolves. Skipped when the
+  // caller already passed a full /api/me object (app.js startup, settings
+  // saves), which avoids a redundant request.
+  if (user && typeof user.groups_enabled !== 'boolean') {
+    api('/api/me')
+      .then((me) => {
+        // Only patch the flag -- a slower-resolving response here must
+        // never clobber a newer currentUser set in the meantime (e.g. a
+        // fast logout/login).
+        if (currentUser) currentUser.groups_enabled = !!me.groups_enabled;
+      })
+      .catch(() => {}); // best-effort; nav just stays without Groups
+  }
 }
 
 export function logout() {

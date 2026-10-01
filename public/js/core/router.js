@@ -15,6 +15,10 @@ import {
   showDm,
   destroyDmComposer,
 } from '../chat/dm.js';
+import {
+  showGroups,
+  destroyGroupComposer,
+} from '../chat/group.js';
 import { showSettings } from '../settings/settings.js';
 
 import {
@@ -55,6 +59,12 @@ const routes = {
   messages: {
     title: 'Messages',
     render: showDm,
+    flush: true,
+  },
+
+  groups: {
+    title: 'Groups',
+    render: showGroups,
     flush: true,
   },
 
@@ -925,6 +935,7 @@ export function navigate(
   // Release any in-progress voice recording before switching views.
   destroyChatComposer();
   destroyDmComposer();
+  destroyGroupComposer();
 
   // -----------------------------------------------------------------------
   // Navigation UI

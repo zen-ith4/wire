@@ -28,6 +28,20 @@ import {
 } from '../chat/dm.js';
 
 import {
+  addGroupMessage,
+  removeGroupMessage,
+  showGroupTyping,
+  hideGroupTyping,
+  clearAllGroupTyping,
+  applyGroupReactionUpdate,
+  handleGroupMembershipChanged as onGroupMembershipChanged,
+  handleGroupKdmDelivered as onGroupKdmDelivered,
+  handleGroupUpdated as onGroupUpdated,
+  handleGroupSocketConnected as onGroupSocketConnected,
+  getActiveGroupId,
+} from '../chat/group.js';
+
+import {
   setOnlineSnapshot,
   setUserOnline,
   setUserOffline
@@ -118,6 +132,11 @@ export function initSocket(token) {
         socket.io?.engine?.transport?.name || null,
       endpoint: serverEndpoint,
     });
+
+    // Pull anything missed while disconnected (group messages/KDMs are
+    // not replayed beyond the server's short recovery window). A no-op
+    // until the Groups view has been opened in this session.
+    void onGroupSocketConnected();
   });
 
   socket.on('disconnect', (reason, details) => {
@@ -129,6 +148,7 @@ export function initSocket(token) {
 
     clearAllChatTyping();
     clearAllDmTyping();
+    clearAllGroupTyping();
 
     setOnlineSnapshot([]);
   });
@@ -322,6 +342,53 @@ export function initSocket(token) {
     }
   );
 
+  // Group events
+  socket.on(
+    'new-group-message',
+    handleGroupMessage
+  );
+
+  socket.on(
+    'group-message-deleted',
+    handleGroupMessageDeleted
+  );
+
+  socket.on(
+    'group:typing',
+    handleGroupTypingEvent
+  );
+
+  socket.on(
+    'group:stop-typing',
+    handleGroupStopTypingEvent
+  );
+
+  socket.on(
+    'group-reaction-update',
+    ({ group_id, message_id, reactions }) => {
+      applyGroupReactionUpdate(
+        group_id,
+        message_id,
+        reactions
+      );
+    }
+  );
+
+  socket.on(
+    'group:membership-changed',
+    onGroupMembershipChanged
+  );
+
+  socket.on(
+    'group:kdm-delivered',
+    onGroupKdmDelivered
+  );
+
+  socket.on(
+    'group:updated',
+    onGroupUpdated
+  );
+
   // Profile updates
   socket.on(
     'profile:avatar-updated',
@@ -377,6 +444,7 @@ export function disconnectSocket() {
   // that handler never got a chance to run).
   clearAllChatTyping();
   clearAllDmTyping();
+  clearAllGroupTyping();
   setOnlineSnapshot([]);
 }
 
@@ -524,4 +592,48 @@ function handleProfileBannerUpdated({
   user_id
 }) {
   refreshBannerEverywhere(user_id);
+}
+
+function handleGroupMessage(message) {
+  addGroupMessage(message);
+
+  const input =
+    document.getElementById('group-input');
+
+  if (
+    input &&
+    message.group_id === getActiveGroupId() &&
+    message.sender_id === getCurrentUser()?.id
+  ) {
+    input.value = '';
+  }
+}
+
+function handleGroupMessageDeleted({ id, group_id }) {
+  removeGroupMessage(group_id, id);
+}
+
+function handleGroupTypingEvent({
+  group_id,
+  sender_id,
+  sender_username
+}) {
+  // Same reasoning as handleChatTyping: the server already excludes
+  // the sender's own socket, but a second tab of the same account
+  // would still see it without this guard.
+  if (
+    sender_id === getCurrentUser()?.id
+  ) {
+    return;
+  }
+
+  showGroupTyping(
+    group_id,
+    sender_id,
+    sender_username
+  );
+}
+
+function handleGroupStopTypingEvent({ group_id, sender_id }) {
+  hideGroupTyping(group_id, sender_id);
 }

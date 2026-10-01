@@ -696,6 +696,16 @@ export function getCurrentIdentity() {
 
 export function lockIdentity() {
     currentIdentity = null;
+
+    // Group Sender Keys (public/js/crypto/groups/*) cache a local
+    // at-rest wrapping key and unwrapped Sender Key CryptoKeys in
+    // memory, both derived from this identity (groups/local-wrap-key.js,
+    // groups/sender-key.js). Clear them here rather than leaving them
+    // reachable after the identity they were derived from is gone.
+    // Dynamic import: no static dependency from this DM/identity module
+    // onto the group crypto module when groups are never used.
+    import('./groups/local-wrap-key.js').then((m) => m.clearLocalWrapKeyCache());
+    import('./groups/sender-key.js').then((m) => m.clearSenderKeyCache());
 }
 
 export function isIdentityUnlocked() {

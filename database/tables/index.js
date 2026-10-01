@@ -7,5 +7,9 @@ module.exports = [
   require('./wireguard.tabels'),
   require('./messageReactions.tabels'),
   require('./shareLinks.tabels'),
-  require('./pushTokens.tabels')
+  require('./pushTokens.tabels'),
+  require('./groups.tabels'),
+  require('./groupMembers.tabels'),
+  require('./groupMessages.tabels'),
+  require('./groupKeyDistributions.tabels')
 ];

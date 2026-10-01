@@ -110,6 +110,21 @@ const constants = {
     path.join(__dirname, '..', 'banners'),
 
   // ======================================================
+  // E2EE group chat (routes/groups.routes.js, sockets/group.socket.js)
+  // ======================================================
+  //
+  // Off by default: the routes/sockets exist but refuse every request
+  // and /api/me reports groups_enabled=false, so no Groups UI appears.
+  // Set GROUPS_ENABLED=true to turn the feature on.
+  GROUPS_ENABLED: process.env.GROUPS_ENABLED === 'true',
+
+  GROUP_UPLOAD_MAX_MB: Number(process.env.GROUP_UPLOAD_MAX_MB) || 50,
+
+  GROUP_UPLOAD_DIR:
+    process.env.GROUP_UPLOAD_DIR ||
+    path.join(__dirname, '..', 'group-uploads'),
+
+  // ======================================================
   // Default Admin
   // ======================================================
 

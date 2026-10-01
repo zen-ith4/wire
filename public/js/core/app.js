@@ -105,6 +105,19 @@ const NAV_ITEMS = [
 ];
 
 
+// Not in NAV_ITEMS itself (that array is a static constant): this entry
+// only appears once the server's GROUPS_ENABLED flag comes back true on
+// /api/me (controllers/me.controller.js). Merged in by buildNav() below,
+// the same way ADMIN_NAV_ITEMS is conditionally merged by user.is_admin.
+// Desktop sidebar only for now: the phone tab bar / "More" menu
+// (ui/mobile-shell.js) are left untouched.
+const GROUPS_NAV_ITEM = {
+  view: 'groups',
+  label: 'Groups',
+  icon: ICONS.users
+};
+
+
 const ADMIN_NAV_ITEMS = [
   {
     view: 'admin-users',
@@ -158,9 +171,16 @@ function buildNav(user) {
       : [];
 
 
+  const groupsItems =
+    user.groups_enabled
+      ? [GROUPS_NAV_ITEM]
+      : [];
+
+
   const items =
     [
       ...NAV_ITEMS,
+      ...groupsItems,
       ...adminItems
     ];
 

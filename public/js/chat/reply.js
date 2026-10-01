@@ -9,11 +9,12 @@
 // instead of being duplicated in chat.js and dm.js.
 // ============================================================
 
-import { escapeHtml, showToast } from '../core/utils.js';
+import { escapeHtml, escapeHtmlAttr, showToast } from '../core/utils.js';
 
 const MESSAGES_CONTAINER_ID = {
   chat: 'chat-messages',
   dm: 'dm-messages',
+  group: 'group-messages',
 };
 
 function attachmentLabel(msg) {
@@ -52,12 +53,18 @@ export function buildReplyQuoteHtml(msg, scope) {
   }
 
   const r = msg.reply_to;
-  const text = r.content
-    ? escapeHtml(r.content)
-    : (r.has_attachment ? attachmentLabel(r) : '');
+  // attachmentLabel() can return the uploader-controlled filename
+  // (msg.attachment_name), and the server only path.basename()s it -- a
+  // name like `<img src=x onerror=...>.pdf` is a legal filename -- so
+  // BOTH branches must be escaped before going into innerHTML.
+  const text = escapeHtml(
+    r.content
+      ? r.content
+      : (r.has_attachment ? attachmentLabel(r) : '')
+  );
 
   return `
-    <div class="reply-quote" onclick="window.scrollToRepliedMessage('${scope}', ${r.id})">
+    <div class="reply-quote" data-action="scroll-to-replied" data-scope="${escapeHtmlAttr(scope)}" data-msg-id="${Number(r.id)}">
       <div class="reply-quote-bar"></div>
       <div class="reply-quote-body">
         <div class="reply-quote-name">${escapeHtml(r.username)}</div>
@@ -66,6 +73,17 @@ export function buildReplyQuoteHtml(msg, scope) {
     </div>
   `;
 }
+
+// Delegated click handling for the reply-quote block above (used by
+// chat.js, dm.js and group/thread.js). Bound once, here, instead of
+// an inline onclick="" attribute, because the app's CSP has no
+// 'unsafe-inline' in script-src, which silently drops inline
+// event-handler attributes.
+if (typeof document !== 'undefined') document.addEventListener('click', (e) => {
+  const el = e.target.closest('.reply-quote[data-action="scroll-to-replied"]');
+  if (!el) return;
+  window.scrollToRepliedMessage(el.dataset.scope, Number(el.dataset.msgId));
+});
 
 /**
  * Normalizes a rendered chat/DM message into the shape the
@@ -98,7 +116,7 @@ window.scrollToRepliedMessage = function (scope, id) {
   const container = document.getElementById(containerId);
   if (!container) return;
 
-  const el = container.querySelector(`.chat-msg[data-msg-id="${id}"]`);
+  const el = container.querySelector(`.chat-msg[data-msg-id="${Number(id)}"]`);
   if (!el) {
     showToast("That message isn't loaded — try loading older messages.", 'info');
     return;

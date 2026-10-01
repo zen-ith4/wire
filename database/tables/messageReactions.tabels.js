@@ -2,7 +2,7 @@ module.exports = `
 CREATE TABLE IF NOT EXISTS message_reactions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
 
-    message_type TEXT NOT NULL CHECK(message_type IN ('chat', 'dm')),
+    message_type TEXT NOT NULL CHECK(message_type IN ('chat', 'dm', 'group')),
     message_id INTEGER NOT NULL,
 
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

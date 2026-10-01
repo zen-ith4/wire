@@ -5,6 +5,7 @@ const { JWT_SECRET } = require('./constants');
 const { getDb } = require('./database');
 const { setupChatSocket } = require('../sockets/chat.socket');
 const { setupDmSocket } = require('../sockets/dm.socket');
+const { setupGroupSocket } = require('../sockets/group.socket');
 const { setIo } = require('../services/socket.service');
 const { markOnline, markOffline, getOnlineUserIds } = require('../services/presence.service');
 const {
@@ -100,6 +101,7 @@ function setupSocketIO(server) {
 
     setupChatSocket(io, socket);
     setupDmSocket(io, socket);
+    setupGroupSocket(io, socket);
 
     socket.on('disconnect', (reason) => {
       console.log(`User ${userId} disconnected (${reason})`);

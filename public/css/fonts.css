@@ -1,0 +1,122 @@
+/* ================================================================
+ * WIRE — Local Fonts
+ * ================================================================ */
+
+
+/* ----------------------------------------------------------------
+ * Inter
+ * ---------------------------------------------------------------- */
+
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/Inter/Inter-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+
+/* ----------------------------------------------------------------
+ * Anthropic Sans
+ * ---------------------------------------------------------------- */
+
+@font-face {
+  font-family: "Anthropic Sans";
+  src: url("/fonts/AnthropicSansText/AnthropicSans-Text-Regular-Static.woff2")
+    format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Anthropic Sans";
+  src: url("/fonts/AnthropicSansText/AnthropicSans-Text-Medium-Static.woff2")
+    format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Anthropic Sans";
+  src: url("/fonts/AnthropicSansText/AnthropicSans-Text-Semibold-Static.woff2")
+    format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Anthropic Sans";
+  src: url("/fonts/AnthropicSansText/AnthropicSans-Text-Bold-Static.woff2")
+    format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+
+/* ----------------------------------------------------------------
+ * Noto Sans
+ * ---------------------------------------------------------------- */
+
+@font-face {
+  font-family: "Noto Sans";
+  src: url("/fonts/NotoSans/NotoSans-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+
+/* ----------------------------------------------------------------
+ * Vazirmatn
+ * ---------------------------------------------------------------- */
+
+@font-face {
+  font-family: "Vazirmatn";
+  src: url("/fonts/Vazirmatn/Vazirmatn-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+
+/* ----------------------------------------------------------------
+ * Roboto
+ * ---------------------------------------------------------------- */
+
+@font-face {
+  font-family: "Roboto";
+  src: url("/fonts/Roboto/Roboto-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+
+/* ----------------------------------------------------------------
+ * Open Sans
+ * ---------------------------------------------------------------- */
+
+@font-face {
+  font-family: "Open Sans";
+  src: url("/fonts/OpenSans/OpenSans-Variable.woff2") format("woff2");
+  font-weight: 300 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+
+/* ----------------------------------------------------------------
+ * Poppins
+ * ---------------------------------------------------------------- */
+
+@font-face {
+  font-family: "Poppins";
+  src: url("/fonts/Poppins/Poppins-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}

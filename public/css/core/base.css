@@ -1,0 +1,37 @@
+/* ---------- Ambient underlay ----------
+   A single, simple atmospheric background layer, fixed behind the
+   whole app (z-index:0, sibling of .app which is z-index:1). This is
+   the *only* place decorative color is drawn — no other surface
+   (sidebar/topbar/content/cards/modal/toast/emoji-picker) paints its
+   own local glow anymore, since that's what used to make the
+   background read as separate circles cut off by container edges.
+   Just two soft accent-colored glows, full-width: one hugging the
+   top edge, one hugging the bottom edge. Same shape is mirrored in
+   theme.js's paintUnderlay(), which repaints this on accent/level
+   change.
+   .bg/.bg-blob/.bg-grid stay in index.html for backward compatibility
+   but render nothing on their own — this element does the job. */
+/* transparent on purpose: #ambient-underlay (below) already ends in
+   its own solid var(--void) fallback layer. .bg used to also paint
+   var(--void) as a flat fill — harmless on its own, but .bg sits
+   later in the DOM than #ambient-underlay with the *same* z-index:0,
+   so stacking order put this flat fill on top and hid every glow
+   underneath it completely. That was the real bug, not the gradient
+   shape. */
+.bg{position:fixed;inset:0;z-index:0;pointer-events:none;background:transparent;}
+.bg-blob{display:none;}
+.bg-grid{display:none;}
+/* Blur radius shared by #ambient-underlay and the mobile .dm-thread
+   background copy (responsive.css) so the two can never drift apart. */
+:root{--ambient-blur:40px;}
+@media (max-width:720px){
+  :root{--ambient-blur:24px;}
+}
+#ambient-underlay {
+  position:fixed;inset:0;z-index:0;pointer-events:none;
+  filter:blur(var(--ambient-blur));
+  background:
+    radial-gradient(ellipse 110% 65% at 50% 0%, rgba(var(--indigo), var(--ambient-strength)) 0%, rgba(var(--indigo), calc(var(--ambient-strength) * 0.45)) 45%, transparent 85%),
+    radial-gradient(ellipse 110% 65% at 50% 100%, rgba(var(--indigo-2), var(--ambient-strength)) 0%, rgba(var(--indigo-2), calc(var(--ambient-strength) * 0.45)) 45%, transparent 85%),
+    var(--void);
+}

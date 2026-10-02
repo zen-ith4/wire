@@ -1,0 +1,493 @@
+/* ================================================================
+   OWN MESSAGE BUBBLE GRADIENT — COLOUR ONLY
+
+   Existing bubble styles in messages.css remain the source of truth.
+
+   TARGET BUBBLES
+     The rules below target:
+
+       .chat-msg:is(.own, :where(:root[data-own-gradient-others="on"]) .chat-msg)
+
+     i.e. always the viewer's own bubbles (.own), plus every other
+     bubble while "Apply to Other Users' Messages" is on. :where()
+     adds no specificity, so this is exactly as specific as the old
+     `.chat-msg.own`, and the incoming bubbles reuse every rule
+     below (same variables, same gradient, same four styles).
+
+   filled:
+     - entire bubble surface uses the gradient.
+
+   soft:
+     - preserves the existing soft surface, border, radius and shadow.
+     - gradient is only a subtle colour layer in the background.
+
+   outline:
+     - interior stays completely transparent.
+     - gradient is visible only where the existing 1px border is.
+
+   clean:
+     - bubble remains transparent.
+     - only the existing ::before accent line becomes gradient.
+
+   This file does NOT define:
+     - padding
+     - margin
+     - width / height
+     - border-radius
+   ================================================================ */
+
+
+/* ================================================================
+   FILLED
+   ================================================================ */
+
+:root[data-own-gradient="on"][data-bubble-style="filled"]
+  .chat-msg:is(.own, :where(:root[data-own-gradient-others="on"]) .chat-msg) .chat-bubble,
+
+:root[data-own-gradient="on"]:not([data-bubble-style])
+  .chat-msg:is(.own, :where(:root[data-own-gradient-others="on"]) .chat-msg) .chat-bubble {
+
+  --bubble-background:var(--own-bubble-gradient);
+  --bubble-color:var(--own-bubble-text);
+}
+
+/* ================================================================
+   SOFT
+   ================================================================ */
+
+:root[data-own-gradient="on"][data-bubble-style="soft"]
+  .chat-msg:is(.own, :where(:root[data-own-gradient-others="on"]) .chat-msg) .chat-bubble {
+
+  --bubble-color:var(--text);
+  --bubble-border:1px solid transparent;
+
+  position:relative;
+
+  /*
+   * Keep the original Soft surface underneath.
+   * Gradient is applied as a subtle overlay.
+   */
+}
+
+
+/* ---------- Soft gradient surface ---------- */
+
+:root[data-own-gradient="on"][data-bubble-style="soft"]
+  .chat-msg:is(.own, :where(:root[data-own-gradient-others="on"]) .chat-msg) .chat-bubble::after {
+
+  content:"";
+  position:absolute;
+  inset:1px;
+
+  border-radius:inherit;
+
+  background:var(--own-bubble-gradient);
+  opacity:.22;
+
+  pointer-events:none;
+}
+
+
+/* ---------- Soft complete gradient border ---------- */
+
+:root[data-own-gradient="on"][data-bubble-style="soft"]
+  .chat-msg:is(.own, :where(:root[data-own-gradient-others="on"]) .chat-msg) .chat-bubble::before {
+
+  content:"";
+  position:absolute;
+  inset:0;
+  padding:calc(1px * var(--wire-density-scale));
+
+  border-radius:inherit;
+
+  background:var(--own-bubble-gradient);
+
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+
+  -webkit-mask-composite:xor;
+
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+
+  mask-composite:exclude;
+
+  pointer-events:none;
+}
+
+
+/* ---------- Keep Soft message content above overlays ---------- */
+
+:root[data-own-gradient="on"][data-bubble-style="soft"]
+  .chat-msg:is(.own, :where(:root[data-own-gradient-others="on"]) .chat-msg) .chat-bubble > * {
+
+  position:relative;
+  z-index:1;
+}
+
+/* ================================================================
+   OUTLINE
+   ================================================================
+
+   Keep the real bubble completely transparent.
+
+   The gradient border is drawn by ::after instead of using a
+   multi-layer background. This prevents the gradient from filling
+   the transparent interior.
+
+   The existing bubble geometry remains untouched.
+   ================================================================ */
+
+:root[data-own-gradient="on"][data-bubble-style="outline"]
+  .chat-msg:is(.own, :where(:root[data-own-gradient-others="on"]) .chat-msg) .chat-bubble {
+
+  --bubble-background:transparent;
+  --bubble-border:1px solid transparent;
+  --bubble-color:var(--text);
+
+  position:relative;
+}
+
+
+/* Gradient border only */
+
+:root[data-own-gradient="on"][data-bubble-style="outline"]
+  .chat-msg:is(.own, :where(:root[data-own-gradient-others="on"]) .chat-msg) .chat-bubble::after {
+
+  content:"";
+  position:absolute;
+  inset:0;
+  padding:calc(1px * var(--wire-density-scale));
+
+  border-radius:inherit;
+
+  background:var(--own-bubble-gradient);
+
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+
+  -webkit-mask-composite:xor;
+
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+
+  mask-composite:exclude;
+
+  pointer-events:none;
+}
+
+
+/* ================================================================
+   CLEAN
+   ================================================================ */
+
+:root[data-own-gradient="on"][data-bubble-style="clean"]
+  .chat-msg:is(.own, :where(:root[data-own-gradient-others="on"]) .chat-msg) .chat-bubble {
+
+  --bubble-background:transparent;
+  --bubble-border:1px solid transparent;
+  --bubble-color:var(--text);
+}
+
+
+:root[data-own-gradient="on"][data-bubble-style="clean"]
+  .chat-msg:is(.own, :where(:root[data-own-gradient-others="on"]) .chat-msg) .chat-bubble::before {
+
+  background:var(--own-bubble-gradient);
+}
+
+
+/* ================================================================
+   CLEAN HOVER
+   ================================================================ */
+
+:root[data-own-gradient="on"][data-bubble-style="clean"]
+  .chat-msg:is(.own, :where(:root[data-own-gradient-others="on"]) .chat-msg) .chat-bubble:hover {
+
+  background:
+    color-mix(
+      in srgb,
+      var(--message-accent,var(--accent)) 6%,
+      transparent
+    );
+}
+
+
+/* ================================================================
+   GRADIENT LINKS
+   ================================================================ */
+
+:root[data-own-gradient="on"]
+  .chat-msg:is(.own, :where(:root[data-own-gradient-others="on"]) .chat-msg) .chat-bubble .chat-link {
+
+  color:inherit;
+  text-decoration-color:currentColor;
+}
+
+
+/* ================================================================
+   SETTINGS PREVIEW
+   ================================================================ */
+
+
+/* ---------- Filled preview ---------- */
+
+:root[data-bubble-style="filled"]
+  .own-bubble-preview[data-own-gradient="on"]
+  .chat-msg:is(.own, :where(.own-bubble-preview[data-own-gradient-others="on"]) .chat-msg) .chat-bubble,
+
+:root:not([data-bubble-style])
+  .own-bubble-preview[data-own-gradient="on"]
+  .chat-msg:is(.own, :where(.own-bubble-preview[data-own-gradient-others="on"]) .chat-msg) .chat-bubble {
+
+  --bubble-background:var(--own-bubble-gradient);
+  --bubble-color:var(--own-bubble-text);
+}
+
+/* ---------- Soft preview ---------- */
+
+:root[data-bubble-style="soft"]
+  .own-bubble-preview[data-own-gradient="on"]
+  .chat-msg:is(.own, :where(.own-bubble-preview[data-own-gradient-others="on"]) .chat-msg) .chat-bubble {
+
+  --bubble-color:var(--text);
+  --bubble-border:1px solid transparent;
+
+  position:relative;
+}
+
+
+/* Soft preview surface */
+
+:root[data-bubble-style="soft"]
+  .own-bubble-preview[data-own-gradient="on"]
+  .chat-msg:is(.own, :where(.own-bubble-preview[data-own-gradient-others="on"]) .chat-msg) .chat-bubble::after {
+
+  content:"";
+  position:absolute;
+  inset:1px;
+
+  border-radius:inherit;
+
+  background:var(--own-bubble-gradient);
+  opacity:.22;
+
+  pointer-events:none;
+}
+
+
+/* Soft preview complete gradient border */
+
+:root[data-bubble-style="soft"]
+  .own-bubble-preview[data-own-gradient="on"]
+  .chat-msg:is(.own, :where(.own-bubble-preview[data-own-gradient-others="on"]) .chat-msg) .chat-bubble::before {
+
+  content:"";
+  position:absolute;
+  inset:0;
+  padding:calc(1px * var(--wire-density-scale));
+
+  border-radius:inherit;
+
+  background:var(--own-bubble-gradient);
+
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+
+  -webkit-mask-composite:xor;
+
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+
+  mask-composite:exclude;
+
+  pointer-events:none;
+}
+
+
+/* Preview content */
+
+:root[data-bubble-style="soft"]
+  .own-bubble-preview[data-own-gradient="on"]
+  .chat-msg:is(.own, :where(.own-bubble-preview[data-own-gradient-others="on"]) .chat-msg) .chat-bubble > * {
+
+  position:relative;
+  z-index:1;
+}
+
+/* ---------- Outline preview ---------- */
+
+:root[data-bubble-style="outline"]
+  .own-bubble-preview[data-own-gradient="on"]
+  .chat-msg:is(.own, :where(.own-bubble-preview[data-own-gradient-others="on"]) .chat-msg) .chat-bubble {
+
+  --bubble-background:transparent;
+  --bubble-border:1px solid transparent;
+  --bubble-color:var(--text);
+
+  position:relative;
+}
+
+
+:root[data-bubble-style="outline"]
+  .own-bubble-preview[data-own-gradient="on"]
+  .chat-msg:is(.own, :where(.own-bubble-preview[data-own-gradient-others="on"]) .chat-msg) .chat-bubble::after {
+
+  content:"";
+  position:absolute;
+  inset:0;
+  padding:calc(1px * var(--wire-density-scale));
+
+  border-radius:inherit;
+
+  background:var(--own-bubble-gradient);
+
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+
+  -webkit-mask-composite:xor;
+
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+
+  mask-composite:exclude;
+
+  pointer-events:none;
+}
+
+
+/* ---------- Clean preview ---------- */
+
+:root[data-bubble-style="clean"]
+  .own-bubble-preview[data-own-gradient="on"]
+  .chat-msg:is(.own, :where(.own-bubble-preview[data-own-gradient-others="on"]) .chat-msg) .chat-bubble {
+
+  --bubble-background:transparent;
+  --bubble-border:1px solid transparent;
+  --bubble-color:var(--text);
+}
+
+
+:root[data-bubble-style="clean"]
+  .own-bubble-preview[data-own-gradient="on"]
+  .chat-msg:is(.own, :where(.own-bubble-preview[data-own-gradient-others="on"]) .chat-msg) .chat-bubble::before {
+
+  background:var(--own-bubble-gradient);
+}
+
+
+/* ================================================================
+   PREVIEW LINKS
+   ================================================================ */
+
+.own-bubble-preview[data-own-gradient="on"]
+  .chat-msg:is(.own, :where(.own-bubble-preview[data-own-gradient-others="on"]) .chat-msg) .chat-bubble .chat-link {
+
+  color:inherit;
+  text-decoration-color:currentColor;
+}
+
+
+/* ================================================================
+   SETTINGS — OWN MESSAGE COLOURS BLOCK
+   ================================================================ */
+
+.own-gradient-head[hidden] {
+  display:none;
+}
+
+.own-gradient-head {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:calc(16px * var(--wire-density-scale));
+}
+
+.own-bubble-preview {
+  display:flex;
+  flex-direction:column;
+  gap:calc(8px * var(--wire-density-scale));
+  padding:calc(14px * var(--wire-density-scale)) calc(12px * var(--wire-density-scale));
+  border-radius:var(--radius-lg);
+  border:1px solid var(--border);
+  background:var(--void);
+  pointer-events:none;
+  min-width:0;
+  overflow:hidden;
+}
+
+.own-bubble-preview .chat-msg {
+  max-width:80%;
+}
+
+.own-bubble-preview .chat-msg-content {
+  min-width:0;
+}
+
+.own-gradient-controls {
+  display:flex;
+  flex-direction:column;
+  gap:calc(12px * var(--wire-density-scale));
+}
+
+.own-gradient-controls[hidden] {
+  display:none;
+}
+
+.own-gradient-stops {
+  display:flex;
+  flex-direction:column;
+  gap:calc(8px * var(--wire-density-scale));
+}
+
+.own-gradient-stop {
+  display:flex;
+  align-items:center;
+  gap:calc(10px * var(--wire-density-scale));
+  min-width:0;
+}
+
+.own-gradient-color {
+  flex-shrink:0;
+  width:36px;
+  height:30px;
+  padding:calc(2px * var(--wire-density-scale));
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  background:var(--ink2);
+  cursor:pointer;
+}
+
+.own-gradient-stop-position {
+  flex:1;
+  min-width:0;
+}
+
+.own-gradient-stop-position .sound-volume-control {
+  min-width:0;
+}
+
+.own-gradient-actions {
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:calc(8px * var(--wire-density-scale));
+}
+
+.own-gradient-status {
+  font-size:calc(12px * var(--wire-font-scale));
+  color:var(--muted2);
+  margin-left:auto;
+}
+
+.own-gradient-status:empty {
+  display:none;
+}

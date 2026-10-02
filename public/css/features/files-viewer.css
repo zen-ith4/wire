@@ -1,0 +1,190 @@
+/* ================================================================
+   FILES VIEWER — image / video / audio  (js/files/viewer.js,
+   audio-ui.js)
+
+   A full-screen native modal <dialog>. Safe-area insets keep the bar
+   and controls clear of notches/gesture bars; heights use dvh so the
+   layout tracks the mobile browser's collapsing toolbar.
+   ================================================================ */
+
+.files-dialog--viewer{
+  position:fixed;inset:0;margin:0;width:100%;height:100%;
+  background:rgba(var(--void-rgb),.98);overflow:hidden;
+}
+.files-dialog--viewer::backdrop{background:#000;}
+.files-viewer [hidden]{display:none !important;}
+
+.files-viewer .files-dialog-panel{
+  position:relative;display:flex;flex-direction:column;
+  width:100%;height:100vh;height:100dvh;
+  animation:motion-fade-in var(--motion-fast) var(--motion-ease);
+}
+
+/* ---------- Top bar ---------- */
+.fv-bar{
+  display:flex;align-items:center;gap:calc(8px * var(--wire-density-scale));flex-shrink:0;
+  padding:calc(8px * var(--wire-density-scale)) calc(calc(10px * var(--wire-density-scale)) + env(safe-area-inset-right, 0px)) calc(8px * var(--wire-density-scale)) calc(calc(10px * var(--wire-density-scale)) + env(safe-area-inset-left, 0px));
+  padding-top:calc(calc(8px * var(--wire-density-scale)) + env(safe-area-inset-top, 0px));
+  border-bottom:1px solid var(--border);
+  background:rgba(var(--ink-rgb),.85);
+}
+.fv-title{flex:1;min-width:0;}
+.fv-name{font-size:calc(14px * var(--wire-font-scale));font-weight:600;letter-spacing:-.01em;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.fv-meta{margin-top:calc(1px * var(--wire-density-scale));font-size:calc(12px * var(--wire-font-scale));color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.fv-actions{display:flex;align-items:center;gap:calc(4px * var(--wire-density-scale));flex-shrink:0;}
+.fv-btn{
+  min-width:44px;height:44px;padding:0 calc(10px * var(--wire-density-scale));
+  display:inline-flex;align-items:center;justify-content:center;
+  background:transparent;border:0;border-radius:var(--radius);color:var(--text);cursor:pointer;
+  transition:background var(--ease-fast);
+}
+.fv-btn svg{width:18px;height:18px;}
+.fv-btn:hover{background:var(--hover);}
+.fv-btn[aria-pressed="true"]{background:var(--accent-bg);}
+.fv-zoom-label{font-size:calc(12px * var(--wire-font-scale));font-weight:600;}
+
+/* ---------- Stage ---------- */
+.fv-stage{
+  position:relative;flex:1;min-height:0;overflow:hidden;outline:none;
+  display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr);
+  place-items:center;
+  padding:calc(12px * var(--wire-density-scale)) calc(calc(12px * var(--wire-density-scale)) + env(safe-area-inset-right, 0px)) calc(calc(12px * var(--wire-density-scale)) + env(safe-area-inset-bottom, 0px)) calc(calc(12px * var(--wire-density-scale)) + env(safe-area-inset-left, 0px));
+  /* pan-y: leave horizontal drags to our swipe handler, keep pinch zoom */
+  touch-action:pan-y pinch-zoom;
+}
+.fv-stage > *{grid-area:1 / 1;}
+
+.fv-img{
+  max-width:100%;max-height:100%;object-fit:contain;border-radius:6px;
+  opacity:0;transition:opacity .15s ease;user-select:none;-webkit-user-select:none;
+}
+.fv-img.is-ready{opacity:1;}
+
+.fv-stage.is-zoomed{display:flex;overflow:auto;touch-action:auto;-webkit-overflow-scrolling:touch;}
+.fv-stage.is-zoomed .fv-img{max-width:none;max-height:none;flex-shrink:0;margin:auto;cursor:zoom-out;}
+
+.fv-video{
+  width:100%;height:100%;object-fit:contain;background:#000;border-radius:6px;outline:none;
+  opacity:0;transition:opacity .15s ease;
+}
+.fv-video.is-ready{opacity:1;}
+
+/* ---------- Loading / error ---------- */
+.fv-state{
+  display:flex;flex-direction:column;align-items:center;gap:calc(10px * var(--wire-density-scale));
+  max-width:420px;padding:calc(24px * var(--wire-density-scale));text-align:center;color:var(--muted);font-size:calc(13px * var(--wire-font-scale));
+}
+.fv-state .spin{width:22px;height:22px;}
+.fv-state-title{font-size:calc(15px * var(--wire-font-scale));font-weight:600;color:var(--text);}
+.fv-state-text{line-height:1.5;}
+.fv-state-icon{opacity:.6;}
+.fv-state-icon svg{width:36px;height:36px;}
+.fv-state-actions{display:flex;flex-wrap:wrap;justify-content:center;gap:calc(10px * var(--wire-density-scale));margin-top:8px;}
+.fv-state-actions .btn{min-height:44px;justify-content:center;}
+
+/* ---------- Prev / next ---------- */
+.fv-nav{
+  position:absolute;top:50%;transform:translateY(-50%);z-index:3;
+  width:48px;height:48px;display:inline-flex;align-items:center;justify-content:center;
+  border-radius:50%;border:1px solid var(--border);background:rgba(0,0,0,.55);color:#fff;cursor:pointer;
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+  transition:background var(--ease-fast),opacity var(--ease-fast);
+}
+.fv-nav:hover:not(:disabled){background:rgba(0,0,0,.78);}
+.fv-nav:disabled{opacity:.3;cursor:default;}
+/* The audio card can fill the whole width of a phone; docking the arrows
+   to the bottom corners keeps them clear of it (and of the title). */
+.fv-stage[data-kind="audio"] ~ .fv-nav{
+  top:auto;bottom:calc(20px + env(safe-area-inset-bottom, 0px));transform:none;
+}
+.fv-prev{left:calc(12px + env(safe-area-inset-left, 0px));}
+.fv-next{right:calc(12px + env(safe-area-inset-right, 0px));}
+
+/* ================================================================
+   AUDIO PLAYER (.fa)
+   ================================================================ */
+.fa{
+  position:relative;width:min(440px,100%);
+  display:flex;flex-direction:column;align-items:center;gap:calc(20px * var(--wire-density-scale));
+  padding:calc(28px * var(--wire-density-scale)) calc(22px * var(--wire-density-scale)) calc(22px * var(--wire-density-scale));border-radius:18px;
+  background:rgba(var(--ink2-rgb),.92);border:1px solid var(--border);
+}
+.fa-art{
+  width:96px;height:96px;border-radius:24px;
+  display:flex;align-items:center;justify-content:center;
+  background:rgba(52,211,153,.10);border:1px solid rgba(52,211,153,.22);
+}
+.fa-art svg{width:40px;height:40px;}
+.fa-title{
+  max-width:100%;text-align:center;font-size:calc(15px * var(--wire-font-scale));font-weight:600;letter-spacing:-.01em;color:var(--text);
+  overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+}
+
+.fa-seek{width:100%;}
+.fa-times{display:flex;justify-content:space-between;margin-top:calc(2px * var(--wire-density-scale));font-size:calc(12px * var(--wire-font-scale));color:var(--muted);font-variant-numeric:tabular-nums;}
+
+/* Sliders (seek + volume) */
+.fa-range{
+  --fa-pct:0%;
+  -webkit-appearance:none;appearance:none;width:100%;height:32px;margin:0;padding:0;
+  background:transparent;border:0;cursor:pointer;
+}
+.fa-range:focus-visible{outline:2px solid var(--accent-ring);outline-offset:2px;border-radius:6px;}
+.fa-range:disabled{opacity:.45;cursor:default;}
+.fa-range::-webkit-slider-runnable-track{
+  height:5px;border-radius:99px;
+  background:linear-gradient(to right,rgb(var(--indigo)) var(--fa-pct),var(--border) var(--fa-pct));
+}
+.fa-range::-webkit-slider-thumb{
+  -webkit-appearance:none;width:18px;height:18px;margin-top:calc(-1 * (6.5px * var(--wire-density-scale)));border:0;border-radius:50%;
+  background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.5);
+}
+.fa-range::-moz-range-track{height:5px;border-radius:99px;background:var(--border);}
+.fa-range::-moz-range-progress{height:5px;border-radius:99px;background:rgb(var(--indigo));}
+.fa-range::-moz-range-thumb{width:18px;height:18px;border:0;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.5);}
+
+.fa-controls{display:flex;align-items:center;justify-content:center;gap:calc(18px * var(--wire-density-scale));}
+.fa-skip{
+  width:52px;height:52px;border-radius:50%;
+  display:inline-flex;align-items:center;justify-content:center;
+  background:var(--ink2);border:1px solid var(--border);color:var(--text);
+  font-size:calc(12.5px * var(--wire-font-scale));font-weight:600;cursor:pointer;
+  transition:background var(--ease-fast),border-color var(--ease-fast);
+}
+.fa-skip:hover{background:var(--accent-bg);border-color:var(--accent-border);}
+.fa-play{
+  position:relative;width:68px;height:68px;border-radius:50%;
+  display:inline-flex;align-items:center;justify-content:center;
+  background:rgb(var(--indigo));border:0;color:var(--accent-contrast);cursor:pointer;
+  transition:background var(--ease-fast),transform var(--motion-fast) var(--motion-ease);
+}
+.fa-play:hover:not(:disabled){background:#87879C;color:#fff;}
+.fa-play:active:not(:disabled){transform:scale(.96);}
+.fa-play:disabled{opacity:.6;cursor:default;}
+.fa-play svg{width:26px;height:26px;}
+.fa-play-icon{display:inline-flex;}
+.fa-pause-icon{display:none;}
+.fa.is-playing .fa-pause-icon{display:inline-flex;}
+.fa.is-playing .fa-play-icon:not(.fa-pause-icon){display:none;}
+.fa-spinner{display:none;position:absolute;inset:0;margin:auto;width:26px;height:26px;border-width:3px;}
+.fa.is-loading .fa-spinner,
+.fa.is-buffering .fa-spinner{display:block;}
+.fa.is-loading .fa-play-icon,
+.fa.is-buffering .fa-play-icon{opacity:0;}
+
+.fa-vol{display:flex;align-items:center;gap:calc(8px * var(--wire-density-scale));width:100%;max-width:260px;}
+.fa-mute{
+  width:44px;height:44px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;
+  background:transparent;border:0;border-radius:var(--radius);color:var(--muted);cursor:pointer;
+}
+.fa-mute:hover{background:var(--hover);color:var(--text);}
+.fa-mute svg{width:20px;height:20px;}
+.fa-vol-off{display:none;}
+.fa.is-muted .fa-vol-off{display:inline-flex;}
+.fa.is-muted .fa-vol-on{display:none;}
+
+/* Phones use the device volume keys: hide the on-screen volume slider
+   (touch-only devices), keep everything else. */
+@media (hover:none) and (pointer:coarse){
+  .fa-vol{display:none;}
+}

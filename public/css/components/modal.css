@@ -1,0 +1,46 @@
+/* ---------- Modal ---------- */
+.modal{display:none;position:fixed;inset:0;background:rgba(var(--scrim-rgb),.72);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);z-index:200;align-items:center;justify-content:center;padding:calc(20px * var(--wire-density-scale));}
+/* Open: the backdrop fades in (keyframes) and .modal-content scales in
+   just below. Close: purely visual and CSS-only — .active is still
+   removed synchronously by the JS, the modal just stays *rendered*
+   for one --motion-fast while it fades out (display is transitioned
+   discretely), with pointer-events off so it never blocks input during
+   that time. Engines without transition-behavior/allow-discrete drop
+   the whole declaration and simply hide instantly, as before. Both
+   halves are 0ms when Animations is off / reduced motion is on. */
+.modal{
+  opacity:0;pointer-events:none;
+  transition:opacity var(--motion-fast) var(--motion-ease),display var(--motion-fast) allow-discrete;
+}
+.modal.active{display:flex;opacity:1;pointer-events:auto;animation:motion-fade-in var(--motion-fast) var(--motion-ease);}
+.modal-content {
+  background:rgba(var(--ink2-rgb),var(--sf-modal-alpha, .92));
+  backdrop-filter:var(--sf-modal-filter,blur(20px));-webkit-backdrop-filter:var(--sf-modal-filter,blur(20px));
+  border:1px solid var(--border);
+  border-radius:var(--radius-lg);
+  padding:calc(26px * var(--wire-density-scale));width:100%;max-width:900px;
+  position:relative;max-height:88vh;max-height:88dvh;overflow:auto;
+  animation:motion-scale-in var(--motion-fast) var(--motion-ease);
+}
+.modal-close{position:absolute;top:16px;right:16px;}
+
+.confirm-modal-content{max-width:380px;padding:calc(24px * var(--wire-density-scale));}
+.confirm-modal-content h3{font-size:calc(15px * var(--wire-font-scale));margin:0 0 calc(10px * var(--wire-density-scale));font-weight:600;}
+.confirm-modal-content p{font-size:calc(13px * var(--wire-font-scale));color:var(--muted);line-height:1.5;margin:0 0 calc(20px * var(--wire-density-scale));}
+.confirm-modal-actions{display:flex;justify-content:flex-end;gap:calc(10px * var(--wire-density-scale));}
+
+.clickable-avatar{cursor:pointer;transition:opacity var(--ease-fast);}
+.clickable-avatar:hover{opacity:.85;}
+
+/* ---------- Drag & drop ---------- */
+.dropzone-overlay{display:none;position:fixed;inset:0;z-index:300;align-items:center;justify-content:center;background:rgba(var(--scrim-rgb),.72);backdrop-filter:blur(4px);pointer-events:none;}
+.dropzone-overlay.active{display:flex;}
+.dropzone-box {
+  display:flex;flex-direction:column;align-items:center;gap:calc(8px * var(--wire-density-scale));padding:46px 60px;border-radius:var(--radius-lg);
+  border:1.5px dashed var(--accent-border);
+  background:rgba(var(--ink2-rgb),.9);
+  color:var(--text);text-align:center;
+}
+.dropzone-box svg{opacity:.85;color:rgb(var(--indigo));}
+.dropzone-title{font-size:calc(15px * var(--wire-font-scale));font-weight:600;margin-top:calc(6px * var(--wire-density-scale));}
+.dropzone-sub{font-size:calc(12.5px * var(--wire-font-scale));color:var(--muted);}

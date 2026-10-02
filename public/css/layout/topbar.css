@@ -1,0 +1,26 @@
+.topbar {
+  height:var(--topbar-height);
+  min-height:var(--topbar-height);
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:0 calc(24px * var(--wire-density-scale));
+  position:relative;
+  z-index:5;
+
+  /* Same transparent surface as the sidebar */
+  background:rgba(var(--ink-rgb), var(--sf-sidebar-alpha, .42));
+  backdrop-filter:var(--sf-sidebar-filter,none);-webkit-backdrop-filter:var(--sf-sidebar-filter,none);
+}
+
+.topbar-title{
+  font-size:calc(14px * var(--wire-font-scale));
+  font-weight:550;
+  color:var(--text);
+  letter-spacing:-0.01em;
+}
+
+/* Light mode: slightly lighter transparent surface */
+:root[data-theme="light"] .topbar{
+  background:rgba(var(--ink-rgb), var(--sf-sidebar-alpha, .36));
+}

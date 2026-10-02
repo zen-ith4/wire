@@ -1,0 +1,165 @@
+:root{
+  /* ---- Interface font ----
+     The one global font variable. css/core/reset.css applies it to
+     html/body and everything else inherits it. This value is only
+     the starting point (Wire's default font, the same stack as
+     FONT_OPTIONS.inter in settings/theme.js) so the page is never
+     without a font before JS runs; initFontFamily() then sets the
+     user's saved choice as an inline style on <html>, which wins
+     over this declaration. */
+  --wire-font-family:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+
+  /* ---- Tokens copied 1:1 from the provided reference ---- */
+  --void:#09090B;
+  --ink:#0D0D11;
+  --ink2:#111116;
+  --card:#111116;
+  --hover:#18181D;
+  --border:#232329;
+  --border-soft:#1c1c22;
+  --text:#F5F5F7;
+  --muted:#9A9AA3;
+  --muted2:#6B6B75;
+
+  /* Reference's accent system, fixed to its default "Neutral" preset
+     (the reference lets the demo user pick from 6 accent swatches —
+     that's a standalone demo feature, not something Wire already
+     has, so it isn't wired up here; the visual result at the default
+     preset is reproduced exactly). Kept as an RGB triplet under the
+     old --indigo/--cyan variable names so every existing
+     rgb(var(--indigo)) / rgba(var(--indigo),X) call site throughout
+     this file keeps working unchanged. */
+  --indigo:92,92,110;
+  --cyan:92,92,110;
+  /* Secondary atmospheric hue, hue-shifted from --indigo (see
+     secondaryRgbString() in theme.js). Static fallback here matches
+     the "Neutral" accent's shift so the very first paint (before
+     theme.js runs) isn't a plain single-color wash; applyAccent()
+     recomputes and overwrites this for whichever accent is active. */
+  --indigo-2:96,88,118;
+  --accent-bg:rgba(92,92,110,.07);
+  --accent-hover-bg:rgba(92,92,110,.11);
+  --accent-ring:rgba(92,92,110,.42);
+  --accent-border:rgba(92,92,110,.28);
+
+  --green:120,170,140;
+  --red:198,120,120;
+  --amber:198,168,110;
+
+  --radius:8px;
+  --radius-lg:12px;
+
+  --sidebar-width:224px;
+  --topbar-height:48px;
+  --bottom-nav-height:56px;
+  --conv-panel-width:348px;
+
+  --ease-fast:120ms ease;
+  --ease-smooth:180ms ease;
+  --ambient-strength: 0.34;
+
+  /* ---- Global "Animations" appearance setting ----
+     Every duration a NEW (decorative) animation/transition uses
+     throughout the app should reference one of these three
+     variables instead of a literal duration. They default to 0ms
+     here, so anything built on them is inert — identical to the
+     app's appearance before this setting existed — until
+     html[data-animations="on"] below (toggled from Settings →
+     Appearance, see theme.js) turns them on. This is the single
+     switch the whole system hangs off of: no component needs its
+     own enabled/disabled branch.
+     Pre-existing transitions/animations (modal/toast entrance,
+     hover color transitions using --ease-fast/--ease-smooth, the
+     loading spinner, etc.) are untouched
+     and keep running regardless of this setting — see motion.css
+     for the split between "always on" and "new, toggled" motion. */
+  --motion-fast:0ms;
+  --motion-base:0ms;
+  --motion-slow:0ms;
+  --motion-ease:linear;
+
+  /* ---- Global "Animation Scale" appearance setting ----
+     Multiplier applied to --motion-fast/--motion-base/--motion-slow
+     below (see core/motion.css) once Animations is on. Defaults to 1
+     (unchanged timing); set on <html> by theme.js/applyAnimationScale()
+     alongside the density and font-size scales above. */
+  --wire-motion-scale:1;
+
+  /* ---- Global "UI Density" appearance setting ----
+     Every padding/margin/gap value throughout the app that should
+     respond to density is written as calc(Npx * var(--wire-density-scale))
+     instead of a literal px value (see settings/theme.js —
+     applyUIDensity() sets this on <html>). Defaults to 1, which
+     collapses every one of those calc()s back to the exact literal
+     px value it replaced, so Default density is pixel-identical to
+     the app's appearance before this setting existed. Compact/
+     Comfortable just change this one number. Sizes that aren't
+     spacing (icon/avatar dimensions, border-radius, font-size, ...)
+     never reference this variable and are untouched by density. */
+  --wire-density-scale:1;
+
+  /* ---- Global "Font Size" appearance setting ----
+     Every font-size declaration throughout the app is written as
+     calc(Npx * var(--wire-font-scale)) instead of a literal px value
+     (see settings/theme.js — applyFontSize()). Defaults to 1, so
+     Default font size is pixel-identical to the app's appearance
+     before this setting existed. line-height throughout the app is
+     already unitless (a multiplier of the element's own font-size),
+     so it scales together with this automatically and the existing
+     type hierarchy (headings vs. body vs. labels) is preserved at
+     every size. */
+  --wire-font-scale:1;
+
+  /* RGB triplets of the flat panel colors above, for rgba() use on
+     glass surfaces (sidebar/topbar/cards) that need to stay
+     translucent so the global atmospheric background layer
+     continues visually behind them instead of being blocked. */
+  --ink-rgb:13,13,17;
+  --ink2-rgb:17,17,22;
+  --void-rgb:9,9,11;
+
+  /* Auto-contrast text color for anything painted directly in the
+     accent color (currently just the "own message" chat bubble) —
+     recomputed in theme.js's applyAccent() from the accent's
+     perceived brightness, so picking a pale/light accent doesn't
+     leave white text unreadable on a now-light bubble. This
+     fallback matches the default "Neutral" accent (#5C5C6E, dark
+     enough for white text). */
+  --accent-contrast:#fff;
+
+  /* Scrim behind modals/dropzone/image-viewer — a separate token
+     (not --void-rgb) because it needs to stay dark in BOTH themes
+     (dimming whatever's behind it), unlike every other panel above
+     which flips to a light fill in light mode. */
+  --scrim-rgb:5,5,8;
+}
+
+/* ============================================================
+   Light mode
+   Toggled via document.documentElement.dataset.theme = 'light'
+   (see applyTheme() in theme.js). Every panel/text/border token
+   above gets a light-mode counterpart here; anything built from
+   --accent-* or --indigo/--cyan is left alone since those are
+   already translucent overlays that read fine on either fill.
+   ============================================================ */
+:root[data-theme="light"]{
+  --void:#F4F4F6;
+  --ink:#FFFFFF;
+  --ink2:#FFFFFF;
+  --card:#FFFFFF;
+  --hover:#ECECEF;
+  --border:#DEDEE3;
+  --border-soft:#E6E6EA;
+  /* Once a surface is this light, white text is the thing that
+     needs to "turn black" — everything reading var(--text)/
+     var(--muted)/var(--muted2) anywhere in the app (chat bubbles,
+     cards, inputs, menus, badges, ...) flips to a dark ink instead
+     of the near-white used on the dark theme. */
+  --text:#16161A;
+  --muted:#5B5B66;
+  --muted2:#82828C;
+
+  --ink-rgb:255,255,255;
+  --ink2-rgb:255,255,255;
+  --void-rgb:244,244,246;
+}

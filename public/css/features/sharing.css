@@ -1,0 +1,186 @@
+/* ================================================================
+   FILES DIALOGS — folder sharing, file share links, and the landing
+   page for a share link.  (js/files/dialog.js, share.js, links.js,
+   share-view.js)
+
+   Every dialog is a native modal <dialog>: the browser makes the rest
+   of the page inert, closes on Escape and keeps the dialog in the top
+   layer, so there is no z-index here. Centred card on desktop; on
+   phones (<=760px, responsive.css) the same markup becomes a
+   full-width bottom sheet.
+   ================================================================ */
+
+.files-dialog [hidden]{display:none !important;}
+
+.files-dialog{
+  padding:0;border:0;background:transparent;color:var(--text);
+  max-width:none;max-height:none;overflow:visible;
+  font-family:var(--wire-font-family, inherit);
+}
+.files-dialog::backdrop{
+  background:rgba(var(--scrim-rgb),.72);
+  backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);
+}
+.files-dialog button,
+.files-dialog input,
+.files-dialog select{font-family:inherit;}
+
+.files-dialog--modal{
+  position:fixed;inset:0;margin:auto;
+  width:min(520px,calc(100vw - 32px));height:fit-content;
+}
+.files-dialog--modal .files-dialog-panel{
+  display:flex;flex-direction:column;
+  max-height:calc(100vh - 48px);max-height:calc(100dvh - 48px);
+  background:rgba(var(--ink2-rgb),.97);
+  border:1px solid var(--border);border-radius:var(--radius-lg);
+  box-shadow:0 24px 60px rgba(0,0,0,.45);
+  overflow:hidden;
+  animation:motion-scale-in var(--motion-fast) var(--motion-ease);
+}
+
+/* ---------- Header / body / footer ---------- */
+.fd-head{
+  display:flex;align-items:center;gap:calc(12px * var(--wire-density-scale));flex-shrink:0;
+  padding:calc(16px * var(--wire-density-scale)) calc(12px * var(--wire-density-scale)) calc(14px * var(--wire-density-scale)) calc(18px * var(--wire-density-scale));border-bottom:1px solid var(--border);
+}
+.fd-titles{flex:1;min-width:0;}
+.fd-title{margin:0;font-size:calc(15px * var(--wire-font-scale));font-weight:600;letter-spacing:-.01em;color:var(--text);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.fd-sub{margin:calc(2px * var(--wire-density-scale)) 0 0;font-size:calc(12.5px * var(--wire-font-scale));color:var(--muted);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.fd-close{
+  width:44px;height:44px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;
+  background:transparent;border:0;border-radius:var(--radius);color:var(--muted);cursor:pointer;
+  transition:background var(--ease-fast),color var(--ease-fast);
+}
+.fd-close:hover{background:var(--hover);color:var(--text);}
+
+.fd-body{
+  flex:1;min-height:0;overflow-y:auto;padding:calc(16px * var(--wire-density-scale)) calc(18px * var(--wire-density-scale));
+  display:flex;flex-direction:column;gap:calc(20px * var(--wire-density-scale));overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch;
+}
+.fd-foot{
+  display:flex;justify-content:flex-end;gap:calc(10px * var(--wire-density-scale));flex-shrink:0;
+  padding:calc(12px * var(--wire-density-scale)) calc(18px * var(--wire-density-scale));padding-bottom:calc(12px + env(safe-area-inset-bottom, 0px));
+  border-top:1px solid var(--border);
+}
+
+.fd-btn{min-height:44px;padding:0 calc(16px * var(--wire-density-scale));justify-content:center;white-space:nowrap;}
+.fd-btn svg{width:15px;height:15px;flex-shrink:0;}
+.fd-btn.is-busy{opacity:.6;pointer-events:none;}
+.fd-select{width:100%;min-height:44px;}
+.fd-label{display:block;margin:0 0 calc(6px * var(--wire-density-scale));font-size:calc(12px * var(--wire-font-scale));font-weight:500;color:var(--muted);}
+.fd-section{margin:0 0 calc(10px * var(--wire-density-scale));font-size:calc(11px * var(--wire-font-scale));font-weight:550;letter-spacing:.05em;text-transform:uppercase;color:var(--muted2);}
+.fd-count{color:var(--muted);font-weight:450;}
+.fd-help{margin:0;font-size:calc(13px * var(--wire-font-scale));line-height:1.55;color:var(--muted);}
+.fd-hint{margin:calc(10px * var(--wire-density-scale)) 0 0;font-size:calc(12px * var(--wire-font-scale));line-height:1.5;color:var(--muted);}
+.fd-hint strong{color:var(--text);font-weight:550;}
+.fd-loading{display:flex;align-items:center;justify-content:center;gap:calc(10px * var(--wire-density-scale));padding:32px 0;color:var(--muted);font-size:calc(13px * var(--wire-font-scale));}
+.fd-error{display:flex;flex-direction:column;align-items:center;gap:calc(12px * var(--wire-density-scale));padding:24px 0;text-align:center;color:#D6A3A3;font-size:calc(13px * var(--wire-font-scale));}
+.fd-error p{margin:0;}
+
+.btn-danger-ghost{
+  background:transparent;border:1px solid rgba(var(--red),.30);color:#D6A3A3;
+}
+.btn-danger-ghost:hover{background:rgba(var(--red),.14);border-color:rgba(var(--red),.45);color:#E2B3B3;}
+
+.files-sharedlg .is-busy{opacity:.75;pointer-events:none;}
+
+/* ---------- Folder sharing: people ---------- */
+.fs-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:calc(8px * var(--wire-density-scale));}
+.fs-row{
+  display:flex;align-items:center;flex-wrap:wrap;gap:calc(10px * var(--wire-density-scale)) calc(12px * var(--wire-density-scale));padding:10px 12px;
+  border-radius:var(--radius);background:var(--ink2);border:1px solid var(--border);
+}
+.fs-row.is-confirming{border-color:rgba(var(--red),.40);background:rgba(var(--red),.06);}
+.fs-avatar{
+  width:36px;height:36px;flex-shrink:0;border-radius:50%;
+  display:inline-flex;align-items:center;justify-content:center;
+  background:var(--accent-bg);border:1px solid var(--accent-border);
+  font-size:calc(13px * var(--wire-font-scale));font-weight:600;color:var(--text);
+}
+.fs-avatar svg{width:16px;height:16px;}
+.fs-person{flex:1 1 120px;min-width:0;}
+.fs-name{font-size:calc(13.5px * var(--wire-font-scale));font-weight:550;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.fs-role{font-size:calc(12px * var(--wire-font-scale));color:var(--muted);}
+.fs-owner-badge{
+  padding:calc(4px * var(--wire-density-scale)) calc(10px * var(--wire-density-scale));border-radius:99px;font-size:calc(11.5px * var(--wire-font-scale));font-weight:550;
+  background:rgba(var(--green),.14);color:rgb(var(--green));
+}
+.fs-controls{display:flex;align-items:center;gap:calc(8px * var(--wire-density-scale));margin-left:auto;}
+.fs-controls .fd-select{width:132px;}
+.fs-confirm{flex:1 1 100%;display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:calc(8px * var(--wire-density-scale));}
+.fs-confirm-text{flex:1 1 100%;font-size:calc(13px * var(--wire-font-scale));color:var(--text);}
+
+/* ---------- Folder sharing: add ---------- */
+.fs-add{display:grid;grid-template-columns:1fr 1fr;gap:calc(12px * var(--wire-density-scale));align-items:end;}
+.fs-add-btn{grid-column:1 / -1;}
+
+/* ---------- File share link ---------- */
+.fl-create-row{display:flex;gap:calc(10px * var(--wire-density-scale));align-items:stretch;}
+.fl-create-row .fd-select{flex:1;min-width:0;}
+.fl-result{padding:calc(14px * var(--wire-density-scale));border-radius:var(--radius);background:var(--accent-bg);border:1px solid var(--accent-border);}
+.fl-url-row{display:flex;gap:calc(8px * var(--wire-density-scale));}
+input.fl-url{
+  flex:1;min-width:0;min-height:44px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:calc(12.5px * var(--wire-font-scale));
+}
+.fl-status{margin:calc(10px * var(--wire-density-scale)) 0 0;font-size:calc(12.5px * var(--wire-font-scale));line-height:1.45;color:var(--muted);}
+.fl-status:empty{display:none;}
+.fl-status[data-tone="ok"]{color:rgb(var(--green));}
+.fl-status[data-tone="warn"]{color:rgb(var(--amber));}
+.fl-note{display:flex;align-items:center;gap:calc(6px * var(--wire-density-scale));margin:10px 0 0;font-size:calc(12px * var(--wire-font-scale));color:var(--muted);}
+.fl-note svg{flex-shrink:0;}
+
+.fl-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:calc(8px * var(--wire-density-scale));}
+.fl-item{
+  display:flex;align-items:center;flex-wrap:wrap;gap:calc(10px * var(--wire-density-scale)) calc(12px * var(--wire-density-scale));padding:10px 12px;
+  border-radius:var(--radius);background:var(--ink2);border:1px solid var(--border);
+}
+.fl-item.is-confirming{border-color:rgba(var(--red),.40);background:rgba(var(--red),.06);}
+.fl-item-main{flex:1 1 150px;min-width:0;}
+.fl-item-title{font-size:calc(13px * var(--wire-font-scale));font-weight:550;color:var(--text);}
+.fl-item-sub{font-size:calc(12px * var(--wire-font-scale));color:var(--muted);}
+.fl-badge{margin-left:calc(6px * var(--wire-density-scale));padding:2px 8px;border-radius:99px;font-size:calc(11px * var(--wire-font-scale));font-weight:550;background:var(--accent-bg);color:var(--text);}
+.fl-confirm{flex:1 1 100%;display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:calc(8px * var(--wire-density-scale));}
+.fl-confirm-text{flex:1 1 100%;font-size:calc(13px * var(--wire-font-scale));color:var(--text);}
+
+/* ================================================================
+   LANDING PAGE FOR A SHARE LINK  (#share/<token>)
+   ================================================================ */
+/* The route is "flush" (router.js), so this wrapper fills #content-area and
+   is the ONLY box that could ever scroll: the card is centred with
+   margin:auto (unlike justify/align-content:center, that never clips the
+   top when the card is taller than the box), and the wrapper only shows a
+   scrollbar if the card genuinely cannot fit — e.g. a tiny window or
+   large text size — never in the normal layouts. */
+.sv-wrap{
+  flex:1;min-height:0;display:flex;padding:calc(24px * var(--wire-density-scale)) calc(16px * var(--wire-density-scale));
+  overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;
+}
+.sv-card{
+  margin:auto;
+  width:100%;max-width:460px;display:flex;flex-direction:column;align-items:center;gap:calc(10px * var(--wire-density-scale));
+  padding:calc(32px * var(--wire-density-scale)) calc(24px * var(--wire-density-scale));text-align:center;
+  background:rgba(var(--ink2-rgb),.92);border:1px solid var(--border);border-radius:var(--radius-lg);
+}
+.sv-title{
+  margin:calc(10px * var(--wire-density-scale)) 0 0;max-width:100%;font-size:calc(18px * var(--wire-font-scale));font-weight:600;letter-spacing:-.01em;color:var(--text);
+  overflow-wrap:anywhere;
+  /* a very long file name must not grow the card without bound (full name is in the title attribute) */
+  display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;
+}
+.sv-meta{margin:0;font-size:calc(13px * var(--wire-font-scale));color:var(--muted);}
+.sv-from{margin:0;font-size:calc(12.5px * var(--wire-font-scale));color:var(--muted);}
+.sv-from strong{color:var(--text);font-weight:550;}
+.sv-text{margin:0;font-size:calc(13px * var(--wire-font-scale));line-height:1.55;color:var(--muted);}
+.sv-actions{display:flex;flex-wrap:wrap;justify-content:center;gap:calc(10px * var(--wire-density-scale));margin-top:14px;width:100%;}
+.sv-btn{min-height:44px;padding:0 calc(20px * var(--wire-density-scale));justify-content:center;}
+.sv-btn svg{width:15px;height:15px;}
+.sv-link{margin-top:calc(8px * var(--wire-density-scale));min-height:44px;padding:0 calc(16px * var(--wire-density-scale));background:none;border:0;color:var(--muted);font-size:calc(12.5px * var(--wire-font-scale));cursor:pointer;border-radius:var(--radius);}
+.sv-link:hover{color:var(--text);background:var(--hover);}
+.sv-icon{display:inline-flex;}
+.sv-icon--error{color:rgb(var(--amber));}
+.sv-icon--error svg{width:32px;height:32px;}

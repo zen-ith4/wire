@@ -1,0 +1,379 @@
+/* ================================================================
+   RESPONSIVE — all @media breakpoints, collected here and grouped
+   by the feature/section they modify. Base (non-media) rules for
+   each of these live in their respective component/feature/layout
+   file; only the breakpoint overrides live here.
+   ================================================================ */
+
+/* ---- Profile card (features/profile.css) ---- */
+@media (max-width:480px){
+  .profile-card-content{max-width:100%;}
+  .profile-card-content .profile-card-banner-wrap .profile-banner{aspect-ratio:2.4/1;}
+}
+
+/* ---- Messages (features/messages.css) ---- */
+@media (max-width:1100px){
+  .dm-sidebar{width:280px;min-width:280px;}
+}
+@media (max-width:760px){
+  .dm-sidebar, .dm-thread{width:100%;min-width:0;}
+  .dm-sidebar{border-right:none;}
+  .dm-back-btn{display:inline-flex;}
+  .dm-layout:not(.showing-thread) .dm-thread{display:none;}
+
+  /* Two stacked layers instead of two swapped panes: the conversation
+     list is always rendered underneath, and an open conversation is a
+     separate opaque layer on top of it. The list stays put (no more
+     display:none), so dragging the thread aside in the swipe-back
+     gesture (dm.js sets an inline transform on .dm-thread) uncovers the
+     already-rendered list instead of an empty gap. */
+  .dm-layout{position:relative;overflow:hidden;}
+  .dm-sidebar{position:absolute;inset:0;z-index:1;}
+  .dm-thread{
+    position:absolute;inset:0;z-index:2;
+    /* Crops the oversized background layer below to the thread's own
+       box. No transform/contain here on purpose: at rest that would turn
+       .dm-thread into the containing block for position:fixed children. */
+    overflow:hidden;
+    /* Opaque, same as <body>: what #ambient-underlay's blurred edges
+       fade into on the real page. No see-through, no glass over the
+       list underneath. */
+    background:var(--void);
+    backdrop-filter:none;-webkit-backdrop-filter:none;
+  }
+
+  /* The thread's own copy of the site background: the very same layers
+     theme.js paints on #ambient-underlay (--ambient-bg), the same blur,
+     and the same size and screen position as that fixed layer
+     (--dm-bg-* are measured by dm.js). Because it is a child of the
+     thread it travels with it during the swipe, and because it lines up
+     with the real underlay the thread is indistinguishable from the
+     page background around it (topbar / bottom bar). */
+  .dm-thread::before{
+    content:"";
+    position:absolute;z-index:-1;pointer-events:none;
+    left:calc(-1 * var(--dm-bg-x, 0px));
+    top:calc(-1 * var(--dm-bg-y, 0px));
+    width:var(--dm-bg-w, 100vw);
+    height:var(--dm-bg-h, 100vh);
+    background:var(--ambient-bg, var(--void));
+    filter:blur(var(--ambient-blur));
+  }
+}
+
+/* ---- Settings (features/settings.css) ---- */
+@media (max-width:1100px){
+  .content{padding:calc(24px * var(--wire-density-scale));}
+  .settings-shell{max-width:500px;}
+}
+@media (max-width:520px){
+  .profile-banner-wrap{aspect-ratio:2.2/1;}
+  .profile-banner-actions{right:10px;bottom:10px;gap:calc(6px * var(--wire-density-scale));}
+}
+
+/* ---- Settings categories (features/settings.css) ---- */
+@media (max-width:760px){
+  .settings-category-row{gap:calc(12px * var(--wire-density-scale));min-height:56px;}
+  .settings-category-row-icon{width:34px;height:34px;}
+  .settings-category-header{margin-bottom:calc(16px * var(--wire-density-scale));}
+}
+
+/* ---- Image viewer (features/image-viewer.css) ----
+   Breakpoint rule kept in that file since it's the only one it has. */
+
+/* ---- Emoji picker (features/emoji-picker.css) ---- */
+@media (max-width:480px){
+  .emoji-picker{width:calc(100vw - 24px);height:340px;}
+}
+
+/* ---- Phone navigation (layout/bottom-nav.css, ui/mobile-shell.js) ----
+   Phones — narrow viewports, plus short landscape phones whatever
+   their width — swap the sidebar for the bottom tab bar (and an admin
+   ⋮ menu in the top bar). Desktop never matches this and keeps the
+   sidebar untouched. This is the one place that decides which
+   navigation is on screen. */
+@media (max-width:900px), (max-height:480px) and (orientation:landscape){
+  .sidebar,
+  .sidebar-resize-handle{display:none;}
+
+  /* Side safe-area insets (landscape notch) for the whole column —
+     topbar, content and bar. The bar's own background bleeds under
+     them again via negative margins (bottom-nav.css); top/bottom
+     insets are handled by the topbar and the bar respectively. */
+  .main{
+    padding-left:env(safe-area-inset-left);
+    padding-right:env(safe-area-inset-right);
+  }
+
+  .bottom-nav{display:flex;}
+  button.topbar-more-btn{display:flex;width:40px;height:40px;margin-right:calc(-1 * (8px * var(--wire-density-scale)));}
+  .more-menu.open{display:block;}
+
+  /* On-screen keyboard up (ui/mobile-shell.js sets html.kb-open while a
+     text field is focused): drop the bar so the composer sits right on
+     the keyboard instead of leaving a nav bar's worth of dead space. */
+  html.kb-open .bottom-nav{display:none;}
+}
+
+/* ---- App shell / topbar / cards (layout + components) ---- */
+@media (max-width:900px){
+  /* The bar is in flow under .content, so unlike the old floating
+     layout this needs no extra bottom room to clear it. */
+  .content{padding:calc(20px * var(--wire-density-scale)) calc(16px * var(--wire-density-scale)) calc(24px * var(--wire-density-scale));}
+  .topbar{
+    padding:0 calc(16px * var(--wire-density-scale));
+    padding-top:env(safe-area-inset-top);
+    height:calc(var(--topbar-height) + env(safe-area-inset-top));
+  }
+  .card{padding:calc(16px * var(--wire-density-scale));}
+
+  /* ---- Modals ----
+     Keep clear of the notch / gesture bar, and never taller than the
+     visible area: max-height:100% resolves against the padded,
+     viewport-sized backdrop, so it follows the keyboard too (88vh
+     didn't — it's the *large* viewport on mobile browsers). */
+  .modal{
+    padding:
+      calc(calc(12px * var(--wire-density-scale)) + env(safe-area-inset-top))
+      calc(calc(12px * var(--wire-density-scale)) + env(safe-area-inset-right))
+      calc(calc(12px * var(--wire-density-scale)) + env(safe-area-inset-bottom))
+      calc(calc(12px * var(--wire-density-scale)) + env(safe-area-inset-left));
+  }
+  .modal-content{padding:calc(20px * var(--wire-density-scale));max-height:100%;}
+  .confirm-modal-content{padding:calc(20px * var(--wire-density-scale));}
+
+  /* ---- Touch target fixes ----
+     Message action buttons are NOT forced visible here any more: the
+     action bar opens on a desktop right-click, or on touch the tap
+     reveal (.is-actions-open, see the end of features/messages.css). */
+  .icon-btn{width:34px;height:34px;}
+  .btn-icon{width:42px;height:42px;}
+  .chat-input-area .btn-icon{width:42px;height:42px;}
+  .composer-mic-btn{width:40px;height:40px;}
+
+  /* iOS Safari zooms the whole page in on focus for any text input
+     under 16px — with the page-level scroll already locked (see
+     core/reset.css) that zoom has nowhere sensible to go and just
+     reads as broken layout/overflow until the user manually zooms
+     back out. Bumping to 16px here (mobile only — desktop keeps its
+     smaller size, same selectors/specificity so no !important is
+     needed since this file loads last) removes the trigger. */
+  .chat-input-area input[type=text],
+  .chat-input-area textarea,
+  input.conv-search-input,
+  input.emoji-picker-search{
+    font-size:calc(16px * var(--wire-font-scale));
+  }
+
+  /* Same for every other text field (settings, admin, forms, login). */
+  input[type=text],
+  input[type=password],
+  input[type=email],
+  input[type=search],
+  input[type=number],
+  textarea{
+    font-size:calc(16px * var(--wire-font-scale));
+  }
+}
+
+/* ---- Composer / keyboard ----
+   Plain bottom margin: the bottom bar underneath already owns the
+   safe-area inset (home-indicator strip), and while the keyboard is up
+   there is no strip to clear — the composer sits right on it. */
+@media (max-width:900px){
+  .composer-wrapper{
+    margin:0 calc(12px * var(--wire-density-scale)) calc(12px * var(--wire-density-scale));
+  }
+  .chat-messages{padding:calc(14px * var(--wire-density-scale)) calc(12px * var(--wire-density-scale));gap:3px;}
+  .chat-top-bar.chat-header-glass + .chat-messages,
+  .chat-top-bar.chat-header-glass + .chat-messages-wrap > .chat-messages{padding-top:calc(70px * var(--wire-density-scale));}
+  .chat-top-bar.chat-header-glass{left:12px;right:12px;}
+  .chat-msg{max-width:88%;}
+  .dm-thread-header,.chat-top-bar{padding:calc(10px * var(--wire-density-scale)) calc(14px * var(--wire-density-scale));}
+}
+
+/* Narrow phones: five controls share the composer row, which left the
+   textarea too thin for even its placeholder ("Type a message…" wrapped
+   and got clipped). Slightly tighter buttons/gaps give the text room. */
+@media (max-width:480px){
+  .chat-input-area{gap:calc(4px * var(--wire-density-scale));padding:8px;}
+  .chat-input-area .btn-icon,
+  .composer-mic-btn{width:36px;height:36px;}
+  .chat-input-area .btn-send{width:38px;height:38px;}
+  /* If it still can't fit, truncate instead of wrapping into a clipped 2nd line. */
+  .chat-input-area textarea::placeholder{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+}
+@media (max-width:340px){
+  .composer-wrapper{margin-left:calc(8px * var(--wire-density-scale));margin-right:8px;}
+  .chat-input-area{padding:calc(8px * var(--wire-density-scale)) calc(6px * var(--wire-density-scale));}
+  .chat-input-area .btn-icon,
+  .composer-mic-btn{width:34px;height:34px;}
+}
+
+/* ---- Short / landscape phones ----
+   Landscape width on a lot of phones is well past the 900px
+   breakpoint above, so it's handled on height instead: short viewports
+   get the same bottom-bar navigation (see "Phone navigation") in a
+   compact, icon-beside-label form, plus tighter vertical rhythm,
+   regardless of width. */
+@media (max-height:480px) and (orientation:landscape){
+  :root{--topbar-height:40px;--bottom-nav-height:44px;}
+  .topbar{padding:0 calc(14px * var(--wire-density-scale));padding-top:env(safe-area-inset-top);}
+  .chat-empty-state{padding:calc(24px * var(--wire-density-scale)) calc(20px * var(--wire-density-scale));gap:10px;}
+  .composer-wrapper{margin:0 calc(10px * var(--wire-density-scale)) calc(8px * var(--wire-density-scale));}
+
+  .bottom-nav-item{flex-direction:row;gap:calc(8px * var(--wire-density-scale));}
+  .bottom-nav-icon{padding:0;}
+  .bottom-nav-item svg{width:20px;height:20px;}
+  .bottom-nav-item.active .bottom-nav-icon{background:none;}
+  .bottom-nav-icon .nav-badge{top:-6px;right:-10px;}
+}
+
+/* ---- My Files on phones (features/files.css, js/files/files.js) ----
+   Master/detail like Messages: ONE pane at a time (the folder list, or
+   the current folder), toggled by .is-list on #files-root. Inside the
+   file pane the desktop table becomes a two-line list — name over
+   "size · date" — so nothing is cramped and nothing scrolls sideways.
+   Column headers are replaced by the sort bar. Every control is at
+   least 44px and nothing depends on hover. */
+@media (max-width:760px){
+  .files-sidebar{width:100%;min-width:0;border-right:0;}
+  .files-main{width:100%;}
+
+  .files-layout:not(.is-list) .files-sidebar{display:none;}
+  .files-layout.is-list .files-main{display:none;}
+  .files-layout:not(.has-folders) .files-main{display:none;}
+  .files-layout:not(.has-folders) .files-sidebar{display:flex;}
+
+  .files-back{display:inline-flex;}
+  .files-header{gap:calc(4px * var(--wire-density-scale));padding:6px 8px 6px 4px;min-height:56px;}
+  .files-crumb-btn,
+  .files-crumb-text{font-size:calc(14px * var(--wire-font-scale));padding:calc(6px * var(--wire-density-scale));}
+  .files-crumb-btn{min-height:40px;}
+  .files-crumb.is-root .files-crumb-btn,
+  .files-crumb.is-root .files-crumb-text{max-width:12ch;}
+  .files-upload{min-height:44px;padding:0 calc(14px * var(--wire-density-scale));}
+  .files-main > .upload-progress{margin:calc(10px * var(--wire-density-scale)) calc(12px * var(--wire-density-scale)) 0;}
+
+  .files-newbtn{min-height:44px;padding:0 calc(14px * var(--wire-density-scale));}
+  .files-newfolder-row .files-input,
+  .files-btn-sm{min-height:44px;}
+  .files-folder-scroll{padding:calc(8px * var(--wire-density-scale)) calc(8px * var(--wire-density-scale)) calc(calc(8px * var(--wire-density-scale)) + env(safe-area-inset-bottom, 0px));}
+  .files-folder-main{min-height:64px;}
+  .files-action{width:44px;height:44px;}
+
+  .files-toolbar{display:flex;}
+  .files-body{padding:calc(4px * var(--wire-density-scale)) calc(8px * var(--wire-density-scale)) calc(calc(16px * var(--wire-density-scale)) + env(safe-area-inset-bottom, 0px));}
+  .files-list-head{display:none;}
+  .files-list{margin-top:calc(4px * var(--wire-density-scale));}
+  .files-row{grid-template-columns:minmax(0,1fr) auto;min-height:64px;padding:calc(2px * var(--wire-density-scale)) 0 calc(2px * var(--wire-density-scale)) calc(8px * var(--wire-density-scale));column-gap:4px;}
+  .files-row-size,
+  .files-row-date{display:none;}
+  .files-row-meta{display:block;}
+  .files-row-chevron{padding-right:calc(14px * var(--wire-density-scale));}
+  .files-only-phone{display:inline-flex;}
+}
+@media (max-width:480px){
+  .files-count{display:none;} /* "N items" — the header is out of room */
+  .files-upload span{display:none;} /* icon-only; the button keeps its aria-label */
+  .files-upload{width:44px;padding:0;justify-content:center;}
+}
+
+/* ---- Files dialogs as bottom sheets (features/sharing.css) ----
+   Same native <dialog> as desktop; it just docks to the bottom edge,
+   full width, with a grab handle and rounded top corners. */
+@media (max-width:760px){
+  .files-dialog--modal{width:100%;max-width:100%;margin:auto 0 0;}
+  .files-dialog--modal .files-dialog-panel{
+    max-height:92vh;max-height:92dvh;
+    border-radius:18px 18px 0 0;border-bottom:0;
+    animation:files-sheet-in var(--motion-base) var(--motion-ease);
+  }
+  .files-dialog--modal .files-dialog-panel::before{
+    content:"";display:block;flex-shrink:0;width:38px;height:4px;margin:calc(8px * var(--wire-density-scale)) auto 0;
+    border-radius:99px;background:var(--border);
+  }
+  .fd-head{padding-top:calc(8px * var(--wire-density-scale));}
+  .fd-body{padding:calc(14px * var(--wire-density-scale)) calc(16px * var(--wire-density-scale));}
+  .fd-foot{padding:calc(10px * var(--wire-density-scale)) calc(16px * var(--wire-density-scale));padding-bottom:calc(10px + env(safe-area-inset-bottom, 0px));}
+  .fd-foot .fd-btn{flex:1;}
+
+  /* people rows: name on top, controls on their own full-width line */
+  .fs-controls{flex:1 1 100%;margin-left:0;}
+  .fs-controls .fd-select{flex:1;width:auto;min-width:0;}
+  .fs-add{grid-template-columns:1fr;}
+  .fl-create-row{flex-direction:column;}
+  .fl-create-row .fd-btn{width:100%;}
+  .fl-url-row{flex-direction:column;}
+  .fl-url-row .fd-btn{width:100%;}
+  .fl-item .fd-btn{flex:1 1 100%;}
+  .fs-confirm .fd-btn,
+  .fl-confirm .fd-btn{flex:1;}
+}
+@keyframes files-sheet-in{from{transform:translateY(24px);opacity:.6;}to{transform:translateY(0);opacity:1;}}
+
+/* ---- Files viewer + share-link page on phones ---- */
+@media (max-width:760px){
+  .fv-bar{gap:calc(2px * var(--wire-density-scale));padding-left:calc(4px + env(safe-area-inset-left, 0px));padding-right:calc(calc(4px * var(--wire-density-scale)) + env(safe-area-inset-right, 0px));}
+  .fv-stage{padding:calc(8px * var(--wire-density-scale)) calc(calc(8px * var(--wire-density-scale)) + env(safe-area-inset-right, 0px)) calc(calc(8px * var(--wire-density-scale)) + env(safe-area-inset-bottom, 0px)) calc(calc(8px * var(--wire-density-scale)) + env(safe-area-inset-left, 0px));}
+  .fv-nav{width:44px;height:44px;}
+  .fv-prev{left:calc(6px + env(safe-area-inset-left, 0px));}
+  .fv-next{right:calc(6px + env(safe-area-inset-right, 0px));}
+  .fa{padding:calc(22px * var(--wire-density-scale)) calc(16px * var(--wire-density-scale)) calc(18px * var(--wire-density-scale));gap:16px;}
+  .fa-art{width:80px;height:80px;border-radius:20px;}
+  .sv-wrap{padding:calc(20px * var(--wire-density-scale)) calc(12px * var(--wire-density-scale));}
+  .sv-actions .sv-btn{flex:1 1 100%;}
+}
+/* Share-link landing page in short landscape screens (~275-305px of content
+   height): the portrait card is 365-420px tall, so lay it out as one
+   compact row — icon on the left, details and actions on the right. */
+@media (max-height:480px) and (orientation:landscape){
+  .sv-wrap{padding:calc(8px * var(--wire-density-scale)) calc(16px * var(--wire-density-scale));}
+  .sv-card--file,
+  .sv-card--error{
+    display:grid;grid-template-columns:auto minmax(0,1fr);
+    grid-template-areas:"tile title" "tile meta" "tile from" "tile actions" "tile link";
+    column-gap:calc(20px * var(--wire-density-scale));row-gap:2px;align-items:center;justify-items:start;
+    max-width:600px;padding:calc(14px * var(--wire-density-scale)) calc(20px * var(--wire-density-scale));text-align:left;
+  }
+  .sv-card--error{grid-template-areas:"tile title" "tile text" "tile actions";}
+  .sv-card > .files-tile,
+  .sv-card > .sv-icon{grid-area:tile;align-self:center;}
+  .sv-card > .sv-title{grid-area:title;margin:0;font-size:calc(16px * var(--wire-font-scale));-webkit-line-clamp:2;}
+  .sv-card > .sv-meta{grid-area:meta;}
+  .sv-card > .sv-from{grid-area:from;}
+  .sv-card > .sv-text{grid-area:text;}
+  .sv-card > .sv-actions{grid-area:actions;justify-content:flex-start;margin-top:calc(8px * var(--wire-density-scale));width:auto;}
+  .sv-card > .sv-link{grid-area:link;margin:0;min-height:44px;padding:0;}
+  .sv-actions .sv-btn{flex:0 0 auto;}
+}
+
+/* Landscape phones: little vertical room — drop the artwork and tighten. */
+@media (max-height:480px) and (orientation:landscape){
+  .fa-art{display:none;}
+  .fa{padding:calc(14px * var(--wire-density-scale)) calc(16px * var(--wire-density-scale));gap:10px;}
+  .fa-play{width:56px;height:56px;}
+  .fa-skip{width:44px;height:44px;}
+  .fv-bar{padding-top:calc(calc(4px * var(--wire-density-scale)) + env(safe-area-inset-top, 0px));padding-bottom:4px;}
+  .files-header{min-height:48px;}
+  .files-dialog--modal .files-dialog-panel{max-height:100vh;max-height:100dvh;}
+}
+
+/* ---- File / peer / user tables (features/files.css) ----
+   No wrapper wide enough to need its own file — see
+   features/files.css for the .table-scroll rule these tables are
+   now rendered inside of. */
+@media (max-width:480px){
+  .file-table th:nth-child(3),
+  .file-table td:nth-child(3){display:none;} /* "Modified" column: least essential, drop first */
+}
+
+/* A hardcoded inline min-width (wireguard/admin toolbars) is the
+   one place in the app that isn't controllable from a stylesheet
+   without matching or beating that inline specificity — narrow
+   enough and clearly justified to be the one !important in this
+   file, only at the width where it would otherwise force the
+   toolbar itself past the viewport. */
+@media (max-width:420px){
+  .toolbar input[type="text"]{min-width:0 !important;flex:1 1 140px;}
+}

@@ -1,0 +1,22 @@
+/* ---------- Cards (used for every non-Messages view — Files,
+   Settings sections, Admin, WireGuard, Share, login) ----------
+   Same translucent-blurred-panel treatment as the reference's
+   .conversations-panel/.chat-panel, generalized into one reusable
+   surface class since those are the only panel components the
+   reference actually shows. */
+.card {
+  /* Flat translucent glass, no local gradient wash — see the note in
+     content.css. The single global ambient layer shows through the
+     card's backdrop-filter blur instead of the card painting its own
+     separate colored patch (which used to look like a bubble abruptly
+     cut off at the card's rounded corners). */
+  background:rgba(var(--ink2-rgb), var(--sf-card-alpha, .78));
+  backdrop-filter:var(--sf-card-filter,blur(12px));-webkit-backdrop-filter:var(--sf-card-filter,blur(12px));
+  border:1px solid var(--border);
+  border-radius:var(--radius-lg);
+  padding:calc(24px * var(--wire-density-scale));
+}
+.card + .card{margin-top:calc(16px * var(--wire-density-scale));}
+.card-head{display:flex;align-items:center;justify-content:space-between;gap:calc(14px * var(--wire-density-scale));margin-bottom:18px;flex-wrap:wrap;}
+.card-title{font-size:calc(15px * var(--wire-font-scale));font-weight:600;display:flex;align-items:center;gap:calc(9px * var(--wire-density-scale));color:var(--text);}
+.card-sub{font-size:calc(12.5px * var(--wire-font-scale));color:var(--muted);margin-top:calc(2px * var(--wire-density-scale));}

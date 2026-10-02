@@ -1,0 +1,17 @@
+{
+  "_readme": "Tests copied from the source tree that exercise behaviour this tree does not have. They are excluded from `npm test` (run them with `npm run test:excluded`). No assertion in them was edited. An entry may only be removed by making the test pass, never by editing the test around it.",
+  "excluded": [
+    {
+      "file": "tests/blob-url-cleanup.test.mjs",
+      "reason": "Drives the source tree's decrypted-attachment pipeline: its mediaToken.js mock exports resolveMediaSrc() returning {src,isBlob}, and it imports revokeMediaPlayerBlobUrls and blob-stamping audio/video players from media/attachments.js. This tree has NO DM attachment encryption (decision: DM path stays exactly as X): mediaToken.js has no resolveMediaSrc, the audio/video players never create blob URLs, and attachments.js has no such export (it is intentionally untouched). Even with its mocks completed for X's newer imports (refreshMediaSrcUrl, vendor/capacitor Directory), the behaviour it asserts does not exist.",
+      "verified": "X's media/audio-player.js, video-player.js, voice-message.js contain no createObjectURL and never set data-blob-url; grep resolveMediaSrc public/js => 0 hits. So this is not a leak in X: there is nothing to leak.",
+      "covered_by": "tests/groups/thread-blob-cleanup.test.mjs (new) pins the group-related part: thread.js removeMessage()/destroy() revoke audio/video blob URLs."
+    },
+    {
+      "file": "tests/dm-blob-url-cleanup.test.mjs",
+      "reason": "Same dependency as above, for dm.js: asserts DM audio blob URLs from the source tree's encrypted-attachment resolver are revoked on message removal / composer destroy. X's DM attachments are not encrypted and create no audio blob URLs. Its mocks are also stale against X's newer modules (reactions.js reactButtonHtml, mediaToken.js refreshMediaSrcUrl).",
+      "verified": "same grep evidence as above.",
+      "covered_by": "not group-related; nothing to cover in this tree."
+    }
+  ]
+}

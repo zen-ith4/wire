@@ -1,0 +1,67 @@
+/* ================================================================
+   Group UI layout helpers.
+
+   These replace inline style="..." attributes that chat/group.js used to
+   emit. The app CSP (middleware/csp.js) has style-src WITHOUT
+   'unsafe-inline', so browsers silently drop inline style attributes: the
+   dialogs and the header rendered unstyled. Classes are CSP-safe.
+   ================================================================ */
+
+.grp-top-main { flex: 1; min-width: 0; }
+
+.grp-name-input { width: 100%; margin: 12px 0; }
+.grp-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+.grp-member-list { max-height: 280px; overflow-y: auto; margin: 12px 0; }
+.grp-member-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; }
+.grp-member-main { flex: 1; }
+.grp-member-role { font-size: 12px; }
+
+.grp-add-select { width: 100%; margin-bottom: 8px; }
+.grp-settings-footer { display: flex; justify-content: space-between; margin-top: 16px; }
+
+/* ----------------------------------------------------------------
+   Add-reaction button inside the group thread's reactions row.
+
+   chat/dm keep the React button in the message action bar
+   (.chat-msg-react), so the old .reaction-add-btn rules were dropped from
+   messages.css. The group thread (chat/thread.js) has no such button and
+   renders this one inside .reactions-row instead (chat/reactions.js,
+   scope 'group'). Scoped under .reactions-row so it cannot affect anything
+   else.
+   ---------------------------------------------------------------- */
+
+.reactions-row .reaction-add-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--muted2);
+  cursor: pointer;
+  opacity: 0;
+  flex-shrink: 0;
+  transition: opacity .15s, background .15s, color .15s, border-color .15s;
+}
+
+.reactions-row .reaction-add-btn svg { width: 14px; height: 14px; }
+
+.chat-msg:hover .reactions-row .reaction-add-btn,
+.reactions-row .reaction-add-btn:focus-visible { opacity: 1; }
+
+.reactions-row .reaction-add-btn:hover {
+  background: var(--hover);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+/* No hover on touch devices: keep the button visible. */
+@media (hover: none) {
+  .reactions-row .reaction-add-btn { opacity: 1; width: 26px; height: 26px; }
+}
+
+/* Inert note shown instead of an attachment card in group threads (chat/thread.js). */
+.chat-attachment.chat-attachment-unsupported { cursor: default; opacity: .7; pointer-events: none; }

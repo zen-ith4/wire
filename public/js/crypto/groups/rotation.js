@@ -34,19 +34,31 @@ import { zero } from './codec.js';
  *   `recipients` is exactly the `recipients` array
  *   POST /api/groups/:groupId/kdms expects, alongside `epoch`.
  */
-export async function rotateSenderKey(identity, groupId, epoch, recipientUserIds) {
+export async function rotateSenderKey(identity, groupId, epoch, recipientUserIds, { deferPersist = false } = {}) {
     if (!recipientUserIds.map(Number).includes(Number(identity.userId))) {
         throw new Error(
             'recipientUserIds must include the sender\'s own user id (self-KDM)'
         );
     }
 
-    const { senderKeyId, rawBytes } = await generateSenderKey(identity, groupId, epoch);
+    // deferPersist (F1): the new key is persisted only when the caller invokes
+    // the returned commit() after the KDM POST returned 201. Otherwise it is
+    // persisted immediately (legacy behaviour kept for direct callers/tests).
+    const generated = await generateSenderKey(identity, groupId, epoch, { deferPersist });
+    const { senderKeyId, rawBytes } = generated;
 
     try {
         const recipients = await distributeSenderKey(rawBytes, recipientUserIds);
+
+        if (deferPersist) {
+            return { senderKeyId, recipients, commit: generated.commit, discard: generated.discard };
+        }
+
         return { senderKeyId, recipients };
+    } catch (e) {
+        if (deferPersist) generated.discard();
+        throw e;
     } finally {
-        zero(rawBytes);
+        if (!deferPersist) zero(rawBytes);
     }
 }

@@ -72,6 +72,33 @@ export async function putSenderKeyRecord(record) {
     });
 }
 
+/**
+ * Atomic insert-if-absent (get + put inside ONE readwrite transaction).
+ * Used for keys received via KDM so that a self-KDM landing on this device
+ * can never overwrite (and thereby demote to decrypt-only) the sending key
+ * this device just generated and committed under the same id (F1).
+ * @returns {Promise<boolean>} true if written, false if a row already existed
+ */
+export async function putSenderKeyRecordIfAbsent(record) {
+    const db = await openDatabase();
+    const tx = db.transaction(KEYS_STORE, 'readwrite');
+    const store = tx.objectStore(KEYS_STORE);
+    let written = false;
+
+    const getReq = store.get(record.senderKeyId);
+    getReq.onsuccess = () => {
+        if (!getReq.result) {
+            store.put(record);
+            written = true;
+        }
+    };
+
+    return new Promise((resolve, reject) => {
+        tx.oncomplete = () => resolve(written);
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
 export async function getSenderKeyRecord(senderKeyId) {
     const db = await openDatabase();
     const tx = db.transaction(KEYS_STORE, 'readonly');

@@ -29,6 +29,7 @@ import { zero } from './codec.js';
 import { deriveSenderKeyIdV2, SENDER_KEY_SCHEME_KEY_DERIVED } from './sender-key-id.js';
 import {
     putSenderKeyRecord,
+    putSenderKeyRecordIfAbsent,
     getSenderKeyRecord,
     getMySenderKeyForGroup,
     deleteSenderKeyRecord,
@@ -77,7 +78,7 @@ async function importSenderKeyBytes(rawBytes) {
  *   kdm.js in the same tick — callers must not persist or log it,
  *   and should let it go out of scope (zero it) once KDMs are built.
  */
-export async function generateSenderKey(identity, groupId, epoch) {
+export async function generateSenderKey(identity, groupId, epoch, { deferPersist = false } = {}) {
     // The id is derived FROM the key (sender-key-id.js, scheme 2), so two
     // devices of one account can never mint the same id for different keys.
     const rawBytes = crypto.getRandomValues(new Uint8Array(SENDER_KEY_BYTE_LENGTH));
@@ -85,7 +86,7 @@ export async function generateSenderKey(identity, groupId, epoch) {
 
     const cryptoKey = await importSenderKeyBytes(rawBytes);
 
-    await persistWrapped(identity, {
+    const meta = {
         senderKeyId,
         groupId,
         ownerUserId: identity.userId,
@@ -96,22 +97,54 @@ export async function generateSenderKey(identity, groupId, epoch) {
         // legacy rows (scheme undefined) are never selected for sending.
         isMine: 1,
         scheme: SENDER_KEY_SCHEME_KEY_DERIVED,
-    }, rawBytes);
+    };
+
+    if (deferPersist) {
+        // F1: the key is NOT on disk and NOT in the cache, so nothing can
+        // select it as "current" until the caller has proven (HTTP 201) that
+        // it was distributed. A process death anywhere before commit() leaves
+        // no trace of an undistributed key. rawBytes stays alive until
+        // commit() or discard(); the caller must call exactly one of them.
+        return {
+            senderKeyId,
+            cryptoKey,
+            rawBytes,
+            async commit() {
+                try {
+                    await persistWrapped(identity, meta, rawBytes);
+                    cryptoKeyCache.set(senderKeyId, cryptoKey);
+                } finally {
+                    zero(rawBytes);
+                }
+            },
+            discard() {
+                zero(rawBytes);
+            },
+        };
+    }
+
+    await persistWrapped(identity, meta, rawBytes);
 
     cryptoKeyCache.set(senderKeyId, cryptoKey);
 
     return { senderKeyId, cryptoKey, rawBytes };
 }
 
-async function persistWrapped(identity, meta, rawBytes) {
+async function persistWrapped(identity, meta, rawBytes, { ifAbsent = false } = {}) {
     const wrapKey = await deriveLocalWrapKey(identity);
     const wrappedKey = await encryptBytes(wrapKey, rawBytes);
-
-    await putSenderKeyRecord({
+    const record = {
         ...meta,
         wrappedKey,
         createdAt: new Date().toISOString(),
-    });
+    };
+
+    if (ifAbsent) {
+        return putSenderKeyRecordIfAbsent(record);
+    }
+
+    await putSenderKeyRecord(record);
+    return true;
 }
 
 /**
@@ -166,14 +199,21 @@ export async function storeReceivedSenderKey(identity, params, rawBytes) {
 
     const cryptoKey = await importSenderKeyBytes(rawBytes);
 
-    await persistWrapped(identity, {
+    // A row for another account's local wrap key (existing !== null but not
+    // unwrappable) must be replaced; otherwise insert only if still absent so
+    // a concurrently committed own sending key is never demoted (F1).
+    const written = await persistWrapped(identity, {
         senderKeyId: params.senderKeyId,
         groupId: params.groupId,
         ownerUserId: params.ownerUserId,
         epoch: params.epoch,
         isMine: 0,
         scheme: params.scheme,
-    }, rawBytes);
+    }, rawBytes, { ifAbsent: !existing });
+
+    if (!written) {
+        return loadSenderKey(identity, params.senderKeyId);
+    }
 
     cryptoKeyCache.set(params.senderKeyId, cryptoKey);
 

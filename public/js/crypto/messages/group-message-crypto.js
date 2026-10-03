@@ -22,7 +22,7 @@ import {
 } from '../groups/message-crypto.js';
 import { rotateSenderKey } from '../groups/rotation.js';
 import { receiveKdm } from '../groups/kdm.js';
-import { getMySenderKey, forgetSenderKey } from '../groups/sender-key.js';
+import { getMySenderKey } from '../groups/sender-key.js';
 import { deleteAllSenderKeysForGroup } from '../groups/sender-key-store.js';
 
 export { MissingSenderKeyError };
@@ -120,23 +120,28 @@ export async function ensureSenderKeyForGroup(groupId, memberUserIds, epoch) {
             return false;
         }
 
-        const { senderKeyId, recipients } = await rotateSenderKey(identity, groupId, epoch, memberUserIds);
+        // F1 / MD-6: the new key is held in memory only. It is written to
+        // IndexedDB AFTER the server confirmed the KDM batch (201), so:
+        //  - fetch throws            -> nothing was ever persisted, discard;
+        //  - process dies mid-POST   -> nothing on disk, the next call mints
+        //                               and distributes a fresh key;
+        //  - POST ok, process dies   -> recipients hold a key this device lost;
+        //    before persist             the next call mints another (harmless:
+        //                               v2 ids are per key, nonces per key).
+        const pending = await rotateSenderKey(identity, groupId, epoch, memberUserIds, { deferPersist: true });
 
         try {
             await api(`/api/groups/${groupId}/kdms`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ epoch, recipients }),
+                body: JSON.stringify({ epoch, recipients: pending.recipients }),
             });
         } catch (e) {
-            // Distribution failed, so nobody else can ever read this key.
-            // Left in place it would be selected as "current" (its epoch
-            // matches), the next call would return false without retrying,
-            // and every message would be undecryptable for the group
-            // (MD-6). Discard it so the next call starts clean.
-            try { await forgetSenderKey(senderKeyId); } catch { /* best effort */ }
+            pending.discard();
             throw e;
         }
+
+        await pending.commit();
 
         return true;
     };

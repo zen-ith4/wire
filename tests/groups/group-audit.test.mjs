@@ -245,14 +245,12 @@ test('F-D: placeholder resolves after the KDM lands and never shows raw cipherte
     for (const r of rows.filter((r) => !r.isMine)) await idb.deleteSenderKeyRecord(r.senderKeyId);
     const skMod = await bob.actor.importModule('crypto/groups/sender-key.js');
     skMod.clearSenderKeyCache();
-    server.db.prepare('UPDATE group_key_distributions SET delivered_at = NULL WHERE to_user_id = ?').run(bob.ident.id);
 
     // Ack-race: hold the mailbox empty during the live arrival by acking, then restoring.
     const pending = server.db.prepare('SELECT id FROM group_key_distributions WHERE to_user_id = ?').all(bob.ident.id).map((r) => r.id);
-    server.db.prepare(`UPDATE group_key_distributions SET delivered_at = 'x' WHERE id IN (${pending.join(',')})`).run();
     // Clients now drain by per-DEVICE receipt (group_kdm_receipts), so hold
     // the mailbox closed for Bob's device the same way: pre-acked receipts.
-    const bobDevice = bob.actor.window.localStorage.getItem('wire:group-device-id');
+    const bobDevice = await (await bob.actor.importModule('crypto/messages/group-message-crypto.js')).getGroupDeviceId();
     assert.ok(bobDevice, 'Bob has a group device id');
     server.db.prepare('DELETE FROM group_kdm_receipts WHERE device_id = ?').run(bobDevice);
     for (const id of pending) server.db.prepare('INSERT OR IGNORE INTO group_kdm_receipts (kdm_id, device_id) VALUES (?, ?)').run(id, bobDevice);
@@ -263,7 +261,6 @@ test('F-D: placeholder resolves after the KDM lands and never shows raw cipherte
     assert.ok(ph, `expected a placeholder while the key is missing; Bob sees: ${JSON.stringify(bob.actor.window.document.getElementById('group-messages')?.textContent)} bubbles=${JSON.stringify(bubbles(bob))}`);
 
     // The KDM finally becomes drainable (what a late/retried delivery looks like).
-    server.db.prepare(`UPDATE group_key_distributions SET delivered_at = NULL WHERE id IN (${pending.join(',')})`).run();
     server.db.prepare('DELETE FROM group_kdm_receipts WHERE device_id = ?').run(bobDevice);
     bob.actor.use();
     await bob.group.handleGroupKdmDelivered({ group_id: group.id });
@@ -600,10 +597,6 @@ test('F-H: signing in as a different user in the same browser profile does not p
     await auth.initializeIdentity(bob.ident.password);
     const gmc = await alice.actor.importModule('crypto/messages/group-message-crypto.js');
     const skm = await alice.actor.importModule('crypto/groups/sender-key.js');
-    const skid = await alice.actor.importModule('crypto/groups/sender-key-id.js');
-    const mine = await skm.getMySenderKey(gmc.getGroupIdentity(), group.id); // currently throws: wrong user's wrapped key
-    if (mine) {
-        const bobsOwnId = await skid.deriveSenderKeyId(group.id, bob.ident.id, mine.epoch);
-        assert.equal(mine.senderKeyId, bobsOwnId, "Bob's client selected a Sender Key that belongs to a different user");
-    }
+    const mine = await skm.getMySenderKey(gmc.getGroupIdentity(), group.id);
+    assert.equal(mine, null, "Bob's client selected a Sender Key that belongs to a different user");
 });

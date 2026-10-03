@@ -67,7 +67,7 @@ test('F7-b: a current client (protocol 2) is not gated', async () => {
     const { alice, bob } = S.users;
     const g = await S.createGroup(alice, 'f7b');
     await S.addMember(alice, g.id, bob);
-    const r = await raw(S, bob, 'GET', '/api/groups/kdms', { proto: 2 });
+    const r = await raw(S, bob, 'GET', '/api/groups/kdms?device_id=bobbobbob0000001', { proto: 2 });
     assert.equal(r.status, 200);
     const m = await raw(S, bob, 'GET', `/api/groups/${g.id}/messages/recent`, { proto: 2 });
     assert.equal(m.status, 200);
@@ -100,8 +100,7 @@ test('F7-c (invariant): the real client never acks a KDM it cannot parse, but st
         console.error = origError;
     }
 
-    const acked = (id) => S.server.db.prepare('SELECT COUNT(*) c FROM group_kdm_receipts WHERE kdm_id = ?').get(id).c
-        + (S.server.db.prepare('SELECT delivered_at FROM group_key_distributions WHERE id = ?').get(id).delivered_at ? 1 : 0);
+    const acked = (id) => S.server.db.prepare('SELECT COUNT(*) c FROM group_kdm_receipts WHERE kdm_id = ?').get(id).c;
 
     assert.equal(acked(futureFormat), 0, 'a v:3 KDM this client cannot parse was acked');
     assert.equal(acked(garbage), 0, 'an unparseable KDM was acked');

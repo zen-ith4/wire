@@ -26,7 +26,7 @@
 import { deriveLocalWrapKey } from './local-wrap-key.js';
 import { encryptBytes, decryptBytes } from './aead.js';
 import { zero } from './codec.js';
-import { deriveSenderKeyIdV2, SENDER_KEY_SCHEME_KEY_DERIVED } from './sender-key-id.js';
+import { deriveSenderKeyId } from './sender-key-id.js';
 import {
     putSenderKeyRecord,
     putSenderKeyRecordIfAbsent,
@@ -57,7 +57,7 @@ async function importSenderKeyBytes(rawBytes) {
 
 /**
  * Generates a brand new Sender Key for a group: fresh random bytes and an
- * id that is a PRF of those bytes (sender-key-id.js, scheme 2:
+ * id that is a PRF of those bytes (sender-key-id.js:
  * HMAC-SHA-256(key, label|group|owner|epoch)). Two devices of one account
  * therefore never mint the same id for different keys, and every recipient
  * arrives at the same id after unwrapping the KDM, without it being
@@ -82,10 +82,10 @@ async function importSenderKeyBytes(rawBytes) {
  *   and should let it go out of scope (zero it) once KDMs are built.
  */
 export async function generateSenderKey(identity, groupId, epoch, { deferPersist = false } = {}) {
-    // The id is derived FROM the key (sender-key-id.js, scheme 2), so two
+    // The id is derived FROM the key (sender-key-id.js), so two
     // devices of one account can never mint the same id for different keys.
     const rawBytes = crypto.getRandomValues(new Uint8Array(SENDER_KEY_BYTE_LENGTH));
-    const senderKeyId = await deriveSenderKeyIdV2(groupId, identity.userId, epoch, rawBytes);
+    const senderKeyId = await deriveSenderKeyId(groupId, identity.userId, epoch, rawBytes);
 
     const cryptoKey = await importSenderKeyBytes(rawBytes);
 
@@ -96,10 +96,8 @@ export async function generateSenderKey(identity, groupId, epoch, { deferPersist
         epoch,
         // isMine === "generated on THIS device, therefore the only kind of
         // key this device may ever ENCRYPT with" (nonce-lock.js counters
-        // are per device). scheme 2 marks records written by this code so
-        // legacy rows (scheme undefined) are never selected for sending.
+        // are per device).
         isMine: 1,
-        scheme: SENDER_KEY_SCHEME_KEY_DERIVED,
     };
 
     if (deferPersist) {
@@ -161,13 +159,13 @@ async function persistWrapped(identity, meta, rawBytes, { ifAbsent = false } = {
  * code derived isMine from the owner id, which is what turned a
  * self-KDM into a second sending device on the same key.)
  *
- * Never overwrites a different key already stored under the same id;
- * that could only happen for legacy (scheme 1) ids that collide across
- * devices, and replacing the key would make every message encrypted
- * under the first one unreadable. The existing key wins.
+ * Never overwrites a different key already stored under the same id
+ * (ids are a PRF of the key, so that needs a 256-bit collision or a hostile
+ * relay); replacing the key would make every message encrypted under the
+ * first one unreadable. The existing key wins.
  *
  * @param {object} identity
- * @param {object} params {senderKeyId, groupId, ownerUserId, epoch, scheme}
+ * @param {object} params {senderKeyId, groupId, ownerUserId, epoch}
  * @param {Uint8Array} rawBytes
  */
 export async function storeReceivedSenderKey(identity, params, rawBytes) {
@@ -211,7 +209,6 @@ export async function storeReceivedSenderKey(identity, params, rawBytes) {
         ownerUserId: params.ownerUserId,
         epoch: params.epoch,
         isMine: 0,
-        scheme: params.scheme,
     }, rawBytes, { ifAbsent: !existing });
 
     if (!written) {

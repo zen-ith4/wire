@@ -512,21 +512,18 @@ function submitKdmBatchHandler(req, res) {
 // so a client that fetches but crashes before persisting the
 // Sender Key locally doesn't lose the KDM — it's still there to
 // drain again next time.
-// Opaque per-browser-profile delivery cursor (see group_kdm_receipts).
-// Absent -> legacy per-account behaviour. PRESENT BUT MALFORMED -> 400 (F6):
-// silently downgrading to account-wide delivery would let one buggy or hostile
-// client consume the mailbox for every device of the account. A valid id is
-// registered (capped, rate-limited) before it can read or write receipts.
+// Opaque per-browser-profile delivery cursor (see group_kdm_receipts). It is
+// MANDATORY: absent or malformed -> 400. A valid id is registered (capped,
+// rate-limited) before it can read or write receipts.
 function resolveDeviceId(raw, res, userId) {
-  if (raw === undefined || raw === null || raw === '') return { deviceId: null };
-
   if (!isValidDeviceId(raw)) {
-    res.status(400).json({ error: 'Invalid device_id' });
+    res.status(400).json({ error: 'device_id is required and must be valid' });
     return null;
   }
 
   const t = touchDevice(userId, raw);
   if (!t.ok) {
+    if (t.retryAfterSec) res.set('Retry-After', String(t.retryAfterSec));
     res.status(t.status).json({ error: t.error });
     return null;
   }

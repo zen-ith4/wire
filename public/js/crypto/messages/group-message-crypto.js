@@ -23,7 +23,7 @@ import {
 import { rotateSenderKey } from '../groups/rotation.js';
 import { receiveKdm } from '../groups/kdm.js';
 import { getMySenderKey } from '../groups/sender-key.js';
-import { deleteAllSenderKeysForGroup } from '../groups/sender-key-store.js';
+import { deleteAllSenderKeysForGroup, getOrCreateDeviceId } from '../groups/sender-key-store.js';
 
 export { MissingSenderKeyError };
 
@@ -154,24 +154,12 @@ export async function ensureSenderKeyForGroup(groupId, memberUserIds, epoch) {
 }
 
 // Random per-browser-PROFILE id (shared by all tabs, distinct per browser
-// or device). It is only a mailbox cursor: it lets the server hand each
-// device the KDMs THAT device has not consumed yet, instead of treating the
-// first device's ack as delivery to every device of the account (MD-4).
-const DEVICE_ID_KEY = 'wire:group-device-id';
-
-export function getGroupDeviceId() {
-    try {
-        let id = globalThis.localStorage?.getItem(DEVICE_ID_KEY);
-        if (!id || !/^[A-Za-z0-9_-]{8,64}$/.test(id)) {
-            const bytes = crypto.getRandomValues(new Uint8Array(16));
-            id = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
-            globalThis.localStorage?.setItem(DEVICE_ID_KEY, id);
-        }
-        return id;
-    } catch {
-        // No storage: fall back to legacy per-account delivery.
-        return null;
-    }
+// or device), stored next to the keys (sender-key-store.js). It is only a
+// mailbox cursor: it lets the server hand each device the KDMs THAT device
+// has not consumed yet (MD-4). It is mandatory: the server rejects
+// drain/ack without it.
+export async function getGroupDeviceId() {
+    return getOrCreateDeviceId();
 }
 
 /**
@@ -188,11 +176,10 @@ export function getGroupDeviceId() {
  */
 export async function drainGroupKdms(groupId = null) {
     const identity = getGroupIdentity();
-    const deviceId = getGroupDeviceId();
-    const params = [];
+    const deviceId = await getGroupDeviceId();
+    const params = [`device_id=${encodeURIComponent(deviceId)}`];
     if (groupId != null) params.push(`group_id=${encodeURIComponent(groupId)}`);
-    if (deviceId) params.push(`device_id=${encodeURIComponent(deviceId)}`);
-    const qs = params.length ? `?${params.join('&')}` : '';
+    const qs = `?${params.join('&')}`;
     const rows = await api(`/api/groups/kdms${qs}`);
 
     if (!Array.isArray(rows) || rows.length === 0) {
@@ -214,7 +201,7 @@ export async function drainGroupKdms(groupId = null) {
         await api('/api/groups/kdms/ack', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ids: consumedIds, ...(deviceId ? { device_id: deviceId } : {}) }),
+            body: JSON.stringify({ ids: consumedIds, device_id: deviceId }),
         });
     }
 

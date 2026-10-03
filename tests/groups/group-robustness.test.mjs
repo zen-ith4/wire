@@ -172,7 +172,7 @@ test('R-4: a removed member cannot drain KDMs for the group, and pending KDMs ar
     assert.equal(pendingForCarol(), 0, 'removed member still has KDM rows addressed to her');
 
     // ...and the drain endpoint, without a group filter, must not hand her rows for groups she left.
-    const drained = await S.api(carol, '/api/groups/kdms');
+    const drained = await S.api(carol, '/api/groups/kdms?device_id=carolcarolcarol01');
     assert.deepEqual(drained.filter((r) => r.group_id === group.id), [], 'removed member drained KDMs for a group she left');
 });
 

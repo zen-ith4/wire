@@ -19,12 +19,7 @@ import { getOrCreateSessionKey } from '../keys/session.js';
 import { encryptBytes, decryptBytes } from './aead.js';
 import { zero } from './codec.js';
 import { storeReceivedSenderKey } from './sender-key.js';
-import {
-    deriveSenderKeyId,
-    deriveSenderKeyIdV2,
-    SENDER_KEY_SCHEME_LEGACY,
-    SENDER_KEY_SCHEME_KEY_DERIVED,
-} from './sender-key-id.js';
+import { deriveSenderKeyId } from './sender-key-id.js';
 
 /**
  * Wraps one Sender Key for one recipient.
@@ -39,9 +34,6 @@ export async function wrapSenderKeyForRecipient(rawSenderKeyBytes, recipientUser
     const sessionKey = await getOrCreateSessionKey(recipientUserId);
     const envelope = await encryptBytes(sessionKey, rawSenderKeyBytes);
 
-    // v:2 = "derive the senderKeyId from the key" (sender-key-id.js,
-    // scheme 2). The plaintext is unchanged (the 32 raw key bytes); only
-    // the version tag tells the recipient which id derivation applies.
     return JSON.stringify({
         v: 2,
         alg: 'AES-GCM',
@@ -97,9 +89,8 @@ export async function unwrapKdm(wrappedKeyJson, fromUserId) {
 }
 
 /**
- * Same as unwrapKdm but also reports the KDM version, which decides how
- * the recipient derives the senderKeyId (v1: from the KDM row's triple,
- * v2: from the key).
+ * Same as unwrapKdm but also reports the KDM version (always 2: it is the
+ * only format).
  */
 export async function unwrapKdmDetailed(wrappedKeyJson, fromUserId) {
     let envelope;
@@ -110,7 +101,7 @@ export async function unwrapKdmDetailed(wrappedKeyJson, fromUserId) {
         throw new Error('Malformed KDM payload');
     }
 
-    if ((envelope?.v !== 1 && envelope?.v !== 2) || envelope?.alg !== 'AES-GCM') {
+    if (envelope?.v !== 2 || envelope?.alg !== 'AES-GCM') {
         throw new Error('Unsupported KDM version/algorithm');
     }
 
@@ -144,24 +135,16 @@ export async function unwrapKdmDetailed(wrappedKeyJson, fromUserId) {
  * @returns {Promise<{senderKeyId: string}>}
  */
 export async function receiveKdm(identity, kdmRow) {
-    const { rawBytes, version } = await unwrapKdmDetailed(kdmRow.wrapped_key, kdmRow.from_user_id);
+    const { rawBytes } = await unwrapKdmDetailed(kdmRow.wrapped_key, kdmRow.from_user_id);
 
     try {
-        // v2: the id is a PRF of the key, so it is unique per generated key
-        // (and therefore per device). v1 (legacy, pre-fix senders): derived
-        // from (group, sender, epoch) exactly as before, because that is
-        // what those senders' envelopes reference.
-        const scheme = version === 2 ? SENDER_KEY_SCHEME_KEY_DERIVED : SENDER_KEY_SCHEME_LEGACY;
-        const senderKeyId = version === 2
-            ? await deriveSenderKeyIdV2(kdmRow.group_id, kdmRow.from_user_id, kdmRow.epoch, rawBytes)
-            : await deriveSenderKeyId(kdmRow.group_id, kdmRow.from_user_id, kdmRow.epoch);
+        const senderKeyId = await deriveSenderKeyId(kdmRow.group_id, kdmRow.from_user_id, kdmRow.epoch, rawBytes);
 
         await storeReceivedSenderKey(identity, {
             senderKeyId,
             groupId: kdmRow.group_id,
             ownerUserId: kdmRow.from_user_id,
             epoch: kdmRow.epoch,
-            scheme,
         }, rawBytes);
 
         return { senderKeyId };

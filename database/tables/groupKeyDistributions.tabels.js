@@ -26,7 +26,6 @@ CREATE TABLE IF NOT EXISTS group_key_distributions (
   epoch INTEGER NOT NULL DEFAULT 0,
 
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  delivered_at TEXT,
 
   FOREIGN KEY (group_id)
     REFERENCES groups(id)
@@ -41,22 +40,21 @@ CREATE TABLE IF NOT EXISTS group_key_distributions (
     ON DELETE CASCADE
 );
 
--- Primary access pattern: "give me everything undelivered addressed
--- to me in this group" (draining on connect/reconnect/membership
+-- Primary access pattern: "give me everything addressed to me in this
+-- group that this device has no receipt for" (draining on connect/reconnect/membership
 -- change, per Phase 3).
 CREATE INDEX IF NOT EXISTS idx_gkd_recipient_undelivered
-ON group_key_distributions(to_user_id, group_id, delivered_at);
+ON group_key_distributions(to_user_id, group_id);
 
 CREATE INDEX IF NOT EXISTS idx_gkd_group_epoch
 ON group_key_distributions(group_id, epoch);
 
--- Per-DEVICE delivery receipts. delivered_at above is per ACCOUNT: the first
--- device to ack a KDM consumed it for every other device of that account,
--- so a second device (phone, new browser) never received keys the first had
--- already drained and could not decrypt those senders at all (MD-4).
--- device_id is an opaque random id each client generates once per browser
--- profile; it is only a delivery cursor, not an identity or credential.
--- Clients that send no device_id keep using delivered_at (legacy behaviour).
+-- Per-DEVICE delivery receipts: a KDM is delivered to a DEVICE, not to an
+-- account. Each device acks only the KDMs it actually stored, so a second
+-- device (phone, new browser) still receives keys the first one already
+-- drained (MD-4). device_id is an opaque random id each client generates once
+-- per browser profile (kept next to its keys in IndexedDB); it is only a
+-- delivery cursor, not an identity or credential, and it is mandatory.
 CREATE TABLE IF NOT EXISTS group_kdm_receipts (
   kdm_id INTEGER NOT NULL,
   device_id TEXT NOT NULL,

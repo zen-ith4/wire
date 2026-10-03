@@ -43,7 +43,7 @@ export async function rotateSenderKey(identity, groupId, epoch, recipientUserIds
 
     // deferPersist (F1): the new key is persisted only when the caller invokes
     // the returned commit() after the KDM POST returned 201. Otherwise it is
-    // persisted immediately (legacy behaviour kept for direct callers/tests).
+    // persisted immediately (used by direct callers/tests).
     const generated = await generateSenderKey(identity, groupId, epoch, { deferPersist });
     const { senderKeyId, rawBytes } = generated;
 

@@ -88,11 +88,14 @@ function submitKdmBatchChecked(groupId, fromUserId, epoch, recipients) {
 // membership join matters: without it a user who was removed from a group
 // could still drain KDM rows addressed to them for that group.
 //
-// deviceId omitted -> legacy per-account semantics (delivered_at).
-// deviceId given   -> per-device semantics (group_kdm_receipts); a device
-//                     that signs in later still receives keys another
-//                     device of the same account already consumed.
-function getUndeliveredForUser(userId, groupId = null, deviceId = null) {
+// Delivery is per DEVICE (group_kdm_receipts): a device that signs in later
+// still receives keys another device of the same account already consumed.
+// deviceId is mandatory.
+function getUndeliveredForUser(userId, groupId = null, deviceId) {
+  if (!isValidDeviceId(deviceId)) {
+    throw new Error('deviceId is required');
+  }
+
   const db = getDb();
 
   const params = [userId];
@@ -108,12 +111,8 @@ function getUndeliveredForUser(userId, groupId = null, deviceId = null) {
     params.push(groupId);
   }
 
-  if (deviceId) {
-    sql += ' AND NOT EXISTS (SELECT 1 FROM group_kdm_receipts r WHERE r.kdm_id = k.id AND r.device_id = ?)';
-    params.push(deviceId);
-  } else {
-    sql += ' AND k.delivered_at IS NULL';
-  }
+  sql += ' AND NOT EXISTS (SELECT 1 FROM group_kdm_receipts r WHERE r.kdm_id = k.id AND r.device_id = ?)';
+  params.push(deviceId);
 
   sql += ' ORDER BY k.created_at ASC, k.id ASC';
 
@@ -124,7 +123,12 @@ function getUndeliveredForUser(userId, groupId = null, deviceId = null) {
 // device_id registry (F6)
 // ---------------------------------------------------------------
 const DEVICE_CAP = Number(process.env.GROUP_DEVICE_CAP) || 20;
-const DEVICE_NEW_PER_HOUR = Number(process.env.GROUP_DEVICE_NEW_PER_HOUR) || 10;
+const DEVICE_NEW_PER_HOUR = Number(process.env.GROUP_DEVICE_NEW_PER_HOUR) || 20;
+// An account is never throttled while it has fewer than this many registered
+// devices: several browsers, a phone, a desktop app and private windows are
+// normal. Tabs of one browser profile share ONE device id, so they never
+// count at all.
+const DEVICE_GRACE = Number(process.env.GROUP_DEVICE_GRACE) || 5;
 const DEVICE_TTL_MS = (Number(process.env.GROUP_DEVICE_TTL_DAYS) || 90) * 86400_000;
 const DEVICE_ID_RE = /^[A-Za-z0-9_-]{8,64}$/;
 
@@ -140,10 +144,11 @@ function deleteReceiptsForDevice(db, deviceId) {
 }
 
 // Registers / refreshes a device id for a user. Known ids are never throttled.
-// New ids: at most `newPerHour` per user per hour (429), and at most `cap` in
+// New ids: once the account has `grace` devices, at most `newPerHour` new ones
+// per hour (429 + Retry-After); and at most `cap` in
 // total (the least recently seen one is evicted together with its receipts, so
 // a legitimate user who keeps clearing browser data never gets locked out).
-function touchDevice(userId, deviceId, { cap = DEVICE_CAP, newPerHour = DEVICE_NEW_PER_HOUR, now = Date.now() } = {}) {
+function touchDevice(userId, deviceId, { cap = DEVICE_CAP, newPerHour = DEVICE_NEW_PER_HOUR, grace = DEVICE_GRACE, now = Date.now() } = {}) {
   const db = getDb();
 
   return db.transaction(() => {
@@ -158,15 +163,18 @@ function touchDevice(userId, deviceId, { cap = DEVICE_CAP, newPerHour = DEVICE_N
       return { ok: true };
     }
 
-    const recent = db.prepare(
-      'SELECT COUNT(*) c FROM group_devices WHERE user_id = ? AND created_at > ?'
-    ).get(userId, now - 3600_000).c;
-
-    if (recent >= newPerHour) {
-      return { ok: false, status: 429, error: 'Too many new devices; try again later' };
-    }
-
     const total = db.prepare('SELECT COUNT(*) c FROM group_devices WHERE user_id = ?').get(userId).c;
+
+    if (total >= grace) {
+      const recent = db.prepare(
+        'SELECT COUNT(*) c, MIN(created_at) oldest FROM group_devices WHERE user_id = ? AND created_at > ?'
+      ).get(userId, now - 3600_000);
+
+      if (recent.c >= newPerHour) {
+        const retryAfterSec = Math.max(1, Math.ceil((recent.oldest + 3600_000 - now) / 1000));
+        return { ok: false, status: 429, error: 'Too many new devices; try again later', retryAfterSec };
+      }
+    }
 
     if (total >= cap) {
       const victims = db.prepare(
@@ -220,30 +228,23 @@ function startDevicePruner(intervalMs = 6 * 3600_000) {
   pruneTimer.unref?.();
 }
 
-// Marks a batch of KDM ids delivered, scoped to the requesting user
-// so one user draining their mailbox can never mark another user's
-// KDM rows as delivered. With deviceId only that device's receipt is
-// written.
-function markDelivered(ids, userId, deviceId = null) {
+// Marks a batch of KDM ids delivered TO ONE DEVICE, scoped to the requesting
+// user so one user can never mark another user's KDM rows as delivered.
+function markDelivered(ids, userId, deviceId) {
+  if (!isValidDeviceId(deviceId)) {
+    throw new Error('deviceId is required');
+  }
+
   if (!ids || ids.length === 0) return;
 
   const db = getDb();
   const placeholders = ids.map(() => '?').join(',');
 
-  if (deviceId) {
-    db.prepare(`
-      INSERT OR IGNORE INTO group_kdm_receipts (kdm_id, device_id, delivered_at)
-      SELECT id, ?, ? FROM group_key_distributions
-      WHERE to_user_id = ? AND id IN (${placeholders})
-    `).run(deviceId, new Date().toISOString(), userId, ...ids);
-    return;
-  }
-
   db.prepare(`
-    UPDATE group_key_distributions
-    SET delivered_at = ?
+    INSERT OR IGNORE INTO group_kdm_receipts (kdm_id, device_id, delivered_at)
+    SELECT id, ?, ? FROM group_key_distributions
     WHERE to_user_id = ? AND id IN (${placeholders})
-  `).run(new Date().toISOString(), userId, ...ids);
+  `).run(deviceId, new Date().toISOString(), userId, ...ids);
 }
 
 // Drops every KDM addressed to a user for one group (called when they are

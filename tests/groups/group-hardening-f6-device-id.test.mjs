@@ -60,17 +60,32 @@ test('F6-a: a malformed device_id is rejected, not silently downgraded to accoun
     assert.equal(badAck.status, 400);
 });
 
-test('F6-b: creation of new device ids is rate-limited per user (HTTP 429)', async () => {
+test('F6-b: creation of new device ids is rate-limited per user (HTTP 429 + Retry-After), but a normal user is never locked out', async () => {
     const { S, bob } = await groupWithMail('f6b');
+
+    // A normal user: 6 browsers (6 ids), each with several tabs (same id, many requests).
+    for (let d = 0; d < 6; d++) {
+        for (let tab = 0; tab < 4; tab++) {
+            const r = await http(S, bob, 'GET', `/api/groups/kdms?device_id=${dev(10 + d)}`);
+            assert.equal(r.status, 200, `normal multi-browser/multi-tab use was refused (device ${d}, tab ${tab})`);
+        }
+    }
+
+    // A flood of brand-new ids is throttled.
     const statuses = [];
-    for (let i = 0; i < 14; i++) {
-        statuses.push((await http(S, bob, 'GET', `/api/groups/kdms?device_id=${dev(100 + i)}`)).status);
+    let retryAfter = null;
+    for (let i = 0; i < 40; i++) {
+        const res = await globalThis.__nodeFetch(`${S.server.origin}/api/groups/kdms?device_id=${dev(100 + i)}`, {
+            headers: { Authorization: `Bearer ${bob.ident.token}`, 'X-Wire-Group-Proto': '2' },
+        });
+        statuses.push(res.status);
+        if (res.status === 429) retryAfter = res.headers.get('retry-after');
     }
     assert.ok(statuses.includes(429), `no rate limit on new device ids: ${statuses}`);
-    assert.equal(statuses.filter((s) => s === 200).length, 10, `expected exactly the per-hour allowance to succeed: ${statuses}`);
+    assert.ok(Number(retryAfter) >= 1, `429 must carry Retry-After: ${retryAfter}`);
 
-    // An already-known device is never throttled by the creation limit.
-    const known = await http(S, bob, 'GET', `/api/groups/kdms?device_id=${dev(100)}`);
+    // An already-known device is never throttled, even while the limit is hit.
+    const known = await http(S, bob, 'GET', `/api/groups/kdms?device_id=${dev(10)}`);
     assert.equal(known.status, 200);
 });
 
@@ -80,7 +95,7 @@ test('F6-c: distinct device ids per user are capped; the least recently seen is 
     assert.equal(typeof svc.touchDevice, 'function');
 
     const now = Date.now();
-    const opts = { cap: 3, newPerHour: 1000 };
+    const opts = { cap: 3, newPerHour: 1000, grace: 1000 };
     for (let i = 0; i < 3; i++) {
         assert.equal(svc.touchDevice(bob.ident.id, dev(200 + i), { ...opts, now: now + i * 1000 }).ok, true);
     }
@@ -120,7 +135,7 @@ test('F6-e: receipts of devices not seen for the TTL are pruned', async () => {
 
     const old = dev(400);
     const mail = svc.getUndeliveredForUser(bob.ident.id, g.id, old);
-    svc.touchDevice(bob.ident.id, old, { cap: 20, newPerHour: 1000, now: Date.now() - 200 * 86400_000 });
+    svc.touchDevice(bob.ident.id, old, { cap: 20, newPerHour: 1000, grace: 1000, now: Date.now() - 200 * 86400_000 });
     svc.markDelivered(mail.map((m) => m.id), bob.ident.id, old);
     assert.ok(S.server.db.prepare('SELECT COUNT(*) c FROM group_kdm_receipts WHERE device_id = ?').get(old).c >= 1);
 
@@ -129,18 +144,19 @@ test('F6-e: receipts of devices not seen for the TTL are pruned', async () => {
     assert.equal(S.server.db.prepare('SELECT COUNT(*) c FROM group_devices WHERE device_id = ?').get(old).c, 0);
 });
 
-test('F6-f: requests without device_id behave exactly as before (account-wide delivered_at, no device rows)', async () => {
+test('F6-f: device_id is mandatory: drain and ack without it are rejected, nothing is consumed', async () => {
     const { S, bob, g } = await groupWithMail('f6f');
-    const devicesBefore = S.server.db.prepare('SELECT COUNT(*) c FROM group_devices').get().c;
     const receiptsBefore = receiptCount(S);
+    const devicesBefore = S.server.db.prepare('SELECT COUNT(*) c FROM group_devices').get().c;
 
-    const first = await http(S, bob, 'GET', `/api/groups/kdms?group_id=${g.id}`);
-    assert.equal(first.status, 200);
-    assert.ok(first.body.length >= 1);
-    await http(S, bob, 'POST', '/api/groups/kdms/ack', { ids: first.body.map((m) => m.id) });
+    const drain = await http(S, bob, 'GET', `/api/groups/kdms?group_id=${g.id}`);
+    assert.equal(drain.status, 400, JSON.stringify(drain));
 
-    const second = await http(S, bob, 'GET', `/api/groups/kdms?group_id=${g.id}`);
-    assert.deepEqual(second.body, [], 'legacy ack consumed the mailbox account-wide');
-    assert.equal(S.server.db.prepare('SELECT COUNT(*) c FROM group_devices').get().c, devicesBefore);
+    const ack = await http(S, bob, 'POST', '/api/groups/kdms/ack', { ids: [1, 2, 3] });
+    assert.equal(ack.status, 400, JSON.stringify(ack));
+
     assert.equal(receiptCount(S), receiptsBefore);
+    assert.equal(S.server.db.prepare('SELECT COUNT(*) c FROM group_devices').get().c, devicesBefore);
+    const cols = S.server.db.prepare("PRAGMA table_info('group_key_distributions')").all().map((c) => c.name);
+    assert.ok(!cols.includes('delivered_at'), 'the account-wide delivered_at column no longer exists');
 });

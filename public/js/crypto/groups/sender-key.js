@@ -26,7 +26,8 @@
 import { deriveLocalWrapKey } from './local-wrap-key.js';
 import { encryptBytes, decryptBytes } from './aead.js';
 import { zero } from './codec.js';
-import { deriveSenderKeyId } from './sender-key-id.js';
+import { deriveSenderKeyId, deriveSenderEncKey } from './sender-key-id.js';
+import { resetNoncePrefix } from './nonce-lock.js';
 import {
     putSenderKeyRecord,
     putSenderKeyRecordIfAbsent,
@@ -45,14 +46,10 @@ const SENDER_KEY_BYTE_LENGTH = 32; // AES-256
 // Phase 3).
 const cryptoKeyCache = new Map();
 
+// The stored/transmitted 32 bytes are the ROOT secret; the AES key is a
+// derived subkey (sender-key-id.js key schedule).
 async function importSenderKeyBytes(rawBytes) {
-    return crypto.subtle.importKey(
-        'raw',
-        rawBytes,
-        { name: 'AES-GCM', length: 256 },
-        false,
-        ['encrypt', 'decrypt']
-    );
+    return deriveSenderEncKey(rawBytes);
 }
 
 /**
@@ -276,4 +273,7 @@ export async function forgetSenderKey(senderKeyId) {
 
 export function clearSenderKeyCache() {
     cryptoKeyCache.clear();
+    // Called on every identity lock: the next unlock draws a fresh random nonce
+    // prefix (nonce-lock.js, F10).
+    resetNoncePrefix();
 }

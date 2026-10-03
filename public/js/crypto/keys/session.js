@@ -1,5 +1,6 @@
 import {
-    deriveSessionKeyFromPeer
+    deriveSessionKeyFromPeer,
+    GROUP_KDM_INFO
 } from './key-derivation.js';
 
 import {
@@ -12,6 +13,11 @@ import {
 
 
 const sessionKeys = new Map();
+
+// Group KDM wrap keys: same ECDH shared secret as the DM session, but a
+// different HKDF info (key-derivation.js GROUP_KDM_INFO), cached separately.
+const kdmKeys = new Map();
+const pendingKdmKeys = new Map();
 
 // In-flight createSessionKey() promises, keyed by peer user id.
 //
@@ -151,6 +157,8 @@ export function removeSessionKey(userId) {
 
     sessionKeys.delete(id);
     pendingSessionKeys.delete(id);
+    kdmKeys.delete(id);
+    pendingKdmKeys.delete(id);
 }
 
 
@@ -161,4 +169,46 @@ export function removeSessionKey(userId) {
 export function clearSessionKeys() {
     sessionKeys.clear();
     pendingSessionKeys.clear();
+    kdmKeys.clear();
+    pendingKdmKeys.clear();
+}
+
+
+/* =========================================================
+ * Group KDM wrap key (F2)
+ * ========================================================= */
+
+async function createGroupKdmKey(id) {
+    const identity = getCurrentIdentity();
+
+    if (!identity || !identity.privateKey) {
+        throw new Error('Identity is not unlocked');
+    }
+
+    const peerPublicKey = await getPeerPublicKey(id);
+    const key = await deriveSessionKeyFromPeer(
+        identity.privateKey,
+        peerPublicKey,
+        GROUP_KDM_INFO
+    );
+
+    kdmKeys.set(id, key);
+    return key;
+}
+
+export async function getOrCreateGroupKdmKey(userId) {
+    const id = normalizeUserId(userId);
+
+    const existing = kdmKeys.get(id);
+    if (existing) return existing;
+
+    const pending = pendingKdmKeys.get(id);
+    if (pending) return pending;
+
+    const creation = createGroupKdmKey(id).finally(() => {
+        pendingKdmKeys.delete(id);
+    });
+
+    pendingKdmKeys.set(id, creation);
+    return creation;
 }

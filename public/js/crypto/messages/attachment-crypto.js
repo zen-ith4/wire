@@ -18,7 +18,8 @@
 import { getOrCreateSessionKey } from '../keys/session.js';
 import { bytesToBase64, base64ToBytes } from '../groups/codec.js';
 import { reserveNextCounter } from '../groups/nonce-lock.js';
-import { nonceFromCounter } from '../groups/message-crypto.js';
+import { nonceFromCounter, readNonce, attachmentAad } from '../groups/message-crypto.js';
+import { getNoncePrefix } from '../groups/nonce-lock.js';
 import { getMySenderKey, loadSenderKey } from '../groups/sender-key.js';
 import { getGroupIdentity } from './group-message-crypto.js';
 import { MissingSenderKeyError } from '../groups/message-crypto.js';
@@ -86,10 +87,14 @@ export async function encryptAttachmentForGroup(groupId, fileBytes) {
     // given key needs its own never-reused counter/nonce regardless
     // of whether it's message text or a file.
     const counter = await reserveNextCounter(mine.senderKeyId);
-    const iv = nonceFromCounter(counter);
+    const iv = nonceFromCounter(counter, getNoncePrefix());
 
     const ciphertext = await crypto.subtle.encrypt(
-        { name: 'AES-GCM', iv },
+        {
+            name: 'AES-GCM',
+            iv,
+            additionalData: attachmentAad(groupId, mine.senderKeyId, counter, iv),
+        },
         mine.cryptoKey,
         fileBytes
     );
@@ -98,6 +103,7 @@ export async function encryptAttachmentForGroup(groupId, fileBytes) {
 }
 
 /**
+ * @param {number} groupId the group the attachment was posted in (bound into the AAD)
  * @param {ArrayBuffer} ciphertext
  * @param {string} ivBase64
  * @param {string} senderKeyId the Sender Key that encrypted this
@@ -110,7 +116,7 @@ export async function encryptAttachmentForGroup(groupId, fileBytes) {
  *   decryptGroupMessage — the caller should treat this the same way
  *   (background KDM drain + retry), not as a hard failure.
  */
-export async function decryptAttachmentForGroup(ciphertext, ivBase64, senderKeyId) {
+export async function decryptAttachmentForGroup(groupId, ciphertext, ivBase64, senderKeyId) {
     const identity = getGroupIdentity();
     const cryptoKey = await loadSenderKey(identity, senderKeyId);
 
@@ -119,10 +125,17 @@ export async function decryptAttachmentForGroup(ciphertext, ivBase64, senderKeyI
     }
 
     const iv = base64ToBytes(ivBase64);
+    // Attachments draw from the same counter sequence as messages; the counter
+    // is read back out of the iv (its last 8 bytes) and bound in the AAD.
+    const { counter } = readNonce(iv);
 
     try {
         return await crypto.subtle.decrypt(
-            { name: 'AES-GCM', iv },
+            {
+                name: 'AES-GCM',
+                iv,
+                additionalData: attachmentAad(groupId, senderKeyId, counter, iv),
+            },
             cryptoKey,
             ciphertext
         );

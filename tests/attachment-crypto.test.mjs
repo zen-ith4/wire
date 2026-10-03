@@ -50,6 +50,14 @@ mock.module('/home/claude/wire/public/js/core/api.js', {
 
 mock.module('/home/claude/wire/public/js/crypto/keys/session.js', {
     namedExports: {
+        getOrCreateGroupKdmKey: async (peerUserId) => {
+            const { deriveSessionKeyFromPeer, GROUP_KDM_INFO } = await import(
+                '/home/claude/wire/public/js/crypto/keys/key-derivation.js'
+            );
+            const me = identitiesByUserId.get(currentActorId);
+            const peer = identitiesByUserId.get(Number(peerUserId));
+            return deriveSessionKeyFromPeer(me.privateKey, peer._publicKeyCryptoKey, GROUP_KDM_INFO);
+        },
         getOrCreateSessionKey: async (peerUserId) => {
             const { deriveSessionKeyFromPeer } = await import(
                 '/home/claude/wire/public/js/crypto/keys/key-derivation.js'
@@ -137,9 +145,30 @@ test('group attachment: encrypt/decrypt round trip using the message-associated 
     const original = new TextEncoder().encode('group photo bytes').buffer;
 
     const { ivBase64, ciphertext } = await encryptAttachmentForGroup(groupId, original);
-    const decrypted = await decryptAttachmentForGroup(ciphertext, ivBase64, mine.senderKeyId);
+    const decrypted = await decryptAttachmentForGroup(groupId, ciphertext, ivBase64, mine.senderKeyId);
 
     assert.deepEqual(Buffer.from(decrypted), Buffer.from(original));
+
+    // F3: the attachment is bound to (group, senderKeyId, counter, iv): presenting it
+    // as another group's attachment, or with a relabelled iv/counter, fails.
+    await assert.rejects(
+        () => decryptAttachmentForGroup(groupId + 1, ciphertext, ivBase64, mine.senderKeyId),
+        /authentication failed/
+    );
+    const ivBytes = Buffer.from(ivBase64, 'base64');
+    ivBytes[11] ^= 0x01; // counter 0 -> 1: a different nonce AND a different AAD counter
+    await assert.rejects(
+        () => decryptAttachmentForGroup(groupId, ciphertext, ivBytes.toString('base64'), mine.senderKeyId),
+        /authentication failed/
+    );
+
+    // Counter is shared with messages: two attachments get distinct counters and nonces.
+    const second = await encryptAttachmentForGroup(groupId, original);
+    assert.notEqual(second.ivBase64, ivBase64);
+    assert.deepEqual(
+        Buffer.from(await decryptAttachmentForGroup(groupId, second.ciphertext, second.ivBase64, mine.senderKeyId)),
+        Buffer.from(original)
+    );
 });
 
 test('group attachment: throws before any Sender Key exists for the group', async () => {
@@ -165,7 +194,7 @@ test('group attachment: unknown senderKeyId raises MissingSenderKeyError (self-h
     );
 
     await assert.rejects(
-        () => decryptAttachmentForGroup(new ArrayBuffer(8), 'AAAAAAAAAAAAAAAA', 'nonexistent-sender-key-id'),
+        () => decryptAttachmentForGroup(1, new ArrayBuffer(8), 'AAAAAAAAAAAAAAAA', 'nonexistent-sender-key-id'),
         MissingSenderKeyError
     );
 });

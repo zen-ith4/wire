@@ -48,7 +48,11 @@ export async function rotateSenderKey(identity, groupId, epoch, recipientUserIds
     const { senderKeyId, rawBytes } = generated;
 
     try {
-        const recipients = await distributeSenderKey(rawBytes, recipientUserIds);
+        const recipients = await distributeSenderKey(rawBytes, recipientUserIds, {
+            groupId,
+            fromUserId: identity.userId,
+            epoch,
+        });
 
         if (deferPersist) {
             return { senderKeyId, recipients, commit: generated.commit, discard: generated.discard };

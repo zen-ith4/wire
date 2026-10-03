@@ -46,12 +46,12 @@ export async function encryptOutgoingGroupMessage(groupId, plaintext) {
 }
 
 export async function decryptIncomingGroupMessage(groupId, envelopeJson) {
-    return decryptGroupMessage(getGroupIdentity(), envelopeJson);
+    return decryptGroupMessage(getGroupIdentity(), groupId, envelopeJson);
 }
 
 /** {plaintext, senderKeyId} where senderKeyId is the id of the key that actually decrypted it. */
 export async function decryptIncomingGroupMessageDetailed(groupId, envelopeJson) {
-    return decryptGroupMessageDetailed(getGroupIdentity(), envelopeJson);
+    return decryptGroupMessageDetailed(getGroupIdentity(), groupId, envelopeJson);
 }
 
 /**

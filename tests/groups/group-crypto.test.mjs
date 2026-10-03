@@ -30,6 +30,7 @@ const sessionProvider = makeSessionKeyProvider(identities);
 mock.module('../../public/js/crypto/keys/session.js', {
     namedExports: {
         getOrCreateSessionKey: (peerUserId) => sessionProvider.getOrCreateSessionKey(peerUserId),
+        getOrCreateGroupKdmKey: (peerUserId) => sessionProvider.getOrCreateGroupKdmKey(peerUserId),
     },
 });
 
@@ -99,6 +100,7 @@ async function rotateAndDistribute(ownerDevice, epoch, recipientDevices) {
             receiveKdm(device.identity, {
                 group_id: GROUP_ID,
                 from_user_id: ownerDevice.identity.userId,
+                to_user_id: device.identity.userId,
                 epoch,
                 wrapped_key: mine.wrapped_key,
             })
@@ -118,7 +120,7 @@ test('encrypt/decrypt round trip: recipient decrypts what the sender sent', asyn
     );
 
     const plaintext = await bobDevice.run(() =>
-        decryptGroupMessage(bob, envelope)
+        decryptGroupMessage(bob, GROUP_ID, envelope)
     );
 
     assert.equal(plaintext, 'hello group');
@@ -142,7 +144,7 @@ test('wrong Sender Key / tampered ciphertext fails authentication, does not thro
     );
 
     await assert.rejects(
-        () => malloryDevice.run(() => decryptGroupMessage(mallory, envelope)),
+        () => malloryDevice.run(() => decryptGroupMessage(mallory, GROUP_ID, envelope)),
         MissingSenderKeyError,
         'Mallory never got a KDM for this senderKeyId at all'
     );
@@ -153,7 +155,7 @@ test('wrong Sender Key / tampered ciphertext fails authentication, does not thro
     tampered.ciphertext = tampered.ciphertext.slice(0, -4) + 'AAAA';
 
     await assert.rejects(
-        () => bobDevice.run(() => decryptGroupMessage(bob, JSON.stringify(tampered))),
+        () => bobDevice.run(() => decryptGroupMessage(bob, GROUP_ID, JSON.stringify(tampered))),
         /authentication failed/
     );
 });
@@ -184,6 +186,7 @@ test('self-KDM: a second device of the same user decrypts messages that OTHER de
         receiveKdm(alice, {
             group_id: GROUP_ID,
             from_user_id: alice.userId,
+            to_user_id: alice.userId,
             epoch: 0,
             wrapped_key: selfKdm.wrapped_key,
         })
@@ -193,6 +196,7 @@ test('self-KDM: a second device of the same user decrypts messages that OTHER de
         receiveKdm(alice, {
             group_id: GROUP_ID,
             from_user_id: alice.userId,
+            to_user_id: alice.userId,
             epoch: 0,
             wrapped_key: selfKdm.wrapped_key,
         })
@@ -206,7 +210,7 @@ test('self-KDM: a second device of the same user decrypts messages that OTHER de
     // about this Sender Key came from consuming that one KDM row
     // above, into its own separate storage.
     const plaintext = await deviceB.run(() =>
-        decryptGroupMessage(alice, envelope)
+        decryptGroupMessage(alice, GROUP_ID, envelope)
     );
 
     assert.equal(plaintext, 'from my laptop');
@@ -226,7 +230,7 @@ test('removed member cannot decrypt messages sent after rotation; remaining memb
     );
 
     assert.equal(
-        await carolDevice.run(() => decryptGroupMessage(carol, beforeRemoval)),
+        await carolDevice.run(() => decryptGroupMessage(carol, GROUP_ID, beforeRemoval)),
         'while carol was still here'
     );
 
@@ -242,12 +246,12 @@ test('removed member cannot decrypt messages sent after rotation; remaining memb
     );
 
     assert.equal(
-        await bobDevice.run(() => decryptGroupMessage(bob, afterRemoval)),
+        await bobDevice.run(() => decryptGroupMessage(bob, GROUP_ID, afterRemoval)),
         'carol should not see this'
     );
 
     await assert.rejects(
-        () => carolDevice.run(() => decryptGroupMessage(carol, afterRemoval)),
+        () => carolDevice.run(() => decryptGroupMessage(carol, GROUP_ID, afterRemoval)),
         MissingSenderKeyError,
         'Carol never received a KDM for epoch 1, so she has no way to decrypt it'
     );
@@ -266,7 +270,7 @@ test('a newly added member gets no history: cannot decrypt pre-join messages, ca
     );
 
     await assert.rejects(
-        () => daveDevice.run(() => decryptGroupMessage(dave, beforeDaveJoined)),
+        () => daveDevice.run(() => decryptGroupMessage(dave, GROUP_ID, beforeDaveJoined)),
         MissingSenderKeyError
     );
 
@@ -297,12 +301,12 @@ test('a newly added member gets no history: cannot decrypt pre-join messages, ca
     );
 
     assert.equal(
-        await daveDevice.run(() => decryptGroupMessage(dave, afterDaveJoined)),
+        await daveDevice.run(() => decryptGroupMessage(dave, GROUP_ID, afterDaveJoined)),
         'new message, dave should see this'
     );
 
     assert.equal(
-        await bobDevice.run(() => decryptGroupMessage(bob, afterDaveJoined)),
+        await bobDevice.run(() => decryptGroupMessage(bob, GROUP_ID, afterDaveJoined)),
         'new message, dave should see this'
     );
 });
@@ -379,6 +383,6 @@ test('encrypted message envelope never contains the plaintext as a substring (sa
 
     assert.ok(!envelope.includes(secret), 'plaintext must not leak into the stored envelope');
 
-    const plaintext = await bobDevice.run(() => decryptGroupMessage(bob, envelope));
+    const plaintext = await bobDevice.run(() => decryptGroupMessage(bob, GROUP_ID, envelope));
     assert.equal(plaintext, secret);
 });

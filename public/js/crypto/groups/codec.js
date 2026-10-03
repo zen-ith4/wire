@@ -56,3 +56,39 @@ export function zero(bytes) {
         bytes.fill(0);
     }
 }
+
+/**
+ * Unambiguous encoding of a list of fields for use as AES-GCM additionalData
+ * (or as an HMAC message). Every field is written as
+ *     1 type byte (0 = UTF-8 text, 1 = raw bytes) | 4-byte big-endian length | data
+ * so no two different field lists can encode to the same bytes (unlike
+ * "a|b|c" joins, where a field containing the separator shifts the rest).
+ * Numbers are written as their decimal text.
+ *
+ * @param {...(string|number|Uint8Array)} parts
+ * @returns {Uint8Array}
+ */
+export function encodeFields(...parts) {
+    const enc = new TextEncoder();
+    const chunks = parts.map((part) => {
+        if (part instanceof Uint8Array) return { type: 1, bytes: part };
+        if (typeof part === 'string' || typeof part === 'number') {
+            return { type: 0, bytes: enc.encode(String(part)) };
+        }
+        throw new Error('encodeFields: unsupported field type');
+    });
+
+    const total = chunks.reduce((n, c) => n + 5 + c.bytes.length, 0);
+    const out = new Uint8Array(total);
+    const view = new DataView(out.buffer);
+    let offset = 0;
+
+    for (const { type, bytes } of chunks) {
+        out[offset] = type;
+        view.setUint32(offset + 1, bytes.length);
+        out.set(bytes, offset + 5);
+        offset += 5 + bytes.length;
+    }
+
+    return out;
+}

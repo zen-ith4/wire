@@ -4,10 +4,11 @@ module.exports = `
 -- envelope) for exactly one recipient. The server never sees the
 -- Sender Key itself -- wrapped_key is opaque ciphertext it only
 -- stores and relays. See plan_prompt.md section 3 for the full
--- Sender Keys scheme and section 2.1 for why to_user_id has no
--- device dimension (identity keys are portable per-account, not
--- per-device, so one KDM per user covers every device/session that
--- user unlocks).
+-- Sender Keys scheme. A KDM row is addressed to an ACCOUNT (identity
+-- keys are portable per-account, so one wrap decrypts on every device
+-- of that user), but DELIVERY is tracked per device: see
+-- group_kdm_receipts below. Each device mints its own Sender Key, so a
+-- member with N devices produces N keys per epoch.
 CREATE TABLE IF NOT EXISTS group_key_distributions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
 
@@ -67,4 +68,25 @@ CREATE TABLE IF NOT EXISTS group_kdm_receipts (
     REFERENCES group_key_distributions(id)
     ON DELETE CASCADE
 );
+
+-- Registry of the device ids each user has presented (F6). device_id is only
+-- a delivery cursor, but unbounded distinct ids would let one account grow
+-- group_kdm_receipts without limit and force full-mailbox re-downloads, so the
+-- server caps the number of ids per user (least recently seen is evicted with
+-- its receipts), rate-limits creation of new ids, and prunes stale ones.
+CREATE TABLE IF NOT EXISTS group_devices (
+  user_id INTEGER NOT NULL,
+  device_id TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  last_seen_at INTEGER NOT NULL,
+
+  PRIMARY KEY (user_id, device_id),
+
+  FOREIGN KEY (user_id)
+    REFERENCES users(id)
+    ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_group_devices_seen
+ON group_devices(last_seen_at);
 `;

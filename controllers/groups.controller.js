@@ -36,6 +36,8 @@ const {
   getUndeliveredForUser,
   markDelivered,
   purgeKdmsForUser,
+  isValidDeviceId,
+  touchDevice,
 } = require('../services/groupKdm.service');
 
 const { findUserById } = require('../services/user.service');
@@ -511,9 +513,25 @@ function submitKdmBatchHandler(req, res) {
 // Sender Key locally doesn't lose the KDM — it's still there to
 // drain again next time.
 // Opaque per-browser-profile delivery cursor (see group_kdm_receipts).
-// Anything that isn't a short token is ignored, i.e. legacy behaviour.
-function parseDeviceId(v) {
-  return typeof v === 'string' && /^[A-Za-z0-9_-]{8,64}$/.test(v) ? v : null;
+// Absent -> legacy per-account behaviour. PRESENT BUT MALFORMED -> 400 (F6):
+// silently downgrading to account-wide delivery would let one buggy or hostile
+// client consume the mailbox for every device of the account. A valid id is
+// registered (capped, rate-limited) before it can read or write receipts.
+function resolveDeviceId(raw, res, userId) {
+  if (raw === undefined || raw === null || raw === '') return { deviceId: null };
+
+  if (!isValidDeviceId(raw)) {
+    res.status(400).json({ error: 'Invalid device_id' });
+    return null;
+  }
+
+  const t = touchDevice(userId, raw);
+  if (!t.ok) {
+    res.status(t.status).json({ error: t.error });
+    return null;
+  }
+
+  return { deviceId: raw };
 }
 
 function drainKdmsHandler(req, res) {
@@ -523,7 +541,10 @@ function drainKdmsHandler(req, res) {
     if (!Number.isInteger(groupId) || !requireMembership(req, res, groupId)) return;
   }
 
-  res.json(getUndeliveredForUser(req.user.id, groupId, parseDeviceId(req.query.device_id)));
+  const dev = resolveDeviceId(req.query.device_id, res, req.user.id);
+  if (!dev) return;
+
+  res.json(getUndeliveredForUser(req.user.id, groupId, dev.deviceId));
 }
 
 function ackKdmsHandler(req, res) {
@@ -535,7 +556,10 @@ function ackKdmsHandler(req, res) {
     return res.status(400).json({ error: 'ids required' });
   }
 
-  markDelivered(ids, req.user.id, parseDeviceId(req.body?.device_id));
+  const dev = resolveDeviceId(req.body?.device_id, res, req.user.id);
+  if (!dev) return;
+
+  markDelivered(ids, req.user.id, dev.deviceId);
   res.json({ success: true });
 }
 

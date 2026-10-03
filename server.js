@@ -40,6 +40,7 @@ async function startServer() {
     // The database tables must exist before the setup wizard can insert the admin user.
     ensureDirectories();
     initDatabase();
+    require('./services/groupKdm.service').startDevicePruner();
 
     // 2. Run setup wizard (only if SETUP_COMPLETED is not 'true')
     await runSetupWizard();

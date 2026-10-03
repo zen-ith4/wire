@@ -120,6 +120,106 @@ function getUndeliveredForUser(userId, groupId = null, deviceId = null) {
   return db.prepare(sql).all(...params);
 }
 
+// ---------------------------------------------------------------
+// device_id registry (F6)
+// ---------------------------------------------------------------
+const DEVICE_CAP = Number(process.env.GROUP_DEVICE_CAP) || 20;
+const DEVICE_NEW_PER_HOUR = Number(process.env.GROUP_DEVICE_NEW_PER_HOUR) || 10;
+const DEVICE_TTL_MS = (Number(process.env.GROUP_DEVICE_TTL_DAYS) || 90) * 86400_000;
+const DEVICE_ID_RE = /^[A-Za-z0-9_-]{8,64}$/;
+
+function isValidDeviceId(v) {
+  return typeof v === 'string' && DEVICE_ID_RE.test(v);
+}
+
+function deleteReceiptsForDevice(db, deviceId) {
+  // Receipts carry no user id: a device id is only ever written under the
+  // account that registered it (touchDevice runs before every write), and a
+  // random 64-bit+ id colliding across accounts is not a case worth a column.
+  db.prepare('DELETE FROM group_kdm_receipts WHERE device_id = ?').run(deviceId);
+}
+
+// Registers / refreshes a device id for a user. Known ids are never throttled.
+// New ids: at most `newPerHour` per user per hour (429), and at most `cap` in
+// total (the least recently seen one is evicted together with its receipts, so
+// a legitimate user who keeps clearing browser data never gets locked out).
+function touchDevice(userId, deviceId, { cap = DEVICE_CAP, newPerHour = DEVICE_NEW_PER_HOUR, now = Date.now() } = {}) {
+  const db = getDb();
+
+  return db.transaction(() => {
+    const known = db.prepare(
+      'SELECT 1 FROM group_devices WHERE user_id = ? AND device_id = ?'
+    ).get(userId, deviceId);
+
+    if (known) {
+      db.prepare(
+        'UPDATE group_devices SET last_seen_at = ? WHERE user_id = ? AND device_id = ?'
+      ).run(now, userId, deviceId);
+      return { ok: true };
+    }
+
+    const recent = db.prepare(
+      'SELECT COUNT(*) c FROM group_devices WHERE user_id = ? AND created_at > ?'
+    ).get(userId, now - 3600_000).c;
+
+    if (recent >= newPerHour) {
+      return { ok: false, status: 429, error: 'Too many new devices; try again later' };
+    }
+
+    const total = db.prepare('SELECT COUNT(*) c FROM group_devices WHERE user_id = ?').get(userId).c;
+
+    if (total >= cap) {
+      const victims = db.prepare(
+        'SELECT device_id FROM group_devices WHERE user_id = ? ORDER BY last_seen_at ASC, created_at ASC LIMIT ?'
+      ).all(userId, total - cap + 1);
+
+      for (const v of victims) {
+        db.prepare('DELETE FROM group_devices WHERE user_id = ? AND device_id = ?').run(userId, v.device_id);
+        deleteReceiptsForDevice(db, v.device_id);
+      }
+    }
+
+    db.prepare(
+      'INSERT INTO group_devices (user_id, device_id, created_at, last_seen_at) VALUES (?, ?, ?, ?)'
+    ).run(userId, deviceId, now, now);
+
+    return { ok: true };
+  })();
+}
+
+// TTL pruning: devices not seen for `maxAgeMs` are forgotten together with
+// their receipts, and receipts of ids nobody registered (orphans) are dropped.
+// A pruned device that comes back simply re-registers and re-drains; consuming
+// a KDM it already stored is idempotent on the client.
+function pruneStaleDevices({ maxAgeMs = DEVICE_TTL_MS, now = Date.now() } = {}) {
+  const db = getDb();
+
+  return db.transaction(() => {
+    const stale = db.prepare('SELECT user_id, device_id FROM group_devices WHERE last_seen_at < ?').all(now - maxAgeMs);
+
+    for (const d of stale) {
+      db.prepare('DELETE FROM group_devices WHERE user_id = ? AND device_id = ?').run(d.user_id, d.device_id);
+      deleteReceiptsForDevice(db, d.device_id);
+    }
+
+    const orphans = db.prepare(
+      'DELETE FROM group_kdm_receipts WHERE device_id NOT IN (SELECT device_id FROM group_devices)'
+    ).run().changes;
+
+    return { devices: stale.length, orphanReceipts: orphans };
+  })();
+}
+
+let pruneTimer = null;
+function startDevicePruner(intervalMs = 6 * 3600_000) {
+  if (pruneTimer) return;
+  try { pruneStaleDevices(); } catch (e) { console.error('[group-kdm] prune failed', e); }
+  pruneTimer = setInterval(() => {
+    try { pruneStaleDevices(); } catch (e) { console.error('[group-kdm] prune failed', e); }
+  }, intervalMs);
+  pruneTimer.unref?.();
+}
+
 // Marks a batch of KDM ids delivered, scoped to the requesting user
 // so one user draining their mailbox can never mark another user's
 // KDM rows as delivered. With deviceId only that device's receipt is
@@ -161,4 +261,8 @@ module.exports = {
   getUndeliveredForUser,
   markDelivered,
   purgeKdmsForUser,
+  isValidDeviceId,
+  touchDevice,
+  pruneStaleDevices,
+  startDevicePruner,
 };

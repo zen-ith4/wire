@@ -77,6 +77,18 @@ import {
     MissingSenderKeyError,
 } from '../crypto/messages/group-message-crypto.js';
 
+// F7: the server answered 426 update_required (see core/api.js): this build is
+// older than the group E2EE protocol the server requires. Say so once instead
+// of leaving the user with endless "waiting for key" placeholders.
+let updateRequiredShown = false;
+if (typeof window !== 'undefined' && window.addEventListener) {
+    window.addEventListener('wire:update-required', () => {
+        if (updateRequiredShown) return;
+        updateRequiredShown = true;
+        showToast('This app version is too old for encrypted groups. Please update the app.', 'error');
+    });
+}
+
 // ---------- Module state ----------
 
 let groupsList = []; // [{id, name, avatar_path, role, key_epoch, ...}]

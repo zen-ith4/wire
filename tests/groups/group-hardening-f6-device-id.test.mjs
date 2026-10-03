@@ -30,7 +30,7 @@ const OPAQUE = (t) => JSON.stringify({ v: 2, alg: 'AES-GCM', iv: 'AAAAAAAAAAAAAA
 async function http(S, u, method, path, body) {
     const res = await globalThis.__nodeFetch(`${S.server.origin}${path}`, {
         method,
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${u.ident.token}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${u.ident.token}`, 'X-Wire-Group-Proto': '2' },
         body: body ? JSON.stringify(body) : undefined,
     });
     return { status: res.status, body: await res.json().catch(() => null) };

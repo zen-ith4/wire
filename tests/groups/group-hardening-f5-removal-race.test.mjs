@@ -29,7 +29,7 @@ const OPAQUE = (tag) => JSON.stringify({ v: 2, alg: 'AES-GCM', iv: 'AAAAAAAAAAAA
 async function post(S, u, groupId, body) {
     const res = await globalThis.__nodeFetch(`${S.server.origin}/api/groups/${groupId}/kdms`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${u.ident.token}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${u.ident.token}`, 'X-Wire-Group-Proto': '2' },
         body: JSON.stringify(body),
     });
     return { status: res.status, body: await res.json().catch(() => null) };
@@ -105,9 +105,9 @@ test('F5-d: a removed member never receives KDMs for the new epoch, and cannot d
 
     assert.equal(rows(S, g.id).filter((r) => r.to_user_id === carol.ident.id).length, 0, 'no row addressed to the removed member');
 
-    const drain = await globalThis.__nodeFetch(`${S.server.origin}/api/groups/kdms`, { headers: { Authorization: `Bearer ${carol.ident.token}` } });
+    const drain = await globalThis.__nodeFetch(`${S.server.origin}/api/groups/kdms`, { headers: { Authorization: `Bearer ${carol.ident.token}`, 'X-Wire-Group-Proto': '2' } });
     assert.deepEqual(await drain.json(), [], 'removed member drains nothing');
-    const scoped = await globalThis.__nodeFetch(`${S.server.origin}/api/groups/kdms?group_id=${g.id}`, { headers: { Authorization: `Bearer ${carol.ident.token}` } });
+    const scoped = await globalThis.__nodeFetch(`${S.server.origin}/api/groups/kdms?group_id=${g.id}`, { headers: { Authorization: `Bearer ${carol.ident.token}`, 'X-Wire-Group-Proto': '2' } });
     assert.equal(scoped.status, 403);
 });
 

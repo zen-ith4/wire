@@ -56,14 +56,17 @@ async function importSenderKeyBytes(rawBytes) {
 }
 
 /**
- * Generates a brand new Sender Key for a group: fresh random bytes,
- * a deterministic id (see sender-key-id.js — derived from
- * (groupId, ownerUserId, epoch), NOT a random UUID, so every
- * recipient who later receives a KDM for this key arrives at the
- * exact same id without it ever needing to be transmitted; a fresh
- * epoch also means a fresh nonce-lock.js lock name, with no
- * continuity to any prior key — see plan_prompt.md 2.2's rotation
- * note), imported non-extractably for use, and persisted wrapped.
+ * Generates a brand new Sender Key for a group: fresh random bytes and an
+ * id that is a PRF of those bytes (sender-key-id.js, scheme 2:
+ * HMAC-SHA-256(key, label|group|owner|epoch)). Two devices of one account
+ * therefore never mint the same id for different keys, and every recipient
+ * arrives at the same id after unwrapping the KDM, without it being
+ * transmitted. The key is imported non-extractably for use and persisted
+ * wrapped. A fresh key also means a fresh nonce-lock.js lock name and
+ * counter, with no continuity to any prior key.
+ *
+ * With { deferPersist: true } (F1) nothing is written or cached until the
+ * returned commit() is called; see messages/group-message-crypto.js.
  *
  * Does NOT distribute it — that's kdm.js's job, driven by whatever
  * orchestrates rotation (rotation.js). Generation and distribution

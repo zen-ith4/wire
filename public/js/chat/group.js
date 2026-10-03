@@ -384,9 +384,12 @@ async function loadMembers(groupId) {
     return members;
 }
 
-// One rotation at a time per group: two concurrent "no key yet" checks
-// would each mint a key under the SAME senderKeyId and the second would
-// overwrite the first after recipients already stored it.
+// One rotation at a time per group IN THIS TAB: two concurrent "no key yet"
+// checks would each mint and distribute a key. Since v2 the two keys have
+// DIFFERENT senderKeyIds (the id is a PRF of the key), so nothing is
+// overwritten; the cost is a wasted key and an extra KDM fan-out. Across
+// tabs the same exclusion is provided by the Web Lock in
+// ensureSenderKeyForGroup() (messages/group-message-crypto.js).
 const keyEnsureInflight = new Map();
 
 function ensureSenderKeyReady(groupId, members = activeGroupMembers, { quiet = false } = {}) {

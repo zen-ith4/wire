@@ -33,6 +33,56 @@ function insertKdmBatch(groupId, fromUserId, epoch, recipients) {
   transaction(recipients);
 }
 
+// Validated, atomic KDM fan-out (F5). Everything that decides whether the
+// batch may land is read INSIDE the same transaction that inserts it, so a
+// membership change can never slip between "check" and "write":
+//   - the sender must be a current member of the group,
+//   - `epoch` must equal the sender's current key_epoch (a key tagged with a
+//     past/future epoch is never stored),
+//   - every recipient must be a current member.
+// All-or-nothing: on any failure no row is written.
+// Returns {ok:true, count} or {ok:false, status, error}.
+function submitKdmBatchChecked(groupId, fromUserId, epoch, recipients) {
+  const db = getDb();
+
+  const run = db.transaction((items) => {
+    const sender = db.prepare(
+      'SELECT key_epoch FROM group_members WHERE group_id = ? AND user_id = ?'
+    ).get(groupId, fromUserId);
+
+    if (!sender) {
+      return { ok: false, status: 403, error: 'Not a member of this group' };
+    }
+
+    if (sender.key_epoch !== epoch) {
+      return { ok: false, status: 409, error: 'Stale epoch', current_epoch: sender.key_epoch };
+    }
+
+    const isMemberStmt = db.prepare(
+      'SELECT 1 FROM group_members WHERE group_id = ? AND user_id = ?'
+    );
+
+    for (const { toUserId } of items) {
+      if (!isMemberStmt.get(groupId, toUserId)) {
+        return { ok: false, status: 400, error: `Recipient ${toUserId} is not a current member` };
+      }
+    }
+
+    const insert = db.prepare(`
+      INSERT INTO group_key_distributions (group_id, from_user_id, to_user_id, wrapped_key, epoch)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+
+    for (const { toUserId, wrappedKey } of items) {
+      insert.run(groupId, fromUserId, toUserId, wrappedKey, epoch);
+    }
+
+    return { ok: true, count: items.length };
+  });
+
+  return run(recipients);
+}
+
 // Everything this user (or, with deviceId, this DEVICE) has not yet
 // consumed, restricted to groups the user is CURRENTLY a member of. The
 // membership join matters: without it a user who was removed from a group
@@ -107,6 +157,7 @@ function purgeKdmsForUser(groupId, userId) {
 module.exports = {
   insertKdm,
   insertKdmBatch,
+  submitKdmBatchChecked,
   getUndeliveredForUser,
   markDelivered,
   purgeKdmsForUser,

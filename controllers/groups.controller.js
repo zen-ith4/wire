@@ -32,7 +32,7 @@ const {
 } = require('../services/groupMessages.service');
 
 const {
-  insertKdmBatch,
+  submitKdmBatchChecked,
   getUndeliveredForUser,
   markDelivered,
   purgeKdmsForUser,
@@ -467,14 +467,13 @@ function submitKdmBatchHandler(req, res) {
     return res.status(400).json({ error: 'At least one recipient is required' });
   }
 
-  const memberIds = new Set(getMemberUserIds(groupId));
   const items = [];
 
   for (const r of recipients) {
     const toUserId = Number.parseInt(r?.user_id, 10);
     const wrappedKey = r?.wrapped_key;
 
-    if (!Number.isInteger(toUserId) || !memberIds.has(toUserId)) {
+    if (!Number.isInteger(toUserId)) {
       return res.status(400).json({ error: `Recipient ${r?.user_id} is not a current member` });
     }
 
@@ -485,7 +484,17 @@ function submitKdmBatchHandler(req, res) {
     items.push({ toUserId, wrappedKey: wrappedKey.trim() });
   }
 
-  insertKdmBatch(groupId, req.user.id, epoch, items);
+  // Membership of the sender and of every recipient, and the epoch, are
+  // re-verified inside the insert transaction (F5): a removal that lands
+  // while this request is being processed cannot let a KDM through.
+  const result = submitKdmBatchChecked(groupId, req.user.id, epoch, items);
+
+  if (!result.ok) {
+    return res.status(result.status).json({
+      error: result.error,
+      ...(result.current_epoch != null ? { current_epoch: result.current_epoch } : {}),
+    });
+  }
 
   // Wake up online recipients immediately rather than making every
   // device wait for its next drain-on-connect — see

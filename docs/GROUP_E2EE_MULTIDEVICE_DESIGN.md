@@ -1,6 +1,6 @@
 # Group E2EE: multi-device Sender Key design
 
-Status: implemented in this working tree (not merged, no branch created).
+Status: implemented on branch `fix/group-e2ee-hardening` (not merged).
 Tests: `tests/groups/group-multidevice.test.mjs` (MD-1..MD-6),
 `group-audit.test.mjs` (F-I, G), `group-keys-contract.test.mjs` (L-1).
 
@@ -11,7 +11,7 @@ Tests: `tests/groups/group-multidevice.test.mjs` (MD-1..MD-6),
 | Message envelope | `{v:1, alg:"AES-GCM", senderKeyId, counter, iv, ciphertext}`; nonce = 4 zero bytes + 8-byte counter |
 | senderKeyId | `hex(SHA-256("group:<groupId>:<ownerUserId>:<epoch>"))` |
 | KDM (`group_key_distributions.wrapped_key`) | `{v:1, alg:"AES-GCM", iv, ciphertext}` wrapping the raw 32-byte key under the pairwise DM session key |
-| KDM row | `(group_id, from_user_id, to_user_id, wrapped_key, epoch, delivered_at)`; **no device column** |
+| KDM row | `(group_id, from_user_id, to_user_id, wrapped_key, epoch, delivered_at)`; no device column (delivery is tracked per device in `group_kdm_receipts`, see 3.4) |
 | Recipient id derivation | from the KDM row's `(group_id, from_user_id, epoch)` |
 | Identity model | identity keypair is per **account**, restored on every device; **no device id exists** |
 | Mailbox | per user; `delivered_at` set once by whichever device acks first |
@@ -43,8 +43,7 @@ Tests: `tests/groups/group-multidevice.test.mjs` (MD-1..MD-6),
 3. **Sending keys are device-local.** Received keys, including self-KDMs, are
    stored `isMine:0` (decrypt-only). Only records with `scheme:2` are eligible
    for sending; legacy records never are.
-4. **Per-device mailbox receipts.** New table `group_kdm_receipts(kdm_id,
-   device_id)`. Clients send an optional `device_id` (random, per browser
+4. **Per-device mailbox receipts.** New table `group_kdm_receipts(kdm_id, device_id)`. Clients send an optional `device_id` (random, per browser
    profile) on drain and ack. Requests without it behave as before.
 5. Client hardening: cross-tab Web Lock around key creation; discard a key
    whose KDM POST failed; a received key never overwrites a different key
@@ -55,20 +54,33 @@ Tests: `tests/groups/group-multidevice.test.mjs` (MD-1..MD-6),
 
 ## 4. Compatibility and migration
 
-* Old clients reject `v:2` KDMs (they leave rows unacked) and cannot read v2
-  messages until they reload the new JS. Bundled/Capacitor builds serving stale
-  assets are the concern.
+* Old clients cannot parse `v:2` KDMs. They never ack what they cannot
+  parse, and since F7 the server answers every KDM / message endpoint with
+  `426 {code:"update_required", min_group_protocol:2}` unless the client
+  declares `X-Wire-Group-Proto: 2` (`middleware/groupProtocol.js`,
+  `core/api.js`). Group management endpoints stay reachable.
 * Existing keys stay readable. Legacy own keys are never used to send again, so
   each group re-keys once per device after upgrade.
 * Data already lost to a legacy id collision is **not** repaired.
-* Every connected device of a member now rotates on a membership change (key
-  count grows with device count).
-* `group_kdm_receipts` rows are not pruned.
+* Every connected device of a member rotates on a membership change (key
+  count grows with device count: members x devices KDM rows per event; set a
+  group-size cap before large groups).
+* Hardening added on this branch: the sending key is persisted only after the
+  KDM POST returned 201 (F1); the KDM insert re-checks sender membership,
+  recipient membership and epoch inside its transaction, stale epoch -> 409
+  (F5); `device_id` is validated (400), registered per user in `group_devices`
+  (cap 20, 10 new ids/hour, least recently seen evicted with its receipts) and
+  stale devices/orphan receipts are pruned (F6).
 
 ## 5. Known limits (unchanged, out of scope)
 
 * No per-message sender authentication: any member holding a sender's key can
   encrypt under it; attribution relies on the server's `sender_id`.
-* KDM rows carry no AAD binding group/sender/epoch (a relabelled row yields an
-  id no envelope references: denial of service, not confusion).
+* KDM rows carry no AAD binding group/sender/epoch yet (planned: F2); a
+  relabelled row yields an id no envelope references: denial of service, not
+  confusion.
+* One X25519 identity per account, restored on every device: no forward secrecy
+  on key distribution, one browser cannot be revoked, KDMs are unsigned.
+* The account password is both the login credential and the wrapping
+  passphrase of the server-stored identity key (see F12 report).
 * No history backfill for a newly added member (by design).

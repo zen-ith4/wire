@@ -74,7 +74,20 @@ import {
     drainGroupKdms,
     forgetGroupKeys,
     MissingSenderKeyError,
+    ReplayedMessageError,
 } from '../crypto/messages/group-message-crypto.js';
+
+// F7: the server answered 426 update_required (see core/api.js): this build is
+// older than the group E2EE protocol the server requires. Say so once instead
+// of leaving the user with endless "waiting for key" placeholders.
+let updateRequiredShown = false;
+if (typeof window !== 'undefined' && window.addEventListener) {
+    window.addEventListener('wire:update-required', () => {
+        if (updateRequiredShown) return;
+        updateRequiredShown = true;
+        showToast('This app version is too old for encrypted groups. Please update the app.', 'error');
+    });
+}
 
 // ---------- Module state ----------
 
@@ -201,7 +214,7 @@ async function decryptReplyPreview(groupId, replyTo) {
         return replyTo;
     }
     try {
-        const { plaintext } = await decryptIncomingGroupMessageDetailed(groupId, replyTo.content);
+        const { plaintext } = await decryptIncomingGroupMessageDetailed(groupId, replyTo.content, replyTo.id);
         return { ...replyTo, content: plaintext };
     } catch {
         return { ...replyTo, content: '🔒 Encrypted message' };
@@ -214,7 +227,7 @@ export async function decorateGroupMessages(groupId, rawMessages, { live = false
         try {
             // senderKeyId comes back from the SAME lookup that selected the
             // key which authenticated this envelope (not a second parse).
-            const { plaintext, senderKeyId } = await decryptIncomingGroupMessageDetailed(groupId, raw.content);
+            const { plaintext, senderKeyId } = await decryptIncomingGroupMessageDetailed(groupId, raw.content, raw.id);
             out.push({
                 ...raw,
                 content: plaintext,
@@ -252,6 +265,12 @@ async function drainAndRetry(groupId) {
 }
 
 function onGroupDecorateError(error, rawMsg) {
+    if (error instanceof ReplayedMessageError) {
+        // F4: a stored ciphertext re-posted under a new message id. Drop it.
+        console.warn(`[group] dropped replayed message ${rawMsg?.id}`);
+        return null;
+    }
+
     if (!(error instanceof MissingSenderKeyError)) return null;
 
     // Self-heal (plan_prompt.md's acceptance checklist: "losing one
@@ -357,9 +376,12 @@ async function loadMembers(groupId) {
     return members;
 }
 
-// One rotation at a time per group: two concurrent "no key yet" checks
-// would each mint a key under the SAME senderKeyId and the second would
-// overwrite the first after recipients already stored it.
+// One rotation at a time per group IN THIS TAB: two concurrent "no key yet"
+// checks would each mint and distribute a key. Since v2 the two keys have
+// DIFFERENT senderKeyIds (the id is a PRF of the key), so nothing is
+// overwritten; the cost is a wasted key and an extra KDM fan-out. Across
+// tabs the same exclusion is provided by the Web Lock in
+// ensureSenderKeyForGroup() (messages/group-message-crypto.js).
 const keyEnsureInflight = new Map();
 
 function ensureSenderKeyReady(groupId, members = activeGroupMembers, { quiet = false } = {}) {

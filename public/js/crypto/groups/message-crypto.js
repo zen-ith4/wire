@@ -12,40 +12,69 @@
 // a Web Lock — see plan_prompt.md 2.2.
 
 import { encryptBytes, decryptBytes } from './aead.js';
-import { reserveNextCounter } from './nonce-lock.js';
+import { base64ToBytes, encodeFields } from './codec.js';
+import { reserveNextCounter, getNoncePrefix } from './nonce-lock.js';
 import { getMySenderKey, loadSenderKey } from './sender-key.js';
+import { claimNonce } from './sender-key-store.js';
 
-const ENVELOPE_VERSION = 1;
+const ENVELOPE_VERSION = 2;
+const IV_LENGTH = 12;
 
 /**
- * 12-byte AES-GCM nonce from a monotonic counter: 4 zero bytes
- * (reserved) + the counter as an 8-byte big-endian integer. A
- * Sender Key is never reused across rotations (sender-key.js always
- * mints a fresh random key + id on rotation, and nonce-lock.js's
- * lock/counter start over at 0 under the new key's own lock name —
- * see 2.2), so "same key, same counter" can only happen if this
- * function is ever called with an unreserved counter, which callers
- * here never do.
+ * 12-byte AES-GCM nonce = 4-byte per-process random prefix (nonce-lock.js,
+ * F10) || 8-byte big-endian counter. The counter is reserved under a Web Lock
+ * and persisted before use, so (key, counter) is unique per device; the random
+ * prefix keeps nonces distinct even if a restored/cloned profile replays an
+ * old counter. A receiver does not know the prefix: it reads it from the iv
+ * and only checks that the LAST 8 bytes equal the envelope counter
+ * (readNonce / the check in decryptGroupMessageDetailed).
  */
-export function nonceFromCounter(counter) {
-    if (!Number.isInteger(counter) || counter < 0) {
+export function nonceFromCounter(counter, prefix) {
+    if (!Number.isInteger(counter) || counter < 0 || counter > Number.MAX_SAFE_INTEGER) {
         throw new Error('Invalid counter');
     }
 
-    const iv = new Uint8Array(12);
+    if (!(prefix instanceof Uint8Array) || prefix.length !== 4) {
+        throw new Error('Invalid nonce prefix');
+    }
+
+    const iv = new Uint8Array(IV_LENGTH);
     const view = new DataView(iv.buffer);
 
-    // Counter fits in the low 8 bytes; JS safe integers (2^53) are
-    // far below what an 8-byte counter can hold, so split into two
-    // 32-bit big-endian words rather than using BigInt for a value
-    // that will never be that large in practice.
-    const high = Math.floor(counter / 0x100000000);
-    const low = counter >>> 0;
-
-    view.setUint32(4, high);
-    view.setUint32(8, low);
+    iv.set(prefix, 0);
+    view.setUint32(4, Math.floor(counter / 0x100000000));
+    view.setUint32(8, counter >>> 0);
 
     return iv;
+}
+
+/** Splits an iv into its (unknown-to-the-receiver) prefix and its counter. */
+export function readNonce(iv) {
+    if (!(iv instanceof Uint8Array) || iv.length !== IV_LENGTH) {
+        throw new Error('Invalid AES-GCM IV length');
+    }
+
+    const view = new DataView(iv.buffer, iv.byteOffset, iv.byteLength);
+    const high = view.getUint32(4);
+
+    if (high > 0x1fffff) {
+        throw new Error('Counter out of range');
+    }
+
+    return { prefix: iv.slice(0, 4), counter: high * 0x100000000 + view.getUint32(8) };
+}
+
+/**
+ * additionalData for group messages: binds the ciphertext to its group, its
+ * Sender Key, its counter and its full iv, so none of them can be relabelled.
+ */
+export function messageAad(groupId, senderKeyId, counter, iv) {
+    return encodeFields('group-msg-v2', Number(groupId), senderKeyId, counter, iv);
+}
+
+/** Same, for attachments (distinct label: a message can never pass as a file or vice versa). */
+export function attachmentAad(groupId, senderKeyId, counter, iv) {
+    return encodeFields('group-att-v2', Number(groupId), senderKeyId, counter, iv);
 }
 
 /**
@@ -69,10 +98,15 @@ export async function encryptGroupMessage(identity, groupId, plaintext) {
     }
 
     const counter = await reserveNextCounter(mine.senderKeyId);
-    const nonce = nonceFromCounter(counter);
+    const nonce = nonceFromCounter(counter, getNoncePrefix());
     const plaintextBytes = new TextEncoder().encode(plaintext);
 
-    const { iv, ciphertext } = await encryptBytes(mine.cryptoKey, plaintextBytes, nonce);
+    const { iv, ciphertext } = await encryptBytes(
+        mine.cryptoKey,
+        plaintextBytes,
+        nonce,
+        messageAad(groupId, mine.senderKeyId, counter, nonce)
+    );
 
     return JSON.stringify({
         v: ENVELOPE_VERSION,
@@ -82,6 +116,47 @@ export async function encryptGroupMessage(identity, groupId, plaintext) {
         iv,
         ciphertext,
     });
+}
+
+/**
+ * Thrown when a ciphertext authenticates correctly but its (senderKeyId, nonce)
+ * was already accepted for a DIFFERENT message (F4): somebody re-posted stored
+ * ciphertext under a fresh message id. The same message arriving again under
+ * the same id is NOT a replay and never raises this.
+ */
+export class ReplayedMessageError extends Error {
+    constructor(senderKeyId, counter) {
+        super('Replayed group message rejected');
+        this.name = 'ReplayedMessageError';
+        this.senderKeyId = senderKeyId;
+        this.counter = counter;
+    }
+}
+
+/**
+ * Records that (senderKeyId, nonce) was accepted for `ref`. Called only AFTER
+ * authentication succeeded, so corrupt data never burns a nonce.
+ * @param {Uint8Array} iv the full 12-byte nonce of the message / attachment
+ * @param {string} ref e.g. "msg:123" or "att:123": stable per message
+ */
+export async function acceptNonceOnce(senderKeyId, iv, counter, ref) {
+    if (typeof ref !== 'string' || ref.length < 5) {
+        throw new Error('A message reference is required for replay protection');
+    }
+
+    const nonceHex = Array.from(iv, (b) => b.toString(16).padStart(2, '0')).join('');
+    const status = await claimNonce({ senderKeyId, nonceHex, counter, ref });
+
+    if (status === 'conflict') {
+        throw new ReplayedMessageError(senderKeyId, counter);
+    }
+}
+
+export function messageRef(messageId) {
+    if (messageId === undefined || messageId === null || messageId === '') {
+        throw new Error('A message id is required for replay protection');
+    }
+    return `msg:${messageId}`;
 }
 
 export class MissingSenderKeyError extends Error {
@@ -94,7 +169,10 @@ export class MissingSenderKeyError extends Error {
 
 /**
  * @param {object} identity {privateKey, publicKey, userId}
+ * @param {number} groupId the group this message was delivered in (bound into the AAD)
  * @param {string} envelopeJson group_messages.content, verbatim
+ * @param {string|number} messageId the SERVER message id this envelope came with
+ *   (replay protection: the first id to claim a counter owns it)
  * @returns {Promise<string>} plaintext
  * @throws {MissingSenderKeyError} if this device has never received
  *   a KDM for the message's Sender Key — the UI layer (Phase 3)
@@ -104,8 +182,8 @@ export class MissingSenderKeyError extends Error {
  *   (plan_prompt.md's acceptance checklist: "losing one member's KDM
  *   doesn't corrupt the group for everyone else").
  */
-export async function decryptGroupMessage(identity, envelopeJson) {
-    const { plaintext } = await decryptGroupMessageDetailed(identity, envelopeJson);
+export async function decryptGroupMessage(identity, groupId, envelopeJson, messageId) {
+    const { plaintext } = await decryptGroupMessageDetailed(identity, groupId, envelopeJson, messageId);
     return plaintext;
 }
 
@@ -118,7 +196,9 @@ export async function decryptGroupMessage(identity, envelopeJson) {
  *
  * @returns {Promise<{plaintext: string, senderKeyId: string}>}
  */
-export async function decryptGroupMessageDetailed(identity, envelopeJson) {
+export async function decryptGroupMessageDetailed(identity, groupId, envelopeJson, messageId) {
+    const ref = messageRef(messageId);
+
     let envelope;
 
     try {
@@ -136,13 +216,41 @@ export async function decryptGroupMessageDetailed(identity, envelopeJson) {
     }
 
     const senderKeyId = envelope.senderKeyId;
+
+    // The counter in the envelope is only a label for the nonce: it must be
+    // exactly what the iv carries in its last 8 bytes. (The first 4 bytes are
+    // the sender's random prefix, which we cannot predict.)
+    if (!Number.isInteger(envelope.counter) || envelope.counter < 0) {
+        throw new Error('Invalid group message counter');
+    }
+
+    let iv;
+    let nonce;
+    try {
+        iv = base64ToBytes(envelope.iv);
+        nonce = readNonce(iv);
+    } catch {
+        throw new Error('Invalid group message nonce');
+    }
+
+    if (nonce.counter !== envelope.counter) {
+        throw new Error('Group message counter does not match its nonce');
+    }
+
     const cryptoKey = await loadSenderKey(identity, senderKeyId);
 
     if (!cryptoKey) {
         throw new MissingSenderKeyError(senderKeyId);
     }
 
-    const plaintextBytes = await decryptBytes(cryptoKey, envelope);
+    const plaintextBytes = await decryptBytes(
+        cryptoKey,
+        envelope,
+        messageAad(groupId, senderKeyId, envelope.counter, iv)
+    );
+
+    // F4: only a message that AUTHENTICATED may claim its nonce.
+    await acceptNonceOnce(senderKeyId, iv, envelope.counter, ref);
 
     return {
         plaintext: new TextDecoder('utf-8', { fatal: true }).decode(plaintextBytes),

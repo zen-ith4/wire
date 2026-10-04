@@ -21,10 +21,15 @@ mock.module(jsPath('crypto/identity.js'), {
         createEncryptedIdentity: async () => ({}),
         restoreIdentityFromServer: async () => ({}),
         decryptIdentityPrivateKey: async () => ({}),
+        decryptIdentityPkcs8: async () => ({}),
+        encryptIdentityPkcs8: async () => ({}),
         encryptIdentityPrivateKey: async () => ({}),
         deriveIdentityUnlockKey: async () => ({}),
         decryptIdentityPrivateKeyWithDerivedKey: async () => ({}),
     },
+});
+mock.module(jsPath('crypto/account-kdf.js'), {
+    namedExports: { fetchOwnKdfParams: async () => ({}) },
 });
 mock.module(jsPath('core/server.js'), {
     namedExports: { resolveServerUrl: (u) => u },

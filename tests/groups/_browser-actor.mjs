@@ -115,7 +115,7 @@ function makeLockPolyfill() {
  * callbacks (e.g. an incoming Socket.IO packet) run is preceded by
  * that actor's own `use()`.
  */
-export function createBrowserActor(label, serverOrigin, { profileOf = null } = {}) {
+export function createBrowserActor(label, serverOrigin, { profileOf = null, freshLocks = false } = {}) {
     const actorKey = `${label}#${copyCounter}`;
     const jsDir = makeIsolatedCopy(label, actorKey);
 
@@ -130,7 +130,9 @@ export function createBrowserActor(label, serverOrigin, { profileOf = null } = {
     // always here) but share IndexedDB, localStorage and Web Locks. Omit it
     // for a genuinely separate browser/device.
     const idbFactory = profileOf ? profileOf.idbFactory : new IDBFactory();
-    const locks = profileOf ? profileOf.locks : makeLockPolyfill();
+    // freshLocks: a RESTARTED process of the same profile. IndexedDB/localStorage
+    // survive a process death, Web Locks do not (the dead process held them).
+    const locks = profileOf && !freshLocks ? profileOf.locks : makeLockPolyfill();
 
     // A real browser's WebSocket implementation; jsdom doesn't ship
     // one, but Node itself (>=22) does (undici's, the same class
@@ -154,10 +156,34 @@ export function createBrowserActor(label, serverOrigin, { profileOf = null } = {
         }
         {
             const method = (init?.method || 'GET').toUpperCase();
-            fetchLog.push({ method, url: urlStr, at: Date.now() });
+            fetchLog.push({
+                method,
+                url: urlStr,
+                at: Date.now(),
+                body: typeof init?.body === 'string' ? init.body : null,
+                headers: init?.headers ? JSON.stringify(init.headers) : null,
+            });
             const i = faults.findIndex((f) => f.method === method && f.match.test(urlStr));
             if (i !== -1) {
                 const fault = faults.splice(i, 1)[0];
+                if (fault.respond) {
+                    // A hostile / broken server answering with a body of our choosing.
+                    return Promise.resolve(new Response(JSON.stringify(fault.respond.json), {
+                        status: fault.respond.status ?? 200,
+                        headers: { 'Content-Type': 'application/json' },
+                    }));
+                }
+                if (fault.hang) {
+                    // Process killed mid-request: the request never reaches the
+                    // server and the caller never gets an answer (no throw).
+                    return new Promise(() => {});
+                }
+                if (fault.dropResponse) {
+                    // Process killed AFTER the server handled the request: the
+                    // write happened, the client never sees the response.
+                    globalThis.__nodeFetch(urlStr, init).catch(() => {});
+                    return new Promise(() => {});
+                }
                 if (fault.delayMs) {
                     // Not a failure: hold this ONE request in flight for a while,
                     // so a test can change UI state while it is pending.
@@ -251,5 +277,20 @@ export function createBrowserActor(label, serverOrigin, { profileOf = null } = {
         faults.push({ method: method.toUpperCase(), match, delayMs });
     }
 
-    return { label, jsDir, window, use, importModule, fetchLog, failNext, delayNext, idbFactory, locks };
+    /** The next matching request hangs forever and never reaches the server (process killed mid-flight). */
+    function hangNext(method, match) {
+        faults.push({ method: method.toUpperCase(), match, hang: true });
+    }
+
+    /** The next matching request is answered locally with `{status, json}`; it never reaches the server. */
+    function respondNext(method, match, respond) {
+        faults.push({ method: method.toUpperCase(), match, respond });
+    }
+
+    /** The next matching request IS delivered to the server, but the client never gets the response. */
+    function dropResponseNext(method, match) {
+        faults.push({ method: method.toUpperCase(), match, dropResponse: true });
+    }
+
+    return { label, jsDir, window, use, importModule, fetchLog, failNext, delayNext, hangNext, dropResponseNext, respondNext, idbFactory, locks };
 }

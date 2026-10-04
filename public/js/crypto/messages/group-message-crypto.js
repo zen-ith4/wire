@@ -19,13 +19,14 @@ import {
     decryptGroupMessage,
     decryptGroupMessageDetailed,
     MissingSenderKeyError,
+    ReplayedMessageError,
 } from '../groups/message-crypto.js';
 import { rotateSenderKey } from '../groups/rotation.js';
 import { receiveKdm } from '../groups/kdm.js';
-import { getMySenderKey, forgetSenderKey } from '../groups/sender-key.js';
-import { deleteAllSenderKeysForGroup } from '../groups/sender-key-store.js';
+import { getMySenderKey } from '../groups/sender-key.js';
+import { deleteAllSenderKeysForGroup, getOrCreateDeviceId } from '../groups/sender-key-store.js';
 
-export { MissingSenderKeyError };
+export { MissingSenderKeyError, ReplayedMessageError };
 
 export function getGroupIdentity() {
     const identity = getCurrentIdentity();
@@ -45,13 +46,13 @@ export async function encryptOutgoingGroupMessage(groupId, plaintext) {
     return encryptGroupMessage(getGroupIdentity(), groupId, plaintext);
 }
 
-export async function decryptIncomingGroupMessage(groupId, envelopeJson) {
-    return decryptGroupMessage(getGroupIdentity(), envelopeJson);
+export async function decryptIncomingGroupMessage(groupId, envelopeJson, messageId) {
+    return decryptGroupMessage(getGroupIdentity(), groupId, envelopeJson, messageId);
 }
 
 /** {plaintext, senderKeyId} where senderKeyId is the id of the key that actually decrypted it. */
-export async function decryptIncomingGroupMessageDetailed(groupId, envelopeJson) {
-    return decryptGroupMessageDetailed(getGroupIdentity(), envelopeJson);
+export async function decryptIncomingGroupMessageDetailed(groupId, envelopeJson, messageId) {
+    return decryptGroupMessageDetailed(getGroupIdentity(), groupId, envelopeJson, messageId);
 }
 
 /**
@@ -120,23 +121,28 @@ export async function ensureSenderKeyForGroup(groupId, memberUserIds, epoch) {
             return false;
         }
 
-        const { senderKeyId, recipients } = await rotateSenderKey(identity, groupId, epoch, memberUserIds);
+        // F1 / MD-6: the new key is held in memory only. It is written to
+        // IndexedDB AFTER the server confirmed the KDM batch (201), so:
+        //  - fetch throws            -> nothing was ever persisted, discard;
+        //  - process dies mid-POST   -> nothing on disk, the next call mints
+        //                               and distributes a fresh key;
+        //  - POST ok, process dies   -> recipients hold a key this device lost;
+        //    before persist             the next call mints another (harmless:
+        //                               v2 ids are per key, nonces per key).
+        const pending = await rotateSenderKey(identity, groupId, epoch, memberUserIds, { deferPersist: true });
 
         try {
             await api(`/api/groups/${groupId}/kdms`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ epoch, recipients }),
+                body: JSON.stringify({ epoch, recipients: pending.recipients }),
             });
         } catch (e) {
-            // Distribution failed, so nobody else can ever read this key.
-            // Left in place it would be selected as "current" (its epoch
-            // matches), the next call would return false without retrying,
-            // and every message would be undecryptable for the group
-            // (MD-6). Discard it so the next call starts clean.
-            try { await forgetSenderKey(senderKeyId); } catch { /* best effort */ }
+            pending.discard();
             throw e;
         }
+
+        await pending.commit();
 
         return true;
     };
@@ -149,24 +155,12 @@ export async function ensureSenderKeyForGroup(groupId, memberUserIds, epoch) {
 }
 
 // Random per-browser-PROFILE id (shared by all tabs, distinct per browser
-// or device). It is only a mailbox cursor: it lets the server hand each
-// device the KDMs THAT device has not consumed yet, instead of treating the
-// first device's ack as delivery to every device of the account (MD-4).
-const DEVICE_ID_KEY = 'wire:group-device-id';
-
-export function getGroupDeviceId() {
-    try {
-        let id = globalThis.localStorage?.getItem(DEVICE_ID_KEY);
-        if (!id || !/^[A-Za-z0-9_-]{8,64}$/.test(id)) {
-            const bytes = crypto.getRandomValues(new Uint8Array(16));
-            id = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
-            globalThis.localStorage?.setItem(DEVICE_ID_KEY, id);
-        }
-        return id;
-    } catch {
-        // No storage: fall back to legacy per-account delivery.
-        return null;
-    }
+// or device), stored next to the keys (sender-key-store.js). It is only a
+// mailbox cursor: it lets the server hand each device the KDMs THAT device
+// has not consumed yet (MD-4). It is mandatory: the server rejects
+// drain/ack without it.
+export async function getGroupDeviceId() {
+    return getOrCreateDeviceId();
 }
 
 /**
@@ -183,11 +177,10 @@ export function getGroupDeviceId() {
  */
 export async function drainGroupKdms(groupId = null) {
     const identity = getGroupIdentity();
-    const deviceId = getGroupDeviceId();
-    const params = [];
+    const deviceId = await getGroupDeviceId();
+    const params = [`device_id=${encodeURIComponent(deviceId)}`];
     if (groupId != null) params.push(`group_id=${encodeURIComponent(groupId)}`);
-    if (deviceId) params.push(`device_id=${encodeURIComponent(deviceId)}`);
-    const qs = params.length ? `?${params.join('&')}` : '';
+    const qs = `?${params.join('&')}`;
     const rows = await api(`/api/groups/kdms${qs}`);
 
     if (!Array.isArray(rows) || rows.length === 0) {
@@ -209,7 +202,7 @@ export async function drainGroupKdms(groupId = null) {
         await api('/api/groups/kdms/ack', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ids: consumedIds, ...(deviceId ? { device_id: deviceId } : {}) }),
+            body: JSON.stringify({ ids: consumedIds, device_id: deviceId }),
         });
     }
 

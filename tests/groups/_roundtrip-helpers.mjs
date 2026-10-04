@@ -63,6 +63,9 @@ export async function apiCall(origin, token, path, options = {}) {
         headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${token}`,
+            // Test plumbing stands in for the CURRENT client, which declares the
+            // group protocol it speaks (core/api.js, F7).
+            ...(path.startsWith('/api/groups') ? { 'X-Wire-Group-Proto': '2' } : {}),
             ...(options.headers || {}),
         },
     });

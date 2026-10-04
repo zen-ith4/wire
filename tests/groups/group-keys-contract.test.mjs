@@ -1,7 +1,6 @@
 // tests/groups/group-keys-contract.test.mjs
 //
-// Group/E2EE audit sections 4 and 6 (+ legacy compatibility for the
-// scheme-2 change). Real server, real Socket.IO, unmodified client.
+// Group/E2EE audit sections 4 and 6. Real server, real Socket.IO, unmodified client.
 //
 //   K-1  every decorated message exposes senderKeyId = id of the key that
 //        actually decrypted it: multiple senders, across rotation, old msgs
@@ -9,7 +8,7 @@
 //        and never break unrelated messages nor expose a bogus id
 //   M-1  membership: late joiner reads existing senders' NEW messages,
 //        removed member gets nothing after removal
-//   L-1  legacy records: never used to send, never overwritten
+//   L-1  received keys: decrypt-only, never overwrite an existing id
 
 import './_env.mjs';
 
@@ -196,13 +195,13 @@ test('M-1: late joiner reads existing senders\' new messages; a removed member g
         () => s.api(carol, `/api/groups/${group.id}/messages/recent?limit=50`),
         'removed member can no longer fetch ciphertext'
     );
-    const drained = await s.api(carol, '/api/groups/kdms');
+    const drained = await s.api(carol, '/api/groups/kdms?device_id=carolcarolcarol01');
     assert.deepEqual(drained.filter((r) => r.group_id === group.id), [], 'and cannot drain keys for the group');
 });
 
-test('L-1: legacy own records are never used to send, and a received key never overwrites an existing id', async () => {
+test('L-1: a received key never overwrites an existing id, is decrypt-only, and ids are a function of the key', async () => {
     const { s, alice, group } = await openBoth('l1');
-    await s.send(alice, 'creates the scheme-2 key');
+    await s.send(alice, 'creates the sending key');
 
     alice.actor.use();
     const ident = (await alice.actor.importModule('crypto/identity-service.js')).getCurrentIdentity();
@@ -213,29 +212,30 @@ test('L-1: legacy own records are never used to send, and a received key never o
     const mine = await sk.getMySenderKey(ident, group.id);
     assert.ok(mine?.senderKeyId, 'control: Alice has a current sending key');
 
-    // A legacy-shaped own record (isMine=1, no scheme) at a HIGHER epoch: the old
-    // selection rule would have picked it and encrypted with it (nonce reuse risk).
-    const template = await store.getSenderKeyRecord(mine.senderKeyId);
-    await store.putSenderKeyRecord({ ...template, senderKeyId: 'legacy-own-record', epoch: template.epoch + 5, scheme: undefined });
+    // A received key (even one whose owner is Alice herself, i.e. a self-KDM
+    // from another device) is never promoted to a sending key.
+    const rawSelf = crypto.getRandomValues(new Uint8Array(32));
+    const selfId = await idmod.deriveSenderKeyId(group.id, ident.userId, mine.epoch + 5, rawSelf);
+    await sk.storeReceivedSenderKey(ident, { senderKeyId: selfId, groupId: group.id, ownerUserId: ident.userId, epoch: mine.epoch + 5 }, rawSelf);
     const stillMine = await sk.getMySenderKey(ident, group.id);
-    assert.equal(stillMine.senderKeyId, mine.senderKeyId, 'legacy record must not be selected for sending');
+    assert.equal(stillMine.senderKeyId, mine.senderKeyId, 'a received key must never be selected for sending');
 
     // Receiving a DIFFERENT key for an id that already exists keeps the existing key.
-    const legacyId = await idmod.deriveSenderKeyId(group.id, 4242, 3);
     const rawA = crypto.getRandomValues(new Uint8Array(32));
     const rawB = crypto.getRandomValues(new Uint8Array(32));
-    const p = { senderKeyId: legacyId, groupId: group.id, ownerUserId: 4242, epoch: 3, scheme: 1 };
+    const fixedId = 'f'.repeat(64);
+    const p = { senderKeyId: fixedId, groupId: group.id, ownerUserId: 4242, epoch: 3 };
     await sk.storeReceivedSenderKey(ident, p, rawA);
-    const first = await store.getSenderKeyRecord(legacyId);
+    const first = await store.getSenderKeyRecord(fixedId);
     await sk.storeReceivedSenderKey(ident, p, rawB);
-    const second = await store.getSenderKeyRecord(legacyId);
-    assert.deepEqual(second.wrappedKey, first.wrappedKey, 'colliding legacy id must not overwrite the existing key');
+    const second = await store.getSenderKeyRecord(fixedId);
+    assert.deepEqual(second.wrappedKey, first.wrappedKey, 'a colliding id must not overwrite the existing key');
     assert.equal(second.isMine, 0, 'received keys are decrypt-only');
 
-    // The v2 derivation is a function of the key: same inputs, different key => different id.
-    const a = await idmod.deriveSenderKeyIdV2(group.id, 1, 0, rawA);
-    const b = await idmod.deriveSenderKeyIdV2(group.id, 1, 0, rawB);
-    const a2 = await idmod.deriveSenderKeyIdV2(group.id, 1, 0, rawA);
+    // The derivation is a function of the key: same inputs, different key => different id.
+    const a = await idmod.deriveSenderKeyId(group.id, 1, 0, rawA);
+    const b = await idmod.deriveSenderKeyId(group.id, 1, 0, rawB);
+    const a2 = await idmod.deriveSenderKeyId(group.id, 1, 0, rawA);
     assert.notEqual(a, b);
     assert.equal(a, a2, 'deterministic for the same key');
     assert.match(a, /^[0-9a-f]{64}$/);

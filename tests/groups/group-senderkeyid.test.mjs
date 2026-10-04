@@ -125,14 +125,14 @@ test('decorate() attaches senderKeyId, usable with decryptAttachmentForGroup', a
 
     bob.use();
     const bobAttach = await bob.importModule('crypto/messages/attachment-crypto.js');
-    const decrypted = await bobAttach.decryptAttachmentForGroup(ciphertext, ivBase64, decorated.senderKeyId);
+    const decrypted = await bobAttach.decryptAttachmentForGroup(group.id, ciphertext, ivBase64, decorated.senderKeyId, 'a1');
     assert.deepEqual(new Uint8Array(decrypted), new Uint8Array(fileBytes), 'attachment bytes must round-trip');
 
     // Wrong / missing id must fail as MissingSenderKeyError (the
     // self-heal contract), never yield garbage.
     // A well-formed but unknown id -> the typed self-heal error.
     await assert.rejects(
-        () => bobAttach.decryptAttachmentForGroup(ciphertext, ivBase64, 'not-a-real-key-id'),
+        () => bobAttach.decryptAttachmentForGroup(group.id, ciphertext, ivBase64, 'not-a-real-key-id', 'a1'),
         (e) => e.name === 'MissingSenderKeyError',
         'unknown senderKeyId must throw MissingSenderKeyError'
     );
@@ -144,7 +144,7 @@ test('decorate() attaches senderKeyId, usable with decryptAttachmentForGroup', a
     // `typeof msg.senderKeyId === 'string'` BEFORE calling, rather than
     // relying on the typed error for this case.
     await assert.rejects(
-        () => bobAttach.decryptAttachmentForGroup(ciphertext, ivBase64, undefined),
+        () => bobAttach.decryptAttachmentForGroup(group.id, ciphertext, ivBase64, undefined, 'a1'),
         (e) => e.name !== 'MissingSenderKeyError',
         'missing senderKeyId rejects, but as a non-typed error (documented caller-side guard)'
     );

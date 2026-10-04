@@ -593,7 +593,18 @@ const pushTokenLimiter =
   });
 
 
+// Public salt lookup used before every login/registration (F12). Cheap, but it
+// is unauthenticated, so keep it from being a scraping/DoS surface.
+const kdfParamsRateLimiter =
+  createRateLimiter({
+    windowMs: 60 * 1000,
+    max: 60,
+    keyFn: req => `kdf-params:${req.ip}`,
+    message: 'Too many requests, please try again later'
+  });
+
 module.exports = {
+  kdfParamsRateLimiter,
   loginRateLimiter,
   registerRateLimiter,
   verifyEmailRateLimiter,

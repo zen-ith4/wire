@@ -22,9 +22,12 @@ const IV_LENGTH = 12;
  *   an explicit counter-derived IV for anything where nonce
  *   uniqueness can't rely on randomness alone (see
  *   groups/message-crypto.js and its use of groups/nonce-lock.js).
+ * @param {Uint8Array} [aad] additionalData: authenticated but not encrypted.
+ *   Bind every context field the receiver must not be able to relabel
+ *   (see codec.js encodeFields).
  * @returns {Promise<{iv: string, ciphertext: string}>} base64
  */
-export async function encryptBytes(key, plaintextBytes, iv) {
+export async function encryptBytes(key, plaintextBytes, iv, aad) {
     if (!(key instanceof CryptoKey)) {
         throw new Error('Invalid AES-GCM key');
     }
@@ -40,7 +43,7 @@ export async function encryptBytes(key, plaintextBytes, iv) {
     }
 
     const ciphertext = await crypto.subtle.encrypt(
-        { name: ALGORITHM, iv: nonce },
+        { name: ALGORITHM, iv: nonce, ...(aad ? { additionalData: aad } : {}) },
         key,
         plaintextBytes
     );
@@ -54,9 +57,10 @@ export async function encryptBytes(key, plaintextBytes, iv) {
 /**
  * @param {CryptoKey} key AES-GCM key (decrypt usage)
  * @param {{iv: string, ciphertext: string}} envelope base64
+ * @param {Uint8Array} [aad] must equal the additionalData used to encrypt
  * @returns {Promise<Uint8Array>}
  */
-export async function decryptBytes(key, envelope) {
+export async function decryptBytes(key, envelope, aad) {
     if (!(key instanceof CryptoKey)) {
         throw new Error('Invalid AES-GCM key');
     }
@@ -81,7 +85,7 @@ export async function decryptBytes(key, envelope) {
 
     try {
         plaintext = await crypto.subtle.decrypt(
-            { name: ALGORITHM, iv },
+            { name: ALGORITHM, iv, ...(aad ? { additionalData: aad } : {}) },
             key,
             ciphertext
         );

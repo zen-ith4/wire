@@ -145,6 +145,19 @@ export function makeSessionKeyProvider(identitiesByUserId) {
         setCurrentActor(userId) {
             currentActorId = userId;
         },
+        async getOrCreateGroupKdmKey(peerUserId) {
+            const { deriveSessionKeyFromPeer, GROUP_KDM_INFO } = await import(
+                '../../public/js/crypto/keys/key-derivation.js'
+            );
+
+            const me = identitiesByUserId.get(currentActorId);
+            const peer = identitiesByUserId.get(Number(peerUserId));
+
+            if (!me) throw new Error(`No current actor set (wanted peer ${peerUserId})`);
+            if (!peer) throw new Error(`Unknown test peer ${peerUserId}`);
+
+            return deriveSessionKeyFromPeer(me.privateKey, peer._publicKeyCryptoKey, GROUP_KDM_INFO);
+        },
         async getOrCreateSessionKey(peerUserId) {
             const { deriveSessionKeyFromPeer } = await import(
                 '../../public/js/crypto/keys/key-derivation.js'

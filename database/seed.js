@@ -1,4 +1,5 @@
 const bcrypt = require('bcryptjs');
+const { deriveCredentialsNode, newKdfSalt, KDF_ITERATIONS } = require('../utils/credentials');
 const constants = require('../config/constants');
 
 function seedDatabase(db) {

@@ -26,9 +26,11 @@
 import { deriveLocalWrapKey } from './local-wrap-key.js';
 import { encryptBytes, decryptBytes } from './aead.js';
 import { zero } from './codec.js';
-import { deriveSenderKeyIdV2, SENDER_KEY_SCHEME_KEY_DERIVED } from './sender-key-id.js';
+import { deriveSenderKeyId, deriveSenderEncKey } from './sender-key-id.js';
+import { resetNoncePrefix } from './nonce-lock.js';
 import {
     putSenderKeyRecord,
+    putSenderKeyRecordIfAbsent,
     getSenderKeyRecord,
     getMySenderKeyForGroup,
     deleteSenderKeyRecord,
@@ -44,25 +46,24 @@ const SENDER_KEY_BYTE_LENGTH = 32; // AES-256
 // Phase 3).
 const cryptoKeyCache = new Map();
 
+// The stored/transmitted 32 bytes are the ROOT secret; the AES key is a
+// derived subkey (sender-key-id.js key schedule).
 async function importSenderKeyBytes(rawBytes) {
-    return crypto.subtle.importKey(
-        'raw',
-        rawBytes,
-        { name: 'AES-GCM', length: 256 },
-        false,
-        ['encrypt', 'decrypt']
-    );
+    return deriveSenderEncKey(rawBytes);
 }
 
 /**
- * Generates a brand new Sender Key for a group: fresh random bytes,
- * a deterministic id (see sender-key-id.js — derived from
- * (groupId, ownerUserId, epoch), NOT a random UUID, so every
- * recipient who later receives a KDM for this key arrives at the
- * exact same id without it ever needing to be transmitted; a fresh
- * epoch also means a fresh nonce-lock.js lock name, with no
- * continuity to any prior key — see plan_prompt.md 2.2's rotation
- * note), imported non-extractably for use, and persisted wrapped.
+ * Generates a brand new Sender Key for a group: fresh random bytes and an
+ * id that is a PRF of those bytes (sender-key-id.js:
+ * HMAC-SHA-256(key, label|group|owner|epoch)). Two devices of one account
+ * therefore never mint the same id for different keys, and every recipient
+ * arrives at the same id after unwrapping the KDM, without it being
+ * transmitted. The key is imported non-extractably for use and persisted
+ * wrapped. A fresh key also means a fresh nonce-lock.js lock name and
+ * counter, with no continuity to any prior key.
+ *
+ * With { deferPersist: true } (F1) nothing is written or cached until the
+ * returned commit() is called; see messages/group-message-crypto.js.
  *
  * Does NOT distribute it — that's kdm.js's job, driven by whatever
  * orchestrates rotation (rotation.js). Generation and distribution
@@ -77,41 +78,71 @@ async function importSenderKeyBytes(rawBytes) {
  *   kdm.js in the same tick — callers must not persist or log it,
  *   and should let it go out of scope (zero it) once KDMs are built.
  */
-export async function generateSenderKey(identity, groupId, epoch) {
-    // The id is derived FROM the key (sender-key-id.js, scheme 2), so two
+export async function generateSenderKey(identity, groupId, epoch, { deferPersist = false } = {}) {
+    // The id is derived FROM the key (sender-key-id.js), so two
     // devices of one account can never mint the same id for different keys.
     const rawBytes = crypto.getRandomValues(new Uint8Array(SENDER_KEY_BYTE_LENGTH));
-    const senderKeyId = await deriveSenderKeyIdV2(groupId, identity.userId, epoch, rawBytes);
+    const senderKeyId = await deriveSenderKeyId(groupId, identity.userId, epoch, rawBytes);
 
     const cryptoKey = await importSenderKeyBytes(rawBytes);
 
-    await persistWrapped(identity, {
+    const meta = {
         senderKeyId,
         groupId,
         ownerUserId: identity.userId,
         epoch,
         // isMine === "generated on THIS device, therefore the only kind of
         // key this device may ever ENCRYPT with" (nonce-lock.js counters
-        // are per device). scheme 2 marks records written by this code so
-        // legacy rows (scheme undefined) are never selected for sending.
+        // are per device).
         isMine: 1,
-        scheme: SENDER_KEY_SCHEME_KEY_DERIVED,
-    }, rawBytes);
+    };
+
+    if (deferPersist) {
+        // F1: the key is NOT on disk and NOT in the cache, so nothing can
+        // select it as "current" until the caller has proven (HTTP 201) that
+        // it was distributed. A process death anywhere before commit() leaves
+        // no trace of an undistributed key. rawBytes stays alive until
+        // commit() or discard(); the caller must call exactly one of them.
+        return {
+            senderKeyId,
+            cryptoKey,
+            rawBytes,
+            async commit() {
+                try {
+                    await persistWrapped(identity, meta, rawBytes);
+                    cryptoKeyCache.set(senderKeyId, cryptoKey);
+                } finally {
+                    zero(rawBytes);
+                }
+            },
+            discard() {
+                zero(rawBytes);
+            },
+        };
+    }
+
+    await persistWrapped(identity, meta, rawBytes);
 
     cryptoKeyCache.set(senderKeyId, cryptoKey);
 
     return { senderKeyId, cryptoKey, rawBytes };
 }
 
-async function persistWrapped(identity, meta, rawBytes) {
+async function persistWrapped(identity, meta, rawBytes, { ifAbsent = false } = {}) {
     const wrapKey = await deriveLocalWrapKey(identity);
     const wrappedKey = await encryptBytes(wrapKey, rawBytes);
-
-    await putSenderKeyRecord({
+    const record = {
         ...meta,
         wrappedKey,
         createdAt: new Date().toISOString(),
-    });
+    };
+
+    if (ifAbsent) {
+        return putSenderKeyRecordIfAbsent(record);
+    }
+
+    await putSenderKeyRecord(record);
+    return true;
 }
 
 /**
@@ -125,13 +156,13 @@ async function persistWrapped(identity, meta, rawBytes) {
  * code derived isMine from the owner id, which is what turned a
  * self-KDM into a second sending device on the same key.)
  *
- * Never overwrites a different key already stored under the same id;
- * that could only happen for legacy (scheme 1) ids that collide across
- * devices, and replacing the key would make every message encrypted
- * under the first one unreadable. The existing key wins.
+ * Never overwrites a different key already stored under the same id
+ * (ids are a PRF of the key, so that needs a 256-bit collision or a hostile
+ * relay); replacing the key would make every message encrypted under the
+ * first one unreadable. The existing key wins.
  *
  * @param {object} identity
- * @param {object} params {senderKeyId, groupId, ownerUserId, epoch, scheme}
+ * @param {object} params {senderKeyId, groupId, ownerUserId, epoch}
  * @param {Uint8Array} rawBytes
  */
 export async function storeReceivedSenderKey(identity, params, rawBytes) {
@@ -166,14 +197,20 @@ export async function storeReceivedSenderKey(identity, params, rawBytes) {
 
     const cryptoKey = await importSenderKeyBytes(rawBytes);
 
-    await persistWrapped(identity, {
+    // A row for another account's local wrap key (existing !== null but not
+    // unwrappable) must be replaced; otherwise insert only if still absent so
+    // a concurrently committed own sending key is never demoted (F1).
+    const written = await persistWrapped(identity, {
         senderKeyId: params.senderKeyId,
         groupId: params.groupId,
         ownerUserId: params.ownerUserId,
         epoch: params.epoch,
         isMine: 0,
-        scheme: params.scheme,
-    }, rawBytes);
+    }, rawBytes, { ifAbsent: !existing });
+
+    if (!written) {
+        return loadSenderKey(identity, params.senderKeyId);
+    }
 
     cryptoKeyCache.set(params.senderKeyId, cryptoKey);
 
@@ -236,4 +273,7 @@ export async function forgetSenderKey(senderKeyId) {
 
 export function clearSenderKeyCache() {
     cryptoKeyCache.clear();
+    // Called on every identity lock: the next unlock draws a fresh random nonce
+    // prefix (nonce-lock.js, F10).
+    resetNoncePrefix();
 }

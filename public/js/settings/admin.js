@@ -5,6 +5,7 @@ import { getCurrentUser } from '../core/auth.js';   // to protect self-deletion
 import { showConfirm } from '../ui/confirm.js';
 import { avatarHtml } from '../ui/avatar.js';
 import { claimRender } from '../core/view-session.js';
+import { deriveCredentials, generateKdfSalt, KDF_ITERATIONS } from '../crypto/credentials.js';
 
 /* ==================== USERS ==================== */
 export async function renderAdminUsers() {
@@ -146,6 +147,18 @@ window.addUser = async function() {
   errEl.textContent = '';
 
   try {
+    // F12: this browser runs the KDF; the server only receives the authKey
+    // and the salt. (The admin necessarily knows the password they typed;
+    // the new user should change it at first login.)
+    if (!password || password.length < 6) {
+      throw new Error('Password must be at least 6 characters');
+    }
+
+    const kdf_salt = generateKdfSalt();
+    const { authKey, wrapKeyBytes } =
+      await deriveCredentials(password, kdf_salt, KDF_ITERATIONS);
+    wrapKeyBytes.fill(0);
+
     await api('/api/admin/users', {
       method: 'POST',
 
@@ -156,7 +169,9 @@ window.addUser = async function() {
       body: JSON.stringify({
         username,
         email,
-        password,
+        auth_key: authKey,
+        kdf_salt,
+        kdf_iterations: KDF_ITERATIONS,
         is_admin
       }),
     });

@@ -4,6 +4,7 @@ const path = require('path');
 const { Writable } = require('stream');
 
 const { hashPassword } = require('./password');
+const { deriveCredentialsNode, newKdfSalt, KDF_ITERATIONS } = require('./credentials');
 const constants = require('../config/constants');
 const tlsSetup = require('./tlsSetup');
 

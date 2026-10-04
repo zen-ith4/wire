@@ -44,9 +44,18 @@ async function createUser(req, res) {
   const {
     username,
     email,
-    password,
+    auth_key,
+    kdf_salt,
+    kdf_iterations,
     is_admin,
   } = req.body || {};
+
+  if (req.body && 'password' in req.body) {
+    return res.status(400).json({
+      error: 'Raw passwords are not accepted. Update the app.',
+      code: 'raw_password_rejected',
+    });
+  }
 
   try {
 
@@ -54,8 +63,10 @@ async function createUser(req, res) {
       await createUserService(
         username,
         email,
-        password,
-        is_admin
+        auth_key,
+        is_admin,
+        kdf_salt,
+        kdf_iterations
       );
 
     return res.status(201).json(user);

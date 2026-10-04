@@ -6,6 +6,7 @@ import {
   emptyState,
   loadingState,
   escapeHtml,
+  escapeHtmlAttr,
   linkifyHtml,
   escapeAttr,
   formatDate,
@@ -1497,7 +1498,7 @@ thread.innerHTML = `
         <input type="file" id="dm-file-input" class="hidden" multiple>
         <button class="btn btn-ghost btn-icon" title="Attach" onclick="document.getElementById('dm-file-input').click()">${ICONS.paperclip}</button>
         <button class="btn btn-ghost btn-icon emoji-trigger" title="Emoji" onclick="window.openDmEmojiPicker(this)">${ICONS.emoji}</button>
-        <textarea id="dm-input" rows="1" placeholder="Message ${escapeHtml(username)}…"></textarea>
+        <textarea id="dm-input" rows="1" placeholder="Message ${escapeHtmlAttr(username)}…"></textarea>
         <button class="composer-mic-btn" id="dm-mic-btn" aria-label="Record a voice message">${ICONS.mic}</button>
         <button onclick="window.sendDm()" class="btn-send" title="Send message (Enter) — Shift+Enter for a new line">${ICONS.send}</button>
       </div>

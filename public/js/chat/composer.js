@@ -24,6 +24,7 @@ import { ICONS } from '../icons.js';
 
 import {
   escapeHtml,
+  escapeHtmlAttr,
   formatBytes,
   showToast
 } from '../core/utils.js';
@@ -591,7 +592,7 @@ export function createComposer(
         <div class="attach-chip-info">
           <span
             class="attach-chip-name"
-            title="${escapeHtml(item.file.name)}"
+            title="${escapeHtmlAttr(item.file.name)}"
           >
             ${escapeHtml(item.file.name)}
           </span>

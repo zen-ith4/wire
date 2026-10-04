@@ -1,6 +1,6 @@
 import { ICONS } from '../icons.js';
 
-import { escapeHtml } from '../core/utils.js';
+import { escapeHtml, escapeHtmlAttr } from '../core/utils.js';
 
 import { bannerHtml } from '../ui/avatar.js';
 
@@ -121,10 +121,10 @@ function renderBackgroundPreset(
     <button
       type="button"
       class="bg-swatch${selected ? ' selected' : ''}"
-      data-id="${escapeHtml(preset.id)}"
-      title="${escapeHtml(preset.name)}"
+      data-id="${escapeHtmlAttr(preset.id)}"
+      title="${escapeHtmlAttr(preset.name)}"
       aria-pressed="${selected}"
-      aria-label="Use ${escapeHtml(preset.name)} background">
+      aria-label="Use ${escapeHtmlAttr(preset.name)} background">
 
       <span
         class="bg-swatch-preview"
@@ -171,10 +171,10 @@ function renderAppearance({
               ? ' selected'
               : ''
           }"
-          data-name="${escapeHtml(p.name)}"
-          title="${escapeHtml(p.name)}"
+          data-name="${escapeHtmlAttr(p.name)}"
+          title="${escapeHtmlAttr(p.name)}"
           style="--swatch-color:${p.hex};"
-          aria-label="Select ${escapeHtml(p.name)} accent color">
+          aria-label="Select ${escapeHtmlAttr(p.name)} accent color">
         </button>
       `)
       .join('');
@@ -497,7 +497,7 @@ function renderAppearance({
             <input
               type="color"
               id="custom-accent-color"
-              value="${escapeHtml(currentAccentHex)}"
+              value="${escapeHtmlAttr(currentAccentHex)}"
               title="Choose custom accent color"
             />
 
@@ -507,7 +507,7 @@ function renderAppearance({
             type="text"
             id="custom-accent-hex"
             class="custom-accent-hex-input"
-            value="${escapeHtml(currentAccentHex)}"
+            value="${escapeHtmlAttr(currentAccentHex)}"
             maxlength="7"
             placeholder="#5F84AD"
             spellcheck="false"
@@ -1758,10 +1758,10 @@ function renderCategoryListHtml() {
         <button
           type="button"
           class="settings-category-row"
-          id="settings-category-row-${escapeHtml(cat.id)}"
-          data-category="${escapeHtml(cat.id)}"
+          id="settings-category-row-${escapeHtmlAttr(cat.id)}"
+          data-category="${escapeHtmlAttr(cat.id)}"
           role="listitem"
-          aria-label="${escapeHtml(cat.label)}: ${escapeHtml(cat.sublabel)}">
+          aria-label="${escapeHtmlAttr(cat.label)}: ${escapeHtmlAttr(cat.sublabel)}">
 
           <span
             class="settings-category-row-icon"

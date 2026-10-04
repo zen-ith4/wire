@@ -85,6 +85,18 @@ Only the group half of that file (`encryptAttachmentForGroup`,
   the repo root. The real-Chromium test needs `@sparticuz/chromium` and
   `puppeteer-core` in `/tmp/browser-check` (`CHROMIUM_DIR`), outside the repo.
 
+## Task C, phase 1: escapeHtml -> escapeHtmlAttr (20 sites)
+- X's `escapeHtml()` does not escape quotes; the 20 uses inside quoted attributes now call
+  `escapeHtmlAttr()`: `chat/dm.js` (1), `chat/composer.js` (1), `settings/settings-render.js` (11),
+  `settings/settings-shortcuts.js` (4), `settings/settings-appearance-custom.js` (2),
+  `settings/settings-bubble-gradient.js` (1). Text-node uses are untouched. `core/auth.js` has
+  its own local `escapeHtml()` that escapes both quote kinds and stays as is.
+- Modified test: `tests/csp-static.test.mjs`, only the `escapeHtmlInAttr` caps (all 0 now).
+- New test: `tests/csp-attr-escape.test.mjs` (real render functions + jsdom DOM parser; each
+  site type fails on the pre-change code and passes after).
+- Merge note: `dm.js`/`composer.js` got one added import line (`escapeHtmlAttr,`) plus one
+  edited site each, in their own commit.
+
 ## Files changed vs the X base (verified)
 `git diff --name-status 7655a7e..HEAD -- ':!tests' ':!docs'` was compared against an independently written list; they match exactly. Nothing else outside `tests/` and `docs/` differs from X.
 

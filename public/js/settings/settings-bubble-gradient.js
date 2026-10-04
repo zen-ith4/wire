@@ -12,7 +12,7 @@
 // ============================================================
 
 import { ICONS } from '../icons.js';
-import { escapeHtml, showToast } from '../core/utils.js';
+import { escapeHtml, escapeHtmlAttr, showToast } from '../core/utils.js';
 
 import {
   OWN_BUBBLE_GRADIENT_LIMITS,
@@ -62,7 +62,7 @@ function stopsHtml(stops) {
         <input
           type="color"
           class="own-gradient-color"
-          value="${escapeHtml(stop.color)}"
+          value="${escapeHtmlAttr(stop.color)}"
           data-og-color="${index}"
           aria-label="Color ${index + 1}"
           title="Color ${index + 1}">

@@ -124,6 +124,7 @@ mock.module(jsPath('media/attachments.js'), {
 });
 
 class MissingSenderKeyError extends Error {}
+class ReplayedMessageError extends Error {}
 mock.module(jsPath('crypto/messages/group-message-crypto.js'), {
     namedExports: {
         encryptOutgoingGroupMessage: async (_g, t) => t,
@@ -136,6 +137,7 @@ mock.module(jsPath('crypto/messages/group-message-crypto.js'), {
         drainGroupKdms: async () => {},
         forgetGroupKeys: async () => {},
         MissingSenderKeyError,
+        ReplayedMessageError,
     },
 });
 

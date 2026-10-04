@@ -18,13 +18,13 @@
 import { getOrCreateSessionKey } from '../keys/session.js';
 import { bytesToBase64, base64ToBytes } from '../groups/codec.js';
 import { reserveNextCounter } from '../groups/nonce-lock.js';
-import { nonceFromCounter, readNonce, attachmentAad } from '../groups/message-crypto.js';
+import { nonceFromCounter, readNonce, attachmentAad, acceptNonceOnce, ReplayedMessageError } from '../groups/message-crypto.js';
 import { getNoncePrefix } from '../groups/nonce-lock.js';
 import { getMySenderKey, loadSenderKey } from '../groups/sender-key.js';
 import { getGroupIdentity } from './group-message-crypto.js';
 import { MissingSenderKeyError } from '../groups/message-crypto.js';
 
-export { MissingSenderKeyError };
+export { MissingSenderKeyError, ReplayedMessageError };
 
 /**
  * @param {number} peerId
@@ -54,8 +54,9 @@ export async function decryptAttachmentForDm(peerId, ciphertext, ivBase64) {
     const sessionKey = await getOrCreateSessionKey(peerId);
     const iv = base64ToBytes(ivBase64);
 
+    let plaintext;
     try {
-        return await crypto.subtle.decrypt(
+        plaintext = await crypto.subtle.decrypt(
             { name: 'AES-GCM', iv },
             sessionKey,
             ciphertext
@@ -63,6 +64,8 @@ export async function decryptAttachmentForDm(peerId, ciphertext, ivBase64) {
     } catch {
         throw new Error('Attachment authentication failed');
     }
+
+    return plaintext;
 }
 
 /**
@@ -116,7 +119,11 @@ export async function encryptAttachmentForGroup(groupId, fileBytes) {
  *   decryptGroupMessage — the caller should treat this the same way
  *   (background KDM drain + retry), not as a hard failure.
  */
-export async function decryptAttachmentForGroup(groupId, ciphertext, ivBase64, senderKeyId) {
+export async function decryptAttachmentForGroup(groupId, ciphertext, ivBase64, senderKeyId, ref) {
+    if (ref === undefined || ref === null || ref === '') {
+        throw new Error('An attachment reference is required for replay protection');
+    }
+
     const identity = getGroupIdentity();
     const cryptoKey = await loadSenderKey(identity, senderKeyId);
 
@@ -129,8 +136,10 @@ export async function decryptAttachmentForGroup(groupId, ciphertext, ivBase64, s
     // is read back out of the iv (its last 8 bytes) and bound in the AAD.
     const { counter } = readNonce(iv);
 
+    let plaintext;
+
     try {
-        return await crypto.subtle.decrypt(
+        plaintext = await crypto.subtle.decrypt(
             {
                 name: 'AES-GCM',
                 iv,
@@ -142,6 +151,12 @@ export async function decryptAttachmentForGroup(groupId, ciphertext, ivBase64, s
     } catch {
         throw new Error('Attachment authentication failed');
     }
+
+    // F4: only an attachment that AUTHENTICATED may claim its nonce (attachments
+    // and messages share one counter/nonce space per key).
+    await acceptNonceOnce(senderKeyId, iv, counter, `att:${ref}`);
+
+    return plaintext;
 }
 
 /**

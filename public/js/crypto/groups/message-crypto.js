@@ -15,6 +15,7 @@ import { encryptBytes, decryptBytes } from './aead.js';
 import { base64ToBytes, encodeFields } from './codec.js';
 import { reserveNextCounter, getNoncePrefix } from './nonce-lock.js';
 import { getMySenderKey, loadSenderKey } from './sender-key.js';
+import { claimNonce } from './sender-key-store.js';
 
 const ENVELOPE_VERSION = 2;
 const IV_LENGTH = 12;
@@ -117,6 +118,47 @@ export async function encryptGroupMessage(identity, groupId, plaintext) {
     });
 }
 
+/**
+ * Thrown when a ciphertext authenticates correctly but its (senderKeyId, nonce)
+ * was already accepted for a DIFFERENT message (F4): somebody re-posted stored
+ * ciphertext under a fresh message id. The same message arriving again under
+ * the same id is NOT a replay and never raises this.
+ */
+export class ReplayedMessageError extends Error {
+    constructor(senderKeyId, counter) {
+        super('Replayed group message rejected');
+        this.name = 'ReplayedMessageError';
+        this.senderKeyId = senderKeyId;
+        this.counter = counter;
+    }
+}
+
+/**
+ * Records that (senderKeyId, nonce) was accepted for `ref`. Called only AFTER
+ * authentication succeeded, so corrupt data never burns a nonce.
+ * @param {Uint8Array} iv the full 12-byte nonce of the message / attachment
+ * @param {string} ref e.g. "msg:123" or "att:123": stable per message
+ */
+export async function acceptNonceOnce(senderKeyId, iv, counter, ref) {
+    if (typeof ref !== 'string' || ref.length < 5) {
+        throw new Error('A message reference is required for replay protection');
+    }
+
+    const nonceHex = Array.from(iv, (b) => b.toString(16).padStart(2, '0')).join('');
+    const status = await claimNonce({ senderKeyId, nonceHex, counter, ref });
+
+    if (status === 'conflict') {
+        throw new ReplayedMessageError(senderKeyId, counter);
+    }
+}
+
+export function messageRef(messageId) {
+    if (messageId === undefined || messageId === null || messageId === '') {
+        throw new Error('A message id is required for replay protection');
+    }
+    return `msg:${messageId}`;
+}
+
 export class MissingSenderKeyError extends Error {
     constructor(senderKeyId) {
         super(`No local Sender Key for id ${senderKeyId}`);
@@ -129,6 +171,8 @@ export class MissingSenderKeyError extends Error {
  * @param {object} identity {privateKey, publicKey, userId}
  * @param {number} groupId the group this message was delivered in (bound into the AAD)
  * @param {string} envelopeJson group_messages.content, verbatim
+ * @param {string|number} messageId the SERVER message id this envelope came with
+ *   (replay protection: the first id to claim a counter owns it)
  * @returns {Promise<string>} plaintext
  * @throws {MissingSenderKeyError} if this device has never received
  *   a KDM for the message's Sender Key — the UI layer (Phase 3)
@@ -138,8 +182,8 @@ export class MissingSenderKeyError extends Error {
  *   (plan_prompt.md's acceptance checklist: "losing one member's KDM
  *   doesn't corrupt the group for everyone else").
  */
-export async function decryptGroupMessage(identity, groupId, envelopeJson) {
-    const { plaintext } = await decryptGroupMessageDetailed(identity, groupId, envelopeJson);
+export async function decryptGroupMessage(identity, groupId, envelopeJson, messageId) {
+    const { plaintext } = await decryptGroupMessageDetailed(identity, groupId, envelopeJson, messageId);
     return plaintext;
 }
 
@@ -152,7 +196,9 @@ export async function decryptGroupMessage(identity, groupId, envelopeJson) {
  *
  * @returns {Promise<{plaintext: string, senderKeyId: string}>}
  */
-export async function decryptGroupMessageDetailed(identity, groupId, envelopeJson) {
+export async function decryptGroupMessageDetailed(identity, groupId, envelopeJson, messageId) {
+    const ref = messageRef(messageId);
+
     let envelope;
 
     try {
@@ -202,6 +248,9 @@ export async function decryptGroupMessageDetailed(identity, groupId, envelopeJso
         envelope,
         messageAad(groupId, senderKeyId, envelope.counter, iv)
     );
+
+    // F4: only a message that AUTHENTICATED may claim its nonce.
+    await acceptNonceOnce(senderKeyId, iv, envelope.counter, ref);
 
     return {
         plaintext: new TextDecoder('utf-8', { fatal: true }).decode(plaintextBytes),

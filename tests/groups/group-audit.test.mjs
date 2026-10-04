@@ -462,8 +462,9 @@ test('G (was OPEN, fixed by device-local sending keys): two devices of one user 
     const report = [];
     for (const pair of collisions) {
         const ok = [];
+        let n = 0;
         for (const c of pair) {
-            try { await bobCrypto.decryptIncomingGroupMessage(group.id, c); ok.push(true); } catch { ok.push(false); }
+            try { await bobCrypto.decryptIncomingGroupMessage(group.id, c, `audit-${n++}`); ok.push(true); } catch { ok.push(false); }
         }
         report.push(ok.every(Boolean) ? 'PROVEN key+nonce reuse (both decrypt under one key)' : 'same id+nonce, different keys (F-I collision)');
     }

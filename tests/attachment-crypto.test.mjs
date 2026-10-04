@@ -145,20 +145,20 @@ test('group attachment: encrypt/decrypt round trip using the message-associated 
     const original = new TextEncoder().encode('group photo bytes').buffer;
 
     const { ivBase64, ciphertext } = await encryptAttachmentForGroup(groupId, original);
-    const decrypted = await decryptAttachmentForGroup(groupId, ciphertext, ivBase64, mine.senderKeyId);
+    const decrypted = await decryptAttachmentForGroup(groupId, ciphertext, ivBase64, mine.senderKeyId, 'a1');
 
     assert.deepEqual(Buffer.from(decrypted), Buffer.from(original));
 
     // F3: the attachment is bound to (group, senderKeyId, counter, iv): presenting it
     // as another group's attachment, or with a relabelled iv/counter, fails.
     await assert.rejects(
-        () => decryptAttachmentForGroup(groupId + 1, ciphertext, ivBase64, mine.senderKeyId),
+        () => decryptAttachmentForGroup(groupId + 1, ciphertext, ivBase64, mine.senderKeyId, 'a1'),
         /authentication failed/
     );
     const ivBytes = Buffer.from(ivBase64, 'base64');
     ivBytes[11] ^= 0x01; // counter 0 -> 1: a different nonce AND a different AAD counter
     await assert.rejects(
-        () => decryptAttachmentForGroup(groupId, ciphertext, ivBytes.toString('base64'), mine.senderKeyId),
+        () => decryptAttachmentForGroup(groupId, ciphertext, ivBytes.toString('base64'), mine.senderKeyId, 'a1'),
         /authentication failed/
     );
 
@@ -166,7 +166,7 @@ test('group attachment: encrypt/decrypt round trip using the message-associated 
     const second = await encryptAttachmentForGroup(groupId, original);
     assert.notEqual(second.ivBase64, ivBase64);
     assert.deepEqual(
-        Buffer.from(await decryptAttachmentForGroup(groupId, second.ciphertext, second.ivBase64, mine.senderKeyId)),
+        Buffer.from(await decryptAttachmentForGroup(groupId, second.ciphertext, second.ivBase64, mine.senderKeyId, 'a2')),
         Buffer.from(original)
     );
 });
@@ -194,7 +194,7 @@ test('group attachment: unknown senderKeyId raises MissingSenderKeyError (self-h
     );
 
     await assert.rejects(
-        () => decryptAttachmentForGroup(1, new ArrayBuffer(8), 'AAAAAAAAAAAAAAAA', 'nonexistent-sender-key-id'),
+        () => decryptAttachmentForGroup(1, new ArrayBuffer(8), 'AAAAAAAAAAAAAAAA', 'nonexistent-sender-key-id', 'a1'),
         MissingSenderKeyError
     );
 });

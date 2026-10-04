@@ -75,6 +75,7 @@ import {
     drainGroupKdms,
     forgetGroupKeys,
     MissingSenderKeyError,
+    ReplayedMessageError,
 } from '../crypto/messages/group-message-crypto.js';
 
 // F7: the server answered 426 update_required (see core/api.js): this build is
@@ -214,7 +215,7 @@ async function decryptReplyPreview(groupId, replyTo) {
         return replyTo;
     }
     try {
-        const { plaintext } = await decryptIncomingGroupMessageDetailed(groupId, replyTo.content);
+        const { plaintext } = await decryptIncomingGroupMessageDetailed(groupId, replyTo.content, replyTo.id);
         return { ...replyTo, content: plaintext };
     } catch {
         return { ...replyTo, content: '🔒 Encrypted message' };
@@ -227,7 +228,7 @@ export async function decorateGroupMessages(groupId, rawMessages, { live = false
         try {
             // senderKeyId comes back from the SAME lookup that selected the
             // key which authenticated this envelope (not a second parse).
-            const { plaintext, senderKeyId } = await decryptIncomingGroupMessageDetailed(groupId, raw.content);
+            const { plaintext, senderKeyId } = await decryptIncomingGroupMessageDetailed(groupId, raw.content, raw.id);
             out.push({
                 ...raw,
                 content: plaintext,
@@ -265,6 +266,12 @@ async function drainAndRetry(groupId) {
 }
 
 function onGroupDecorateError(error, rawMsg) {
+    if (error instanceof ReplayedMessageError) {
+        // F4: a stored ciphertext re-posted under a new message id. Drop it.
+        console.warn(`[group] dropped replayed message ${rawMsg?.id}`);
+        return null;
+    }
+
     if (!(error instanceof MissingSenderKeyError)) return null;
 
     // Self-heal (plan_prompt.md's acceptance checklist: "losing one

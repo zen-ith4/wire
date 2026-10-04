@@ -120,7 +120,7 @@ test('encrypt/decrypt round trip: recipient decrypts what the sender sent', asyn
     );
 
     const plaintext = await bobDevice.run(() =>
-        decryptGroupMessage(bob, GROUP_ID, envelope)
+        decryptGroupMessage(bob, GROUP_ID, envelope, 't')
     );
 
     assert.equal(plaintext, 'hello group');
@@ -144,7 +144,7 @@ test('wrong Sender Key / tampered ciphertext fails authentication, does not thro
     );
 
     await assert.rejects(
-        () => malloryDevice.run(() => decryptGroupMessage(mallory, GROUP_ID, envelope)),
+        () => malloryDevice.run(() => decryptGroupMessage(mallory, GROUP_ID, envelope, 't')),
         MissingSenderKeyError,
         'Mallory never got a KDM for this senderKeyId at all'
     );
@@ -155,7 +155,7 @@ test('wrong Sender Key / tampered ciphertext fails authentication, does not thro
     tampered.ciphertext = tampered.ciphertext.slice(0, -4) + 'AAAA';
 
     await assert.rejects(
-        () => bobDevice.run(() => decryptGroupMessage(bob, GROUP_ID, JSON.stringify(tampered))),
+        () => bobDevice.run(() => decryptGroupMessage(bob, GROUP_ID, JSON.stringify(tampered), 't')),
         /authentication failed/
     );
 });
@@ -210,7 +210,7 @@ test('self-KDM: a second device of the same user decrypts messages that OTHER de
     // about this Sender Key came from consuming that one KDM row
     // above, into its own separate storage.
     const plaintext = await deviceB.run(() =>
-        decryptGroupMessage(alice, GROUP_ID, envelope)
+        decryptGroupMessage(alice, GROUP_ID, envelope, 't')
     );
 
     assert.equal(plaintext, 'from my laptop');
@@ -230,7 +230,7 @@ test('removed member cannot decrypt messages sent after rotation; remaining memb
     );
 
     assert.equal(
-        await carolDevice.run(() => decryptGroupMessage(carol, GROUP_ID, beforeRemoval)),
+        await carolDevice.run(() => decryptGroupMessage(carol, GROUP_ID, beforeRemoval, 't')),
         'while carol was still here'
     );
 
@@ -246,12 +246,12 @@ test('removed member cannot decrypt messages sent after rotation; remaining memb
     );
 
     assert.equal(
-        await bobDevice.run(() => decryptGroupMessage(bob, GROUP_ID, afterRemoval)),
+        await bobDevice.run(() => decryptGroupMessage(bob, GROUP_ID, afterRemoval, 't')),
         'carol should not see this'
     );
 
     await assert.rejects(
-        () => carolDevice.run(() => decryptGroupMessage(carol, GROUP_ID, afterRemoval)),
+        () => carolDevice.run(() => decryptGroupMessage(carol, GROUP_ID, afterRemoval, 't')),
         MissingSenderKeyError,
         'Carol never received a KDM for epoch 1, so she has no way to decrypt it'
     );
@@ -270,7 +270,7 @@ test('a newly added member gets no history: cannot decrypt pre-join messages, ca
     );
 
     await assert.rejects(
-        () => daveDevice.run(() => decryptGroupMessage(dave, GROUP_ID, beforeDaveJoined)),
+        () => daveDevice.run(() => decryptGroupMessage(dave, GROUP_ID, beforeDaveJoined, 't')),
         MissingSenderKeyError
     );
 
@@ -301,12 +301,12 @@ test('a newly added member gets no history: cannot decrypt pre-join messages, ca
     );
 
     assert.equal(
-        await daveDevice.run(() => decryptGroupMessage(dave, GROUP_ID, afterDaveJoined)),
+        await daveDevice.run(() => decryptGroupMessage(dave, GROUP_ID, afterDaveJoined, 't')),
         'new message, dave should see this'
     );
 
     assert.equal(
-        await bobDevice.run(() => decryptGroupMessage(bob, GROUP_ID, afterDaveJoined)),
+        await bobDevice.run(() => decryptGroupMessage(bob, GROUP_ID, afterDaveJoined, 't')),
         'new message, dave should see this'
     );
 });
@@ -383,6 +383,6 @@ test('encrypted message envelope never contains the plaintext as a substring (sa
 
     assert.ok(!envelope.includes(secret), 'plaintext must not leak into the stored envelope');
 
-    const plaintext = await bobDevice.run(() => decryptGroupMessage(bob, GROUP_ID, envelope));
+    const plaintext = await bobDevice.run(() => decryptGroupMessage(bob, GROUP_ID, envelope, 't'));
     assert.equal(plaintext, secret);
 });

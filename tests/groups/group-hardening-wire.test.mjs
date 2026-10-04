@@ -86,7 +86,7 @@ async function setup({ epoch = 0, groupId = GROUP_ID } = {}) {
 const send = (s, text = 'hello', groupId = s.groupId) =>
     s.aliceDev.run(() => mc.encryptGroupMessage(s.alice, groupId, text));
 const open = (s, envelope, groupId = s.groupId) =>
-    s.bobDev.run(() => mc.decryptGroupMessage(s.bob, groupId, envelope));
+    s.bobDev.run(() => mc.decryptGroupMessage(s.bob, groupId, envelope, 't'));
 
 // ---------------------------------------------------------------- F2
 

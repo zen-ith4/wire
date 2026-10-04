@@ -19,13 +19,14 @@ import {
     decryptGroupMessage,
     decryptGroupMessageDetailed,
     MissingSenderKeyError,
+    ReplayedMessageError,
 } from '../groups/message-crypto.js';
 import { rotateSenderKey } from '../groups/rotation.js';
 import { receiveKdm } from '../groups/kdm.js';
 import { getMySenderKey } from '../groups/sender-key.js';
 import { deleteAllSenderKeysForGroup, getOrCreateDeviceId } from '../groups/sender-key-store.js';
 
-export { MissingSenderKeyError };
+export { MissingSenderKeyError, ReplayedMessageError };
 
 export function getGroupIdentity() {
     const identity = getCurrentIdentity();
@@ -45,13 +46,13 @@ export async function encryptOutgoingGroupMessage(groupId, plaintext) {
     return encryptGroupMessage(getGroupIdentity(), groupId, plaintext);
 }
 
-export async function decryptIncomingGroupMessage(groupId, envelopeJson) {
-    return decryptGroupMessage(getGroupIdentity(), groupId, envelopeJson);
+export async function decryptIncomingGroupMessage(groupId, envelopeJson, messageId) {
+    return decryptGroupMessage(getGroupIdentity(), groupId, envelopeJson, messageId);
 }
 
 /** {plaintext, senderKeyId} where senderKeyId is the id of the key that actually decrypted it. */
-export async function decryptIncomingGroupMessageDetailed(groupId, envelopeJson) {
-    return decryptGroupMessageDetailed(getGroupIdentity(), groupId, envelopeJson);
+export async function decryptIncomingGroupMessageDetailed(groupId, envelopeJson, messageId) {
+    return decryptGroupMessageDetailed(getGroupIdentity(), groupId, envelopeJson, messageId);
 }
 
 /**

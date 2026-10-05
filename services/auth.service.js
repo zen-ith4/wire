@@ -7,6 +7,12 @@ const {
 
 const { signToken } = require('../utils/jwt');
 
+const {
+  isValidAuthKey,
+  isValidKdfSalt,
+  isValidIterations
+} = require('../utils/credentials');
+
 // ======================================================
 // TIMING SIDE-CHANNEL MITIGATION
 //
@@ -63,6 +69,7 @@ const {
 } = require('./email.service');
 
 
+// F12: `password` here is the client-derived authKey, never the real password.
 async function authenticateUser(username, password) {
   const db = getDb();
 
@@ -192,7 +199,9 @@ async function authenticateUser(username, password) {
 }
 
 
-async function registerUser(username, email, password) {
+// F12: `password` is the client-derived authKey; kdfSalt/kdfIterations are the
+// parameters the browser used to derive it (needed again at every login).
+async function registerUser(username, email, password, kdfSalt, kdfIterations) {
   const db = getDb();
 
   username = String(username || '')
@@ -226,12 +235,16 @@ async function registerUser(username, email, password) {
     throw error;
   }
 
-  if (!password || password.length < 6) {
+  if (
+    !isValidAuthKey(password) ||
+    !isValidKdfSalt(kdfSalt) ||
+    !isValidIterations(kdfIterations)
+  ) {
     const error = new Error(
-      'Password must be at least 6 characters'
+      'Invalid credentials payload'
     );
 
-    error.code = 'INVALID_PASSWORD';
+    error.code = 'INVALID_CREDENTIALS';
 
     throw error;
   }
@@ -294,13 +307,17 @@ async function registerUser(username, email, password) {
         username,
         email,
         password_hash,
+        kdf_salt,
+        kdf_iterations,
         email_verified
       )
-      VALUES (?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?)
     `).run(
       username,
       email,
       passwordHash,
+      kdfSalt,
+      kdfIterations,
       initialEmailVerified
     );
 

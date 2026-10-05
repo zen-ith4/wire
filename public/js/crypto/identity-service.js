@@ -2,6 +2,8 @@ import {
     createEncryptedIdentity,
     restoreIdentityFromServer,
     decryptIdentityPrivateKey,
+    decryptIdentityPkcs8,
+    encryptIdentityPkcs8,
     encryptIdentityPrivateKey,
     deriveIdentityUnlockKey,
     decryptIdentityPrivateKeyWithDerivedKey
@@ -10,6 +12,18 @@ import {
 import {
     resolveServerUrl
 } from "../core/server.js";
+
+import {
+    fetchOwnKdfParams
+} from "./account-kdf.js";
+
+import {
+    deriveCredentials,
+    generateKdfSalt,
+    KDF_ITERATIONS,
+    KDF_NAME,
+    IDENTITY_VERSION
+} from "./credentials.js";
 
 const IDENTITY_ENDPOINT =
     "/api/me/identity-key";
@@ -324,9 +338,18 @@ export async function createIdentity(
         "[IdentityService] Generating encrypted identity..."
     );
 
+    // The identity is wrapped under THIS account's KDF parameters (the server
+    // refuses anything else), so any device can re-derive the wrapKey from the
+    // password alone (F12).
+    const kdf =
+        await fetchOwnKdfParams(
+            token
+        );
+
     const identity =
         await createEncryptedIdentity(
-            password
+            password,
+            kdf
         );
 
     console.log(
@@ -502,7 +525,7 @@ export async function restoreIdentityWithUnlockKey(
     }
 
     if (
-        identity.version !== 1
+        identity.version !== IDENTITY_VERSION
     ) {
         throw new Error(
             "Unsupported identity version"
@@ -510,7 +533,7 @@ export async function restoreIdentityWithUnlockKey(
     }
 
     if (
-        identity.kdf !== "PBKDF2-SHA-256"
+        identity.kdf !== KDF_NAME
     ) {
         throw new Error(
             "Unsupported identity KDF"
@@ -546,19 +569,22 @@ export async function restoreIdentityWithUnlockKey(
 }
 
 /* =========================================================
- * Re-encrypt identity
+ * Change password (client side of PUT /api/me/password)
  * ========================================================= */
 
 /*
- * Re-encrypt the existing identity private key
- * with a new account password.
+ * F12: prepares EVERYTHING the server needs to change the password without it
+ * ever seeing a password:
  *
- * Does NOT generate a new X25519 key pair.
- * Does NOT upload anything.
- * Public key remains unchanged.
+ *   - current_auth_key: derived from the current password (proves knowledge),
+ *   - a fresh salt, and new_auth_key / wrapKey derived from the new password,
+ *   - the existing identity private key, decrypted with the OLD wrapKey and
+ *     re-encrypted with the NEW wrapKey.
+ *
+ * Does NOT generate a new X25519 key pair. Does NOT upload anything.
+ * The public key remains unchanged.
  */
-
-export async function reencryptIdentity(
+export async function prepareCredentialChange(
     currentPassword,
     newPassword,
     token
@@ -583,35 +609,62 @@ export async function reencryptIdentity(
         );
     }
 
+    const oldKdf =
+        await fetchOwnKdfParams(
+            token
+        );
+
+    const old =
+        await deriveCredentials(
+            currentPassword,
+            oldKdf.salt,
+            oldKdf.iterations
+        );
+
+    old.wrapKeyBytes.fill(0);
+
+    const newSalt =
+        generateKdfSalt();
+
+    const next =
+        await deriveCredentials(
+            newPassword,
+            newSalt,
+            KDF_ITERATIONS
+        );
+
+    next.wrapKeyBytes.fill(0);
+
+    const result = {
+        current_auth_key:
+            old.authKey,
+
+        new_auth_key:
+            next.authKey,
+
+        new_kdf_salt:
+            newSalt,
+
+        new_kdf_iterations:
+            KDF_ITERATIONS,
+
+        identity:
+            null
+    };
+
     const identity =
         await fetchIdentity(token);
 
     if (!identity.exists) {
-        return null;
-    }
-
-    if (
-        identity.version !== 1
-    ) {
-        throw new Error(
-            "Unsupported identity version"
-        );
-    }
-
-    if (
-        identity.kdf !== "PBKDF2-SHA-256"
-    ) {
-        throw new Error(
-            "Unsupported identity KDF"
-        );
+        return result;
     }
 
     console.log(
         "[IdentityService] Decrypting existing identity..."
     );
 
-    const privateKey =
-        await decryptIdentityPrivateKey(
+    const pkcs8 =
+        await decryptIdentityPkcs8(
             identity.encryptedPrivateKey,
             currentPassword,
             identity.salt,
@@ -623,31 +676,38 @@ export async function reencryptIdentity(
         "[IdentityService] Re-encrypting identity with new password..."
     );
 
-    const encrypted =
-        await encryptIdentityPrivateKey(
-            privateKey,
-            newPassword
-        );
+    let encrypted;
 
-    return {
+    try {
+        encrypted =
+            await encryptIdentityPkcs8(
+                pkcs8,
+                newPassword,
+                {
+                    salt: newSalt,
+                    iterations: KDF_ITERATIONS
+                }
+            );
+    } finally {
+        new Uint8Array(pkcs8).fill(0);
+    }
+
+    result.identity = {
         encryptedPrivateKey:
             encrypted.encryptedPrivateKey,
-
         kdf:
             encrypted.kdf,
-
         kdfParams:
             encrypted.kdfParams,
-
         salt:
             encrypted.salt,
-
         iv:
             encrypted.iv,
-
         version:
             encrypted.version
     };
+
+    return result;
 }
 
 /* =========================================================

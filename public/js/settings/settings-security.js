@@ -5,8 +5,12 @@ import {
 } from '../core/utils.js';
 
 import {
-  reencryptIdentity
+  prepareCredentialChange
 } from '../crypto/identity-service.js';
+
+import {
+  deriveOwnAuthKey
+} from '../crypto/account-kdf.js';
 
 import {
   renderSettings
@@ -99,11 +103,11 @@ async function changePassword() {
 
   try {
     /*
-     * The encrypted identity must be re-encrypted with the new
-     * password before the backend accepts the password change.
+     * F12: the browser derives everything (authKeys, a fresh salt, the
+     * re-encrypted identity). The server never receives a password.
      */
-    const encryptedIdentity =
-      await reencryptIdentity(
+    const change =
+      await prepareCredentialChange(
         currentPassword,
         newPassword,
         localStorage.getItem('token')
@@ -121,16 +125,7 @@ async function changePassword() {
             'application/json'
         },
 
-        body: JSON.stringify({
-          current_password:
-            currentPassword,
-
-          new_password:
-            newPassword,
-
-          identity:
-            encryptedIdentity
-        })
+        body: JSON.stringify(change)
       }
     );
 
@@ -372,8 +367,11 @@ function createEmail2FAController() {
               },
 
               body: JSON.stringify({
-                current_password:
-                  password
+                current_auth_key:
+                  await deriveOwnAuthKey(
+                    password,
+                    localStorage.getItem('token')
+                  )
               })
             }
           );
@@ -544,8 +542,11 @@ function createEmail2FAController() {
             },
 
             body: JSON.stringify({
-              current_password:
-                password
+              current_auth_key:
+                await deriveOwnAuthKey(
+                  password,
+                  localStorage.getItem('token')
+                )
             })
           }
         );

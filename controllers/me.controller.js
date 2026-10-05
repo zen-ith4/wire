@@ -11,7 +11,6 @@ const {
   updateAccentColor: updateUserAccentColor,
   updateAvatar: updateUserAvatar,
   updateBanner: updateUserBanner,
-  updatePassword: updateUserPassword,
   changePasswordWithIdentity,
   getStorageUsage,
   isShowLastSeenEnabled,
@@ -19,6 +18,13 @@ const {
 const { isOnline } = require('../services/presence.service');
 
 const { comparePassword } = require('../utils/password');
+const {
+  isValidAuthKey,
+  isValidKdfSalt,
+  isValidIterations,
+  IDENTITY_KDF_NAME,
+  IDENTITY_VERSION
+} = require('../utils/credentials');
 const { AVATAR_MIME_MAP } = require('../config/multer');
 const {
   emitProfileAvatarUpdate,
@@ -101,201 +107,179 @@ function updateBio(req, res) {
 
 
 // PUT /me/password
+//
+// F12: no raw password ever reaches the server. The browser derives, from the
+// old and the new password, two authKeys (and wrapKeys); it decrypts the identity
+// with the old wrapKey, re-encrypts it with the new wrapKey under a FRESH salt,
+// and sends:
+//   current_auth_key   proves knowledge of the old password
+//   new_auth_key       becomes the new bcrypt'd credential
+//   new_kdf_salt/new_kdf_iterations   parameters of the new derivation
+//   identity           the identity private key re-encrypted client-side
 async function changePassword(req, res) {
+  const body = req.body || {};
+
+  if (
+    'current_password' in body ||
+    'new_password' in body ||
+    'password' in body
+  ) {
+    return res.status(400).json({
+      error: 'Raw passwords are not accepted. Update the app.',
+      code: 'raw_password_rejected'
+    });
+  }
+
   const {
-    current_password,
-    new_password,
+    current_auth_key,
+    new_auth_key,
+    new_kdf_salt,
+    new_kdf_iterations,
     identity
-  } = req.body || {};
-
-
-  if (
-    !current_password ||
-    !new_password
-  ) {
-    return res.status(400).json({
-      error:
-        'Current and new password required'
-    });
-  }
-
+  } = body;
 
   if (
-    typeof current_password !== 'string' ||
-    typeof new_password !== 'string'
+    !isValidAuthKey(current_auth_key) ||
+    !isValidAuthKey(new_auth_key) ||
+    !isValidKdfSalt(new_kdf_salt) ||
+    !isValidIterations(new_kdf_iterations)
   ) {
     return res.status(400).json({
-      error:
-        'Invalid password data'
+      error: 'Invalid credentials payload'
     });
   }
 
-
-  if (new_password.length < 6) {
-    return res.status(400).json({
-      error:
-        'New password must be at least 6 characters'
-    });
-  }
-
-
-  const user =
-    findUserWithPassword(
-      req.user.id
-    );
-
+  const user = findUserWithPassword(req.user.id);
 
   if (!user) {
     return res.status(404).json({
-      error:
-        'User not found'
+      error: 'User not found'
     });
   }
-
 
   const valid =
     await comparePassword(
-      current_password,
+      current_auth_key,
       user.password_hash
     );
 
-
   if (!valid) {
     return res.status(401).json({
-      error:
-        'Current password is incorrect'
+      error: 'Current password is incorrect'
     });
   }
 
-
   /*
-   * If the user has an E2EE identity,
-   * the browser must provide its NEW
-   * encrypted-at-rest representation.
-   *
-   * The server does not decrypt it.
+   * If the user has an E2EE identity, the browser must provide its NEW
+   * encrypted-at-rest representation. The server does not decrypt it, and it
+   * only accepts it if it was wrapped under the new salt it is also storing.
    */
   let validatedIdentity = null;
 
-
   if (identity != null) {
+    const check = validateIdentityPayload(identity, new_kdf_salt, new_kdf_iterations);
 
-    if (
-      typeof identity !== 'object' ||
-      Array.isArray(identity)
-    ) {
+    if (!check.ok) {
       return res.status(400).json({
-        error:
-          'Invalid identity data'
+        error: check.error
       });
     }
-
-
-    const {
-      encryptedPrivateKey,
-      kdf,
-      kdfParams,
-      salt,
-      iv,
-      version
-    } = identity;
-
-
-    if (
-      typeof encryptedPrivateKey !== 'string' ||
-      !encryptedPrivateKey.trim() ||
-
-      kdf !== 'PBKDF2-SHA-256' ||
-
-      !kdfParams ||
-      typeof kdfParams !== 'object' ||
-      Array.isArray(kdfParams) ||
-
-      !Number.isInteger(
-        kdfParams.iterations
-      ) ||
-
-      kdfParams.iterations < 100000 ||
-
-      kdfParams.hash !== 'SHA-256' ||
-
-      typeof salt !== 'string' ||
-      !salt.trim() ||
-
-      typeof iv !== 'string' ||
-      !iv.trim() ||
-
-      version !== 1
-    ) {
-      return res.status(400).json({
-        error:
-          'Invalid encrypted identity data'
-      });
-    }
-
-
-    /*
-     * Make sure an identity actually exists.
-     *
-     * Most importantly, we DO NOT accept a
-     * public key from the client here.
-     *
-     * The existing public key remains untouched.
-     */
-    const db =
-      getDb();
 
     const existingIdentity =
-      db.prepare(`
-        SELECT
-          id
-        FROM identity_keys
-        WHERE user_id = ?
-      `).get(
-        req.user.id
-      );
-
+      getDb().prepare(`
+        SELECT id FROM identity_keys WHERE user_id = ?
+      `).get(req.user.id);
 
     if (!existingIdentity) {
       return res.status(400).json({
-        error:
-          'Identity key does not exist'
+        error: 'Identity key does not exist'
       });
     }
 
-
-    validatedIdentity = {
-      encryptedPrivateKey:
-        encryptedPrivateKey.trim(),
-
-      kdf,
-
-      kdfParams,
-
-      salt:
-        salt.trim(),
-
-      iv:
-        iv.trim(),
-
-      version
-    };
+    validatedIdentity = check.value;
   }
 
-
-  /*
-   * Password hash + identity encryption
-   * are committed together.
-   */
   await changePasswordWithIdentity(
     req.user.id,
-    new_password,
-    validatedIdentity
+    new_auth_key,
+    validatedIdentity,
+    new_kdf_salt,
+    new_kdf_iterations
   );
-
 
   return res.json({
     success: true
+  });
+}
+
+
+// Shared by PUT /me/identity-key and PUT /me/password. Only ONE format exists:
+// version 2, PBKDF2-SHA-256 (>= 600,000) + HKDF, wrapped under the account's salt.
+function validateIdentityPayload(identity, accountSalt, accountIterations) {
+  if (!identity || typeof identity !== 'object' || Array.isArray(identity)) {
+    return { ok: false, error: 'Invalid identity data' };
+  }
+
+  const {
+    encryptedPrivateKey,
+    kdf,
+    kdfParams,
+    salt,
+    iv,
+    version
+  } = identity;
+
+  if (
+    typeof encryptedPrivateKey !== 'string' ||
+    !encryptedPrivateKey.trim() ||
+    kdf !== IDENTITY_KDF_NAME ||
+    !kdfParams ||
+    typeof kdfParams !== 'object' ||
+    Array.isArray(kdfParams) ||
+    !isValidIterations(kdfParams.iterations) ||
+    kdfParams.hash !== 'SHA-256' ||
+    typeof iv !== 'string' ||
+    !iv.trim() ||
+    version !== IDENTITY_VERSION
+  ) {
+    return { ok: false, error: 'Invalid encrypted identity data' };
+  }
+
+  if (salt !== accountSalt || kdfParams.iterations !== accountIterations) {
+    return { ok: false, error: 'Identity must be wrapped with the account KDF parameters' };
+  }
+
+  return {
+    ok: true,
+    value: {
+      encryptedPrivateKey: encryptedPrivateKey.trim(),
+      kdf,
+      kdfParams: { iterations: kdfParams.iterations, hash: kdfParams.hash },
+      salt,
+      iv: iv.trim(),
+      version
+    }
+  };
+}
+
+
+// GET /me/kdf-params : the caller's own account salt (needed to derive the
+// wrapKey on a device that has no identity record yet, i.e. first login).
+function getOwnKdfParams(req, res) {
+  const row =
+    getDb().prepare(`
+      SELECT kdf_salt, kdf_iterations FROM users WHERE id = ?
+    `).get(req.user.id);
+
+  if (!row?.kdf_salt || !row?.kdf_iterations) {
+    return res.status(404).json({
+      error: 'No KDF parameters for this account'
+    });
+  }
+
+  return res.json({
+    salt: row.kdf_salt,
+    iterations: row.kdf_iterations
   });
 }
 
@@ -709,37 +693,11 @@ function getIdentityKey(req, res) {
 }
 
 function saveIdentityKey(req, res) {
-  const {
-    publicKey,
-    encryptedPrivateKey,
-    kdf,
-    kdfParams,
-    salt,
-    iv,
-    version = 1
-  } = req.body || {};
+  const { publicKey } = req.body || {};
 
-  if (
-    typeof publicKey !== 'string' ||
-    typeof encryptedPrivateKey !== 'string' ||
-    typeof kdf !== 'string' ||
-    !kdfParams ||
-    typeof kdfParams !== 'object' ||
-    Array.isArray(kdfParams) ||
-    typeof salt !== 'string' ||
-    typeof iv !== 'string'
-  ) {
+  if (typeof publicKey !== 'string') {
     return res.status(400).json({
       error: 'Invalid identity key data'
-    });
-  }
-
-  if (
-    !Number.isInteger(version) ||
-    version < 1
-  ) {
-    return res.status(400).json({
-      error: 'Invalid identity key version'
     });
   }
 
@@ -755,6 +713,34 @@ function saveIdentityKey(req, res) {
   }
 
   const db = getDb();
+
+  const account =
+    db.prepare(`
+      SELECT kdf_salt, kdf_iterations FROM users WHERE id = ?
+    `).get(req.user.id);
+
+  if (!account?.kdf_salt) {
+    return res.status(400).json({
+      error: 'Account has no KDF parameters'
+    });
+  }
+
+  // Only one format exists (version 2) and it must be wrapped under THIS
+  // account's salt/iterations, so the wrapKey is reproducible from the password
+  // alone on any device.
+  const check = validateIdentityPayload(
+    req.body,
+    account.kdf_salt,
+    account.kdf_iterations
+  );
+
+  if (!check.ok) {
+    return res.status(400).json({
+      error: check.error
+    });
+  }
+
+  const v = check.value;
 
   db.prepare(`
     INSERT INTO identity_keys (
@@ -780,12 +766,12 @@ function saveIdentityKey(req, res) {
   `).run(
     req.user.id,
     publicKey.trim(),
-    encryptedPrivateKey.trim(),
-    kdf.trim(),
-    JSON.stringify(kdfParams),
-    salt.trim(),
-    iv.trim(),
-    version
+    v.encryptedPrivateKey,
+    v.kdf,
+    JSON.stringify(v.kdfParams),
+    v.salt,
+    v.iv,
+    v.version
   );
 
   return res.json({
@@ -889,6 +875,7 @@ module.exports = {
   updateBio,
   updateAccentColor,
   changePassword,
+  getOwnKdfParams,
   uploadAvatar,
   removeAvatar,
   getAvatar,

@@ -28,6 +28,74 @@ const {
   isEmailEnabled
 } = require('../services/email.service');
 
+const {
+  fakeKdfSalt,
+  KDF_ITERATIONS
+} = require('../utils/credentials');
+
+
+/* =========================================================
+ * F12 helpers
+ * ========================================================= */
+
+// Any body that still carries a raw password field is refused outright, so a
+// stale or hostile client can never make the server see a password.
+function rejectRawPassword(req, res) {
+  const b = req.body || {};
+
+  if (
+    'password' in b ||
+    'current_password' in b ||
+    'new_password' in b
+  ) {
+    res.status(400).json({
+      error:
+        'Raw passwords are not accepted. Update the app.',
+      code: 'raw_password_rejected'
+    });
+
+    return true;
+  }
+
+  return false;
+}
+
+// GET /api/auth/kdf-params?username=...  (public, rate limited)
+// The browser needs the account salt BEFORE it can derive the authKey. Unknown
+// usernames get a deterministic fake salt so this cannot be used to enumerate
+// accounts.
+function getKdfParams(req, res) {
+  const username =
+    String(req.query?.username || '')
+      .trim()
+      .toLowerCase();
+
+  if (!username || username.length > 64) {
+    return res.status(400).json({
+      error: 'username required'
+    });
+  }
+
+  const row =
+    getDb().prepare(`
+      SELECT kdf_salt, kdf_iterations
+      FROM users
+      WHERE username = ?
+    `).get(username);
+
+  if (row?.kdf_salt && row?.kdf_iterations) {
+    return res.json({
+      salt: row.kdf_salt,
+      iterations: row.kdf_iterations
+    });
+  }
+
+  return res.json({
+    salt: fakeKdfSalt(username),
+    iterations: KDF_ITERATIONS
+  });
+}
+
 
 /* =========================================================
  * Login
@@ -37,13 +105,17 @@ async function login(req, res) {
   const username =
     req.body?.username?.trim();
 
+  // F12: the raw password is never accepted. `auth_key` is derived in the
+  // browser (PBKDF2 + HKDF) and is useless for decrypting anything.
+  if (rejectRawPassword(req, res)) return;
+
   const password =
-    req.body?.password;
+    req.body?.auth_key;
 
   if (!username || !password) {
     return res.status(400).json({
       error:
-        'Username and password required'
+        'Username and auth_key required'
     });
   }
 
@@ -84,13 +156,15 @@ async function register(req, res) {
   const email =
     req.body?.email?.trim();
 
+  if (rejectRawPassword(req, res)) return;
+
   const password =
-    req.body?.password;
+    req.body?.auth_key;
 
   if (!username || !email || !password) {
     return res.status(400).json({
       error:
-        'Username, email and password required'
+        'Username, email and auth_key required'
     });
   }
 
@@ -100,7 +174,9 @@ async function register(req, res) {
       await registerUser(
         username,
         email,
-        password
+        password,
+        req.body?.kdf_salt,
+        req.body?.kdf_iterations
       );
 
     return res.status(201).json(result);
@@ -151,14 +227,10 @@ async function register(req, res) {
       });
     }
 
-    if (
-      error.code === 'INVALID_PASSWORD' ||
-      error.message ===
-        'Password must be at least 6 characters'
-    ) {
+    if (error.code === 'INVALID_CREDENTIALS') {
       return res.status(400).json({
         error:
-          'Password must be at least 6 characters'
+          'Invalid credentials payload'
       });
     }
 
@@ -532,6 +604,7 @@ async function verifyTwoFactor(req, res) {
 
 
 module.exports = {
+  getKdfParams,
   login,
   register,
   verifyEmail,

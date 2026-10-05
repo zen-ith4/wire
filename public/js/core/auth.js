@@ -1,6 +1,16 @@
 import { api } from './api.js';
 
 import {
+  deriveCredentials,
+  generateKdfSalt,
+  KDF_ITERATIONS
+} from '../crypto/credentials.js';
+
+import {
+  fetchPublicKdfParams
+} from '../crypto/account-kdf.js';
+
+import {
   getServerEndpoint,
   setServerEndpoint,
   isNativeApp
@@ -508,6 +518,22 @@ export async function login(
   username,
   password
 ) {
+  // F12: derive in the browser; only the authKey is sent. The salt is public
+  // (unknown usernames get a deterministic fake one, so this reveals nothing).
+  const kdf =
+    await fetchPublicKdfParams(
+      username
+    );
+
+  const { authKey, wrapKeyBytes } =
+    await deriveCredentials(
+      password,
+      kdf.salt,
+      kdf.iterations
+    );
+
+  wrapKeyBytes.fill(0);
+
   const data =
     await api(
       '/api/auth/login',
@@ -520,7 +546,7 @@ export async function login(
 
         body: JSON.stringify({
           username,
-          password
+          auth_key: authKey
         })
       }
     );
@@ -654,6 +680,20 @@ export async function register(
   email,
   password
 ) {
+  // F12: a fresh salt is generated here and the KDF runs in the browser; the
+  // server receives the authKey and the salt, never the password.
+  const kdfSalt =
+    generateKdfSalt();
+
+  const { authKey, wrapKeyBytes } =
+    await deriveCredentials(
+      password,
+      kdfSalt,
+      KDF_ITERATIONS
+    );
+
+  wrapKeyBytes.fill(0);
+
   const data =
     await api(
       '/api/auth/register',
@@ -667,7 +707,9 @@ export async function register(
         body: JSON.stringify({
           username,
           email,
-          password
+          auth_key: authKey,
+          kdf_salt: kdfSalt,
+          kdf_iterations: KDF_ITERATIONS
         })
       }
     );
@@ -1389,6 +1431,13 @@ function renderAuthCard(
             autocomplete="new-password"
             required
           >
+
+          <p class="auth-recovery-notice" id="auth-recovery-notice">
+            Your password also protects your encryption keys, and the
+            server never sees it. There is no password recovery: if you
+            forget it, your encrypted messages cannot be recovered, and a
+            reset would create a new, empty identity.
+          </p>
         `
         : ''
     }

@@ -21,6 +21,7 @@ const {
   updateBio,
   updateAccentColor,
   changePassword,
+  getOwnKdfParams,
   uploadAvatar,
   removeAvatar,
   getAvatar,
@@ -42,6 +43,12 @@ router.put(
   '/accent-color',
   authenticate,
   updateAccentColor
+);
+
+router.get(
+  '/kdf-params',
+  authenticate,
+  getOwnKdfParams
 );
 
 router.put(

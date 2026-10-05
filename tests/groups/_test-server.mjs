@@ -34,6 +34,8 @@ export async function startTestServer() {
     app.use('/api/auth', require('../../routes/auth.routes'));
     app.use('/api/me', require('../../routes/me.routes'));
     app.use('/api/groups', require('../../routes/groups.routes'));
+    app.use('/api/settings', require('../../routes/settings.routes'));
+    app.use('/api/admin', require('../../routes/admin.routes'));
 
     app.use((req, res) => res.status(404).json({ error: 'Not found' }));
     app.use(errorHandler);

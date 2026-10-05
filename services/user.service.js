@@ -5,8 +5,13 @@ const { getDb } = require('../config/database');
 const { hashPassword } = require('../utils/password');
 const {
   isValidUsername,
-  isValidPassword,
-} = require('../utils/validator');
+  } = require('../utils/validator');
+
+const {
+  isValidAuthKey,
+  isValidKdfSalt,
+  isValidIterations
+} = require('./../utils/credentials');
 const { isEmailEnabled } = require('./email.service');
 const constants = require('../config/constants');
 
@@ -67,29 +72,6 @@ function findUserWithPassword(id) {
 
 // ساخت ادمین
 // فقط از admin controller استفاده شود
-async function createAdmin(username, password) {
-
-  username = normalizeUsername(username);
-
-  const hash = await hashPassword(password);
-
-  return getDb()
-    .prepare(`
-      INSERT INTO users
-      (
-        username,
-        password_hash,
-        is_admin
-      )
-      VALUES (?, ?, 1)
-    `)
-    .run(
-      username,
-      hash
-    );
-}
-
-
 // Errors thrown by createUser() carry the same `code`s that
 // registerUser() (auth.service.js) uses, so callers can map them to
 // HTTP statuses the same way auth.controller.js does.
@@ -163,7 +145,7 @@ function findDuplicateUserError(db, username, email) {
 // no verification email — the account belongs to someone else.
 //
 // Resolves to the created user's safe fields (never password_hash).
-async function createUser(username, email, password, isAdmin) {
+async function createUser(username, email, password, isAdmin, kdfSalt, kdfIterations) {
 
   const db = getDb();
 
@@ -211,24 +193,16 @@ async function createUser(username, email, password, isAdmin) {
     );
   }
 
-  // The password is kept exactly as entered (never trimmed).
-  requireString(
-    password,
-    'Password',
-    'INVALID_PASSWORD'
-  );
-
-  if (!password) {
+  // F12: `password` is the client-derived authKey (the admin's browser runs the
+  // KDF); the server never sees the account's real password.
+  if (
+    !isValidAuthKey(password) ||
+    !isValidKdfSalt(kdfSalt) ||
+    !isValidIterations(kdfIterations)
+  ) {
     throw createUserError(
       'INVALID_PASSWORD',
-      'Password is required'
-    );
-  }
-
-  if (!isValidPassword(password)) {
-    throw createUserError(
-      'INVALID_PASSWORD',
-      'Password must be between 6 and 128 characters'
+      'Invalid credentials payload'
     );
   }
 
@@ -274,14 +248,18 @@ async function createUser(username, email, password, isAdmin) {
         username,
         email,
         password_hash,
+        kdf_salt,
+        kdf_iterations,
         email_verified,
         is_admin
       )
-      VALUES (?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(
       username,
       email,
       passwordHash,
+      kdfSalt,
+      kdfIterations,
       emailVerified,
       isAdmin ? 1 : 0
     );
@@ -576,23 +554,6 @@ function getStorageUsage(userId) {
 }
 
 
-async function updatePassword(userId, newPassword) {
-
-  const hash = await hashPassword(newPassword);
-
-  return getDb()
-    .prepare(`
-      UPDATE users
-      SET password_hash = ?
-      WHERE id = ?
-    `)
-    .run(
-      hash,
-      userId
-    );
-}
-
-
 /*
  * Change the account password and re-encrypt the
  * existing E2EE identity atomically.
@@ -620,7 +581,9 @@ async function updatePassword(userId, newPassword) {
 async function changePasswordWithIdentity(
   userId,
   newPassword,
-  identity
+  identity,
+  newKdfSalt,
+  newKdfIterations
 ) {
 
   const db = getDb();
@@ -640,10 +603,14 @@ async function changePasswordWithIdentity(
       const passwordResult =
         db.prepare(`
           UPDATE users
-          SET password_hash = ?
+          SET password_hash = ?,
+              kdf_salt = ?,
+              kdf_iterations = ?
           WHERE id = ?
         `).run(
           hash,
+          newKdfSalt,
+          newKdfIterations,
           userId
         );
 
@@ -892,7 +859,6 @@ module.exports = {
   findUserById,
   findUserWithPassword,
 
-  createAdmin,
   createUser,
 
   setUserAdmin,
@@ -909,7 +875,6 @@ module.exports = {
 
   updateAvatar,
   updateBanner,
-  updatePassword,
   changePasswordWithIdentity,
 
   getStorageUsage,

@@ -4,6 +4,8 @@ const VALID_COLUMNS = {
     email_verified: "email_verified INTEGER NOT NULL DEFAULT 0",
     email_2fa_enabled: "email_2fa_enabled INTEGER NOT NULL DEFAULT 0",
     is_active: "is_active INTEGER NOT NULL DEFAULT 1",
+    kdf_salt: "kdf_salt TEXT",
+    kdf_iterations: "kdf_iterations INTEGER",
 
     bio: "bio TEXT",
     avatar_path: "avatar_path TEXT",

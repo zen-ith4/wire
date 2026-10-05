@@ -6,13 +6,16 @@ const PRIVATE_KEY_ALGORITHM = {
     name: "X25519",
 };
 
-const KDF_NAME = "PBKDF2-SHA-256";
+import {
+    deriveCredentials,
+    KDF_ITERATIONS,
+    KDF_NAME,
+    IDENTITY_VERSION
+} from "./credentials.js";
+
 const KDF_HASH = "SHA-256";
-const KDF_ITERATIONS = 600000;
 const AES_KEY_LENGTH = 256;
 const AES_IV_LENGTH = 12;
-const SALT_LENGTH = 16;
-const IDENTITY_VERSION = 1;
 
 
 function ensureWebCrypto() {
@@ -145,65 +148,13 @@ export async function importPrivateKey(pkcs8) {
 
 
 /*
- * Runs the PBKDF2 step and returns the raw derived bits.
- *
- * This is the one piece of the KDF pipeline that needs to be
- * reachable on its own: `deriveIdentityUnlockKey` (below) exposes
- * these same raw bytes so the Electron shell can cache them for
- * auto-unlock. `deriveEncryptionKey` (also below) wraps this and
- * immediately imports the result as a non-extractable AES-GCM key
- * for normal encrypt/decrypt use - identical to what `deriveKey`
- * produced directly before this change. No parameter, iteration
- * count, hash, or output length differs from before.
+ * Key schedule of the identity wrap (F12): see credentials.js. The password is
+ * stretched with PBKDF2 and split by HKDF into authKey (sent to the server as a
+ * login credential) and wrapKey (this file's AES-GCM key, never sent anywhere).
+ * `deriveIdentityUnlockKey` (below) exposes the raw wrapKey bytes so the
+ * Electron shell can cache them for auto-unlock; `deriveWrapKey` imports the
+ * same bytes as a non-extractable AES-GCM key for normal use.
  */
-async function derivePasswordKeyMaterial(
-    password,
-    salt,
-    iterations
-) {
-    ensureWebCrypto();
-    validatePassword(password);
-
-    if (!(salt instanceof Uint8Array)) {
-        throw new Error("Invalid salt");
-    }
-
-    if (
-        !Number.isInteger(iterations) ||
-        iterations < 100000
-    ) {
-        throw new Error(
-            "Invalid PBKDF2 iterations"
-        );
-    }
-
-    const encoder =
-        new TextEncoder();
-
-    const passwordKey =
-        await crypto.subtle.importKey(
-            "raw",
-            encoder.encode(password),
-            {
-                name: "PBKDF2"
-            },
-            false,
-            ["deriveBits"]
-        );
-
-    return crypto.subtle.deriveBits(
-        {
-            name: "PBKDF2",
-            salt,
-            iterations,
-            hash: KDF_HASH
-        },
-        passwordKey,
-        AES_KEY_LENGTH
-    );
-}
-
-
 async function importAesGcmKey(
     rawKeyBits,
     extractable
@@ -226,33 +177,33 @@ async function importAesGcmKey(
 }
 
 
-async function deriveEncryptionKey(
-    password,
-    salt,
-    iterations = KDF_ITERATIONS
-) {
-    const rawKeyBits =
-        await derivePasswordKeyMaterial(
-            password,
-            salt,
-            iterations
-        );
+/*
+ * F12: the identity private key is encrypted with the wrapKey that the
+ * password derives (credentials.js), NOT with a key the server could ever
+ * reconstruct from anything it receives. The salt/iterations are the ACCOUNT's
+ * (the server enforces that they match users.kdf_salt), so any device can
+ * re-derive the same wrapKey from the password alone.
+ */
+async function deriveWrapKey(password, saltB64, iterations) {
+    validatePassword(password);
 
-    // Same result as the old direct deriveKey() call: a
-    // non-extractable AES-GCM key, usable only for encrypt/decrypt.
-    return importAesGcmKey(
-        rawKeyBits,
-        false
-    );
+    const { wrapKeyBytes } =
+        await deriveCredentials(password, saltB64, iterations);
+
+    try {
+        return await importAesGcmKey(wrapKeyBytes, false);
+    } finally {
+        wrapKeyBytes.fill(0);
+    }
 }
 
 
 export async function encryptIdentityPrivateKey(
     privateKey,
-    password
+    password,
+    kdf
 ) {
     ensureWebCrypto();
-    validatePassword(password);
 
     if (!privateKey) {
         throw new Error(
@@ -266,10 +217,40 @@ export async function encryptIdentityPrivateKey(
             privateKey
         );
 
-    const salt =
-        crypto.getRandomValues(
-            new Uint8Array(SALT_LENGTH)
+    try {
+        return await encryptIdentityPkcs8(
+            privateKeyBytes,
+            password,
+            kdf
         );
+    } finally {
+        new Uint8Array(privateKeyBytes).fill(0);
+    }
+}
+
+
+/*
+ * Same, for an already-exported PKCS#8 buffer. Used by the password-change
+ * path, which re-wraps the identity WITHOUT importing it as a CryptoKey (the
+ * restored identity key is non-extractable on purpose).
+ */
+export async function encryptIdentityPkcs8(
+    privateKeyBytes,
+    password,
+    kdf
+) {
+    ensureWebCrypto();
+    validatePassword(password);
+
+    if (
+        !kdf ||
+        typeof kdf.salt !== "string" ||
+        !Number.isInteger(kdf.iterations)
+    ) {
+        throw new Error(
+            "Account KDF parameters are required"
+        );
+    }
 
     const iv =
         crypto.getRandomValues(
@@ -277,10 +258,10 @@ export async function encryptIdentityPrivateKey(
         );
 
     const encryptionKey =
-        await deriveEncryptionKey(
+        await deriveWrapKey(
             password,
-            salt,
-            KDF_ITERATIONS
+            kdf.salt,
+            kdf.iterations
         );
 
     const encrypted =
@@ -298,7 +279,7 @@ export async function encryptIdentityPrivateKey(
             arrayBufferToBase64(encrypted),
 
         salt:
-            arrayBufferToBase64(salt),
+            kdf.salt,
 
         iv:
             arrayBufferToBase64(iv),
@@ -308,7 +289,7 @@ export async function encryptIdentityPrivateKey(
 
         kdfParams: {
             iterations:
-                KDF_ITERATIONS,
+                kdf.iterations,
 
             hash:
                 KDF_HASH
@@ -320,7 +301,56 @@ export async function encryptIdentityPrivateKey(
 }
 
 
+function readKdfParams(kdfParams) {
+    const iterations = kdfParams?.iterations;
+
+    if (
+        !Number.isInteger(iterations) ||
+        iterations < KDF_ITERATIONS
+    ) {
+        throw new Error(
+            "Invalid PBKDF2 iterations"
+        );
+    }
+
+    if (kdfParams?.hash !== KDF_HASH) {
+        throw new Error(
+            "Unsupported KDF hash"
+        );
+    }
+
+    return iterations;
+}
+
+
 export async function decryptIdentityPrivateKey(
+    encryptedPrivateKey,
+    password,
+    salt,
+    iv,
+    kdfParams
+) {
+    const decrypted =
+        await decryptIdentityPkcs8(
+            encryptedPrivateKey,
+            password,
+            salt,
+            iv,
+            kdfParams
+        );
+
+    try {
+        return await importPrivateKey(
+            decrypted
+        );
+    } finally {
+        new Uint8Array(decrypted).fill(0);
+    }
+}
+
+
+/** Decrypts to the raw PKCS#8 bytes (caller must zero them). */
+export async function decryptIdentityPkcs8(
     encryptedPrivateKey,
     password,
     salt,
@@ -340,37 +370,8 @@ export async function decryptIdentityPrivateKey(
         );
     }
 
-    const params =
-        kdfParams &&
-        typeof kdfParams === "object"
-            ? kdfParams
-            : {};
-
     const iterations =
-        params.iterations;
-
-    const hash =
-        params.hash;
-
-    if (
-        !Number.isInteger(iterations) ||
-        iterations < 100000
-    ) {
-        throw new Error(
-            "Invalid PBKDF2 iterations"
-        );
-    }
-
-    if (hash !== KDF_HASH) {
-        throw new Error(
-            "Unsupported KDF hash"
-        );
-    }
-
-    const saltBytes =
-        new Uint8Array(
-            base64ToArrayBuffer(salt)
-        );
+        readKdfParams(kdfParams);
 
     const ivBytes =
         new Uint8Array(
@@ -383,14 +384,6 @@ export async function decryptIdentityPrivateKey(
         );
 
     if (
-        saltBytes.length !== SALT_LENGTH
-    ) {
-        throw new Error(
-            "Invalid salt length"
-        );
-    }
-
-    if (
         ivBytes.length !== AES_IV_LENGTH
     ) {
         throw new Error(
@@ -399,9 +392,9 @@ export async function decryptIdentityPrivateKey(
     }
 
     const encryptionKey =
-        await deriveEncryptionKey(
+        await deriveWrapKey(
             password,
-            saltBytes,
+            salt,
             iterations
         );
 
@@ -423,14 +416,13 @@ export async function decryptIdentityPrivateKey(
         );
     }
 
-    return importPrivateKey(
-        decrypted
-    );
+    return decrypted;
 }
 
 
 export async function createEncryptedIdentity(
-    password
+    password,
+    kdf
 ) {
     validatePassword(password);
 
@@ -445,7 +437,8 @@ export async function createEncryptedIdentity(
     const encrypted =
         await encryptIdentityPrivateKey(
             keyPair.privateKey,
-            password
+            password,
+            kdf
         );
 
     return {
@@ -513,11 +506,12 @@ export async function restoreIdentityFromServer(
  * touches the KDF parameters, the ciphertext format, or the
  * account password:
  *
- * - deriveIdentityUnlockKey() runs the exact same PBKDF2 step as
- *   deriveEncryptionKey() above and returns the raw derived AES
- *   key bytes (base64) - never the password, never the private
- *   key. It is meaningless without the corresponding
- *   encryptedPrivateKey/iv, which stay server-side.
+ * - deriveIdentityUnlockKey() runs the same derivation as
+ *   deriveWrapKey() above and returns the raw wrapKey bytes
+ *   (base64) - never the password, never the private key, never
+ *   the authKey. It is meaningless without the corresponding
+ *   encryptedPrivateKey/iv, which are stored server-side. Anyone who
+ *   holds it can decrypt the identity: it must stay on this device.
  *
  * - decryptIdentityPrivateKeyWithDerivedKey() is the mirror of
  *   decryptIdentityPrivateKey(), except it takes an already-
@@ -537,52 +531,21 @@ export async function deriveIdentityUnlockKey(
         throw new Error("Invalid salt");
     }
 
-    const params =
-        kdfParams &&
-        typeof kdfParams === "object"
-            ? kdfParams
-            : {};
-
     const iterations =
-        params.iterations;
+        readKdfParams(kdfParams);
 
-    const hash =
-        params.hash;
-
-    if (
-        !Number.isInteger(iterations) ||
-        iterations < 100000
-    ) {
-        throw new Error(
-            "Invalid PBKDF2 iterations"
-        );
-    }
-
-    if (hash !== KDF_HASH) {
-        throw new Error(
-            "Unsupported KDF hash"
-        );
-    }
-
-    const saltBytes =
-        new Uint8Array(
-            base64ToArrayBuffer(salt)
-        );
-
-    if (saltBytes.length !== SALT_LENGTH) {
-        throw new Error(
-            "Invalid salt length"
-        );
-    }
-
-    const rawKeyBits =
-        await derivePasswordKeyMaterial(
+    const { wrapKeyBytes } =
+        await deriveCredentials(
             password,
-            saltBytes,
+            salt,
             iterations
         );
 
-    return arrayBufferToBase64(rawKeyBits);
+    try {
+        return arrayBufferToBase64(wrapKeyBytes);
+    } finally {
+        wrapKeyBytes.fill(0);
+    }
 }
 
 

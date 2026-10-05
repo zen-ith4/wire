@@ -6,6 +6,12 @@ CREATE TABLE IF NOT EXISTS users (
     email TEXT UNIQUE,
     password_hash TEXT NOT NULL,
 
+    -- F12: per-account PBKDF2 salt and iteration count. password_hash is a bcrypt
+    -- hash of the client-derived authKey, NEVER of the password. The salt must
+    -- be served before login, so it is not secret.
+    kdf_salt TEXT,
+    kdf_iterations INTEGER,
+
     email_verified INTEGER NOT NULL DEFAULT 0,
     email_2fa_enabled INTEGER NOT NULL DEFAULT 0,
 

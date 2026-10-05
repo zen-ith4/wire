@@ -15,35 +15,53 @@
 // it just wraps for every user_id it's given. The caller (rotation.js)
 // is what ensures the sender's own user_id is present in that list.
 
-import { getOrCreateSessionKey } from '../keys/session.js';
+import { getOrCreateGroupKdmKey } from '../keys/session.js';
 import { encryptBytes, decryptBytes } from './aead.js';
-import { zero } from './codec.js';
+import { zero, encodeFields } from './codec.js';
 import { storeReceivedSenderKey } from './sender-key.js';
-import {
-    deriveSenderKeyId,
-    deriveSenderKeyIdV2,
-    SENDER_KEY_SCHEME_LEGACY,
-    SENDER_KEY_SCHEME_KEY_DERIVED,
-} from './sender-key-id.js';
+import { deriveSenderKeyId } from './sender-key-id.js';
+
+const KDM_VERSION = 2;
+
+/**
+ * additionalData of a KDM wrap: binds the wrapped key to the group, sender,
+ * recipient, epoch and format version it was made for, so the server cannot
+ * relabel a row (move it to another group/epoch/recipient or pass it off as
+ * coming from someone else). senderKeyId is NOT in here: it is derived from
+ * the key after unwrapping (it would be circular).
+ */
+export function kdmAad({ groupId, fromUserId, toUserId, epoch }) {
+    return encodeFields(
+        'group-kdm-v2',
+        Number(groupId),
+        Number(fromUserId),
+        Number(toUserId),
+        Number(epoch),
+        KDM_VERSION
+    );
+}
 
 /**
  * Wraps one Sender Key for one recipient.
  *
  * @param {Uint8Array} rawSenderKeyBytes
  * @param {number} recipientUserId
+ * @param {{groupId: number, fromUserId: number, epoch: number}} context
  * @returns {Promise<string>} JSON string — this is exactly what goes
  *   in group_key_distributions.wrapped_key; the server only ever
  *   sees this opaque string.
  */
-export async function wrapSenderKeyForRecipient(rawSenderKeyBytes, recipientUserId) {
-    const sessionKey = await getOrCreateSessionKey(recipientUserId);
-    const envelope = await encryptBytes(sessionKey, rawSenderKeyBytes);
+export async function wrapSenderKeyForRecipient(rawSenderKeyBytes, recipientUserId, context) {
+    const wrapKey = await getOrCreateGroupKdmKey(recipientUserId);
+    const envelope = await encryptBytes(
+        wrapKey,
+        rawSenderKeyBytes,
+        undefined,
+        kdmAad({ ...context, toUserId: recipientUserId })
+    );
 
-    // v:2 = "derive the senderKeyId from the key" (sender-key-id.js,
-    // scheme 2). The plaintext is unchanged (the 32 raw key bytes); only
-    // the version tag tells the recipient which id derivation applies.
     return JSON.stringify({
-        v: 2,
+        v: KDM_VERSION,
         alg: 'AES-GCM',
         iv: envelope.iv,
         ciphertext: envelope.ciphertext,
@@ -59,11 +77,12 @@ export async function wrapSenderKeyForRecipient(rawSenderKeyBytes, recipientUser
  *
  * @param {Uint8Array} rawSenderKeyBytes
  * @param {number[]} recipientUserIds
+ * @param {{groupId: number, fromUserId: number, epoch: number}} context
  * @returns {Promise<Array<{user_id: number, wrapped_key: string}>>}
  *   Ready to POST as the `recipients` array to
  *   POST /api/groups/:groupId/kdms.
  */
-export async function distributeSenderKey(rawSenderKeyBytes, recipientUserIds) {
+export async function distributeSenderKey(rawSenderKeyBytes, recipientUserIds, context) {
     if (!Array.isArray(recipientUserIds) || recipientUserIds.length === 0) {
         throw new Error('At least one recipient is required');
     }
@@ -73,7 +92,7 @@ export async function distributeSenderKey(rawSenderKeyBytes, recipientUserIds) {
     return Promise.all(
         uniqueIds.map(async (userId) => ({
             user_id: userId,
-            wrapped_key: await wrapSenderKeyForRecipient(rawSenderKeyBytes, userId),
+            wrapped_key: await wrapSenderKeyForRecipient(rawSenderKeyBytes, userId, context),
         }))
     );
 }
@@ -83,25 +102,23 @@ export async function distributeSenderKey(rawSenderKeyBytes, recipientUserIds) {
  *
  * @param {string} wrappedKeyJson the group_key_distributions row's
  *   wrapped_key field, verbatim
- * @param {number} fromUserId the KDM's from_user_id — whose pairwise
- *   session key was used to wrap it. For a self-KDM this is the same
- *   as the current user's own id, which session.js handles the same
- *   as any other peer (an identity ECDH'd with itself is still a
- *   well-defined, deterministic X25519 operation).
+ * @param {{groupId: number, fromUserId: number, toUserId: number, epoch: number}} context
+ *   taken from the server row; they are authenticated as AAD, so a row the
+ *   server relabelled fails here. For a self-KDM fromUserId equals toUserId
+ *   (an identity ECDH'd with itself is a well-defined X25519 operation).
  * @returns {Promise<Uint8Array>} raw Sender Key bytes (32 bytes) —
  *   caller is responsible for importing + zeroing per sender-key.js.
  */
-export async function unwrapKdm(wrappedKeyJson, fromUserId) {
-    const { rawBytes } = await unwrapKdmDetailed(wrappedKeyJson, fromUserId);
+export async function unwrapKdm(wrappedKeyJson, context) {
+    const { rawBytes } = await unwrapKdmDetailed(wrappedKeyJson, context);
     return rawBytes;
 }
 
 /**
- * Same as unwrapKdm but also reports the KDM version, which decides how
- * the recipient derives the senderKeyId (v1: from the KDM row's triple,
- * v2: from the key).
+ * Same as unwrapKdm but also reports the KDM version (always 2: it is the
+ * only format).
  */
-export async function unwrapKdmDetailed(wrappedKeyJson, fromUserId) {
+export async function unwrapKdmDetailed(wrappedKeyJson, context) {
     let envelope;
 
     try {
@@ -110,12 +127,12 @@ export async function unwrapKdmDetailed(wrappedKeyJson, fromUserId) {
         throw new Error('Malformed KDM payload');
     }
 
-    if ((envelope?.v !== 1 && envelope?.v !== 2) || envelope?.alg !== 'AES-GCM') {
+    if (envelope?.v !== KDM_VERSION || envelope?.alg !== 'AES-GCM') {
         throw new Error('Unsupported KDM version/algorithm');
     }
 
-    const sessionKey = await getOrCreateSessionKey(fromUserId);
-    const rawBytes = await decryptBytes(sessionKey, envelope);
+    const wrapKey = await getOrCreateGroupKdmKey(context.fromUserId);
+    const rawBytes = await decryptBytes(wrapKey, envelope, kdmAad(context));
 
     if (rawBytes.length !== 32) {
         throw new Error('Unwrapped KDM is not a valid AES-256 key');
@@ -144,24 +161,21 @@ export async function unwrapKdmDetailed(wrappedKeyJson, fromUserId) {
  * @returns {Promise<{senderKeyId: string}>}
  */
 export async function receiveKdm(identity, kdmRow) {
-    const { rawBytes, version } = await unwrapKdmDetailed(kdmRow.wrapped_key, kdmRow.from_user_id);
+    const { rawBytes } = await unwrapKdmDetailed(kdmRow.wrapped_key, {
+        groupId: kdmRow.group_id,
+        fromUserId: kdmRow.from_user_id,
+        toUserId: kdmRow.to_user_id,
+        epoch: kdmRow.epoch,
+    });
 
     try {
-        // v2: the id is a PRF of the key, so it is unique per generated key
-        // (and therefore per device). v1 (legacy, pre-fix senders): derived
-        // from (group, sender, epoch) exactly as before, because that is
-        // what those senders' envelopes reference.
-        const scheme = version === 2 ? SENDER_KEY_SCHEME_KEY_DERIVED : SENDER_KEY_SCHEME_LEGACY;
-        const senderKeyId = version === 2
-            ? await deriveSenderKeyIdV2(kdmRow.group_id, kdmRow.from_user_id, kdmRow.epoch, rawBytes)
-            : await deriveSenderKeyId(kdmRow.group_id, kdmRow.from_user_id, kdmRow.epoch);
+        const senderKeyId = await deriveSenderKeyId(kdmRow.group_id, kdmRow.from_user_id, kdmRow.epoch, rawBytes);
 
         await storeReceivedSenderKey(identity, {
             senderKeyId,
             groupId: kdmRow.group_id,
             ownerUserId: kdmRow.from_user_id,
             epoch: kdmRow.epoch,
-            scheme,
         }, rawBytes);
 
         return { senderKeyId };

@@ -32,10 +32,12 @@ const {
 } = require('../services/groupMessages.service');
 
 const {
-  insertKdmBatch,
+  submitKdmBatchChecked,
   getUndeliveredForUser,
   markDelivered,
   purgeKdmsForUser,
+  isValidDeviceId,
+  touchDevice,
 } = require('../services/groupKdm.service');
 
 const { findUserById } = require('../services/user.service');
@@ -467,14 +469,13 @@ function submitKdmBatchHandler(req, res) {
     return res.status(400).json({ error: 'At least one recipient is required' });
   }
 
-  const memberIds = new Set(getMemberUserIds(groupId));
   const items = [];
 
   for (const r of recipients) {
     const toUserId = Number.parseInt(r?.user_id, 10);
     const wrappedKey = r?.wrapped_key;
 
-    if (!Number.isInteger(toUserId) || !memberIds.has(toUserId)) {
+    if (!Number.isInteger(toUserId)) {
       return res.status(400).json({ error: `Recipient ${r?.user_id} is not a current member` });
     }
 
@@ -485,7 +486,17 @@ function submitKdmBatchHandler(req, res) {
     items.push({ toUserId, wrappedKey: wrappedKey.trim() });
   }
 
-  insertKdmBatch(groupId, req.user.id, epoch, items);
+  // Membership of the sender and of every recipient, and the epoch, are
+  // re-verified inside the insert transaction (F5): a removal that lands
+  // while this request is being processed cannot let a KDM through.
+  const result = submitKdmBatchChecked(groupId, req.user.id, epoch, items);
+
+  if (!result.ok) {
+    return res.status(result.status).json({
+      error: result.error,
+      ...(result.current_epoch != null ? { current_epoch: result.current_epoch } : {}),
+    });
+  }
 
   // Wake up online recipients immediately rather than making every
   // device wait for its next drain-on-connect — see
@@ -501,10 +512,23 @@ function submitKdmBatchHandler(req, res) {
 // so a client that fetches but crashes before persisting the
 // Sender Key locally doesn't lose the KDM — it's still there to
 // drain again next time.
-// Opaque per-browser-profile delivery cursor (see group_kdm_receipts).
-// Anything that isn't a short token is ignored, i.e. legacy behaviour.
-function parseDeviceId(v) {
-  return typeof v === 'string' && /^[A-Za-z0-9_-]{8,64}$/.test(v) ? v : null;
+// Opaque per-browser-profile delivery cursor (see group_kdm_receipts). It is
+// MANDATORY: absent or malformed -> 400. A valid id is registered (capped,
+// rate-limited) before it can read or write receipts.
+function resolveDeviceId(raw, res, userId) {
+  if (!isValidDeviceId(raw)) {
+    res.status(400).json({ error: 'device_id is required and must be valid' });
+    return null;
+  }
+
+  const t = touchDevice(userId, raw);
+  if (!t.ok) {
+    if (t.retryAfterSec) res.set('Retry-After', String(t.retryAfterSec));
+    res.status(t.status).json({ error: t.error });
+    return null;
+  }
+
+  return { deviceId: raw };
 }
 
 function drainKdmsHandler(req, res) {
@@ -514,7 +538,10 @@ function drainKdmsHandler(req, res) {
     if (!Number.isInteger(groupId) || !requireMembership(req, res, groupId)) return;
   }
 
-  res.json(getUndeliveredForUser(req.user.id, groupId, parseDeviceId(req.query.device_id)));
+  const dev = resolveDeviceId(req.query.device_id, res, req.user.id);
+  if (!dev) return;
+
+  res.json(getUndeliveredForUser(req.user.id, groupId, dev.deviceId));
 }
 
 function ackKdmsHandler(req, res) {
@@ -526,7 +553,10 @@ function ackKdmsHandler(req, res) {
     return res.status(400).json({ error: 'ids required' });
   }
 
-  markDelivered(ids, req.user.id, parseDeviceId(req.body?.device_id));
+  const dev = resolveDeviceId(req.body?.device_id, res, req.user.id);
+  if (!dev) return;
+
+  markDelivered(ids, req.user.id, dev.deviceId);
   res.json({ success: true });
 }
 

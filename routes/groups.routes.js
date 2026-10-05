@@ -1,4 +1,5 @@
 const express = require('express');
+const { requireGroupProtocol } = require('../middleware/groupProtocol');
 const router = express.Router();
 
 const constants = require('../config/constants');
@@ -67,11 +68,11 @@ router.post('/:groupId/avatar', authenticate, uploadLimiter, groupAvatarUpload.s
 
 // ----- Messages (ciphertext relay only) -----
 
-router.get('/:groupId/messages/recent', authenticate, getRecentMessagesHandler);
-router.get('/:groupId/messages/before', authenticate, getMessagesBeforeHandler);
-router.get('/:groupId/messages/since', authenticate, getMessagesSinceHandler);
+router.get('/:groupId/messages/recent', authenticate, requireGroupProtocol, getRecentMessagesHandler);
+router.get('/:groupId/messages/before', authenticate, requireGroupProtocol, getMessagesBeforeHandler);
+router.get('/:groupId/messages/since', authenticate, requireGroupProtocol, getMessagesSinceHandler);
 
-router.post('/:groupId/messages', authenticate, chatWriteLimiter, sendMessageHandler);
+router.post('/:groupId/messages', authenticate, requireGroupProtocol, chatWriteLimiter, sendMessageHandler);
 router.delete('/:groupId/messages/:messageId', authenticate, deleteMessageHandler);
 router.post('/:groupId/messages/:messageId/reactions', authenticate, toggleGroupReactionHandler);
 
@@ -80,6 +81,7 @@ router.post('/:groupId/messages/:messageId/reactions', authenticate, toggleGroup
 router.post(
   '/:groupId/upload',
   authenticate,
+  requireGroupProtocol,
   uploadLimiter,
   groupUpload.single('file'),
   asyncHandler(sendMessageWithAttachmentHandler)
@@ -104,8 +106,8 @@ router.get(
 
 // ----- Key Distribution Message mailbox -----
 
-router.post('/:groupId/kdms', authenticate, submitKdmBatchHandler);
-router.get('/kdms', authenticate, drainKdmsHandler);
-router.post('/kdms/ack', authenticate, ackKdmsHandler);
+router.post('/:groupId/kdms', authenticate, requireGroupProtocol, submitKdmBatchHandler);
+router.get('/kdms', authenticate, requireGroupProtocol, drainKdmsHandler);
+router.post('/kdms/ack', authenticate, requireGroupProtocol, ackKdmsHandler);
 
 module.exports = router;

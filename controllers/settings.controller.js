@@ -24,17 +24,32 @@ async function getSecurity(req, res) {
 }
 
 
+// F12: the "current password" confirmation is the client-derived authKey; a body
+// carrying a raw password is refused.
+function rejectRawPassword(req, res) {
+  if (req.body && 'current_password' in req.body) {
+    res.status(400).json({
+      error: 'Raw passwords are not accepted. Update the app.',
+      code: 'raw_password_rejected'
+    });
+    return true;
+  }
+  return false;
+}
+
 async function enableEmail2FA(req, res) {
   const userId = req.user.id;
 
+  if (rejectRawPassword(req, res)) return;
+
   const currentPassword =
-    typeof req.body?.current_password === 'string'
-      ? req.body.current_password
+    typeof req.body?.current_auth_key === 'string'
+      ? req.body.current_auth_key
       : '';
 
   if (!currentPassword) {
     return res.status(400).json({
-      error: 'Current password is required'
+      error: 'current_auth_key is required'
     });
   }
 
@@ -155,14 +170,16 @@ async function verifyEmail2FA(req, res) {
 async function disableEmail2FA(req, res) {
   const userId = req.user.id;
 
+  if (rejectRawPassword(req, res)) return;
+
   const currentPassword =
-    typeof req.body?.current_password === 'string'
-      ? req.body.current_password
+    typeof req.body?.current_auth_key === 'string'
+      ? req.body.current_auth_key
       : '';
 
   if (!currentPassword) {
     return res.status(400).json({
-      error: 'Current password is required'
+      error: 'current_auth_key is required'
     });
   }
 

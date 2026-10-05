@@ -3,6 +3,7 @@ const express = require('express');
 const router = express.Router();
 
 const {
+  getKdfParams,
   login,
   register,
   verifyEmail,
@@ -11,6 +12,7 @@ const {
 } = require('../controllers/auth.controller');
 
 const {
+  kdfParamsRateLimiter,
   loginRateLimiter,
   registerRateLimiter,
   verifyEmailRateLimiter,
@@ -21,6 +23,13 @@ const {
 const {
   asyncHandler
 } = require('../middleware/asyncHandler');
+
+
+router.get(
+  '/kdf-params',
+  kdfParamsRateLimiter,
+  getKdfParams
+);
 
 
 router.post(

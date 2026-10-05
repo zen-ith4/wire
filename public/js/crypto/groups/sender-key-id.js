@@ -1,78 +1,64 @@
 // public/js/crypto/groups/sender-key-id.js
 //
-// One Sender Key exists per (group, owner, epoch) — plan_prompt.md
-// Section 3: each member generates their own key, and rotation
-// (step 4) has every remaining member generate a new one under the
-// bumped epoch. That triple is already a unique, non-secret handle,
-// so rather than the owner minting a random id that recipients would
-// then have no way to learn except by trusting an unauthenticated
-// field inside the KDM payload, everyone just computes the same id
-// locally from data they already have:
+// Key schedule of a Sender Key (F8).
 //
-// - The owner has it when generating (their own groupId/userId/epoch).
-// - A recipient has it from the KDM row's (group_id, from_user_id,
-//   epoch) — no extra field needed in the wrapped payload.
+// What travels in a KDM and sits wrapped in IndexedDB is a 32-byte ROOT secret.
+// It is never used directly. Two independent subkeys are derived from it with
+// HKDF-SHA-256 and distinct info labels:
 //
-// This id is not secret (it identifies *which* key, not the key
-// material) and doesn't need to be unguessable — only collision-
-// resistant and identical for everyone deriving it from the same
-// triple, which a plain SHA-256 gives us.
+//     encKey = HKDF(root, info = "Wire-GroupKey-enc-v2")  -> AES-256-GCM key
+//     idKey  = HKDF(root, info = "Wire-GroupKey-id-v2")   -> HMAC-SHA-256 key
+//
+// and the public senderKeyId is
+//
+//     id = hex(HMAC-SHA-256(idKey, encodeFields("group-sender-key-id-v2",
+//                                               groupId, ownerUserId, epoch)))
+//
+// (length-prefixed fields, not "|" joins). The id is a PRF of the key, so two
+// distinct keys (e.g. minted by two devices of one account at the same epoch)
+// get distinct ids while every recipient arrives at the same id after
+// unwrapping the KDM, without it being transmitted. Because encKey and idKey
+// are independent, publishing the id in every message reveals nothing about
+// the AES key.
 
-export async function deriveSenderKeyId(groupId, ownerUserId, epoch) {
-    const encoded = new TextEncoder().encode(
-        `${Number(groupId)}:${Number(ownerUserId)}:${Number(epoch)}`
-    );
-    const digest = await crypto.subtle.digest('SHA-256', encoded);
+import { encodeFields } from './codec.js';
 
-    return Array.from(new Uint8Array(digest))
-        .map((b) => b.toString(16).padStart(2, '0'))
-        .join('');
+const ENC_INFO = new TextEncoder().encode('Wire-GroupKey-enc-v2');
+const ID_INFO = new TextEncoder().encode('Wire-GroupKey-id-v2');
+
+async function importRoot(rootBytes) {
+    if (!(rootBytes instanceof Uint8Array) || rootBytes.length !== 32) {
+        throw new Error('Sender Key root must be 32 bytes');
+    }
+    return crypto.subtle.importKey('raw', rootBytes, { name: 'HKDF' }, false, ['deriveKey']);
 }
 
-// ---------------------------------------------------------------
-// Scheme 2 (device-safe ids)
-// ---------------------------------------------------------------
-//
-// The scheme above has a flaw: nothing in (group, owner, epoch)
-// distinguishes one DEVICE of an account from another. Identity keys
-// are per-account and portable, so two devices of the same user who
-// both create their first key at the same epoch derived the SAME id
-// for two DIFFERENT random keys. Recipients (and the second device
-// itself, via the self-KDM) then overwrote one key with the other,
-// which (a) made every earlier message from the first device
-// undecryptable and (b) left both devices encrypting under one AES-GCM
-// key with independent counters -> (key, nonce) reuse.
-// Reproduced in tests/groups/group-multidevice.test.mjs (MD-1..MD-3).
-//
-// Fix: the id is now a PRF of the key itself,
-//
-//     id = hex(HMAC-SHA-256(key = senderKeyBytes,
-//                           msg = "wire-sender-key-id/v2|group|owner|epoch"))
-//
-// so distinct keys always get distinct ids (collision only if two devices
-// drew the same 256-bit key), while the id stays a pure function of data
-// every recipient has AFTER unwrapping the KDM. The envelope format and
-// the KDM plaintext are unchanged; the id is still an opaque string in the
-// envelope. HMAC output is independent of the key (PRF), so publishing it
-// in every message reveals nothing about the key. Group/owner/epoch stay in
-// the message so a KDM relabelled by the server yields an id no envelope
-// references (denial of service at worst, never a key/plaintext mix-up).
+/** AES-256-GCM key used to encrypt messages/attachments (non-extractable). */
+export async function deriveSenderEncKey(rootBytes) {
+    const root = await importRoot(rootBytes);
+    return crypto.subtle.deriveKey(
+        { name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(32), info: ENC_INFO },
+        root,
+        { name: 'AES-GCM', length: 256 },
+        false,
+        ['encrypt', 'decrypt']
+    );
+}
 
-export const SENDER_KEY_SCHEME_LEGACY = 1;
-export const SENDER_KEY_SCHEME_KEY_DERIVED = 2;
-
-export async function deriveSenderKeyIdV2(groupId, ownerUserId, epoch, rawKeyBytes) {
-    const hmacKey = await crypto.subtle.importKey(
-        'raw',
-        rawKeyBytes,
-        { name: 'HMAC', hash: 'SHA-256' },
+export async function deriveSenderKeyId(groupId, ownerUserId, epoch, rootBytes) {
+    const root = await importRoot(rootBytes);
+    const idKey = await crypto.subtle.deriveKey(
+        { name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(32), info: ID_INFO },
+        root,
+        { name: 'HMAC', hash: 'SHA-256', length: 256 },
         false,
         ['sign']
     );
-    const label = new TextEncoder().encode(
-        `wire-sender-key-id/v2|${Number(groupId)}|${Number(ownerUserId)}|${Number(epoch)}`
+    const mac = await crypto.subtle.sign(
+        'HMAC',
+        idKey,
+        encodeFields('group-sender-key-id-v2', Number(groupId), Number(ownerUserId), Number(epoch))
     );
-    const mac = await crypto.subtle.sign('HMAC', hmacKey, label);
 
     return Array.from(new Uint8Array(mac))
         .map((b) => b.toString(16).padStart(2, '0'))

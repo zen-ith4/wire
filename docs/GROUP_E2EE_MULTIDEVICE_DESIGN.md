@@ -1,74 +1,253 @@
-# Group E2EE: multi-device Sender Key design
+# Group E2EE: multi-device Sender Key design (v2)
 
-Status: implemented in this working tree (not merged, no branch created).
-Tests: `tests/groups/group-multidevice.test.mjs` (MD-1..MD-6),
-`group-audit.test.mjs` (F-I, G), `group-keys-contract.test.mjs` (L-1).
+Status: implemented on branch `fix/group-e2ee-hardening` (not merged). There is
+exactly ONE wire format (v2). The system has no users yet, so there is no legacy
+path, no migration and no compatibility shim: v1 KDMs, the `scheme` field, the old
+id derivation, account-wide `delivered_at` delivery and "no `device_id`" requests
+were removed, not deprecated.
 
-## 1. Current (pre-change) protocol
+Tests: `tests/groups/` (run `npm test`). MD-1..MD-6 (`group-multidevice`), audit
+cases F-I/G (`group-audit`), L-1 (`group-keys-contract`), and one file per hardening
+finding: `group-hardening-f1-crash`, `-wire` (F2/F3/F8/F10), `-f10-rollback`,
+`-f4-replay`, `-f5-removal-race`, `-f6-device-id`, `-f7-version-gate`,
+`-f9-web-locks`, `-f12-credentials`.
 
-| Item | Value |
-|---|---|
-| Message envelope | `{v:1, alg:"AES-GCM", senderKeyId, counter, iv, ciphertext}`; nonce = 4 zero bytes + 8-byte counter |
-| senderKeyId | `hex(SHA-256("group:<groupId>:<ownerUserId>:<epoch>"))` |
-| KDM (`group_key_distributions.wrapped_key`) | `{v:1, alg:"AES-GCM", iv, ciphertext}` wrapping the raw 32-byte key under the pairwise DM session key |
-| KDM row | `(group_id, from_user_id, to_user_id, wrapped_key, epoch, delivered_at)`; **no device column** |
-| Recipient id derivation | from the KDM row's `(group_id, from_user_id, epoch)` |
-| Identity model | identity keypair is per **account**, restored on every device; **no device id exists** |
-| Mailbox | per user; `delivered_at` set once by whichever device acks first |
-| Local role flag | `isMine` = "KDM owner is my account" (so a self-KDM copy became a sending key) |
-| Counters | per device (IndexedDB, Web Lock), keyed by senderKeyId |
+## 1. What this protects, and what it cannot
 
-## 2. Failure scenario (all reproduced with real server + Socket.IO + client)
+Protects: group message and attachment confidentiality and integrity against the
+server operator and against anyone who obtains the database, as long as the web
+client code the user runs is honest.
 
-1. Alice's device 1 creates a key K1 for epoch E. id = H(g:alice:E).
-2. Alice's device 2 has no key, so it creates K2 for the same epoch. **Same id.**
-3. Bob receives K2's KDM and overwrites K1 under that id (put-by-id).
-   Every message device 1 sent under K1 now fails authentication (MD-2).
-4. Device 1 receives the self-KDM and adopts K2 while keeping its own counters.
-   Both devices now encrypt under K2 with independent counters starting at 0:
-   **(key, nonce) reuse** (MD-3 recovers `c1 XOR c2 == p1 XOR p2` from the DB).
-5. Separately, the mailbox is consumed once per account: a device that signs
-   in after another device drained Bob's KDM never gets Bob's key (MD-4).
-6. Also: a failed KDM POST left an undistributed key as "current" (MD-6);
-   two tabs both minting a first key (MD-5).
+**It cannot protect against a malicious server delivering malicious JavaScript.**
+The web client is loaded from the same server it talks to, so a hostile or
+compromised server can ship code that exfiltrates the password or the keys. This is
+inherent to web E2EE. It is only mitigated, not solved, by installed
+Capacitor/Electron builds (their assets are fixed until the user updates) and by the
+service worker (which pins a manifest, but is itself served by the server on first
+load). Do not describe this system as "the server cannot read your messages" without
+this caveat.
 
-## 3. Minimum protocol change (implemented)
+Also true by design: a malicious server can still drop messages, reorder them,
+withhold KDMs, and learn who talks in which group and when.
 
-1. **senderKeyId = HMAC-SHA-256(key, "wire-sender-key-id/v2|group|owner|epoch")**.
-   A PRF of the key, so distinct keys get distinct ids, and the id reveals
-   nothing about the key. Recipients compute it after unwrapping; nothing new
-   is transmitted. Envelope format unchanged.
-2. **KDM `v:2`** (inside the opaque `wrapped_key`; server never parses it).
-   Plaintext unchanged. `v:1` KDMs are still accepted and use the legacy id.
-3. **Sending keys are device-local.** Received keys, including self-KDMs, are
-   stored `isMine:0` (decrypt-only). Only records with `scheme:2` are eligible
-   for sending; legacy records never are.
-4. **Per-device mailbox receipts.** New table `group_kdm_receipts(kdm_id,
-   device_id)`. Clients send an optional `device_id` (random, per browser
-   profile) on drain and ack. Requests without it behave as before.
-5. Client hardening: cross-tab Web Lock around key creation; discard a key
-   whose KDM POST failed; a received key never overwrites a different key
-   stored under the same id.
-6. Server hardening: drain only returns KDMs for groups the caller is still
-   in; removal purges the removed user's KDMs and evicts their sockets from
-   `group:<id>`.
+## 2. Protocol v2
 
-## 4. Compatibility and migration
+### 2.1 Credentials (F12): the password never reaches the server
 
-* Old clients reject `v:2` KDMs (they leave rows unacked) and cannot read v2
-  messages until they reload the new JS. Bundled/Capacitor builds serving stale
-  assets are the concern.
-* Existing keys stay readable. Legacy own keys are never used to send again, so
-  each group re-keys once per device after upgrade.
-* Data already lost to a legacy id collision is **not** repaired.
-* Every connected device of a member now rotates on a membership change (key
-  count grows with device count).
-* `group_kdm_receipts` rows are not pruned.
+```
+master  = PBKDF2-HMAC-SHA-256(password, accountSalt, 600,000 iterations)   32 bytes
+authKey = HKDF-SHA-256(master, salt = 32 zero bytes, info = "Wire-Auth-v1")
+wrapKey = HKDF-SHA-256(master, salt = 32 zero bytes, info = "Wire-Identity-Wrap-v1")
+```
 
-## 5. Known limits (unchanged, out of scope)
+* `authKey` (43 base64url chars) is the only secret-derived value sent to the server
+  (login, registration, password change, "confirm your password" prompts). The server
+  stores `bcrypt(authKey)`. It cannot derive `wrapKey` or `master` from it
+  (independent HKDF outputs).
+* `wrapKey` AES-256-GCM-encrypts the X25519 identity private key (PKCS#8). It never
+  leaves the browser. The "remember me" cache stores exactly these 32 bytes on the
+  device; whoever has them can decrypt the identity.
+* `accountSalt` (16 random bytes, generated by the client at registration, fresh on
+  every password change) and the iteration count live in
+  `users.kdf_salt/kdf_iterations`. They are public: `GET /api/auth/kdf-params?username=`
+  serves them before login; unknown usernames get a deterministic fake salt (HMAC of
+  the username under a server secret) so the endpoint does not reveal which accounts
+  exist. `GET /api/me/kdf-params` returns the caller's own.
+* Floors: the server rejects `kdf_iterations < 600000`, an identity whose KDF is not
+  `PBKDF2-SHA-256+HKDF-SHA-256`, version != 2, or a salt/iterations different from the
+  account's. The **client** also refuses any KDF parameters below 600,000 whatever the
+  server answers (a hostile server asking for 1 iteration would otherwise harvest a
+  trivially brute-forceable `authKey`).
+* Every endpoint rejects bodies that still carry `password`, `current_password` or
+  `new_password` (HTTP 400, `raw_password_rejected`).
+* Password change: the browser derives old and new credentials, decrypts the identity
+  with the old `wrapKey`, re-encrypts it with the new one under a new salt, and sends
+  `{current_auth_key, new_auth_key, new_kdf_salt, new_kdf_iterations, identity}`; the
+  server swaps all of it in one transaction. The X25519 identity (and therefore every
+  group key wrapped to it) does not change. (Before this branch the re-wrap tried to
+  export a non-extractable key and failed whenever an identity existed.)
+* Registration, login and password change run a 600k-iteration PBKDF2 in the browser
+  (a few hundred ms on a desktop, noticeably more on a low-end phone). Login derives
+  twice (authKey for login, wrapKey again at identity unlock); a shared cache would
+  halve that and was left out to keep the derivation stateless.
 
-* No per-message sender authentication: any member holding a sender's key can
-  encrypt under it; attribution relies on the server's `sender_id`.
-* KDM rows carry no AAD binding group/sender/epoch (a relabelled row yields an
-  id no envelope references: denial of service, not confusion).
+**There is no password reset.** The password protects the identity key and the server
+cannot decrypt it. Forgetting the password loses the identity: encrypted history
+becomes unreadable, and a "reset" can only create a new, empty identity. The
+registration screen says so. See section 6 for an optional recovery key (decision
+pending). The codebase has no password-reset route, so nothing had to be removed there.
+
+Operator-supplied passwords: the first-run setup wizard and `DEFAULT_ADMIN_PASS` derive
+`authKey` locally with the same algorithm (`utils/credentials.js`, verified
+byte-identical to the browser module by a test), but the plaintext password is, by
+definition, seen by the process on the host where the operator types it. An admin
+creating a user from the UI also knows the password they typed. Both should be changed
+by the account owner at first login.
+
+### 2.2 Sender Key and its id (F8)
+
+A Sender Key is a random 32-byte **root** secret. It is never used directly:
+
+```
+encKey = HKDF-SHA-256(root, salt = 32 zero bytes, info = "Wire-GroupKey-enc-v2")  -> AES-256-GCM
+idKey  = HKDF-SHA-256(root, salt = 32 zero bytes, info = "Wire-GroupKey-id-v2")   -> HMAC-SHA-256
+senderKeyId = hex(HMAC-SHA-256(idKey, encodeFields("group-sender-key-id-v2", groupId, ownerUserId, epoch)))
+```
+
+The id is a PRF of the key: two devices of one account minting at the same epoch get
+different ids; recipients derive the id after unwrapping the KDM (nothing extra is
+transmitted); publishing the id reveals nothing about `encKey`. `encodeFields` is the
+unambiguous encoding used everywhere below: each field is written as type (1 byte),
+length (4 bytes, big-endian), then the bytes, so there is no "|"-join ambiguity.
+
+### 2.3 Message envelope and nonce (F3, F10)
+
+`{v:2, alg:"AES-GCM", senderKeyId, counter, iv, ciphertext}`
+
+* `iv` (12 bytes) = `prefix(4) || counter(8, big-endian)`.
+* `prefix` is **random per JS process and redrawn on every identity lock/unlock**. It
+  lives only in memory and is NOT stored with the key. A restored or cloned profile has
+  the same key and possibly an older counter; a stored prefix would reproduce the same
+  nonces, a fresh one does not. Residual risk: two processes that reuse the same counter
+  value collide with probability 2^-32 per pair. The counter is still persisted,
+  reserved-then-used under a Web Lock, so one profile never repeats a counter.
+* AAD = `encodeFields("group-msg-v2", groupId, senderKeyId, counter, iv)`; attachments
+  use the label `"group-att-v2"` and the same counter/nonce space.
+* The receiver does not know the prefix. It requires `iv.length == 12` and that the last
+  8 bytes of `iv` equal `envelope.counter`, then decrypts with the AAD above. So the
+  counter, the group, the key id and the iv cannot be relabelled.
+
+### 2.4 Key distribution message, KDM v2 (F2)
+
+`group_key_distributions.wrapped_key` = `{v:2, alg:"AES-GCM", iv, ciphertext}` wrapping
+the 32-byte root for one recipient.
+
+* Wrap key = HKDF over the same X25519 ECDH as 1:1 DMs but with info
+  `Wire-E2EE-Group-KDM-v2` (DMs use `Wire-E2EE-v1`), so a DM ciphertext can never be
+  accepted as a KDM or the reverse.
+* AAD = `encodeFields("group-kdm-v2", groupId, fromUserId, toUserId, epoch, 2)`, taken
+  from the server row on receipt. A relabelled row (other group, epoch, recipient or
+  sender) fails authentication. `senderKeyId` is not in the AAD (it is derived from the
+  key after unwrapping).
+* Only `v:2` exists. Anything else is rejected and, crucially, **not acked**.
+
+### 2.5 Replay protection (F4)
+
+Each device keeps a seen-set in IndexedDB (`seen-counters`): one row per
+`(senderKeyId, full 12-byte nonce)` it has accepted, bound to the **server message id**
+(or attachment reference) that first claimed it.
+
+* The claim is made only **after** AES-GCM authentication succeeds, in one IndexedDB
+  transaction (get + put), so a corrupt message never burns a nonce and two tabs racing
+  on the same database are serialised: exactly one of two competing ids wins.
+* Same id again (socket + `syncSince` after a reconnect, reload, quoted reply preview,
+  another tab): accepted, idempotent, never shown as an error. Same nonce under a
+  different id: `ReplayedMessageError`, the message is dropped.
+* The set is keyed by the full nonce, not the counter alone: after a counter rollback
+  (F10) fresh messages legitimately reuse old counter values under a new prefix and must
+  not look like replays.
+* Out-of-order delivery is fine (a set, not a high-water mark). Attachments and messages
+  share it.
+* Cleanup: rows are deleted with their key (group left/removed, forgotten key). They are
+  kept across rotation (the old key still decrypts history, so it must keep rejecting
+  replays). A cap of 100,000 rows per key evicts the oldest ~10%; eviction only ever
+  weakens protection for ancient messages, it never rejects a legitimate one.
+* The decrypt API requires the message id; there is no unprotected path.
+* Limits: the seen-set is per device; the server can still replay to a device that has
+  no row (new device, wiped storage) before the original arrives. Dropping and
+  reordering by the server are not detected.
+
+### 2.6 Mailbox, devices, receipts (F6)
+
+* A KDM is delivered to a **device**: `group_kdm_receipts(kdm_id, device_id)`. A device
+  acks only KDMs it stored, so a second device still receives keys the first one already
+  consumed (MD-4). `device_id` is mandatory on drain and ack (400 otherwise).
+* The client generates `device_id` once per browser profile and stores it in the same
+  IndexedDB as its keys (if the keys are wiped, the id goes with them and the server
+  re-delivers everything).
+* Server: `group_devices(user_id, device_id, ...)` registry. Cap 20 ids per user (least
+  recently seen evicted together with its receipts). Creating new ids is throttled
+  (429 + `Retry-After`, default 20/hour) **only once the account has 5 devices**; ids
+  the account already knows are never throttled. Tabs of one profile share one id.
+  Devices unseen for 90 days and orphan receipts are pruned every 6 hours; receipts
+  cascade with their KDM row. Env: `GROUP_DEVICE_CAP`, `GROUP_DEVICE_NEW_PER_HOUR`,
+  `GROUP_DEVICE_GRACE`, `GROUP_DEVICE_TTL_DAYS`.
+* `device_id` is a cursor, not a credential: knowing someone's id lets an authenticated
+  user re-download only their own mailbox.
+
+### 2.7 Sending keys and crash safety (F1, F9)
+
+* Sending keys are device-local: a key is a sending key only if this device generated it
+  (`isMine == 1`). Received keys, including self-KDMs from another device of the same
+  account, are decrypt-only and never demote an existing sending key (atomic
+  insert-if-absent).
+* **MD-6 closed on crash:** a new sending key is held in memory only and written to
+  IndexedDB after the KDM POST returned 201. If the process dies before or during the
+  POST nothing is on disk and the next call mints and distributes a fresh key. If it dies
+  after the server stored the KDMs but before the write, recipients hold a key this device
+  lost and it mints another (harmless: ids are per key, nonces per key).
+* Sending requires `navigator.locks` (nonce counters); without it sending throws. Key
+  minting falls back to unlocked, which can only produce an extra key, never a nonce
+  reuse. On Capacitor WebViews: Android WebView (Chromium) supports Web Locks in secure
+  contexts; iOS WKWebView supports them from 15.4. Whether the Capacitor origin counts as
+  a secure context on each target was NOT verified on a device: check `navigator.locks`
+  there. If it is missing, those clients can read but cannot send.
+
+### 2.8 Server rules (F5, F7)
+
+* `POST /api/groups/:id/kdms` validates, in the same transaction as the insert: the
+  sender is a member, `epoch` equals the sender's current `key_epoch` (stale -> 409), and
+  every recipient is a current member. All-or-nothing. Removal purges the removed
+  member's KDMs and evicts their sockets from `group:<id>`; drain only serves groups the
+  caller is in.
+* Version gate: the client sends `X-Wire-Group-Proto: 2`; KDM and message endpoints
+  answer anything older or missing with HTTP 426 and `{code:"update_required", min_group_protocol:2}`,
+  and the client shows a toast. Group management stays reachable.
+  A client that cannot parse a KDM never acks it, so the server keeps it for after the
+  update (locked in by a test).
+
+## 3. Why this exists (reproduced with the real server, Socket.IO and client)
+
+1. Two devices of one account used to mint the same key id for different keys, so a
+   recipient overwrote one with the other (MD-2) and both devices could encrypt under one
+   key with independent counters from 0: (key, nonce) reuse (MD-3 recovers
+   `c1 XOR c2 == p1 XOR p2` from the DB).
+2. The mailbox was consumed once per account, so a later device never got keys another
+   device had drained (MD-4).
+3. A failed or interrupted KDM POST left an undistributed key as current (MD-6); two tabs
+   both minting a first key (MD-5).
+
+## 4. Capacity
+
+Every connected device of a member mints its own key at each membership change, and
+adding a member also bumps the epoch, so a rotation writes about `members x devices` KDM
+rows per sender. At 50 members x 3 devices that is thousands of rows per event. Set a
+group-size cap before allowing large groups.
+
+## 5. Known limits (out of scope here)
+
+* One X25519 identity per account, restored on every device: no forward secrecy on key
+  distribution (a stolen password plus the server's wrapped identity decrypts every group
+  key ever sent to that user), one browser cannot be revoked (rotate the account
+  identity), KDMs are unsigned (unwrap success is the only authenticity).
+* No per-message sender authentication: any member holding a sender's key can encrypt
+  under it; attribution relies on the server's `sender_id`. This is Megolm with a portable
+  identity, not Signal Sender Keys with device identities.
+* PBKDF2 is not memory-hard. A database leak costs an attacker 600,000 SHA-256 iterations
+  per guess; a memory-hard KDF (Argon2id via WASM) would be stronger.
 * No history backfill for a newly added member (by design).
+* The malicious-JavaScript limit in section 1.
+
+Next protocol bump: device identity keys, signed KDMs, wrap per recipient device (then one
+laptop can be revoked). MLS only if groups grow past a few dozen people.
+
+## 6. Open decision: optional recovery key
+
+Not implemented. Sketch, for the owner to accept or reject: at registration the client
+generates a 256-bit recovery key shown once (and offered as a file/QR), and uploads a
+second copy of the identity encrypted under
+`HKDF(recoveryKey, "Wire-Identity-Recovery-v1")`. Reset-with-recovery-key then keeps the
+identity and history; without it a reset still means a new identity. Cost: one more secret
+users must store, and a carelessly stored recovery key is a second way to the identity.
+Default recommendation: leave it out for a small private server and keep the "no
+recovery" statement.

@@ -178,6 +178,33 @@ export async function createScenario(names) {
             return tab;
         },
 
+        /**
+         * Simulates a process kill + relaunch of `u`'s browser profile: the old
+         * JS heap is gone (its socket dies, any in-flight request is abandoned,
+         * its Web Locks are released), IndexedDB and localStorage survive, and
+         * a brand new module graph signs in again.
+         */
+        async restartProcess(u, label = 'restarted') {
+            try { u.socketMod?.getSocket()?.disconnect(); } catch { /* ignore */ }
+            const n = `${u.n}-${label}-${seq++}`;
+            const actor = createBrowserActor(n, server.origin, { profileOf: u.actor, freshLocks: true });
+            cleanups.push(() => actor.window.close());
+            actor.use();
+            const auth = await actor.importModule('core/auth.js');
+            await auth.login(u.n, u.ident.password);
+            await auth.initializeIdentity(u.ident.password);
+            const proc = {
+                actor,
+                n,
+                name: `${u.name}:${label}`,
+                ident: { id: u.ident.id, token: auth.getToken(), password: u.ident.password },
+                account: u,
+            };
+            extras.push(proc);
+            await S.mount(proc);
+            return proc;
+        },
+
         /** Every group_messages envelope for a group, parsed. */
         envelopes(groupId) {
             return server.db

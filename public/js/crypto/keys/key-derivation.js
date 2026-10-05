@@ -5,6 +5,12 @@ const PROTOCOL_INFO = new TextEncoder().encode(
     'Wire-E2EE-v1'
 );
 
+// F2: KDM wrapping uses its OWN key (distinct HKDF info) so a DM ciphertext
+// made with the 1:1 session key can never be accepted as a KDM, and vice versa.
+export const GROUP_KDM_INFO = new TextEncoder().encode(
+    'Wire-E2EE-Group-KDM-v2'
+);
+
 
 /**
  * Derive a raw X25519 shared secret.

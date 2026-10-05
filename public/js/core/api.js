@@ -9,6 +9,8 @@ resolveServerUrl
 
 import { perfApi } from './perf.js';
 
+const GROUP_PROTOCOL = 2;
+
 let isHandlingUnauthorized = false;
 
 /* =========================================================
@@ -44,6 +46,14 @@ const headers = {
 if (token) {
 headers['Authorization'] =
 'Bearer ' + token;
+}
+
+// F7: tell the server which group E2EE protocol this build speaks. Stale
+// builds omit it and get an explicit 426 update_required instead of silently
+// failing to parse v:2 KDMs. Bump together with GROUP_PROTOCOL_MIN
+// (middleware/groupProtocol.js).
+if (typeof url === 'string' && url.startsWith('/api/groups')) {
+headers['X-Wire-Group-Proto'] = String(GROUP_PROTOCOL);
 }
 
 const response =
@@ -113,6 +123,22 @@ if (sessionError && !isHandlingUnauthorized) {
 }
 
 throw new Error(errorMessage);
+
+}
+
+if (response.status === 426 && data?.code === 'update_required') {
+
+try {
+globalThis.dispatchEvent?.(
+new CustomEvent('wire:update-required', { detail: data })
+);
+} catch {
+/* no DOM events available */
+}
+
+const err = new Error(data.error || 'Update required');
+err.code = 'update_required';
+throw err;
 
 }
 

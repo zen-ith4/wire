@@ -16,6 +16,28 @@
 
 import { readCounter, writeCounter } from './sender-key-store.js';
 
+// F10: the 4-byte nonce prefix is random and lives in MEMORY ONLY. It is drawn
+// lazily on first use in every JS process (page load, tab, app start) and
+// redrawn after every identity lock/unlock (sender-key.js clearSenderKeyCache
+// calls resetNoncePrefix). It is deliberately NOT stored with the key: a
+// restored or cloned profile has the same key and possibly an older counter,
+// and a stored prefix would reproduce the exact same nonces. With a fresh
+// prefix per process a rolled-back counter still yields different nonces,
+// except with probability 2^-32 per pair of processes that reuse a counter
+// value (see the design doc).
+let noncePrefix = null;
+
+export function getNoncePrefix() {
+    if (!noncePrefix) {
+        noncePrefix = crypto.getRandomValues(new Uint8Array(4));
+    }
+    return noncePrefix;
+}
+
+export function resetNoncePrefix() {
+    noncePrefix = null;
+}
+
 function lockName(senderKeyId) {
     return `sender-key:${senderKeyId}`;
 }

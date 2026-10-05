@@ -172,7 +172,7 @@ test('R-4: a removed member cannot drain KDMs for the group, and pending KDMs ar
     assert.equal(pendingForCarol(), 0, 'removed member still has KDM rows addressed to her');
 
     // ...and the drain endpoint, without a group filter, must not hand her rows for groups she left.
-    const drained = await S.api(carol, '/api/groups/kdms');
+    const drained = await S.api(carol, '/api/groups/kdms?device_id=carolcarolcarol01');
     assert.deepEqual(drained.filter((r) => r.group_id === group.id), [], 'removed member drained KDMs for a group she left');
 });
 
@@ -202,7 +202,7 @@ test('R-5: Bob\'s UI updates from the new-group-message Socket.IO event, with no
     assert.ok(ev, `Bob's socket never received new-group-message; saw ${JSON.stringify(socketEvents.map((e) => e.name))}`);
     assert.equal(ev.payload.group_id, group.id);
     assert.ok(!ev.payload.content.includes(text), 'the socket payload is ciphertext (server never sees plaintext)');
-    assert.equal(JSON.parse(ev.payload.content).v, 1, 'payload is a group envelope');
+    assert.equal(JSON.parse(ev.payload.content).v, 2, 'payload is a v2 group envelope');
 
     assert.equal(historyFetches(), fetchesBefore, 'Bob fetched message history: the UI was NOT driven by the socket event alone');
     const newRequests = bob.actor.fetchLog.slice(totalBefore).map((f) => `${f.method} ${new URL(f.url).pathname}`);

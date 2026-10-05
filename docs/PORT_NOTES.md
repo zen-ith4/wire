@@ -164,6 +164,46 @@ Depends on other agents
 - Not tested: real phone, notch / home-indicator insets (Chromium reports 0; safe-area was evaluated
   from the CSS only), native WebView, Capacitor, APK.
 
+## Phase C: per-message sender authentication (ECDSA P-256)
+Group messages are signed per Sender Key; design, wire format, threat model and **known limitations** are in
+`docs/GROUP_E2EE_MULTIDEVICE_DESIGN.md` sections 6 and 7. v2 was **changed in place** (unreleased; no v3):
+test groups created before Phase C must be **recreated** (no migration code; old KDMs are never acked and log one
+line per drain; old messages show as unverified).
+
+`group-signing-keys.test.mjs`, `group-signing-ensure.test.mjs`, `group-signing-messages.test.mjs`,
+`group-signing-ui.test.mjs`, `group-signing-adversarial.test.mjs`, `group-signing-adversarial-ui.test.mjs`,
+`group-e2e-browser.test.mjs` and `group-hostile-browser.test.mjs` (both real Chromium, one browser process per account).
+
+**Production files modified** (all in the group crypto / group UI set; no server, login, auth, DM, admin or settings file;
+`crypto/messages/group-message-crypto.js`, `chat/group.js`, `chat/thread.js` (permanent placeholders are not retried).
+
+**Existing tests modified (call sites / mocks only, no assertion changed):**
+- `tests/groups/group-keys-contract.test.mjs` (L-1): `deriveSenderKeyId` / `storeReceivedSenderKey` gain the signing public key.
+- `tests/groups/group-hardening-wire.test.mjs` (F8-a, F3-c): same; F3-c's second id is now the real derived id (a stored id that does not
+  re-derive is refused on load).
+- `tests/csp-xss-render.test.mjs`: its fake `group-message-crypto.js` also exports `UnverifiedMessageError` and its passthrough reports
+  the owner and reply target the server claimed.
+`UnverifiedMessageError` messages start with "Group message authentication failed" so the existing `/authentication failed/` assertions
+(F3-a/b/c, F4-g) pass unchanged.
+
+**Behaviour that differs from before:** envelope has `reply_to_id` and `sig`; KDM plaintext is 97 bytes; the Sender Key id commits to the
+signing public key; a message is attributed to the verified key's owner (the server's `sender_id` must agree); history fetches show a
+static placeholder for unverified messages instead of dropping them (malformed envelopes are still dropped, `K-2`); a rotation drops the
+superseded own private signing key after the 201; `getMySenderKey` also needs a signing key and retries if a rotation commits underneath it.
+
+**Phase C summary** (every sub-step: one commit; every new test failed before its change and was mutation-checked):
+
+| Step | Tests added | Mutants (killed / run) | Full `npm test` |
+|---|---|---|---|
+| C1 signing primitive | 12 | 11 / 15 (4 equivalent: WebCrypto re-checks the same input) | 237 |
+| C2 key lifecycle | 31 (24 keys, 6 ensure/drain, 1 real-Chromium lifecycle) | 24 / 26 (2 equivalent) + 1 browser mutant | 268 |
+| C3 sign, verify, attribute | 20 (12 crypto, 8 with a real server) | 19 / 19 + 1 browser mutant | 288 |
+| C4 adversarial | 14 (8 crypto, 5 real server, 1 real Chromium) | 16 / 16 | 302 |
+| C5 docs and proposals | 0 (docs only) | n/a | see the delivery report |
+
+**Commands:** `npm test` (with Chromium in `/tmp/browser-check`); `node --experimental-test-module-mocks --env-file=tests/test.env --test tests/groups/group-signing*.test.mjs`;
+the real-Chromium tests: `tests/groups/group-e2e-browser.test.mjs`, `tests/groups/group-hostile-browser.test.mjs`.
+
 ## Files changed vs the X base (verified)
 `git diff --name-status 7655a7e..HEAD -- ':!tests' ':!docs'` was compared against an independently written list; they match exactly. Nothing else outside `tests/` and `docs/` differs from X.
 
@@ -216,7 +256,7 @@ Depends on other agents
 - `services/groupMessages.service.js`
 - `services/groups.service.js`
 - `sockets/group.socket.js`
-- `public/js/crypto/groups/*` (10 files)
+- `public/js/crypto/groups/*` (10 files, plus `signing.js` from Phase C)
 
 Not touched (protected): `dm.js`, `composer.js`, `chat.js`, `media/attachments.js`, `media/mediaToken.js`, the audio/video players, `ui/mobile-shell.js`, `sw.js`, `sw-manifest.js`, `index.html`, `settings/*`, `dm.controller`/`dm.service`, `messages.css`, `responsive.css`, and everything for push, APK, appearance, shortcuts, fonts and message sounds.
 

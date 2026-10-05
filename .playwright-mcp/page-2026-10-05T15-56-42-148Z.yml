@@ -1,0 +1,81 @@
+- generic [ref=f12e2]:
+  - generic [ref=f12e3]:
+    - link "Skip to content" [ref=f12e4] [cursor=pointer]:
+      - /url: "#start-of-content"
+    - banner [ref=f12e9]:
+      - heading "Navigation Menu" [level=2] [ref=f12e10]
+      - generic [ref=f12e12]:
+        - button "Toggle navigation" [ref=f12e14] [cursor=pointer]
+        - link "Homepage" [ref=f12e18] [cursor=pointer]:
+          - /url: /
+        - generic [ref=f12e21]:
+          - link "Sign in" [ref=f12e22] [cursor=pointer]:
+            - /url: /login?return_to=https%3A%2F%2Fgithub.com%2Fsearch%3Fq%3Drepo%253Aagalwood%252FMotrix%2Brepo%253Aagalwood%252FMotrix%2Bpath%253Aclaude%26type%3Dcode
+          - button "Appearance settings" [ref=f12e25] [cursor=pointer]
+  - main [ref=f12e31]:
+    - generic [ref=f12e34]:
+      - heading "code Search Results · repo:agalwood/Motrix repo:agalwood/Motrix path:claude" [level=1] [ref=f12e35]
+      - generic [ref=f12e38]:
+        - generic [ref=f12e39]:
+          - generic [ref=f12e40]:
+            - heading "Filter by" [level=2] [ref=f12e41]
+            - list "Filter by" [ref=f12e46]:
+              - listitem [ref=f12e47]:
+                - list [ref=f12e48]:
+                  - listitem [ref=f12e49]:
+                    - link "Code (...) results" [ref=f12e50] [cursor=pointer]:
+                      - /url: https://github.com/search?q=repo%3Aagalwood%2FMotrix+repo%3Aagalwood%2FMotrix+path%3Aclaude&type=code
+                      - generic [ref=f12e51]:
+                        - generic [ref=f12e52]: Code
+                        - generic:
+                          - generic [aria-hidden]: ...
+                          - generic: (...)
+                          - generic: results
+                  - listitem [ref=f12e53]:
+                    - link "Repositories results" [ref=f12e54] [cursor=pointer]:
+                      - /url: https://github.com/search?q=repo%3Aagalwood%2FMotrix+repo%3Aagalwood%2FMotrix+path%3Aclaude&type=repositories
+                      - generic [ref=f12e55]:
+                        - generic [ref=f12e56]: Repositories
+                        - generic: results
+                  - listitem [ref=f12e57]:
+                    - link "Issues results" [ref=f12e58] [cursor=pointer]:
+                      - /url: https://github.com/search?q=repo%3Aagalwood%2FMotrix+repo%3Aagalwood%2FMotrix+path%3Aclaude&type=issues
+                      - generic [ref=f12e59]:
+                        - generic [ref=f12e60]: Issues
+                        - generic: results
+                  - listitem [ref=f12e61]:
+                    - link "Pull requests results" [ref=f12e62] [cursor=pointer]:
+                      - /url: https://github.com/search?q=repo%3Aagalwood%2FMotrix+repo%3Aagalwood%2FMotrix+path%3Aclaude&type=pullrequests
+                      - generic [ref=f12e63]:
+                        - generic [ref=f12e64]: Pull requests
+                        - generic: results
+                  - listitem [ref=f12e65]:
+                    - link "Discussions results" [ref=f12e66] [cursor=pointer]:
+                      - /url: https://github.com/search?q=repo%3Aagalwood%2FMotrix+repo%3Aagalwood%2FMotrix+path%3Aclaude&type=discussions
+                      - generic [ref=f12e67]:
+                        - generic [ref=f12e68]: Discussions
+                        - generic: results
+                  - listitem [ref=f12e69] [cursor=pointer]:
+                    - link "Users results" [ref=f12e70]:
+                      - /url: https://github.com/search?q=repo%3Aagalwood%2FMotrix+repo%3Aagalwood%2FMotrix+path%3Aclaude&type=users
+                      - generic [ref=f12e71]:
+                        - generic [ref=f12e72]: Users
+                        - generic: results
+                  - listitem [ref=f12e73]:
+                    - button "More" [ref=f12e74] [cursor=pointer]
+              - listitem [aria-hidden] [ref=f12e77]
+              - listitem [ref=f12e78]:
+                - link "Advanced search" [ref=f12e79] [cursor=pointer]:
+                  - /url: /search/advanced
+          - slider "Draggable pane splitter" [ref=f12e83]
+        - generic [ref=f12e87]:
+          - button "Open column options" [ref=f12e92] [cursor=pointer]
+          - generic [ref=f12e97]:
+            - img "Mona looking through a globe hologram for code" [ref=f12e99]
+            - generic [ref=f12e100]: Sign in to search code on GitHub
+            - generic [ref=f12e101]: Before you can access our code search functionality please sign in or create a free account.
+            - generic [ref=f12e102]:
+              - link "Sign in" [ref=f12e103] [cursor=pointer]:
+                - /url: /login?return_to=https%3A%2F%2Fgithub.com%2Fsearch%3Fq%3Drepo%253Aagalwood%252FMotrix%2Brepo%253Aagalwood%252FMotrix%2Bpath%253Aclaude%26type%3Dcode
+              - link "Sign up" [ref=f12e106] [cursor=pointer]:
+                - /url: /signup?source=code_search_results

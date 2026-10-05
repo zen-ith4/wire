@@ -1,0 +1,263 @@
+- generic [active] [ref=f16e1]:
+  - generic [ref=f16e2]:
+    - generic [ref=f16e3]:
+      - link "Skip to content" [ref=f16e4] [cursor=pointer]:
+        - /url: "#start-of-content"
+      - banner [ref=f16e9]:
+        - heading "Navigation Menu" [level=2] [ref=f16e10]
+        - generic [ref=f16e12]:
+          - button "Toggle navigation" [ref=f16e14] [cursor=pointer]
+          - link "Homepage" [ref=f16e18] [cursor=pointer]:
+            - /url: /
+          - generic [ref=f16e21]:
+            - link "Sign in" [ref=f16e22] [cursor=pointer]:
+              - /url: /login?return_to=https%3A%2F%2Fgithub.com%2Fagalwood%2FMotrix%2Ftree%2Fmain%2F.claude%2Frules
+            - button "Appearance settings" [ref=f16e25] [cursor=pointer]
+    - main [ref=f16e32]:
+      - generic [ref=f16e33]:
+        - generic [ref=f16e34]:
+          - generic [ref=f16e36]:
+            - link "agalwood" [ref=f16e40] [cursor=pointer]:
+              - /url: /agalwood
+            - generic [ref=f16e41]: /
+            - strong [ref=f16e42]:
+              - link "Motrix" [ref=f16e43] [cursor=pointer]:
+                - /url: /agalwood/Motrix
+            - generic [ref=f16e44]: Public
+          - generic [ref=f16e45]:
+            - list:
+              - listitem [ref=f16e46]:
+                - link "You must be signed in to change notification settings" [ref=f16e47] [cursor=pointer]:
+                  - /url: /login?return_to=%2Fagalwood%2FMotrix
+                  - text: Notifications
+              - listitem [ref=f16e50]:
+                - link "Fork 5k" [ref=f16e51] [cursor=pointer]:
+                  - /url: /login?return_to=%2Fagalwood%2FMotrix
+                  - text: Fork
+                  - generic "5,046" [ref=f16e54]: 5k
+              - listitem [ref=f16e55]:
+                - link "You must be signed in to star a repository" [ref=f16e57] [cursor=pointer]:
+                  - /url: /login?return_to=%2Fagalwood%2FMotrix
+                  - text: Star
+                  - generic "56106 users starred this repository" [ref=f16e60]: 56.1k
+        - navigation "Repository" [ref=f16e61]:
+          - list [ref=f16e62]:
+            - listitem [ref=f16e63]:
+              - link "Code" [ref=f16e64] [cursor=pointer]:
+                - /url: /agalwood/Motrix
+            - listitem [ref=f16e68]:
+              - link "Issues 140" [ref=f16e69] [cursor=pointer]:
+                - /url: /agalwood/Motrix/issues
+                - generic [ref=f16e73]: Issues
+                - generic "140" [ref=f16e74]
+            - listitem [ref=f16e75]:
+              - link "Pull requests 8" [ref=f16e76] [cursor=pointer]:
+                - /url: /agalwood/Motrix/pulls
+                - generic [ref=f16e79]: Pull requests
+                - generic "8" [ref=f16e80]
+            - listitem [ref=f16e81]:
+              - link "Discussions" [ref=f16e82] [cursor=pointer]:
+                - /url: /agalwood/Motrix/discussions
+            - listitem [ref=f16e86]:
+              - link "Actions" [ref=f16e87] [cursor=pointer]:
+                - /url: /agalwood/Motrix/actions
+            - listitem [ref=f16e91]:
+              - link "Projects" [ref=f16e92] [cursor=pointer]:
+                - /url: /agalwood/Motrix/projects
+            - listitem [ref=f16e96]:
+              - link "Wiki" [ref=f16e97] [cursor=pointer]:
+                - /url: /agalwood/Motrix/wiki
+            - listitem [ref=f16e101]
+            - listitem [ref=f16e102]
+          - button "Additional navigation options" [ref=f16e106] [cursor=pointer]
+      - generic [ref=f16e117]:
+        - generic [ref=f16e121]:
+          - generic [ref=f16e122]:
+            - heading "Expand file tree" [level=2] [ref=f16e124]:
+              - button "Expand file tree" [ref=f16e125] [cursor=pointer]
+            - button "main branch" [ref=f16e130] [cursor=pointer]:
+              - generic [ref=f16e131]: main
+            - generic [ref=f16e136]:
+              - navigation [ref=f16e137]:
+                - heading "Breadcrumbs" [level=2] [ref=f16e138]
+                - list [ref=f16e139]:
+                  - listitem [ref=f16e140]:
+                    - link "Motrix" [ref=f16e141] [cursor=pointer]:
+                      - /url: /agalwood/Motrix/tree/main
+                  - listitem [ref=f16e142]:
+                    - text: /
+                    - link ".claude" [ref=f16e143] [cursor=pointer]:
+                      - /url: /agalwood/Motrix/tree/main/.claude
+              - generic [ref=f16e144]:
+                - text: /
+                - heading "rules" [level=1] [ref=f16e145]
+                - text: /
+              - button "Copy path" [ref=f16e146] [cursor=pointer]
+          - generic [ref=f16e152]:
+            - heading "Directory actions" [level=2] [ref=f16e153]
+            - combobox "Go to file" [ref=f16e160]
+            - heading "More options" [level=2] [ref=f16e161]
+            - button "More options" [ref=f16e162] [cursor=pointer]
+        - generic [ref=f16e165]:
+          - generic [ref=f16e167]:
+            - heading "Latest commit" [level=2] [ref=f16e168]
+            - generic [ref=f16e171]:
+              - heading "History" [level=2] [ref=f16e172]
+              - link "View commit history for this file." [ref=f16e174] [cursor=pointer]:
+                - /url: /agalwood/Motrix/commits/main/.claude/rules
+          - generic [ref=f16e177]:
+            - heading "Folders and files" [level=2] [ref=f16e178]
+            - table "Folders and files" [ref=f16e179]:
+              - rowgroup [ref=f16e180]:
+                - row [ref=f16e181]:
+                  - columnheader "Name" [ref=f16e182]
+                  - columnheader "Last commit message" [ref=f16e183]
+                  - columnheader "Last commit date" [ref=f16e185]
+              - rowgroup [ref=f16e187]:
+                - row [ref=f16e188]:
+                  - cell [ref=f16e189]:
+                    - heading "parent directory" [level=3] [ref=f16e190]
+                    - link "Parent directory" [ref=f16e191] [cursor=pointer]:
+                      - /url: /agalwood/Motrix/tree/main/.claude
+                      - generic [ref=f16e192]: ..
+                - row "architecture.md, (File)" [ref=f16e195]:
+                  - cell [ref=f16e196]:
+                    - link "architecture.md, (File)" [ref=f16e203] [cursor=pointer]:
+                      - /url: /agalwood/Motrix/blob/main/.claude/rules/architecture.md
+                      - text: architecture.md
+                  - cell [ref=f16e204]
+                  - cell [ref=f16e206]
+                - row "bridge.md, (File)" [ref=f16e209]:
+                  - cell [ref=f16e210]:
+                    - link "bridge.md, (File)" [ref=f16e217] [cursor=pointer]:
+                      - /url: /agalwood/Motrix/blob/main/.claude/rules/bridge.md
+                      - text: bridge.md
+                  - cell [ref=f16e218]
+                  - cell [ref=f16e220]
+                - row "browser-artifacts.md, (File)" [ref=f16e223]:
+                  - cell [ref=f16e224]:
+                    - link "browser-artifacts.md, (File)" [ref=f16e231] [cursor=pointer]:
+                      - /url: /agalwood/Motrix/blob/main/.claude/rules/browser-artifacts.md
+                      - text: browser-artifacts.md
+                  - cell [ref=f16e232]
+                  - cell [ref=f16e234]
+                - row "code-style.md, (File)" [ref=f16e237]:
+                  - cell [ref=f16e238]:
+                    - link "code-style.md, (File)" [ref=f16e245] [cursor=pointer]:
+                      - /url: /agalwood/Motrix/blob/main/.claude/rules/code-style.md
+                      - text: code-style.md
+                  - cell [ref=f16e246]
+                  - cell [ref=f16e248]
+                - row "commit-and-quality.md, (File)" [ref=f16e251]:
+                  - cell [ref=f16e252]:
+                    - link "commit-and-quality.md, (File)" [ref=f16e259] [cursor=pointer]:
+                      - /url: /agalwood/Motrix/blob/main/.claude/rules/commit-and-quality.md
+                      - text: commit-and-quality.md
+                  - cell [ref=f16e260]
+                  - cell [ref=f16e262]
+                - row "domain-model.md, (File)" [ref=f16e265]:
+                  - cell [ref=f16e266]:
+                    - link "domain-model.md, (File)" [ref=f16e273] [cursor=pointer]:
+                      - /url: /agalwood/Motrix/blob/main/.claude/rules/domain-model.md
+                      - text: domain-model.md
+                  - cell [ref=f16e274]
+                  - cell [ref=f16e276]
+                - row "electron-vite.md, (File)" [ref=f16e279]:
+                  - cell [ref=f16e280]:
+                    - link "electron-vite.md, (File)" [ref=f16e287] [cursor=pointer]:
+                      - /url: /agalwood/Motrix/blob/main/.claude/rules/electron-vite.md
+                      - text: electron-vite.md
+                  - cell [ref=f16e288]
+                  - cell [ref=f16e290]
+                - row "git-workflow.md, (File)" [ref=f16e293]:
+                  - cell [ref=f16e294]:
+                    - link "git-workflow.md, (File)" [ref=f16e301] [cursor=pointer]:
+                      - /url: /agalwood/Motrix/blob/main/.claude/rules/git-workflow.md
+                      - text: git-workflow.md
+                  - cell [ref=f16e302]
+                  - cell [ref=f16e304]
+                - row "i18n.md, (File)" [ref=f16e307]:
+                  - cell [ref=f16e308]:
+                    - link "i18n.md, (File)" [ref=f16e315] [cursor=pointer]:
+                      - /url: /agalwood/Motrix/blob/main/.claude/rules/i18n.md
+                      - text: i18n.md
+                  - cell [ref=f16e316]
+                  - cell [ref=f16e318]
+                - row "icons.md, (File)" [ref=f16e321]:
+                  - cell [ref=f16e322]:
+                    - link "icons.md, (File)" [ref=f16e329] [cursor=pointer]:
+                      - /url: /agalwood/Motrix/blob/main/.claude/rules/icons.md
+                      - text: icons.md
+                  - cell [ref=f16e330]
+                  - cell [ref=f16e332]
+                - row "language-and-docs.md, (File)" [ref=f16e335]:
+                  - cell [ref=f16e336]:
+                    - link "language-and-docs.md, (File)" [ref=f16e343] [cursor=pointer]:
+                      - /url: /agalwood/Motrix/blob/main/.claude/rules/language-and-docs.md
+                      - text: language-and-docs.md
+                  - cell [ref=f16e344]
+                  - cell [ref=f16e346]
+                - row "panel-layout.md, (File)" [ref=f16e349]:
+                  - cell [ref=f16e350]:
+                    - link "panel-layout.md, (File)" [ref=f16e357] [cursor=pointer]:
+                      - /url: /agalwood/Motrix/blob/main/.claude/rules/panel-layout.md
+                      - text: panel-layout.md
+                  - cell [ref=f16e358]
+                  - cell [ref=f16e360]
+                - row "plugin-registry.md, (File)" [ref=f16e363]:
+                  - cell [ref=f16e364]:
+                    - link "plugin-registry.md, (File)" [ref=f16e371] [cursor=pointer]:
+                      - /url: /agalwood/Motrix/blob/main/.claude/rules/plugin-registry.md
+                      - text: plugin-registry.md
+                  - cell [ref=f16e372]
+                  - cell [ref=f16e374]
+                - row "plugins.md, (File)" [ref=f16e377]:
+                  - cell [ref=f16e378]:
+                    - link "plugins.md, (File)" [ref=f16e385] [cursor=pointer]:
+                      - /url: /agalwood/Motrix/blob/main/.claude/rules/plugins.md
+                      - text: plugins.md
+                  - cell [ref=f16e386]
+                  - cell [ref=f16e388]
+                - row "renderer.md, (File)" [ref=f16e391]:
+                  - cell [ref=f16e392]:
+                    - link "renderer.md, (File)" [ref=f16e399] [cursor=pointer]:
+                      - /url: /agalwood/Motrix/blob/main/.claude/rules/renderer.md
+                      - text: renderer.md
+                  - cell [ref=f16e400]
+                  - cell [ref=f16e402]
+    - contentinfo [ref=f16e406]:
+      - heading "Footer" [level=2] [ref=f16e407]
+      - generic [ref=f16e408]:
+        - generic [ref=f16e409]:
+          - link "GitHub Homepage" [ref=f16e410] [cursor=pointer]:
+            - /url: https://github.com
+          - generic [ref=f16e413]: © 2026 GitHub, Inc.
+        - navigation "Footer" [ref=f16e414]:
+          - heading "Footer navigation" [level=3] [ref=f16e415]
+          - list "Footer navigation" [ref=f16e416]:
+            - listitem [ref=f16e417]:
+              - link "Terms" [ref=f16e418] [cursor=pointer]:
+                - /url: https://docs.github.com/site-policy/github-terms/github-terms-of-service
+            - listitem [ref=f16e419]:
+              - link "Privacy" [ref=f16e420] [cursor=pointer]:
+                - /url: https://docs.github.com/site-policy/privacy-policies/github-privacy-statement
+            - listitem [ref=f16e421]:
+              - link "Security" [ref=f16e422] [cursor=pointer]:
+                - /url: https://github.com/security
+            - listitem [ref=f16e423]:
+              - link "Status" [ref=f16e424] [cursor=pointer]:
+                - /url: https://www.githubstatus.com/
+            - listitem [ref=f16e425]:
+              - link "Community" [ref=f16e426] [cursor=pointer]:
+                - /url: https://github.community/
+            - listitem [ref=f16e427]:
+              - link "Docs" [ref=f16e428] [cursor=pointer]:
+                - /url: https://docs.github.com/
+            - listitem [ref=f16e429]:
+              - link "Contact" [ref=f16e430] [cursor=pointer]:
+                - /url: https://support.github.com?tags=dotcom-footer
+            - listitem [ref=f16e431]:
+              - button "Manage cookies" [ref=f16e433] [cursor=pointer]
+            - listitem [ref=f16e434]:
+              - button "Do not share my personal information" [ref=f16e436] [cursor=pointer]
+  - alert [ref=f16e439]

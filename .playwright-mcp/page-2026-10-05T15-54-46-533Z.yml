@@ -1,0 +1,1660 @@
+- generic [active] [ref=f5e1]:
+  - generic [ref=f5e2]:
+    - generic [ref=f5e3]:
+      - link "Skip to content" [ref=f5e4] [cursor=pointer]:
+        - /url: "#start-of-content"
+      - banner [ref=f5e9]:
+        - heading "Navigation Menu" [level=2] [ref=f5e10]
+        - generic [ref=f5e12]:
+          - button "Toggle navigation" [ref=f5e14] [cursor=pointer]
+          - link "Homepage" [ref=f5e18] [cursor=pointer]:
+            - /url: /
+          - generic [ref=f5e21]:
+            - link "Sign in" [ref=f5e22] [cursor=pointer]:
+              - /url: /login?return_to=https%3A%2F%2Fgithub.com%2Fagalwood%2FMotrix
+            - button "Appearance settings" [ref=f5e25] [cursor=pointer]
+    - main [ref=f5e32]:
+      - generic [ref=f5e33]:
+        - generic [ref=f5e34]:
+          - generic [ref=f5e36]:
+            - link "agalwood" [ref=f5e40] [cursor=pointer]:
+              - /url: /agalwood
+            - generic [ref=f5e41]: /
+            - strong [ref=f5e42]:
+              - link "Motrix" [ref=f5e43] [cursor=pointer]:
+                - /url: /agalwood/Motrix
+            - generic [ref=f5e44]: Public
+          - generic [ref=f5e45]:
+            - list:
+              - listitem [ref=f5e46]:
+                - link "You must be signed in to change notification settings" [ref=f5e47] [cursor=pointer]:
+                  - /url: /login?return_to=%2Fagalwood%2FMotrix
+                  - text: Notifications
+              - listitem [ref=f5e50]:
+                - link "Fork 5k" [ref=f5e51] [cursor=pointer]:
+                  - /url: /login?return_to=%2Fagalwood%2FMotrix
+                  - text: Fork
+                  - generic "5,046" [ref=f5e54]: 5k
+              - listitem [ref=f5e55]:
+                - link "You must be signed in to star a repository" [ref=f5e57] [cursor=pointer]:
+                  - /url: /login?return_to=%2Fagalwood%2FMotrix
+                  - text: Star
+                  - generic "56106 users starred this repository" [ref=f5e60]: 56.1k
+        - navigation "Repository" [ref=f5e61]:
+          - list [ref=f5e62]:
+            - listitem [ref=f5e63]:
+              - link "Code" [ref=f5e64] [cursor=pointer]:
+                - /url: /agalwood/Motrix
+            - listitem [ref=f5e68]:
+              - link "Issues 139" [ref=f5e69] [cursor=pointer]:
+                - /url: /agalwood/Motrix/issues
+                - generic [ref=f5e73]: Issues
+                - generic "139" [ref=f5e74]
+            - listitem [ref=f5e75]:
+              - link "Pull requests 8" [ref=f5e76] [cursor=pointer]:
+                - /url: /agalwood/Motrix/pulls
+                - generic [ref=f5e79]: Pull requests
+                - generic "8" [ref=f5e80]
+            - listitem [ref=f5e81]:
+              - link "Discussions" [ref=f5e82] [cursor=pointer]:
+                - /url: /agalwood/Motrix/discussions
+            - listitem [ref=f5e86]:
+              - link "Actions" [ref=f5e87] [cursor=pointer]:
+                - /url: /agalwood/Motrix/actions
+            - listitem [ref=f5e91]:
+              - link "Projects" [ref=f5e92] [cursor=pointer]:
+                - /url: /agalwood/Motrix/projects
+            - listitem [ref=f5e96]:
+              - link "Wiki" [ref=f5e97] [cursor=pointer]:
+                - /url: /agalwood/Motrix/wiki
+            - listitem [ref=f5e101]
+            - listitem [ref=f5e102]
+          - button "Additional navigation options" [ref=f5e106] [cursor=pointer]
+      - generic [ref=f5e120]:
+        - generic [ref=f5e123]:
+          - generic [ref=f5e124]:
+            - generic [ref=f5e125]:
+              - button "main branch" [ref=f5e127] [cursor=pointer]:
+                - generic [ref=f5e128]: main
+              - generic [ref=f5e132]:
+                - link "Go to Branches page" [ref=f5e133] [cursor=pointer]:
+                  - /url: /agalwood/Motrix/branches
+                - link "Go to Tags page" [ref=f5e136] [cursor=pointer]:
+                  - /url: /agalwood/Motrix/tags
+            - generic [ref=f5e139]:
+              - button "Go to file" [ref=f5e142] [cursor=pointer]
+              - button "Code" [ref=f5e145] [cursor=pointer]
+          - generic [ref=f5e148]:
+            - generic [ref=f5e149]:
+              - generic [ref=f5e151]:
+                - heading "Latest commit" [level=2] [ref=f5e152]
+                - generic [ref=f5e153]:
+                  - generic [ref=f5e155]:
+                    - link [ref=f5e156] [cursor=pointer]:
+                      - /url: /agalwood
+                      - img "agalwood" [ref=f5e157]
+                    - link "commits by agalwood" [ref=f5e158] [cursor=pointer]:
+                      - /url: /agalwood/Motrix/commits?author=agalwood
+                      - text: agalwood
+                  - generic [ref=f5e159]:
+                    - generic [ref=f5e161]:
+                      - 'link "perf(build): optimize bundles and desktop deferred loading (" [ref=f5e162] [cursor=pointer]':
+                        - /url: /agalwood/Motrix/commit/ad3ea65b23270003dca78fd1701a536c0653efe2
+                      - link "#2316" [ref=f5e163] [cursor=pointer]:
+                        - /url: https://github.com/agalwood/Motrix/pull/2316
+                      - link ")" [ref=f5e164] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/commit/ad3ea65b23270003dca78fd1701a536c0653efe2
+                    - button "success" [ref=f5e165] [cursor=pointer]
+                - generic [ref=f5e168]:
+                  - generic [ref=f5e170]:
+                    - link "Commit ad3ea65" [ref=f5e171] [cursor=pointer]:
+                      - /url: /agalwood/Motrix/commit/ad3ea65b23270003dca78fd1701a536c0653efe2
+                      - text: ad3ea65
+                    - text: ·
+                    - generic "Oct 4, 2026, 7:04 AM GMT+3:30" [ref=f5e172]: Oct 4, 20262 days ago
+                  - generic [ref=f5e173]:
+                    - heading "History" [level=2] [ref=f5e174]
+                    - link "View commit history for this file." [ref=f5e176] [cursor=pointer]:
+                      - /url: /agalwood/Motrix/commits/main/
+              - heading "Folders and files" [level=2] [ref=f5e178]
+              - table "Folders and files" [ref=f5e179]:
+                - rowgroup:
+                  - row "Name Last commit message Last commit date":
+                    - columnheader "Name"
+                    - columnheader "Last commit message"
+                    - columnheader "Last commit date"
+                - rowgroup [ref=f5e180]:
+                  - row [ref=f5e181]:
+                    - cell [ref=f5e182]:
+                      - link ".cargo, (Directory)" [ref=f5e189] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/tree/main/.cargo
+                        - text: .cargo
+                    - cell [ref=f5e190]:
+                      - 'link "feat: import motrix-turbo snapshot" [ref=f5e193] [cursor=pointer]':
+                        - /url: /agalwood/Motrix/commit/6a5d6efd2dc72a00f3cc2adfa76056c16336ce0c
+                    - cell "Aug 9, 20262 months ago" [ref=f5e194]
+                  - row [ref=f5e196]:
+                    - cell [ref=f5e197]:
+                      - link ".claude/rules, (Directory)" [ref=f5e204] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/tree/main/.claude/rules
+                        - text: .claude/rules
+                    - cell [ref=f5e205]:
+                      - generic [ref=f5e207]:
+                        - 'link "perf(build): optimize bundles and desktop deferred loading (" [ref=f5e208] [cursor=pointer]':
+                          - /url: /agalwood/Motrix/commit/ad3ea65b23270003dca78fd1701a536c0653efe2
+                        - link "#2316" [ref=f5e209] [cursor=pointer]:
+                          - /url: https://github.com/agalwood/Motrix/pull/2316
+                        - link ")" [ref=f5e210] [cursor=pointer]:
+                          - /url: /agalwood/Motrix/commit/ad3ea65b23270003dca78fd1701a536c0653efe2
+                    - cell "Oct 4, 20262 days ago" [ref=f5e211]
+                  - row [ref=f5e213]:
+                    - cell [ref=f5e214]:
+                      - link ".github, (Directory)" [ref=f5e221] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/tree/main/.github
+                        - text: .github
+                    - cell [ref=f5e222]:
+                      - generic [ref=f5e224]:
+                        - 'link "perf(build): optimize bundles and desktop deferred loading (" [ref=f5e225] [cursor=pointer]':
+                          - /url: /agalwood/Motrix/commit/ad3ea65b23270003dca78fd1701a536c0653efe2
+                        - link "#2316" [ref=f5e226] [cursor=pointer]:
+                          - /url: https://github.com/agalwood/Motrix/pull/2316
+                        - link ")" [ref=f5e227] [cursor=pointer]:
+                          - /url: /agalwood/Motrix/commit/ad3ea65b23270003dca78fd1701a536c0653efe2
+                    - cell "Oct 4, 20262 days ago" [ref=f5e228]
+                  - row [ref=f5e230]:
+                    - cell [ref=f5e231]:
+                      - link ".playwright, (Directory)" [ref=f5e238] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/tree/main/.playwright
+                        - text: .playwright
+                    - cell [ref=f5e239]:
+                      - generic [ref=f5e241]:
+                        - 'link "chore(test): consolidate playwright artifacts (" [ref=f5e242] [cursor=pointer]':
+                          - /url: /agalwood/Motrix/commit/da90b6a4e554cbdc8c5adaf06eda47063200c71f
+                        - link "#2173" [ref=f5e243] [cursor=pointer]:
+                          - /url: https://github.com/agalwood/Motrix/pull/2173
+                        - link ")" [ref=f5e244] [cursor=pointer]:
+                          - /url: /agalwood/Motrix/commit/da90b6a4e554cbdc8c5adaf06eda47063200c71f
+                    - cell "Sep 20, 20262 weeks ago" [ref=f5e245]
+                  - row [ref=f5e247]:
+                    - cell [ref=f5e248]:
+                      - link ".vscode, (Directory)" [ref=f5e255] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/tree/main/.vscode
+                        - text: .vscode
+                    - cell [ref=f5e256]:
+                      - 'link "feat: import motrix-turbo snapshot" [ref=f5e259] [cursor=pointer]':
+                        - /url: /agalwood/Motrix/commit/6a5d6efd2dc72a00f3cc2adfa76056c16336ce0c
+                    - cell "Aug 9, 20262 months ago" [ref=f5e260]
+                  - row [ref=f5e262]:
+                    - cell [ref=f5e263]:
+                      - link "THIRD_PARTY_LICENSES, (Directory)" [ref=f5e270] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/tree/main/THIRD_PARTY_LICENSES
+                        - text: THIRD_PARTY_LICENSES
+                    - cell [ref=f5e271]:
+                      - generic [ref=f5e273]:
+                        - 'link "fix(finalize): publish completed files safely on NFS (" [ref=f5e274] [cursor=pointer]':
+                          - /url: /agalwood/Motrix/commit/84e52ef0ca69c127690c4dc587f8f6c4565835e1
+                        - link "#2179" [ref=f5e275] [cursor=pointer]:
+                          - /url: https://github.com/agalwood/Motrix/pull/2179
+                        - link ")" [ref=f5e276] [cursor=pointer]:
+                          - /url: /agalwood/Motrix/commit/84e52ef0ca69c127690c4dc587f8f6c4565835e1
+                    - cell "Sep 21, 20262 weeks ago" [ref=f5e277]
+                  - row [ref=f5e279]:
+                    - cell [ref=f5e280]:
+                      - link "build, (Directory)" [ref=f5e287] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/tree/main/build
+                        - text: build
+                    - cell [ref=f5e288]:
+                      - generic [ref=f5e290]:
+                        - 'link "fix(protocol): restore safe motrix deep links and retire mo (" [ref=f5e291] [cursor=pointer]':
+                          - /url: /agalwood/Motrix/commit/1e45108674c06cc361d51a3a114895f77143cb04
+                        - link "#2300" [ref=f5e292] [cursor=pointer]:
+                          - /url: https://github.com/agalwood/Motrix/pull/2300
+                        - link ")" [ref=f5e293] [cursor=pointer]:
+                          - /url: /agalwood/Motrix/commit/1e45108674c06cc361d51a3a114895f77143cb04
+                    - cell "Oct 2, 20264 days ago" [ref=f5e294]
+                  - row [ref=f5e296]:
+                    - cell [ref=f5e297]:
+                      - link "docs, (Directory)" [ref=f5e304] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/tree/main/docs
+                        - text: docs
+                    - cell [ref=f5e305]:
+                      - generic [ref=f5e307]:
+                        - 'link "perf(build): optimize bundles and desktop deferred loading (" [ref=f5e308] [cursor=pointer]':
+                          - /url: /agalwood/Motrix/commit/ad3ea65b23270003dca78fd1701a536c0653efe2
+                        - link "#2316" [ref=f5e309] [cursor=pointer]:
+                          - /url: https://github.com/agalwood/Motrix/pull/2316
+                        - link ")" [ref=f5e310] [cursor=pointer]:
+                          - /url: /agalwood/Motrix/commit/ad3ea65b23270003dca78fd1701a536c0653efe2
+                    - cell "Oct 4, 20262 days ago" [ref=f5e311]
+                  - row [ref=f5e313]:
+                    - cell [ref=f5e314]:
+                      - link "e2e, (Directory)" [ref=f5e321] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/tree/main/e2e
+                        - text: e2e
+                    - cell [ref=f5e322]:
+                      - generic [ref=f5e324]:
+                        - 'link "perf(build): optimize bundles and desktop deferred loading (" [ref=f5e325] [cursor=pointer]':
+                          - /url: /agalwood/Motrix/commit/ad3ea65b23270003dca78fd1701a536c0653efe2
+                        - link "#2316" [ref=f5e326] [cursor=pointer]:
+                          - /url: https://github.com/agalwood/Motrix/pull/2316
+                        - link ")" [ref=f5e327] [cursor=pointer]:
+                          - /url: /agalwood/Motrix/commit/ad3ea65b23270003dca78fd1701a536c0653efe2
+                    - cell "Oct 4, 20262 days ago" [ref=f5e328]
+                  - row [ref=f5e330]:
+                    - cell [ref=f5e331]:
+                      - link "extra, (Directory)" [ref=f5e338] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/tree/main/extra
+                        - text: extra
+                    - cell [ref=f5e339]:
+                      - generic [ref=f5e341]:
+                        - 'link "feat(downloads): refine task controls and seeding lifecycle (" [ref=f5e342] [cursor=pointer]':
+                          - /url: /agalwood/Motrix/commit/a09f0ea39ea2d06e1d03c6dd069a71438273572e
+                        - link "#2143" [ref=f5e343] [cursor=pointer]:
+                          - /url: https://github.com/agalwood/Motrix/pull/2143
+                        - link ")" [ref=f5e344] [cursor=pointer]:
+                          - /url: /agalwood/Motrix/commit/a09f0ea39ea2d06e1d03c6dd069a71438273572e
+                    - cell "Sep 15, 20263 weeks ago" [ref=f5e345]
+                  - row [ref=f5e347]:
+                    - cell [ref=f5e348]:
+                      - link "flatpak, (Directory)" [ref=f5e355] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/tree/main/flatpak
+                        - text: flatpak
+                    - cell [ref=f5e356]:
+                      - generic [ref=f5e358]:
+                        - 'link "chore(release): prepare 2.0.0-beta.46 (" [ref=f5e359] [cursor=pointer]':
+                          - /url: /agalwood/Motrix/commit/56f7f63ddbe37d6dfb8651981dcda2d3b684799b
+                        - link "#2303" [ref=f5e360] [cursor=pointer]:
+                          - /url: https://github.com/agalwood/Motrix/pull/2303
+                        - link ")" [ref=f5e361] [cursor=pointer]:
+                          - /url: /agalwood/Motrix/commit/56f7f63ddbe37d6dfb8651981dcda2d3b684799b
+                    - cell "Oct 2, 20263 days ago" [ref=f5e362]
+                  - row [ref=f5e364]:
+                    - cell [ref=f5e365]:
+                      - link "packages, (Directory)" [ref=f5e372] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/tree/main/packages
+                        - text: packages
+                    - cell [ref=f5e373]:
+                      - generic [ref=f5e375]:
+                        - 'link "feat(safari): ship signed desktop bootstrap and upgrade registration (" [ref=f5e376] [cursor=pointer]':
+                          - /url: /agalwood/Motrix/commit/0db6923da428364025d2d4b1e12a171eb6190b06
+                        - link "#…" [ref=f5e377] [cursor=pointer]:
+                          - /url: https://github.com/agalwood/Motrix/pull/2271
+                    - cell "Sep 29, 2026last week" [ref=f5e378]
+                  - row [ref=f5e380]:
+                    - cell [ref=f5e381]:
+                      - link "public, (Directory)" [ref=f5e388] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/tree/main/public
+                        - text: public
+                    - cell [ref=f5e389]:
+                      - 'link "fix: preserve window title and add app icons" [ref=f5e392] [cursor=pointer]':
+                        - /url: /agalwood/Motrix/commit/b577dbf6f41922c604b7e98f32acb6696ae4a013
+                    - cell "Aug 27, 20262 months ago" [ref=f5e393]
+                  - row [ref=f5e395]:
+                    - cell [ref=f5e396]:
+                      - link "screenshots, (Directory)" [ref=f5e403] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/tree/main/screenshots
+                        - text: screenshots
+                    - cell [ref=f5e404]:
+                      - generic [ref=f5e406]:
+                        - 'link "feat(plugins): support signed official optional installs (" [ref=f5e407] [cursor=pointer]':
+                          - /url: /agalwood/Motrix/commit/732120373c7203fd0fd9fba8fe411b46b064cbc7
+                        - link "#2312" [ref=f5e408] [cursor=pointer]:
+                          - /url: https://github.com/agalwood/Motrix/pull/2312
+                        - link ")" [ref=f5e409] [cursor=pointer]:
+                          - /url: /agalwood/Motrix/commit/732120373c7203fd0fd9fba8fe411b46b064cbc7
+                    - cell "Oct 4, 20262 days ago" [ref=f5e410]
+                  - row [ref=f5e412]:
+                    - cell [ref=f5e413]:
+                      - link "scripts, (Directory)" [ref=f5e420] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/tree/main/scripts
+                        - text: scripts
+                    - cell [ref=f5e421]:
+                      - generic [ref=f5e423]:
+                        - 'link "perf(build): optimize bundles and desktop deferred loading (" [ref=f5e424] [cursor=pointer]':
+                          - /url: /agalwood/Motrix/commit/ad3ea65b23270003dca78fd1701a536c0653efe2
+                        - link "#2316" [ref=f5e425] [cursor=pointer]:
+                          - /url: https://github.com/agalwood/Motrix/pull/2316
+                        - link ")" [ref=f5e426] [cursor=pointer]:
+                          - /url: /agalwood/Motrix/commit/ad3ea65b23270003dca78fd1701a536c0653efe2
+                    - cell "Oct 4, 20262 days ago" [ref=f5e427]
+                  - row [ref=f5e429]:
+                    - cell [ref=f5e430]:
+                      - link "src, (Directory)" [ref=f5e437] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/tree/main/src
+                        - text: src
+                    - cell [ref=f5e438]:
+                      - generic [ref=f5e440]:
+                        - 'link "perf(build): optimize bundles and desktop deferred loading (" [ref=f5e441] [cursor=pointer]':
+                          - /url: /agalwood/Motrix/commit/ad3ea65b23270003dca78fd1701a536c0653efe2
+                        - link "#2316" [ref=f5e442] [cursor=pointer]:
+                          - /url: https://github.com/agalwood/Motrix/pull/2316
+                        - link ")" [ref=f5e443] [cursor=pointer]:
+                          - /url: /agalwood/Motrix/commit/ad3ea65b23270003dca78fd1701a536c0653efe2
+                    - cell "Oct 4, 20262 days ago" [ref=f5e444]
+                  - row [ref=f5e446]:
+                    - cell [ref=f5e447]:
+                      - link "tests, (Directory)" [ref=f5e454] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/tree/main/tests
+                        - text: tests
+                    - cell [ref=f5e455]:
+                      - generic [ref=f5e457]:
+                        - 'link "perf(build): optimize bundles and desktop deferred loading (" [ref=f5e458] [cursor=pointer]':
+                          - /url: /agalwood/Motrix/commit/ad3ea65b23270003dca78fd1701a536c0653efe2
+                        - link "#2316" [ref=f5e459] [cursor=pointer]:
+                          - /url: https://github.com/agalwood/Motrix/pull/2316
+                        - link ")" [ref=f5e460] [cursor=pointer]:
+                          - /url: /agalwood/Motrix/commit/ad3ea65b23270003dca78fd1701a536c0653efe2
+                    - cell "Oct 4, 20262 days ago" [ref=f5e461]
+                  - row [ref=f5e463]:
+                    - cell [ref=f5e464]:
+                      - link ".dockerignore, (File)" [ref=f5e471] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/blob/main/.dockerignore
+                        - text: .dockerignore
+                    - cell [ref=f5e472]:
+                      - generic [ref=f5e474]:
+                        - 'link "fix(server): support Docker extension bridge startup (" [ref=f5e475] [cursor=pointer]':
+                          - /url: /agalwood/Motrix/commit/2712720d45c697276ec126839cc302f23e2a42f0
+                        - link "#2055" [ref=f5e476] [cursor=pointer]:
+                          - /url: https://github.com/agalwood/Motrix/pull/2055
+                        - link ")" [ref=f5e477] [cursor=pointer]:
+                          - /url: /agalwood/Motrix/commit/2712720d45c697276ec126839cc302f23e2a42f0
+                    - cell "Sep 3, 2026last month" [ref=f5e478]
+                  - row [ref=f5e480]:
+                    - cell [ref=f5e481]:
+                      - link ".gitattributes, (File)" [ref=f5e488] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/blob/main/.gitattributes
+                        - text: .gitattributes
+                    - cell [ref=f5e489]:
+                      - generic [ref=f5e491]:
+                        - 'link "feat(safari): ship signed desktop bootstrap and upgrade registration (" [ref=f5e492] [cursor=pointer]':
+                          - /url: /agalwood/Motrix/commit/0db6923da428364025d2d4b1e12a171eb6190b06
+                        - link "#…" [ref=f5e493] [cursor=pointer]:
+                          - /url: https://github.com/agalwood/Motrix/pull/2271
+                    - cell "Sep 29, 2026last week" [ref=f5e494]
+                  - row [ref=f5e496]:
+                    - cell [ref=f5e497]:
+                      - link ".gitignore, (File)" [ref=f5e504] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/blob/main/.gitignore
+                        - text: .gitignore
+                    - cell [ref=f5e505]:
+                      - generic [ref=f5e507]:
+                        - 'link "chore(test): consolidate playwright artifacts (" [ref=f5e508] [cursor=pointer]':
+                          - /url: /agalwood/Motrix/commit/da90b6a4e554cbdc8c5adaf06eda47063200c71f
+                        - link "#2173" [ref=f5e509] [cursor=pointer]:
+                          - /url: https://github.com/agalwood/Motrix/pull/2173
+                        - link ")" [ref=f5e510] [cursor=pointer]:
+                          - /url: /agalwood/Motrix/commit/da90b6a4e554cbdc8c5adaf06eda47063200c71f
+                    - cell "Sep 20, 20262 weeks ago" [ref=f5e511]
+                  - row [ref=f5e513]:
+                    - cell [ref=f5e514]:
+                      - link ".npmrc, (File)" [ref=f5e521] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/blob/main/.npmrc
+                        - text: .npmrc
+                    - cell [ref=f5e522]:
+                      - 'link "fix: harden CI and flatpak packaging workflows" [ref=f5e525] [cursor=pointer]':
+                        - /url: /agalwood/Motrix/commit/fa3187810c009475838147db14927b9dd33c8142
+                    - cell "Aug 10, 20262 months ago" [ref=f5e526]
+                  - row [ref=f5e528]:
+                    - cell [ref=f5e529]:
+                      - link "AGENTS.md, (File)" [ref=f5e536] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/blob/main/AGENTS.md
+                        - text: AGENTS.md
+                    - cell [ref=f5e537]:
+                      - 'link "docs: add public Claude and Codex contributor guidance" [ref=f5e540] [cursor=pointer]':
+                        - /url: /agalwood/Motrix/commit/bbe78b1d5550d9d0d20e64f51438e525f55f980a
+                    - cell "Aug 13, 20262 months ago" [ref=f5e541]
+                  - row [ref=f5e543]:
+                    - cell [ref=f5e544]:
+                      - link "CLAUDE.md, (File)" [ref=f5e551] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/blob/main/CLAUDE.md
+                        - text: CLAUDE.md
+                    - cell [ref=f5e552]:
+                      - generic [ref=f5e554]:
+                        - 'link "feat(appearance): add glass icons and adaptive sidebar colors (" [ref=f5e555] [cursor=pointer]':
+                          - /url: /agalwood/Motrix/commit/9a6d5c312d7f6f5d75c9ba608029d6ddb28b541c
+                        - link "#2206" [ref=f5e556] [cursor=pointer]:
+                          - /url: https://github.com/agalwood/Motrix/pull/2206
+                        - link ")" [ref=f5e557] [cursor=pointer]:
+                          - /url: /agalwood/Motrix/commit/9a6d5c312d7f6f5d75c9ba608029d6ddb28b541c
+                    - cell "Sep 25, 20262 weeks ago" [ref=f5e558]
+                  - row [ref=f5e560]:
+                    - cell [ref=f5e561]:
+                      - link "CODE_OF_CONDUCT.md, (File)" [ref=f5e568] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/blob/main/CODE_OF_CONDUCT.md
+                        - text: CODE_OF_CONDUCT.md
+                    - cell [ref=f5e569]:
+                      - 'link "docs: update code of conduct to v3.0" [ref=f5e572] [cursor=pointer]':
+                        - /url: /agalwood/Motrix/commit/643c4f28a332a437875100818d0fb3dd72133766
+                    - cell "Aug 26, 20262 months ago" [ref=f5e573]
+                  - row [ref=f5e575]:
+                    - cell [ref=f5e576]:
+                      - link "CODE_OF_CONDUCT.zh-CN.md, (File)" [ref=f5e583] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/blob/main/CODE_OF_CONDUCT.zh-CN.md
+                        - text: CODE_OF_CONDUCT.zh-CN.md
+                    - cell [ref=f5e584]:
+                      - 'link "docs: update code of conduct to v3.0" [ref=f5e587] [cursor=pointer]':
+                        - /url: /agalwood/Motrix/commit/643c4f28a332a437875100818d0fb3dd72133766
+                    - cell "Aug 26, 20262 months ago" [ref=f5e588]
+                  - row [ref=f5e590]:
+                    - cell [ref=f5e591]:
+                      - link "CONTRIBUTING.md, (File)" [ref=f5e598] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/blob/main/CONTRIBUTING.md
+                        - text: CONTRIBUTING.md
+                    - cell [ref=f5e599]:
+                      - generic [ref=f5e601]:
+                        - 'link "fix: isolate dev data and repair tracker proxy sync (" [ref=f5e602] [cursor=pointer]':
+                          - /url: /agalwood/Motrix/commit/eda44ac93493606f74f627e13f513690aa118c82
+                        - link "#2006" [ref=f5e603] [cursor=pointer]:
+                          - /url: https://github.com/agalwood/Motrix/pull/2006
+                        - link ")" [ref=f5e604] [cursor=pointer]:
+                          - /url: /agalwood/Motrix/commit/eda44ac93493606f74f627e13f513690aa118c82
+                    - cell "Aug 28, 20262 months ago" [ref=f5e605]
+                  - row [ref=f5e607]:
+                    - cell [ref=f5e608]:
+                      - link "CONTRIBUTING.zh-CN.md, (File)" [ref=f5e615] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/blob/main/CONTRIBUTING.zh-CN.md
+                        - text: CONTRIBUTING.zh-CN.md
+                    - cell [ref=f5e616]:
+                      - generic [ref=f5e618]:
+                        - 'link "fix: isolate dev data and repair tracker proxy sync (" [ref=f5e619] [cursor=pointer]':
+                          - /url: /agalwood/Motrix/commit/eda44ac93493606f74f627e13f513690aa118c82
+                        - link "#2006" [ref=f5e620] [cursor=pointer]:
+                          - /url: https://github.com/agalwood/Motrix/pull/2006
+                        - link ")" [ref=f5e621] [cursor=pointer]:
+                          - /url: /agalwood/Motrix/commit/eda44ac93493606f74f627e13f513690aa118c82
+                    - cell "Aug 28, 20262 months ago" [ref=f5e622]
+                  - row [ref=f5e624]:
+                    - cell [ref=f5e625]:
+                      - link "Dockerfile, (File)" [ref=f5e632] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/blob/main/Dockerfile
+                        - text: Dockerfile
+                    - cell [ref=f5e633]:
+                      - generic [ref=f5e635]:
+                        - 'link "chore(deps): refresh npm packages and security locks (" [ref=f5e636] [cursor=pointer]':
+                          - /url: /agalwood/Motrix/commit/e34f2d7cc4d98605e41ea1dd413ec71a0da69827
+                        - link "#2287" [ref=f5e637] [cursor=pointer]:
+                          - /url: https://github.com/agalwood/Motrix/pull/2287
+                        - link ")" [ref=f5e638] [cursor=pointer]:
+                          - /url: /agalwood/Motrix/commit/e34f2d7cc4d98605e41ea1dd413ec71a0da69827
+                    - cell "Sep 30, 20265 days ago" [ref=f5e639]
+                  - row [ref=f5e641]:
+                    - cell [ref=f5e642]:
+                      - link "LICENSE, (File)" [ref=f5e649] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/blob/main/LICENSE
+                        - text: LICENSE
+                    - cell [ref=f5e650]:
+                      - 'link "feat: import motrix-turbo snapshot" [ref=f5e653] [cursor=pointer]':
+                        - /url: /agalwood/Motrix/commit/6a5d6efd2dc72a00f3cc2adfa76056c16336ce0c
+                    - cell "Aug 9, 20262 months ago" [ref=f5e654]
+                  - row [ref=f5e656]:
+                    - cell [ref=f5e657]:
+                      - link "README.md, (File)" [ref=f5e664] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/blob/main/README.md
+                        - text: README.md
+                    - cell [ref=f5e665]:
+                      - generic [ref=f5e667]:
+                        - 'link "chore(release): prepare 2.0.0-beta.46 (" [ref=f5e668] [cursor=pointer]':
+                          - /url: /agalwood/Motrix/commit/56f7f63ddbe37d6dfb8651981dcda2d3b684799b
+                        - link "#2303" [ref=f5e669] [cursor=pointer]:
+                          - /url: https://github.com/agalwood/Motrix/pull/2303
+                        - link ")" [ref=f5e670] [cursor=pointer]:
+                          - /url: /agalwood/Motrix/commit/56f7f63ddbe37d6dfb8651981dcda2d3b684799b
+                    - cell "Oct 2, 20263 days ago" [ref=f5e671]
+                  - row [ref=f5e673]:
+                    - cell [ref=f5e674]:
+                      - link "README.zh-CN.md, (File)" [ref=f5e681] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/blob/main/README.zh-CN.md
+                        - text: README.zh-CN.md
+                    - cell [ref=f5e682]:
+                      - generic [ref=f5e684]:
+                        - 'link "chore(release): prepare 2.0.0-beta.46 (" [ref=f5e685] [cursor=pointer]':
+                          - /url: /agalwood/Motrix/commit/56f7f63ddbe37d6dfb8651981dcda2d3b684799b
+                        - link "#2303" [ref=f5e686] [cursor=pointer]:
+                          - /url: https://github.com/agalwood/Motrix/pull/2303
+                        - link ")" [ref=f5e687] [cursor=pointer]:
+                          - /url: /agalwood/Motrix/commit/56f7f63ddbe37d6dfb8651981dcda2d3b684799b
+                    - cell "Oct 2, 20263 days ago" [ref=f5e688]
+                  - row [ref=f5e690]:
+                    - cell [ref=f5e691]:
+                      - link "SECURITY.md, (File)" [ref=f5e698] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/blob/main/SECURITY.md
+                        - text: SECURITY.md
+                    - cell [ref=f5e699]:
+                      - 'link "docs: add community health documentation" [ref=f5e702] [cursor=pointer]':
+                        - /url: /agalwood/Motrix/commit/393e8523a5b7c792aa4b008f947185dea8b3cdb3
+                    - cell "Aug 26, 20262 months ago" [ref=f5e703]
+                  - row [ref=f5e705]:
+                    - cell [ref=f5e706]:
+                      - link "SECURITY.zh-CN.md, (File)" [ref=f5e713] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/blob/main/SECURITY.zh-CN.md
+                        - text: SECURITY.zh-CN.md
+                    - cell [ref=f5e714]:
+                      - 'link "docs: add community health documentation" [ref=f5e717] [cursor=pointer]':
+                        - /url: /agalwood/Motrix/commit/393e8523a5b7c792aa4b008f947185dea8b3cdb3
+                    - cell "Aug 26, 20262 months ago" [ref=f5e718]
+                  - row [ref=f5e720]:
+                    - cell [ref=f5e721]:
+                      - link "THIRD_PARTY_NOTICES.md, (File)" [ref=f5e728] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/blob/main/THIRD_PARTY_NOTICES.md
+                        - text: THIRD_PARTY_NOTICES.md
+                    - cell [ref=f5e729]:
+                      - generic [ref=f5e731]:
+                        - 'link "feat(integration): add safari extension install entry (" [ref=f5e732] [cursor=pointer]':
+                          - /url: /agalwood/Motrix/commit/0e6570ea7941b8a2a871bde69c7bc9cdfc7ff97f
+                        - link "#2283" [ref=f5e733] [cursor=pointer]:
+                          - /url: https://github.com/agalwood/Motrix/pull/2283
+                        - link ")" [ref=f5e734] [cursor=pointer]:
+                          - /url: /agalwood/Motrix/commit/0e6570ea7941b8a2a871bde69c7bc9cdfc7ff97f
+                    - cell "Sep 30, 2026last week" [ref=f5e735]
+                  - row [ref=f5e737]:
+                    - cell [ref=f5e738]:
+                      - link "THIRD_PARTY_NOTICES.zh-CN.md, (File)" [ref=f5e745] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/blob/main/THIRD_PARTY_NOTICES.zh-CN.md
+                        - text: THIRD_PARTY_NOTICES.zh-CN.md
+                    - cell [ref=f5e746]:
+                      - generic [ref=f5e748]:
+                        - 'link "feat(integration): add safari extension install entry (" [ref=f5e749] [cursor=pointer]':
+                          - /url: /agalwood/Motrix/commit/0e6570ea7941b8a2a871bde69c7bc9cdfc7ff97f
+                        - link "#2283" [ref=f5e750] [cursor=pointer]:
+                          - /url: https://github.com/agalwood/Motrix/pull/2283
+                        - link ")" [ref=f5e751] [cursor=pointer]:
+                          - /url: /agalwood/Motrix/commit/0e6570ea7941b8a2a871bde69c7bc9cdfc7ff97f
+                    - cell "Sep 30, 2026last week" [ref=f5e752]
+                  - row [ref=f5e754]:
+                    - cell [ref=f5e755]:
+                      - link "biome.json, (File)" [ref=f5e762] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/blob/main/biome.json
+                        - text: biome.json
+                    - cell [ref=f5e763]:
+                      - generic [ref=f5e765]:
+                        - 'link "chore(deps): align upgrades with offline and release packaging (" [ref=f5e766] [cursor=pointer]':
+                          - /url: /agalwood/Motrix/commit/d4fc4cfc8e7c99b8e4861d079a3bd97db6aba71f
+                        - link "#2268" [ref=f5e767] [cursor=pointer]:
+                          - /url: https://github.com/agalwood/Motrix/pull/2268
+                        - link ")" [ref=f5e768] [cursor=pointer]:
+                          - /url: /agalwood/Motrix/commit/d4fc4cfc8e7c99b8e4861d079a3bd97db6aba71f
+                    - cell "Sep 29, 2026last week" [ref=f5e769]
+                  - row [ref=f5e771]:
+                    - cell [ref=f5e772]:
+                      - link "components.json, (File)" [ref=f5e779] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/blob/main/components.json
+                        - text: components.json
+                    - cell [ref=f5e780]:
+                      - 'link "feat: import motrix-turbo snapshot" [ref=f5e783] [cursor=pointer]':
+                        - /url: /agalwood/Motrix/commit/6a5d6efd2dc72a00f3cc2adfa76056c16336ce0c
+                    - cell "Aug 9, 20262 months ago" [ref=f5e784]
+                  - row [ref=f5e786]:
+                    - cell [ref=f5e787]:
+                      - link "compose.named-volumes.yaml, (File)" [ref=f5e794] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/blob/main/compose.named-volumes.yaml
+                        - text: compose.named-volumes.yaml
+                    - cell [ref=f5e795]:
+                      - generic [ref=f5e797]:
+                        - 'link "feat(server): add logo menu and configurable torrent limits (" [ref=f5e798] [cursor=pointer]':
+                          - /url: /agalwood/Motrix/commit/259d6785f54688a6a4d0af6f2642e5f190c06fcc
+                        - link "#2146" [ref=f5e799] [cursor=pointer]:
+                          - /url: https://github.com/agalwood/Motrix/pull/2146
+                        - link ")" [ref=f5e800] [cursor=pointer]:
+                          - /url: /agalwood/Motrix/commit/259d6785f54688a6a4d0af6f2642e5f190c06fcc
+                    - cell "Sep 15, 20263 weeks ago" [ref=f5e801]
+                  - row [ref=f5e803]:
+                    - cell [ref=f5e804]:
+                      - link "compose.reverse-proxy.env, (File)" [ref=f5e811] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/blob/main/compose.reverse-proxy.env
+                        - text: compose.reverse-proxy.env
+                    - cell [ref=f5e812]:
+                      - generic [ref=f5e814]:
+                        - 'link "fix(security): harden supply-chain trust boundaries (" [ref=f5e815] [cursor=pointer]':
+                          - /url: /agalwood/Motrix/commit/630c036229580edcca172c10d8d0fdf85cf167dd
+                        - link "#1846" [ref=f5e816] [cursor=pointer]:
+                          - /url: https://github.com/agalwood/Motrix/pull/1846
+                        - link ")" [ref=f5e817] [cursor=pointer]:
+                          - /url: /agalwood/Motrix/commit/630c036229580edcca172c10d8d0fdf85cf167dd
+                    - cell "Aug 13, 20262 months ago" [ref=f5e818]
+                  - row [ref=f5e820]:
+                    - cell [ref=f5e821]:
+                      - link "compose.yaml, (File)" [ref=f5e828] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/blob/main/compose.yaml
+                        - text: compose.yaml
+                    - cell [ref=f5e829]:
+                      - generic [ref=f5e831]:
+                        - 'link "feat(server): add logo menu and configurable torrent limits (" [ref=f5e832] [cursor=pointer]':
+                          - /url: /agalwood/Motrix/commit/259d6785f54688a6a4d0af6f2642e5f190c06fcc
+                        - link "#2146" [ref=f5e833] [cursor=pointer]:
+                          - /url: https://github.com/agalwood/Motrix/pull/2146
+                        - link ")" [ref=f5e834] [cursor=pointer]:
+                          - /url: /agalwood/Motrix/commit/259d6785f54688a6a4d0af6f2642e5f190c06fcc
+                    - cell "Sep 15, 20263 weeks ago" [ref=f5e835]
+                  - row [ref=f5e837]:
+                    - cell [ref=f5e838]:
+                      - link "electron-builder.json, (File)" [ref=f5e845] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/blob/main/electron-builder.json
+                        - text: electron-builder.json
+                    - cell [ref=f5e846]:
+                      - generic [ref=f5e848]:
+                        - 'link "fix(protocol): restore safe motrix deep links and retire mo (" [ref=f5e849] [cursor=pointer]':
+                          - /url: /agalwood/Motrix/commit/1e45108674c06cc361d51a3a114895f77143cb04
+                        - link "#2300" [ref=f5e850] [cursor=pointer]:
+                          - /url: https://github.com/agalwood/Motrix/pull/2300
+                        - link ")" [ref=f5e851] [cursor=pointer]:
+                          - /url: /agalwood/Motrix/commit/1e45108674c06cc361d51a3a114895f77143cb04
+                    - cell "Oct 2, 20264 days ago" [ref=f5e852]
+                  - row [ref=f5e854]:
+                    - cell [ref=f5e855]:
+                      - link "electron-builder.signing.json, (File)" [ref=f5e862] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/blob/main/electron-builder.signing.json
+                        - text: electron-builder.signing.json
+                    - cell [ref=f5e863]:
+                      - generic [ref=f5e865]:
+                        - 'link "fix(protocol): restore safe motrix deep links and retire mo (" [ref=f5e866] [cursor=pointer]':
+                          - /url: /agalwood/Motrix/commit/1e45108674c06cc361d51a3a114895f77143cb04
+                        - link "#2300" [ref=f5e867] [cursor=pointer]:
+                          - /url: https://github.com/agalwood/Motrix/pull/2300
+                        - link ")" [ref=f5e868] [cursor=pointer]:
+                          - /url: /agalwood/Motrix/commit/1e45108674c06cc361d51a3a114895f77143cb04
+                    - cell "Oct 2, 20264 days ago" [ref=f5e869]
+                  - row [ref=f5e871]:
+                    - cell [ref=f5e872]:
+                      - link "index.html, (File)" [ref=f5e879] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/blob/main/index.html
+                        - text: index.html
+                    - cell [ref=f5e880]:
+                      - generic [ref=f5e882]:
+                        - 'link "fix(window): align startup themes and fullscreen chrome (" [ref=f5e883] [cursor=pointer]':
+                          - /url: /agalwood/Motrix/commit/61f9dfde12ab1e95eec4e8f21478f892cf439aee
+                        - link "#2057" [ref=f5e884] [cursor=pointer]:
+                          - /url: https://github.com/agalwood/Motrix/pull/2057
+                        - link ")" [ref=f5e885] [cursor=pointer]:
+                          - /url: /agalwood/Motrix/commit/61f9dfde12ab1e95eec4e8f21478f892cf439aee
+                    - cell "Sep 3, 2026last month" [ref=f5e886]
+                  - row [ref=f5e888]:
+                    - cell [ref=f5e889]:
+                      - link "obsidian-docs.config.example.json, (File)" [ref=f5e896] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/blob/main/obsidian-docs.config.example.json
+                        - text: obsidian-docs.config.example.json
+                    - cell [ref=f5e897]:
+                      - 'link "chore(docs): add optional Obsidian plan gateway" [ref=f5e900] [cursor=pointer]':
+                        - /url: /agalwood/Motrix/commit/2ca02b0392e98a5fcd6c15aa3c5177454b43ad68
+                    - cell "Aug 13, 20262 months ago" [ref=f5e901]
+                  - row [ref=f5e903]:
+                    - cell [ref=f5e904]:
+                      - link "package.json, (File)" [ref=f5e911] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/blob/main/package.json
+                        - text: package.json
+                    - cell [ref=f5e912]:
+                      - generic [ref=f5e914]:
+                        - 'link "perf(build): optimize bundles and desktop deferred loading (" [ref=f5e915] [cursor=pointer]':
+                          - /url: /agalwood/Motrix/commit/ad3ea65b23270003dca78fd1701a536c0653efe2
+                        - link "#2316" [ref=f5e916] [cursor=pointer]:
+                          - /url: https://github.com/agalwood/Motrix/pull/2316
+                        - link ")" [ref=f5e917] [cursor=pointer]:
+                          - /url: /agalwood/Motrix/commit/ad3ea65b23270003dca78fd1701a536c0653efe2
+                    - cell "Oct 4, 20262 days ago" [ref=f5e918]
+                  - row [ref=f5e920]:
+                    - cell [ref=f5e921]:
+                      - link "playwright.config.ts, (File)" [ref=f5e928] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/blob/main/playwright.config.ts
+                        - text: playwright.config.ts
+                    - cell [ref=f5e929]:
+                      - generic [ref=f5e931]:
+                        - 'link "chore(test): consolidate playwright artifacts (" [ref=f5e932] [cursor=pointer]':
+                          - /url: /agalwood/Motrix/commit/da90b6a4e554cbdc8c5adaf06eda47063200c71f
+                        - link "#2173" [ref=f5e933] [cursor=pointer]:
+                          - /url: https://github.com/agalwood/Motrix/pull/2173
+                        - link ")" [ref=f5e934] [cursor=pointer]:
+                          - /url: /agalwood/Motrix/commit/da90b6a4e554cbdc8c5adaf06eda47063200c71f
+                    - cell "Sep 20, 20262 weeks ago" [ref=f5e935]
+                  - row [ref=f5e937]:
+                    - cell [ref=f5e938]:
+                      - link "pnpm-lock.yaml, (File)" [ref=f5e945] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/blob/main/pnpm-lock.yaml
+                        - text: pnpm-lock.yaml
+                    - cell [ref=f5e946]:
+                      - generic [ref=f5e948]:
+                        - 'link "fix(nat): support Huawei AX3 Unicode device descriptions (" [ref=f5e949] [cursor=pointer]':
+                          - /url: /agalwood/Motrix/commit/8d682062da22c93e1de52b1e643606ed686ec85d
+                        - link "#2297" [ref=f5e950] [cursor=pointer]:
+                          - /url: https://github.com/agalwood/Motrix/pull/2297
+                        - link ")" [ref=f5e951] [cursor=pointer]:
+                          - /url: /agalwood/Motrix/commit/8d682062da22c93e1de52b1e643606ed686ec85d
+                    - cell "Oct 1, 20265 days ago" [ref=f5e952]
+                  - row [ref=f5e954]:
+                    - cell [ref=f5e955]:
+                      - link "pnpm-workspace.yaml, (File)" [ref=f5e962] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/blob/main/pnpm-workspace.yaml
+                        - text: pnpm-workspace.yaml
+                    - cell [ref=f5e963]:
+                      - generic [ref=f5e965]:
+                        - 'link "fix(nat): support Huawei AX3 Unicode device descriptions (" [ref=f5e966] [cursor=pointer]':
+                          - /url: /agalwood/Motrix/commit/8d682062da22c93e1de52b1e643606ed686ec85d
+                        - link "#2297" [ref=f5e967] [cursor=pointer]:
+                          - /url: https://github.com/agalwood/Motrix/pull/2297
+                        - link ")" [ref=f5e968] [cursor=pointer]:
+                          - /url: /agalwood/Motrix/commit/8d682062da22c93e1de52b1e643606ed686ec85d
+                    - cell "Oct 1, 20265 days ago" [ref=f5e969]
+                  - row [ref=f5e971]:
+                    - cell [ref=f5e972]:
+                      - link "tsconfig.json, (File)" [ref=f5e979] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/blob/main/tsconfig.json
+                        - text: tsconfig.json
+                    - cell [ref=f5e980]:
+                      - 'link "feat: import motrix-turbo snapshot" [ref=f5e983] [cursor=pointer]':
+                        - /url: /agalwood/Motrix/commit/6a5d6efd2dc72a00f3cc2adfa76056c16336ce0c
+                    - cell "Aug 9, 20262 months ago" [ref=f5e984]
+                  - row [ref=f5e986]:
+                    - cell [ref=f5e987]:
+                      - link "vite.main.config.ts, (File)" [ref=f5e994] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/blob/main/vite.main.config.ts
+                        - text: vite.main.config.ts
+                    - cell [ref=f5e995]:
+                      - generic [ref=f5e997]:
+                        - 'link "perf(build): optimize bundles and desktop deferred loading (" [ref=f5e998] [cursor=pointer]':
+                          - /url: /agalwood/Motrix/commit/ad3ea65b23270003dca78fd1701a536c0653efe2
+                        - link "#2316" [ref=f5e999] [cursor=pointer]:
+                          - /url: https://github.com/agalwood/Motrix/pull/2316
+                        - link ")" [ref=f5e1000] [cursor=pointer]:
+                          - /url: /agalwood/Motrix/commit/ad3ea65b23270003dca78fd1701a536c0653efe2
+                    - cell "Oct 4, 20262 days ago" [ref=f5e1001]
+                  - row [ref=f5e1003]:
+                    - cell [ref=f5e1004]:
+                      - link "vite.preload.config.ts, (File)" [ref=f5e1011] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/blob/main/vite.preload.config.ts
+                        - text: vite.preload.config.ts
+                    - cell [ref=f5e1012]:
+                      - generic [ref=f5e1014]:
+                        - 'link "perf(build): optimize bundles and desktop deferred loading (" [ref=f5e1015] [cursor=pointer]':
+                          - /url: /agalwood/Motrix/commit/ad3ea65b23270003dca78fd1701a536c0653efe2
+                        - link "#2316" [ref=f5e1016] [cursor=pointer]:
+                          - /url: https://github.com/agalwood/Motrix/pull/2316
+                        - link ")" [ref=f5e1017] [cursor=pointer]:
+                          - /url: /agalwood/Motrix/commit/ad3ea65b23270003dca78fd1701a536c0653efe2
+                    - cell "Oct 4, 20262 days ago" [ref=f5e1018]
+                  - row [ref=f5e1020]:
+                    - cell [ref=f5e1021]:
+                      - link "vite.renderer.config.ts, (File)" [ref=f5e1028] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/blob/main/vite.renderer.config.ts
+                        - text: vite.renderer.config.ts
+                    - cell [ref=f5e1029]:
+                      - generic [ref=f5e1031]:
+                        - 'link "perf(build): optimize bundles and desktop deferred loading (" [ref=f5e1032] [cursor=pointer]':
+                          - /url: /agalwood/Motrix/commit/ad3ea65b23270003dca78fd1701a536c0653efe2
+                        - link "#2316" [ref=f5e1033] [cursor=pointer]:
+                          - /url: https://github.com/agalwood/Motrix/pull/2316
+                        - link ")" [ref=f5e1034] [cursor=pointer]:
+                          - /url: /agalwood/Motrix/commit/ad3ea65b23270003dca78fd1701a536c0653efe2
+                    - cell "Oct 4, 20262 days ago" [ref=f5e1035]
+                  - row [ref=f5e1037]:
+                    - cell [ref=f5e1038]:
+                      - link "vite.renderer.web.config.ts, (File)" [ref=f5e1045] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/blob/main/vite.renderer.web.config.ts
+                        - text: vite.renderer.web.config.ts
+                    - cell [ref=f5e1046]:
+                      - generic [ref=f5e1048]:
+                        - 'link "perf(build): optimize bundles and desktop deferred loading (" [ref=f5e1049] [cursor=pointer]':
+                          - /url: /agalwood/Motrix/commit/ad3ea65b23270003dca78fd1701a536c0653efe2
+                        - link "#2316" [ref=f5e1050] [cursor=pointer]:
+                          - /url: https://github.com/agalwood/Motrix/pull/2316
+                        - link ")" [ref=f5e1051] [cursor=pointer]:
+                          - /url: /agalwood/Motrix/commit/ad3ea65b23270003dca78fd1701a536c0653efe2
+                    - cell "Oct 4, 20262 days ago" [ref=f5e1052]
+                  - row [ref=f5e1054]:
+                    - cell [ref=f5e1055]:
+                      - link "vite.server.config.ts, (File)" [ref=f5e1062] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/blob/main/vite.server.config.ts
+                        - text: vite.server.config.ts
+                    - cell [ref=f5e1063]:
+                      - generic [ref=f5e1065]:
+                        - 'link "perf(build): optimize bundles and desktop deferred loading (" [ref=f5e1066] [cursor=pointer]':
+                          - /url: /agalwood/Motrix/commit/ad3ea65b23270003dca78fd1701a536c0653efe2
+                        - link "#2316" [ref=f5e1067] [cursor=pointer]:
+                          - /url: https://github.com/agalwood/Motrix/pull/2316
+                        - link ")" [ref=f5e1068] [cursor=pointer]:
+                          - /url: /agalwood/Motrix/commit/ad3ea65b23270003dca78fd1701a536c0653efe2
+                    - cell "Oct 4, 20262 days ago" [ref=f5e1069]
+                  - row [ref=f5e1071]:
+                    - cell [ref=f5e1072]:
+                      - link "vite.worker.config.ts, (File)" [ref=f5e1079] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/blob/main/vite.worker.config.ts
+                        - text: vite.worker.config.ts
+                    - cell [ref=f5e1080]:
+                      - generic [ref=f5e1082]:
+                        - 'link "perf(build): optimize bundles and desktop deferred loading (" [ref=f5e1083] [cursor=pointer]':
+                          - /url: /agalwood/Motrix/commit/ad3ea65b23270003dca78fd1701a536c0653efe2
+                        - link "#2316" [ref=f5e1084] [cursor=pointer]:
+                          - /url: https://github.com/agalwood/Motrix/pull/2316
+                        - link ")" [ref=f5e1085] [cursor=pointer]:
+                          - /url: /agalwood/Motrix/commit/ad3ea65b23270003dca78fd1701a536c0653efe2
+                    - cell "Oct 4, 20262 days ago" [ref=f5e1086]
+                  - row [ref=f5e1088]:
+                    - cell [ref=f5e1089]:
+                      - link "vitest.config.ts, (File)" [ref=f5e1096] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/blob/main/vitest.config.ts
+                        - text: vitest.config.ts
+                    - cell [ref=f5e1097]:
+                      - generic [ref=f5e1099]:
+                        - 'link "feat(menu): add cross-platform application menu (" [ref=f5e1100] [cursor=pointer]':
+                          - /url: /agalwood/Motrix/commit/ccbbed26d885745ee5476a72f82e7a53ea310942
+                        - link "#1847" [ref=f5e1101] [cursor=pointer]:
+                          - /url: https://github.com/agalwood/Motrix/pull/1847
+                        - link ")" [ref=f5e1102] [cursor=pointer]:
+                          - /url: /agalwood/Motrix/commit/ccbbed26d885745ee5476a72f82e7a53ea310942
+                    - cell "Aug 14, 20262 months ago" [ref=f5e1103]
+                  - row [ref=f5e1105]:
+                    - cell [ref=f5e1106]:
+                      - link "vitest.notices.config.ts, (File)" [ref=f5e1113] [cursor=pointer]:
+                        - /url: /agalwood/Motrix/blob/main/vitest.notices.config.ts
+                        - text: vitest.notices.config.ts
+                    - cell [ref=f5e1114]:
+                      - generic [ref=f5e1116]:
+                        - 'link "fix(bt): recover magnet file selection and add timeout fallback (" [ref=f5e1117] [cursor=pointer]':
+                          - /url: /agalwood/Motrix/commit/6f9d08585119f33b2c0cc62096eca4b5f82ff69c
+                        - link "#2089" [ref=f5e1118] [cursor=pointer]:
+                          - /url: https://github.com/agalwood/Motrix/pull/2089
+                        - link ")" [ref=f5e1119] [cursor=pointer]:
+                          - /url: /agalwood/Motrix/commit/6f9d08585119f33b2c0cc62096eca4b5f82ff69c
+                    - cell "Sep 7, 2026last month" [ref=f5e1120]
+            - generic [ref=f5e1123]:
+              - generic [ref=f5e1124]:
+                - heading "Repository files navigation" [level=2] [ref=f5e1125]
+                - navigation "Repository files" [ref=f5e1126]:
+                  - list [ref=f5e1127]:
+                    - listitem [ref=f5e1128]:
+                      - link "README" [ref=f5e1129] [cursor=pointer]:
+                        - /url: "#"
+                    - listitem [ref=f5e1131]:
+                      - link "Code of conduct" [ref=f5e1132] [cursor=pointer]:
+                        - /url: "#"
+                    - listitem [ref=f5e1134]:
+                      - link "Contributing" [ref=f5e1135] [cursor=pointer]:
+                        - /url: "#"
+                    - listitem [ref=f5e1137]:
+                      - link "License" [ref=f5e1138] [cursor=pointer]:
+                        - /url: "#"
+                    - listitem [ref=f5e1140]:
+                      - link "Security" [ref=f5e1141] [cursor=pointer]:
+                        - /url: "#"
+                - button "Outline" [ref=f5e1143] [cursor=pointer]
+              - article [ref=f5e1147]:
+                - generic [ref=f5e1148]:
+                  - link [ref=f5e1149] [cursor=pointer]:
+                    - /url: /agalwood/Motrix/blob/main/public/app-icon.png
+                    - img "Motrix" [ref=f5e1150]
+                  - generic [ref=f5e1151]:
+                    - heading "Motrix" [level=1] [ref=f5e1152]
+                    - 'link "Permalink: Motrix" [ref=f5e1153] [cursor=pointer]':
+                      - /url: "#motrix"
+                  - paragraph [ref=f5e1156]: A modern, full-featured download manager that stays simple to use
+                - paragraph [ref=f5e1157]:
+                  - link [ref=f5e1158] [cursor=pointer]:
+                    - /url: https://github.com/agalwood/Motrix/releases
+                    - img "GitHub release" [ref=f5e1159]
+                  - link [ref=f5e1160] [cursor=pointer]:
+                    - /url: https://github.com/agalwood/Motrix/workflows/Build/release/badge.svg
+                    - img "Build/release" [ref=f5e1161]
+                  - link [ref=f5e1162] [cursor=pointer]:
+                    - /url: https://camo.githubusercontent.com/5fc583c43ae78be26914b6b17dd40cb39849a4ee83dc5d8064117efdc4d4ade8/68747470733a2f2f696d672e736869656c64732e696f2f6769746875622f646f776e6c6f6164732f6167616c776f6f642f4d6f747269782f746f74616c2e737667
+                    - img "Total Downloads" [ref=f5e1163]
+                - paragraph [ref=f5e1164]:
+                  - text: English |
+                  - link "简体中文" [ref=f5e1165] [cursor=pointer]:
+                    - /url: /agalwood/Motrix/blob/main/README.zh-CN.md
+                - generic [ref=f5e1166]:
+                  - heading "Overview" [level=2] [ref=f5e1167]
+                  - 'link "Permalink: Overview" [ref=f5e1168] [cursor=pointer]':
+                    - /url: "#overview"
+                - paragraph [ref=f5e1171]: Motrix is a clean, full-featured desktop download manager for HTTP, FTP, BitTorrent, magnet links, and more.
+                - paragraph [ref=f5e1172]:
+                  - strong [ref=f5e1173]: Motrix Turbo
+                  - text: is Motrix v2, rebuilt from the ground up with Electron, React, and TypeScript while keeping the clean, straightforward experience of v1. The download core is independent of the UI. Browser extensions and command-line tools communicate with the app over
+                  - strong [ref=f5e1174]: MDXP
+                  - text: (Motrix Download eXchange Protocol), an open protocol built on JSON-RPC 2.0, while plugins run in isolated sandboxes.
+                - paragraph [ref=f5e1175]: "The same core powers two ways to run Motrix:"
+                - list [ref=f5e1176]:
+                  - listitem [ref=f5e1177]:
+                    - strong [ref=f5e1178]: "Desktop app:"
+                    - text: Runs on macOS, Windows, and Linux
+                  - listitem [ref=f5e1179]:
+                    - strong [ref=f5e1180]: "Headless server:"
+                    - text: Runs without a desktop environment, either directly on Node.js or in Docker, and includes a web UI for NAS devices and home servers
+                - generic [ref=f5e1181]:
+                  - heading "🧪 Beta testing" [level=2] [ref=f5e1182]
+                  - 'link "Permalink: 🧪 Beta testing" [ref=f5e1183] [cursor=pointer]':
+                    - /url: "#-beta-testing"
+                - paragraph [ref=f5e1186]:
+                  - text: Motrix Turbo v2 is currently in beta. After its remaining release gates pass, download
+                  - link "v2.0.0-beta.46 from GitHub Releases" [ref=f5e1187] [cursor=pointer]:
+                    - /url: https://github.com/agalwood/Motrix/releases/tag/v2.0.0-beta.46
+                  - text: and read the
+                  - link "full release notes" [ref=f5e1188] [cursor=pointer]:
+                    - /url: /agalwood/Motrix/blob/main/docs/release-notes/2.0.0-beta.46.md
+                  - text: before installing it.
+                - paragraph [ref=f5e1189]: Back up your existing Motrix data and downloads before testing. Migration from Motrix v1 data has not yet been validated, so do not use your only copy of v1 data with this beta. When practical, test v2 in parallel using a separate OS account, machine, or Docker data directory.
+                - generic [ref=f5e1190]:
+                  - heading "Screenshots" [level=2] [ref=f5e1191]
+                  - 'link "Permalink: Screenshots" [ref=f5e1192] [cursor=pointer]':
+                    - /url: "#screenshots"
+                - generic [ref=f5e1195]:
+                  - heading "Dashboard" [level=3] [ref=f5e1196]
+                  - 'link "Permalink: Dashboard" [ref=f5e1197] [cursor=pointer]':
+                    - /url: "#dashboard"
+                - img "Motrix Dashboard" [ref=f5e1202]
+                - generic [ref=f5e1203]:
+                  - heading "Downloads" [level=3] [ref=f5e1204]
+                  - 'link "Permalink: Downloads" [ref=f5e1205] [cursor=pointer]':
+                    - /url: "#downloads"
+                - img "Motrix Downloads" [ref=f5e1210]
+                - generic [ref=f5e1211]:
+                  - heading "Settings" [level=3] [ref=f5e1212]
+                  - 'link "Permalink: Settings" [ref=f5e1213] [cursor=pointer]':
+                    - /url: "#settings"
+                - img "Motrix Settings" [ref=f5e1218]
+                - generic [ref=f5e1219]:
+                  - heading "✨ Features" [level=2] [ref=f5e1220]
+                  - 'link "Permalink: ✨ Features" [ref=f5e1221] [cursor=pointer]':
+                    - /url: "#-features"
+                - list [ref=f5e1224]:
+                  - listitem [ref=f5e1225]: 🕹 Clean, intuitive interface with dark mode
+                  - listitem [ref=f5e1226]: 🦄 BitTorrent downloads with per-file selection, plus magnet link support
+                  - listitem [ref=f5e1227]: 📡 Built-in tracker list management with automatic updates and health checks
+                  - listitem [ref=f5e1228]: 🔌 UPnP and NAT-PMP port mapping
+                  - listitem [ref=f5e1229]: 🚥 Upload and download limits with multiple speed-limit profiles
+                  - listitem [ref=f5e1230]: 💾 SQLite-backed sessions that restore downloads after a restart
+                  - listitem [ref=f5e1231]: 📊 Customizable Dashboard with transfer stats, live activity, and task tiles
+                  - listitem [ref=f5e1232]: 🔔 System notifications when downloads finish, plus an in-app notification center
+                  - listitem [ref=f5e1233]: 🧩 QuickJS-based plugin sandboxing, fine-grained permissions, and an in-app marketplace
+                  - listitem [ref=f5e1234]:
+                    - text: 🌐
+                    - link "Motrix Extension" [ref=f5e1235] [cursor=pointer]:
+                      - /url: https://github.com/motrixapp/motrix-extension
+                    - text: for Chrome, Edge, and Firefox hands browser downloads off to Motrix in one click
+                  - listitem [ref=f5e1236]:
+                    - text: ⌨️ Official
+                    - code [ref=f5e1237]: "@motrix/cli"
+                    - text: client for everyday shell use and AI agents
+                  - listitem [ref=f5e1238]: 🐳 Docker-ready headless server with secure device-code pairing for remote CLI and agent clients
+                  - listitem [ref=f5e1239]: 🎬 Extensible URL Resolver plugins for extracting media from supported sites
+                  - listitem [ref=f5e1240]: 🤖 System tray integration and launch at startup
+                  - listitem [ref=f5e1241]: 🌍 Simplified Chinese and English UI, with more languages planned
+                  - listitem [ref=f5e1242]:
+                    - text: 🔗 Handlers for
+                    - code [ref=f5e1243]: motrix://
+                    - text: and
+                    - code [ref=f5e1244]: "magnet:"
+                    - text: links, plus
+                    - code [ref=f5e1245]: .torrent
+                    - text: file associations
+                - generic [ref=f5e1246]:
+                  - heading "🧩 Ecosystem" [level=2] [ref=f5e1247]
+                  - 'link "Permalink: 🧩 Ecosystem" [ref=f5e1248] [cursor=pointer]':
+                    - /url: "#-ecosystem"
+                - paragraph [ref=f5e1251]: "Motrix extends beyond the desktop app with a shared protocol library, command-line client, browser extensions, and a complete plugin toolchain:"
+                - table [ref=f5e1253]:
+                  - rowgroup [ref=f5e1254]:
+                    - row [ref=f5e1255]:
+                      - columnheader "Project" [ref=f5e1256]
+                      - columnheader "Distribution" [ref=f5e1257]
+                      - columnheader "What it does" [ref=f5e1258]
+                  - rowgroup [ref=f5e1259]:
+                    - row [ref=f5e1260]:
+                      - cell [ref=f5e1261]:
+                        - link [ref=f5e1262] [cursor=pointer]:
+                          - /url: https://github.com/motrixapp/mdxp
+                          - code [ref=f5e1263]: "@motrix/mdxp"
+                      - cell "npm package" [ref=f5e1264]
+                      - cell "Defines the shared JSON-RPC 2.0 wire schemas and Zod types for MDXP, with helpers for bidirectional connections" [ref=f5e1265]
+                    - row [ref=f5e1266]:
+                      - cell [ref=f5e1267]:
+                        - link [ref=f5e1268] [cursor=pointer]:
+                          - /url: https://github.com/motrixapp/cli
+                          - code [ref=f5e1269]: "@motrix/cli"
+                      - cell "npm package" [ref=f5e1270]
+                      - cell [ref=f5e1271]:
+                        - text: Provides the
+                        - code [ref=f5e1272]: motrix
+                        - text: command, automatically discovers a local desktop app, and pairs with remote instances
+                    - row [ref=f5e1273]:
+                      - cell [ref=f5e1274]:
+                        - link "Motrix Extension" [ref=f5e1275] [cursor=pointer]:
+                          - /url: https://github.com/motrixapp/motrix-extension
+                      - cell "Browser extension" [ref=f5e1276]
+                      - cell "Intercepts downloads in Chrome, Edge, and Firefox (Manifest V3), hands them off to Motrix, and pairs securely with the desktop app over native messaging" [ref=f5e1277]
+                    - row [ref=f5e1278]:
+                      - cell [ref=f5e1279]:
+                        - link "Motrix Plugin SDK" [ref=f5e1280] [cursor=pointer]:
+                          - /url: https://github.com/motrixapp/plugin-sdk
+                      - cell "Four npm packages" [ref=f5e1281]
+                      - cell [ref=f5e1282]:
+                        - text: Includes
+                        - code [ref=f5e1283]: "@motrix/plugin-manifest-schema"
+                        - text: ","
+                        - code [ref=f5e1284]: "@motrix/plugin-api"
+                        - text: ","
+                        - code [ref=f5e1285]: "@motrix/plugin-cli"
+                        - text: ", and"
+                        - code [ref=f5e1286]: create-motrix-plugin
+                        - text: for developing, testing, and packaging plugins
+                    - row [ref=f5e1287]:
+                      - cell [ref=f5e1288]:
+                        - link "Builtin Plugins" [ref=f5e1289] [cursor=pointer]:
+                          - /url: https://github.com/motrixapp/builtin-plugins
+                      - cell [ref=f5e1290]:
+                        - text: Signed
+                        - code [ref=f5e1291]: .moext
+                        - text: packages
+                      - cell [ref=f5e1292]:
+                        - text: "Includes three official plugins:"
+                        - strong [ref=f5e1293]: Filename Template
+                        - text: for renaming files from a template before they are saved,
+                        - strong [ref=f5e1294]: Page Scraper
+                        - text: for extracting direct file links from HTML pages, and
+                        - strong [ref=f5e1295]: URL Resolver
+                        - text: as the foundation for site-specific media resolution
+                    - row [ref=f5e1296]:
+                      - cell "Plugin Registry" [ref=f5e1297]
+                      - cell "Public JSON feed" [ref=f5e1298]
+                      - cell [ref=f5e1299]:
+                        - text: Publishes plugin listings and install metadata at
+                        - code [ref=f5e1300]: dl.motrix.app/registry/plugins.json
+                        - text: for both the website and the in-app marketplace
+                - generic [ref=f5e1301]:
+                  - heading "CLI quick start" [level=3] [ref=f5e1302]
+                  - 'link "Permalink: CLI quick start" [ref=f5e1303] [cursor=pointer]':
+                    - /url: "#cli-quick-start"
+                - generic [ref=f5e1306]:
+                  - generic [ref=f5e1307]:
+                    - text: npm install -g @motrix/cli
+                    - generic [ref=f5e1308]: "# Requires Node.js 22 or later"
+                    - text: motrix add https://example.com/file.iso --save-dir ~/Downloads motrix list
+                    - generic [ref=f5e1309]: "# List downloads"
+                    - text: motrix watch --stats
+                    - generic [ref=f5e1310]: "# Stream live progress as NDJSON"
+                    - text: motrix pair --name my-nas
+                    - generic [ref=f5e1311]: "# Pair with a remote or headless instance"
+                  - button "Copy code to clipboard" [ref=f5e1313] [cursor=pointer]
+                - generic [ref=f5e1317]:
+                  - heading "Build a plugin" [level=3] [ref=f5e1318]
+                  - 'link "Permalink: Build a plugin" [ref=f5e1319] [cursor=pointer]':
+                    - /url: "#build-a-plugin"
+                - paragraph [ref=f5e1322]:
+                  - text: The
+                  - link "Motrix Plugin SDK" [ref=f5e1323] [cursor=pointer]:
+                    - /url: https://github.com/motrixapp/plugin-sdk
+                  - text: "provides the TypeScript API, manifest schema, project scaffolder, and CLI used throughout the plugin development workflow:"
+                - generic [ref=f5e1324]:
+                  - generic [ref=f5e1325]:
+                    - text: pnpm create motrix-plugin my-plugin cd my-plugin && pnpm install pnpm dev
+                    - generic [ref=f5e1326]: "# Watch-build and launch Motrix with the plugin"
+                    - text: pnpm exec motrix-plugin validate
+                    - generic [ref=f5e1327]: "# Validate motrix-plugin.json"
+                    - text: pnpm run pack
+                    - generic [ref=f5e1328]: "# Create dist/<id>-<version>.moext"
+                    - text: pnpm exec motrix-plugin lint
+                    - generic [ref=f5e1329]: "# Check the packed bundle"
+                  - button "Copy code to clipboard" [ref=f5e1331] [cursor=pointer]
+                - paragraph [ref=f5e1335]:
+                  - text: The default scaffold starts with a
+                  - code [ref=f5e1336]: beforeCreate
+                  - text: URL resolver. Pass
+                  - code [ref=f5e1337]: post-action
+                  - text: after the project name to start with an
+                  - code [ref=f5e1338]: afterComplete
+                  - text: notification plugin instead. Plugins can hook into
+                  - code [ref=f5e1339]: beforeCreate
+                  - text: ","
+                  - code [ref=f5e1340]: beforeFinalize
+                  - text: ","
+                  - code [ref=f5e1341]: afterComplete
+                  - text: ", and"
+                  - code [ref=f5e1342]: onError
+                  - text: ", contribute callable commands and settings, and access the runtime through the"
+                  - code [ref=f5e1343]: motrix:plugin-api
+                  - text: virtual module.
+                - paragraph [ref=f5e1344]:
+                  - text: Plugins are bundled as a single ES2020 module and run inside a QuickJS sandbox without Node.js APIs or direct file and network access. Declare activation events, required capabilities, and URL-scoped host permissions in
+                  - code [ref=f5e1345]: motrix-plugin.json
+                  - text: ; Motrix shows those requests to the user before granting access. See the
+                  - link "Plugin SDK documentation" [ref=f5e1346] [cursor=pointer]:
+                    - /url: https://github.com/motrixapp/plugin-sdk
+                  - text: for templates, the manifest and runtime API references, localization, sandbox constraints, packaging, and distribution.
+                - generic [ref=f5e1347]:
+                  - heading "Browser extension" [level=2] [ref=f5e1348]
+                  - 'link "Permalink: Browser extension" [ref=f5e1349] [cursor=pointer]':
+                    - /url: "#browser-extension"
+                - paragraph [ref=f5e1352]: "Motrix Extension is available from the official browser stores for use with Motrix 2:"
+                - list [ref=f5e1353]:
+                  - listitem [ref=f5e1354]:
+                    - link "Chrome Web Store" [ref=f5e1355] [cursor=pointer]:
+                      - /url: https://chromewebstore.google.com/detail/motrix-extension/lggbokfckofcgjndaboioakcmincinpo
+                  - listitem [ref=f5e1356]:
+                    - link "Microsoft Edge Add-ons" [ref=f5e1357] [cursor=pointer]:
+                      - /url: https://microsoftedge.microsoft.com/addons/detail/motrix-extension/efcflljngohddnmfmebiamigoikmdfbf
+                  - listitem [ref=f5e1358]:
+                    - link "Firefox Add-ons" [ref=f5e1359] [cursor=pointer]:
+                      - /url: https://addons.mozilla.org/en-US/firefox/addon/motrix-extension/
+                - paragraph [ref=f5e1360]:
+                  - text: For installation and pairing, see the
+                  - link "browser extension guide" [ref=f5e1361] [cursor=pointer]:
+                    - /url: https://motrix.app/manual/browser-extension/
+                  - text: . Development builds remain available from the
+                  - link "extension repository" [ref=f5e1362] [cursor=pointer]:
+                    - /url: https://github.com/motrixapp/motrix-extension#manual-browser-workflow-development
+                  - text: .
+                - generic [ref=f5e1363]:
+                  - heading "📦 Installation" [level=2] [ref=f5e1364]
+                  - 'link "Permalink: 📦 Installation" [ref=f5e1365] [cursor=pointer]':
+                    - /url: "#--installation"
+                - generic [ref=f5e1368]:
+                  - heading "Desktop app" [level=3] [ref=f5e1369]
+                  - 'link "Permalink: Desktop app" [ref=f5e1370] [cursor=pointer]':
+                    - /url: "#desktop-app"
+                - paragraph [ref=f5e1373]:
+                  - text: Download Motrix from
+                  - link "motrix.app" [ref=f5e1374] [cursor=pointer]:
+                    - /url: https://motrix.app
+                  - text: and choose the package for your operating system. Most Mac users should choose the Apple Silicon build; Intel builds are available for older Macs with Intel processors.
+                - paragraph [ref=f5e1375]:
+                  - text: After the remaining release gates pass, the current beta desktop packages will be distributed through the GitHub prerelease linked above. The protected release tag also publishes verified Snap builds to
+                  - code [ref=f5e1376]: latest/edge
+                  - text: ". Choose the package that matches your operating system and architecture:"
+                - table [ref=f5e1378]:
+                  - rowgroup [ref=f5e1379]:
+                    - row [ref=f5e1380]:
+                      - columnheader "Platform" [ref=f5e1381]
+                      - columnheader "Architectures" [ref=f5e1382]
+                      - columnheader "Packages / channel" [ref=f5e1383]
+                      - columnheader "Recommendation" [ref=f5e1384]
+                  - rowgroup [ref=f5e1385]:
+                    - row [ref=f5e1386]:
+                      - cell "macOS 13+" [ref=f5e1387]
+                      - cell [ref=f5e1388]:
+                        - code [ref=f5e1389]: arm64
+                        - text: (Apple Silicon),
+                        - code [ref=f5e1390]: x64
+                        - text: (Intel)
+                      - cell [ref=f5e1391]:
+                        - code [ref=f5e1392]: .dmg
+                        - text: /
+                        - code [ref=f5e1393]: .zip
+                      - cell [ref=f5e1394]:
+                        - text: Use the
+                        - code [ref=f5e1395]: .dmg
+                        - text: matching your Mac; choose
+                        - code [ref=f5e1396]: x64
+                        - text: only for an Intel-based Mac
+                    - row [ref=f5e1397]:
+                      - cell "Windows" [ref=f5e1398]
+                      - cell [ref=f5e1399]:
+                        - code [ref=f5e1400]: x64
+                      - cell [ref=f5e1401]:
+                        - code [ref=f5e1402]: .exe
+                        - text: (NSIS installer) /
+                        - code [ref=f5e1403]: .zip
+                      - cell [ref=f5e1404]:
+                        - text: Use the
+                        - code [ref=f5e1405]: .exe
+                        - text: installer for a normal installation or
+                        - code [ref=f5e1406]: .zip
+                        - text: for a manually extracted copy
+                    - row [ref=f5e1407]:
+                      - cell "Linux" [ref=f5e1408]
+                      - cell [ref=f5e1409]:
+                        - code [ref=f5e1410]: x64
+                        - text: ","
+                        - code [ref=f5e1411]: arm64
+                      - cell [ref=f5e1412]:
+                        - code [ref=f5e1413]: .AppImage
+                        - text: /
+                        - code [ref=f5e1414]: .deb
+                        - text: /
+                        - code [ref=f5e1415]: .rpm
+                      - cell [ref=f5e1416]:
+                        - text: Use the portable
+                        - code [ref=f5e1417]: .AppImage
+                        - text: on any distribution,
+                        - code [ref=f5e1418]: .deb
+                        - text: on Debian or Ubuntu, or
+                        - code [ref=f5e1419]: .rpm
+                        - text: on Fedora or openSUSE
+                    - row [ref=f5e1420]:
+                      - cell "Linux (Snap Store)" [ref=f5e1421]
+                      - cell [ref=f5e1422]:
+                        - code [ref=f5e1423]: amd64
+                        - text: ","
+                        - code [ref=f5e1424]: arm64
+                      - cell [ref=f5e1425]:
+                        - code [ref=f5e1426]: latest/edge
+                      - cell [ref=f5e1427]:
+                        - text: Install the strictly confined beta with
+                        - code [ref=f5e1428]: sudo snap install motrix --edge
+                    - row [ref=f5e1429]:
+                      - cell "Linux (Flatpak)" [ref=f5e1430]
+                      - cell [ref=f5e1431]:
+                        - code [ref=f5e1432]: x86_64
+                        - text: ","
+                        - code [ref=f5e1433]: aarch64
+                      - cell [ref=f5e1434]:
+                        - code [ref=f5e1435]: .flatpak
+                      - cell [ref=f5e1436]:
+                        - text: Install a versioned bundle from a release that includes it; see the
+                        - link "Flatpak guide" [ref=f5e1437] [cursor=pointer]:
+                          - /url: /agalwood/Motrix/blob/main/docs/flatpak.md
+                    - row [ref=f5e1438]:
+                      - cell "Arch Linux / Omarchy" [ref=f5e1439]
+                      - cell [ref=f5e1440]:
+                        - code [ref=f5e1441]: x64
+                        - text: ","
+                        - code [ref=f5e1442]: arm64
+                      - cell [ref=f5e1443]:
+                        - code [ref=f5e1444]: .pacman
+                      - cell [ref=f5e1445]:
+                        - text: Install the native Arch package with
+                        - code [ref=f5e1446]: sudo pacman -U ./Motrix-<version>-<arch>.pacman
+                        - text: ; see the
+                        - link "Arch installation guide" [ref=f5e1447] [cursor=pointer]:
+                          - /url: /agalwood/Motrix/blob/main/docs/arch-linux.md
+                - paragraph [ref=f5e1448]:
+                  - text: The
+                  - code [ref=f5e1449]: .AppImage
+                  - text: asks on first launch whether to register its desktop entry and URL-scheme handlers under your user data directory; declining leaves your system untouched. You can enable or remove this desktop integration at any time from Settings → Integration. The Snap Store package is strictly confined. Its approved
+                  - code [ref=f5e1450]: personal-files
+                  - text: interface permits Motrix to register Native Messaging hosts for supported browsers; it does not grant general access to files outside the normal Snap interfaces. Release tags build and validate Flatpak application bundles for both architectures before publication. Older releases, including beta.39, contain only the Flatpak Native Host companion. These single-file bundles require manual upgrades; they do not configure a Motrix update repository. Windows
+                  - code [ref=f5e1451]: arm64
+                  - text: and all 32-bit packages are not available. Windows
+                  - code [ref=f5e1452]: x64
+                  - text: packages are unsigned and may trigger a Windows SmartScreen warning.
+                - generic [ref=f5e1453]:
+                  - heading "Command-line client" [level=3] [ref=f5e1454]
+                  - 'link "Permalink: Command-line client" [ref=f5e1455] [cursor=pointer]':
+                    - /url: "#command-line-client"
+                - generic [ref=f5e1458]:
+                  - generic [ref=f5e1459]: npm install -g @motrix/cli
+                  - button "Copy code to clipboard" [ref=f5e1461] [cursor=pointer]
+                - paragraph [ref=f5e1465]: You can also install it from Settings → Integration → Command-line tools in the desktop app.
+                - generic [ref=f5e1466]:
+                  - heading "Headless server with Docker" [level=3] [ref=f5e1467]
+                  - 'link "Permalink: Headless server with Docker" [ref=f5e1468] [cursor=pointer]':
+                    - /url: "#headless-server-with-docker"
+                - paragraph [ref=f5e1471]:
+                  - text: Tagged releases publish a multi-architecture Server image to Docker Hub and GHCR. Beta releases publish only the immutable version tag and do not update
+                  - code [ref=f5e1472]: latest
+                  - text: ; the included
+                  - code [ref=f5e1473]: compose.yaml
+                  - text: "keeps Server state separate from downloaded resources:"
+                - generic [ref=f5e1474]:
+                  - generic [ref=f5e1475]:
+                    - text: mkdir -p motrix-data downloads sudo chown 1000:1000 motrix-data downloads export MOTRIX_IMAGE=
+                    - generic [ref=f5e1476]: "'docker.io/motrixapp/motrix-server:2.0.0-beta.46'"
+                    - text: export MOTRIX_PUBLIC_URL=
+                    - generic [ref=f5e1477]: "'http://nas.example.lan:8080'"
+                    - text: docker compose pull server docker compose up -d --wait
+                  - button "Copy code to clipboard" [ref=f5e1479] [cursor=pointer]
+                - paragraph [ref=f5e1483]:
+                  - text: The runtime is non-root, supports a read-only root filesystem, validates mount permissions before accepting work, and preserves downloads, sessions, and installed plugins across container replacement. The standard direct-LAN setup publishes the Web service on port 8080 and MDXP on port 16801. Set
+                  - code [ref=f5e1484]: MOTRIX_PUBLIC_URL
+                  - text: to the Web approval URL that remote clients can actually reach; the Compose files do not substitute a misleading localhost URL.
+                - paragraph [ref=f5e1485]: "If the Web approval URL is temporarily unavailable, an SSH operator can list and approve the exact client code without exposing another port:"
+                - generic [ref=f5e1486]:
+                  - generic [ref=f5e1487]: docker compose exec server motrix-admin pairing pending docker compose exec server motrix-admin pairing approve ABCD-EFGH
+                  - button "Copy code to clipboard" [ref=f5e1489] [cursor=pointer]
+                - paragraph [ref=f5e1493]:
+                  - text: Remote CLI and agent clients pair through the device-code flow. Browser extensions can pair with the headless Server when
+                  - code [ref=f5e1494]: MOTRIX_REMOTE_EXTENSION_ENABLED=true
+                  - text: and
+                  - code [ref=f5e1495]: MOTRIX_REMOTE_EXTENSION_PUBLIC_URL
+                  - text: is the WS/WSS address entered in the Extension. HTTPS remains the default operator requirement. A direct trusted-LAN HTTP operator additionally requires
+                  - code [ref=f5e1496]: MOTRIX_ALLOW_INSECURE_OPERATOR_HTTP=true
+                  - text: and produces a startup warning; never enable it on the Internet or an untrusted LAN. Internet access requires a TLS reverse proxy and firewall rules around the origin ports. See the
+                  - link "Docker Server deployment guide" [ref=f5e1497] [cursor=pointer]:
+                    - /url: /agalwood/Motrix/blob/main/docs/docker-server.md
+                  - text: for ownership setup, Docker Hub/GHCR image and tag selection, DSM 7 and fnOS installation, ports, diagnostics, and backup/upgrade instructions.
+                - generic [ref=f5e1498]:
+                  - heading "🛠 Development" [level=2] [ref=f5e1499]
+                  - 'link "Permalink: 🛠 Development" [ref=f5e1500] [cursor=pointer]':
+                    - /url: "#--development"
+                - paragraph [ref=f5e1503]:
+                  - text: Development requires Node.js 22 or later and pnpm. Use the pnpm version specified by the
+                  - code [ref=f5e1504]: packageManager
+                  - text: field in
+                  - code [ref=f5e1505]: package.json
+                  - text: .
+                - generic [ref=f5e1506]:
+                  - generic [ref=f5e1507]:
+                    - text: git clone https://github.com/agalwood/Motrix.git cd Motrix pnpm install
+                    - generic [ref=f5e1508]: "# Install dependencies, download aria2 for your platform, and rebuild native modules"
+                    - text: pnpm start
+                    - generic [ref=f5e1509]: "# Start the Electron app in development mode with Vite HMR in the renderer"
+                    - text: pnpm test
+                    - generic [ref=f5e1510]: "# Run the Vitest unit tests"
+                    - text: pnpm test:e2e
+                    - generic [ref=f5e1511]: "# Run the Playwright E2E tests"
+                    - text: pnpm run lint
+                    - generic [ref=f5e1512]: "# Run Biome checks"
+                    - text: pnpm build
+                    - generic [ref=f5e1513]: "# Fetch signed built-in plugins, then build the native host and four Vite targets"
+                  - button "Copy code to clipboard" [ref=f5e1515] [cursor=pointer]
+                - generic [ref=f5e1519]:
+                  - heading "Preview the in-window application menu on macOS" [level=3] [ref=f5e1520]
+                  - 'link "Permalink: Preview the in-window application menu on macOS" [ref=f5e1521] [cursor=pointer]':
+                    - /url: "#preview-the-in-window-application-menu-on-macos"
+                - paragraph [ref=f5e1524]: "Windows and Linux render the application menu inside the Motrix window. To preview that chrome while developing on macOS, start the app with the preview flag enabled:"
+                - generic [ref=f5e1525]:
+                  - generic [ref=f5e1526]: MOTRIX_PREVIEW_MAC_MENU=1 pnpm start
+                  - button "Copy code to clipboard" [ref=f5e1528] [cursor=pointer]
+                - paragraph [ref=f5e1532]: The flag hides the main window's macOS traffic-light buttons, enables the renderer dropdown menu, and shows the custom window controls used on Windows and Linux. Collapse the sidebar in this mode to check the application menu, attached actions, drag region, and caption-control safe areas together. Restart the development process after changing the flag because both Electron and Vite read it at startup.
+                - paragraph [ref=f5e1533]:
+                  - text: This mode is intended for layout and command-item debugging. Electron routes macOS role items through AppKit's native menu, so role-backed actions such as
+                  - strong [ref=f5e1534]: Window → Minimize
+                  - text: do not behave identically when invoked from the preview dropdown. Validate those native role actions on Windows or Linux.
+                - paragraph [ref=f5e1535]:
+                  - text: See the scripts in
+                  - code [ref=f5e1536]: package.json
+                  - text: for the available packaging commands. Platform-specific settings for macOS, Windows, and Linux live in
+                  - code [ref=f5e1537]: electron-builder.json
+                  - text: .
+                - generic [ref=f5e1538]:
+                  - heading "🔧 Tech stack" [level=2] [ref=f5e1539]
+                  - 'link "Permalink: 🔧 Tech stack" [ref=f5e1540] [cursor=pointer]':
+                    - /url: "#--tech-stack"
+                - table [ref=f5e1544]:
+                  - rowgroup [ref=f5e1545]:
+                    - row [ref=f5e1546]:
+                      - columnheader "Area" [ref=f5e1547]
+                      - columnheader "Stack" [ref=f5e1548]
+                  - rowgroup [ref=f5e1549]:
+                    - row [ref=f5e1550]:
+                      - cell "Desktop shell" [ref=f5e1551]
+                      - cell "Electron 44" [ref=f5e1552]
+                    - row [ref=f5e1553]:
+                      - cell "UI" [ref=f5e1554]
+                      - cell "React 19 + Tailwind CSS 4 + shadcn/ui" [ref=f5e1555]
+                    - row [ref=f5e1556]:
+                      - cell "Language" [ref=f5e1557]
+                      - cell "TypeScript in strict mode" [ref=f5e1558]
+                    - row [ref=f5e1559]:
+                      - cell "Build system" [ref=f5e1560]
+                      - cell "Vite 8 with separate main, preload, worker, and renderer targets" [ref=f5e1561]
+                    - row [ref=f5e1562]:
+                      - cell "Validation" [ref=f5e1563]
+                      - cell "Zod 4 for settings, IPC payloads, and wire schemas" [ref=f5e1564]
+                    - row [ref=f5e1565]:
+                      - cell "Download engine" [ref=f5e1566]
+                      - cell [ref=f5e1567]:
+                        - text: A Motrix-maintained fork of
+                        - link "aria2" [ref=f5e1568] [cursor=pointer]:
+                          - /url: https://github.com/motrixapp/aria2
+                        - text: ", bundled with the app"
+                    - row [ref=f5e1569]:
+                      - cell "Persistence" [ref=f5e1570]
+                      - cell "better-sqlite3 for download session storage and recovery" [ref=f5e1571]
+                    - row [ref=f5e1572]:
+                      - cell "Plugin sandbox" [ref=f5e1573]
+                      - cell "quickjs-emscripten" [ref=f5e1574]
+                    - row [ref=f5e1575]:
+                      - cell "Server runtime" [ref=f5e1576]
+                      - cell "Node.js + Fastify + WebSocket" [ref=f5e1577]
+                    - row [ref=f5e1578]:
+                      - cell "Internationalization" [ref=f5e1579]
+                      - cell "i18next + react-i18next" [ref=f5e1580]
+                    - row [ref=f5e1581]:
+                      - cell "Quality tooling" [ref=f5e1582]
+                      - cell "Biome, Vitest, and Playwright" [ref=f5e1583]
+                - paragraph [ref=f5e1584]: "The codebase has four strict layers. CI enforces the dependency boundaries between them, keeping the core portable and leaving a clear path for a future Rust rewrite:"
+                - generic [ref=f5e1585]:
+                  - code [ref=f5e1587]: renderer (React UI) | IPC via window.motrix app core (tasks, settings, plugins, bridge) | engine adapter | aria2 (download engine)
+                  - button "Copy code to clipboard" [ref=f5e1589] [cursor=pointer]
+                - paragraph [ref=f5e1593]: The Electron desktop app and the Node.js headless server share the same core. Platform-specific capabilities such as notifications and secret storage have separate implementations with consistent behavior.
+                - generic [ref=f5e1594]:
+                  - heading "🤝 Contributing" [level=2] [ref=f5e1595]
+                  - 'link "Permalink: 🤝 Contributing" [ref=f5e1596] [cursor=pointer]':
+                    - /url: "#-contributing"
+                - paragraph [ref=f5e1599]:
+                  - text: Contributions of code, tests, documentation, translations, issue reports, and design feedback are welcome. Before opening a pull request, read the
+                  - link "contribution guidelines" [ref=f5e1600] [cursor=pointer]:
+                    - /url: /agalwood/Motrix/blob/main/CONTRIBUTING.md
+                  - text: for the development workflow, architecture boundaries, implementation standards, and required validation.
+                - paragraph [ref=f5e1601]:
+                  - text: All participants must follow the
+                  - link "Code of Conduct" [ref=f5e1602] [cursor=pointer]:
+                    - /url: /agalwood/Motrix/blob/main/CODE_OF_CONDUCT.md
+                  - text: . Report suspected vulnerabilities privately according to the
+                  - link "Security Policy" [ref=f5e1603] [cursor=pointer]:
+                    - /url: /agalwood/Motrix/blob/main/SECURITY.md
+                  - text: ", not through a public issue or discussion."
+                - generic [ref=f5e1604]:
+                  - heading "📜 License" [level=2] [ref=f5e1605]
+                  - 'link "Permalink: 📜 License" [ref=f5e1606] [cursor=pointer]':
+                    - /url: "#--license"
+                - paragraph [ref=f5e1609]:
+                  - link "MIT" [ref=f5e1610] [cursor=pointer]:
+                    - /url: /agalwood/Motrix/blob/main/LICENSE
+                  - text: © 2018-present Dr_rOot
+                - paragraph [ref=f5e1611]:
+                  - text: See
+                  - link [ref=f5e1612] [cursor=pointer]:
+                    - /url: /agalwood/Motrix/blob/main/THIRD_PARTY_NOTICES.md
+                    - code [ref=f5e1613]: THIRD_PARTY_NOTICES.md
+                  - text: for third-party license information. Release packages also include a generated dependency inventory, consolidated license texts, and an SPDX 2.3 SBOM under
+                  - code [ref=f5e1614]: legal/
+                  - text: .
+        - generic [ref=f5e1617]:
+          - generic [ref=f5e1618]:
+            - heading "About" [level=2] [ref=f5e1619]
+            - paragraph [ref=f5e1620]: A full-featured download manager.
+            - generic "https://motrix.app" [ref=f5e1624]:
+              - link "motrix.app" [ref=f5e1625] [cursor=pointer]:
+                - /url: https://motrix.app
+            - heading "Topics" [level=3] [ref=f5e1626]
+            - generic [ref=f5e1627]:
+              - link "aria2" [ref=f5e1628] [cursor=pointer]:
+                - /url: /topics/aria2
+              - link "bt" [ref=f5e1629] [cursor=pointer]:
+                - /url: /topics/bt
+              - link "download" [ref=f5e1630] [cursor=pointer]:
+                - /url: /topics/download
+              - link "electron" [ref=f5e1631] [cursor=pointer]:
+                - /url: /topics/electron
+              - link "linux" [ref=f5e1632] [cursor=pointer]:
+                - /url: /topics/linux
+              - link "mac" [ref=f5e1633] [cursor=pointer]:
+                - /url: /topics/mac
+              - link "macos" [ref=f5e1634] [cursor=pointer]:
+                - /url: /topics/macos
+              - link "magnet" [ref=f5e1635] [cursor=pointer]:
+                - /url: /topics/magnet
+              - link "motrix" [ref=f5e1636] [cursor=pointer]:
+                - /url: /topics/motrix
+              - link "torrent" [ref=f5e1637] [cursor=pointer]:
+                - /url: /topics/torrent
+              - link "windows" [ref=f5e1638] [cursor=pointer]:
+                - /url: /topics/windows
+            - heading "Resources" [level=3] [ref=f5e1639]
+            - link "Readme" [ref=f5e1641] [cursor=pointer]:
+              - /url: "#readme-ov-file"
+            - link "License" [ref=f5e1645] [cursor=pointer]:
+              - /url: "#License-1-ov-file"
+            - heading "Code of conduct" [level=3] [ref=f5e1648]
+            - link "Code of conduct" [ref=f5e1650] [cursor=pointer]:
+              - /url: /agalwood/Motrix#coc-ov-file
+            - heading "Contributing" [level=3] [ref=f5e1653]
+            - link "Contributing" [ref=f5e1655] [cursor=pointer]:
+              - /url: "#contributing-ov-file"
+            - heading "Security policy" [level=3] [ref=f5e1658]
+            - link "Security policy" [ref=f5e1660] [cursor=pointer]:
+              - /url: "#security-ov-file"
+            - generic [ref=f5e1663]:
+              - link "Activity" [ref=f5e1666] [cursor=pointer]:
+                - /url: /agalwood/Motrix/activity
+              - generic [ref=f5e1669]:
+                - heading "Stars" [level=3] [ref=f5e1670]
+                - generic [ref=f5e1672]:
+                  - strong [ref=f5e1675]: 56.1k
+                  - text: stars
+                - heading "Watchers" [level=3] [ref=f5e1676]
+                - generic [ref=f5e1678]:
+                  - strong [ref=f5e1681]: "492"
+                  - text: watching
+                - heading "Forks" [level=3] [ref=f5e1682]
+                - link [ref=f5e1684] [cursor=pointer]:
+                  - /url: /agalwood/Motrix/forks
+                  - strong [ref=f5e1688]: 5.0k
+                  - text: forks
+            - link "Report repository" [ref=f5e1690] [cursor=pointer]:
+              - /url: /contact/report-content?content_url=https%3A%2F%2Fgithub.com%2Fagalwood%2FMotrix&report=agalwood+%28user%29
+          - generic [ref=f5e1691]:
+            - heading "Releases (51)" [level=2] [ref=f5e1692]:
+              - generic [ref=f5e1693]:
+                - link "Releases" [ref=f5e1694] [cursor=pointer]:
+                  - /url: /agalwood/Motrix/releases
+                - generic [aria-hidden] [ref=f5e1695]: "51"
+                - generic [ref=f5e1696]: (51)
+            - link "Motrix v1.8.19 Latest May 3, 20233 years ago" [ref=f5e1697] [cursor=pointer]:
+              - /url: /agalwood/Motrix/releases/tag/v1.8.19
+              - generic [ref=f5e1700]:
+                - generic [ref=f5e1701]:
+                  - generic "Motrix v1.8.19" [ref=f5e1702]
+                  - generic [ref=f5e1703]: Latest
+                - generic [ref=f5e1704]: May 3, 20233 years ago
+            - link "+ 50 releases" [ref=f5e1706] [cursor=pointer]:
+              - /url: /agalwood/Motrix/releases
+          - generic [ref=f5e1707]:
+            - heading "Contributors (73)" [level=2] [ref=f5e1708]:
+              - generic [ref=f5e1709]:
+                - link "Contributors" [ref=f5e1710] [cursor=pointer]:
+                  - /url: /agalwood/Motrix/graphs/contributors
+                - generic [aria-hidden] [ref=f5e1711]: "73"
+                - generic [ref=f5e1712]: (73)
+            - list [ref=f5e1713]:
+              - listitem [ref=f5e1714]:
+                - link [ref=f5e1715] [cursor=pointer]:
+                  - /url: /agalwood
+                  - img "@agalwood" [ref=f5e1716]
+              - listitem [ref=f5e1717]:
+                - link [ref=f5e1718] [cursor=pointer]:
+                  - /url: /shatyuka
+                  - img "@shatyuka" [ref=f5e1719]
+              - listitem [ref=f5e1720]:
+                - link [ref=f5e1721] [cursor=pointer]:
+                  - /url: /dicarne
+                  - img "@dicarne" [ref=f5e1722]
+              - listitem [ref=f5e1723]:
+                - link [ref=f5e1724] [cursor=pointer]:
+                  - /url: /kant
+                  - img "@kant" [ref=f5e1725]
+              - listitem [ref=f5e1726]:
+                - link [ref=f5e1727] [cursor=pointer]:
+                  - /url: /Raistlin916
+                  - img "@Raistlin916" [ref=f5e1728]
+              - listitem [ref=f5e1729]:
+                - link [ref=f5e1730] [cursor=pointer]:
+                  - /url: /mesquka
+                  - img "@mesquka" [ref=f5e1731]
+              - listitem [ref=f5e1732]:
+                - link [ref=f5e1733] [cursor=pointer]:
+                  - /url: /bladeaweb
+                  - img "@bladeaweb" [ref=f5e1734]
+              - listitem [ref=f5e1735]:
+                - link [ref=f5e1736] [cursor=pointer]:
+                  - /url: /gpatarin
+                  - img "@gpatarin" [ref=f5e1737]
+              - listitem [ref=f5e1738]:
+                - link [ref=f5e1739] [cursor=pointer]:
+                  - /url: /149segolte
+                  - img "@149segolte" [ref=f5e1740]
+              - listitem [ref=f5e1741]:
+                - link [ref=f5e1742] [cursor=pointer]:
+                  - /url: /dependabot[bot]
+                  - img "@dependabot[bot]" [ref=f5e1743]
+              - listitem [ref=f5e1744]:
+                - link [ref=f5e1745] [cursor=pointer]:
+                  - /url: /CDzungx
+                  - img "@CDzungx" [ref=f5e1746]
+              - listitem [ref=f5e1747]:
+                - link [ref=f5e1748] [cursor=pointer]:
+                  - /url: /3gf8jv4dv
+                  - img "@3gf8jv4dv" [ref=f5e1749]
+              - listitem [ref=f5e1750]:
+                - link [ref=f5e1751] [cursor=pointer]:
+                  - /url: /devrsi0n
+                  - img "@devrsi0n" [ref=f5e1752]
+              - listitem [ref=f5e1753]:
+                - link [ref=f5e1754] [cursor=pointer]:
+                  - /url: /abdullah
+                  - img "@abdullah" [ref=f5e1755]
+            - link "+ 59 contributors" [ref=f5e1757] [cursor=pointer]:
+              - /url: /agalwood/Motrix/graphs/contributors
+          - generic [ref=f5e1758]:
+            - heading "Languages" [level=2] [ref=f5e1759]
+            - generic [ref=f5e1761]:
+              - 'progressbar "TypeScript: 91.8%" [ref=f5e1762]'
+              - 'progressbar "JavaScript: 4.7%" [ref=f5e1763]'
+              - 'progressbar "Rust: 2.8%" [ref=f5e1764]'
+              - 'progressbar "Swift: 0.4%" [ref=f5e1765]'
+              - 'progressbar "CSS: 0.2%" [ref=f5e1766]'
+              - 'progressbar "Dockerfile: 0.1%" [ref=f5e1767]'
+            - list [ref=f5e1768]:
+              - listitem [ref=f5e1769]:
+                - link "TypeScript 91.8%" [ref=f5e1770] [cursor=pointer]:
+                  - /url: /agalwood/Motrix/search?l=typescript
+                  - generic [ref=f5e1772]: TypeScript
+                  - generic [ref=f5e1773]: 91.8%
+              - listitem [ref=f5e1774]:
+                - link "JavaScript 4.7%" [ref=f5e1775] [cursor=pointer]:
+                  - /url: /agalwood/Motrix/search?l=javascript
+                  - generic [ref=f5e1777]: JavaScript
+                  - generic [ref=f5e1778]: 4.7%
+              - listitem [ref=f5e1779]:
+                - link "Rust 2.8%" [ref=f5e1780] [cursor=pointer]:
+                  - /url: /agalwood/Motrix/search?l=rust
+                  - generic [ref=f5e1782]: Rust
+                  - generic [ref=f5e1783]: 2.8%
+              - listitem [ref=f5e1784]:
+                - link "Swift 0.4%" [ref=f5e1785] [cursor=pointer]:
+                  - /url: /agalwood/Motrix/search?l=swift
+                  - generic [ref=f5e1787]: Swift
+                  - generic [ref=f5e1788]: 0.4%
+              - listitem [ref=f5e1789]:
+                - link "CSS 0.2%" [ref=f5e1790] [cursor=pointer]:
+                  - /url: /agalwood/Motrix/search?l=css
+                  - generic [ref=f5e1792]: CSS
+                  - generic [ref=f5e1793]: 0.2%
+              - listitem [ref=f5e1794]:
+                - link "Dockerfile 0.1%" [ref=f5e1795] [cursor=pointer]:
+                  - /url: /agalwood/Motrix/search?l=dockerfile
+                  - generic [ref=f5e1797]: Dockerfile
+                  - generic [ref=f5e1798]: 0.1%
+    - contentinfo [ref=f5e1800]:
+      - heading "Footer" [level=2] [ref=f5e1801]
+      - generic [ref=f5e1802]:
+        - generic [ref=f5e1803]:
+          - link "GitHub Homepage" [ref=f5e1804] [cursor=pointer]:
+            - /url: https://github.com
+          - generic [ref=f5e1807]: © 2026 GitHub, Inc.
+        - navigation "Footer" [ref=f5e1808]:
+          - heading "Footer navigation" [level=3] [ref=f5e1809]
+          - list "Footer navigation" [ref=f5e1810]:
+            - listitem [ref=f5e1811]:
+              - link "Terms" [ref=f5e1812] [cursor=pointer]:
+                - /url: https://docs.github.com/site-policy/github-terms/github-terms-of-service
+            - listitem [ref=f5e1813]:
+              - link "Privacy" [ref=f5e1814] [cursor=pointer]:
+                - /url: https://docs.github.com/site-policy/privacy-policies/github-privacy-statement
+            - listitem [ref=f5e1815]:
+              - link "Security" [ref=f5e1816] [cursor=pointer]:
+                - /url: https://github.com/security
+            - listitem [ref=f5e1817]:
+              - link "Status" [ref=f5e1818] [cursor=pointer]:
+                - /url: https://www.githubstatus.com/
+            - listitem [ref=f5e1819]:
+              - link "Community" [ref=f5e1820] [cursor=pointer]:
+                - /url: https://github.community/
+            - listitem [ref=f5e1821]:
+              - link "Docs" [ref=f5e1822] [cursor=pointer]:
+                - /url: https://docs.github.com/
+            - listitem [ref=f5e1823]:
+              - link "Contact" [ref=f5e1824] [cursor=pointer]:
+                - /url: https://support.github.com?tags=dotcom-footer
+            - listitem [ref=f5e1825]:
+              - button "Manage cookies" [ref=f5e1827] [cursor=pointer]
+            - listitem [ref=f5e1828]:
+              - button "Do not share my personal information" [ref=f5e1830] [cursor=pointer]
+  - alert [ref=f5e1833]

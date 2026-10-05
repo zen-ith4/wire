@@ -1,0 +1,468 @@
+- generic [ref=f1e2]:
+  - generic [ref=f1e3]:
+    - link "Skip to content" [ref=f1e4] [cursor=pointer]:
+      - /url: "#start-of-content"
+    - banner [ref=f1e9]:
+      - heading "Navigation Menu" [level=2] [ref=f1e10]
+      - generic [ref=f1e12]:
+        - button "Toggle navigation" [ref=f1e14] [cursor=pointer]
+        - link "Homepage" [ref=f1e18] [cursor=pointer]:
+          - /url: /
+        - generic [ref=f1e21]:
+          - link "Sign in" [ref=f1e22] [cursor=pointer]:
+            - /url: /login?return_to=https%3A%2F%2Fgithub.com%2Fsearch%3Fq%3Dmortex%26type%3Drepositories
+          - button "Appearance settings" [ref=f1e25] [cursor=pointer]
+  - main [ref=f1e31]:
+    - generic [ref=f1e34]:
+      - heading "repositories Search Results · mortex" [level=1] [ref=f1e35]
+      - generic [ref=f1e38]:
+        - generic [ref=f1e39]:
+          - region [ref=f1e40]:
+            - heading "Filter by" [level=2] [ref=f1e41]
+            - list "Filter by" [ref=f1e46]:
+              - listitem [ref=f1e47]:
+                - list [ref=f1e48]:
+                  - listitem [ref=f1e49]:
+                    - link "Code (...) results" [ref=f1e50] [cursor=pointer]:
+                      - /url: https://github.com/search?q=mortex&type=code
+                      - generic [ref=f1e51]:
+                        - generic [ref=f1e52]: Code
+                        - generic:
+                          - generic [aria-hidden]: ...
+                          - generic: (...)
+                          - generic: results
+                  - listitem [ref=f1e53]:
+                    - link "Repositories (56) results" [ref=f1e54] [cursor=pointer]:
+                      - /url: https://github.com/search?q=mortex&type=repositories
+                      - generic [ref=f1e55]:
+                        - generic [ref=f1e56]: Repositories
+                        - generic:
+                          - generic [aria-hidden]: "56"
+                          - generic: (56)
+                          - generic: results
+                  - listitem [ref=f1e57]:
+                    - link "Issues (8) results" [ref=f1e58] [cursor=pointer]:
+                      - /url: https://github.com/search?q=mortex&type=issues
+                      - generic [ref=f1e59]:
+                        - generic [ref=f1e60]: Issues
+                        - generic:
+                          - generic [aria-hidden]: "8"
+                          - generic: (8)
+                          - generic: results
+                  - listitem [ref=f1e61]:
+                    - link "Pull requests (5) results" [ref=f1e62] [cursor=pointer]:
+                      - /url: https://github.com/search?q=mortex&type=pullrequests
+                      - generic [ref=f1e63]:
+                        - generic [ref=f1e64]: Pull requests
+                        - generic:
+                          - generic [aria-hidden]: "5"
+                          - generic: (5)
+                          - generic: results
+                  - listitem [ref=f1e65]:
+                    - link "Discussions (0) results" [ref=f1e66] [cursor=pointer]:
+                      - /url: https://github.com/search?q=mortex&type=discussions
+                      - generic [ref=f1e67]:
+                        - generic [ref=f1e68]: Discussions
+                        - generic:
+                          - generic [aria-hidden]: "0"
+                          - generic: (0)
+                          - generic: results
+                  - listitem [ref=f1e69]:
+                    - link "Users results" [ref=f1e70] [cursor=pointer]:
+                      - /url: https://github.com/search?q=mortex&type=users
+                      - generic [ref=f1e71]:
+                        - generic [ref=f1e72]: Users
+                        - generic: results
+                  - listitem [ref=f1e73]:
+                    - button "More" [ref=f1e74] [cursor=pointer]
+              - listitem [ref=f1e77]:
+                - heading "Languages" [level=3] [ref=f1e79]
+                - list "Languages" [ref=f1e80]:
+                  - listitem [ref=f1e81]:
+                    - link "HTML" [ref=f1e82] [cursor=pointer]:
+                      - /url: https://github.com/search?q=mortex+language%3AHTML&type=repositories
+                      - generic "HTML" [ref=f1e86]
+                  - listitem [ref=f1e87]:
+                    - link "JavaScript" [ref=f1e88] [cursor=pointer]:
+                      - /url: https://github.com/search?q=mortex+language%3AJavaScript&type=repositories
+                      - generic "JavaScript" [ref=f1e92]
+                  - listitem [ref=f1e93]:
+                    - link "Python" [ref=f1e94] [cursor=pointer]:
+                      - /url: https://github.com/search?q=mortex+language%3APython&type=repositories
+                      - generic "Python" [ref=f1e98]
+                  - listitem [ref=f1e99]:
+                    - link "TypeScript" [ref=f1e100] [cursor=pointer]:
+                      - /url: https://github.com/search?q=mortex+language%3ATypeScript&type=repositories
+                      - generic "TypeScript" [ref=f1e104]
+                  - listitem [ref=f1e105]:
+                    - link "Java" [ref=f1e106] [cursor=pointer]:
+                      - /url: https://github.com/search?q=mortex+language%3AJava&type=repositories
+                      - generic "Java" [ref=f1e110]
+                  - listitem [ref=f1e111]:
+                    - link "C#" [ref=f1e112] [cursor=pointer]:
+                      - /url: https://github.com/search?q=mortex+language%3AC%23&type=repositories
+                      - generic "C#" [ref=f1e116]
+                  - listitem [ref=f1e117]:
+                    - link "C++" [ref=f1e118] [cursor=pointer]:
+                      - /url: https://github.com/search?q=mortex+language%3AC%2B%2B&type=repositories
+                      - generic "C++" [ref=f1e122]
+                  - listitem [ref=f1e123]:
+                    - link "CSS" [ref=f1e124] [cursor=pointer]:
+                      - /url: https://github.com/search?q=mortex+language%3ACSS&type=repositories
+                      - generic "CSS" [ref=f1e128]
+                  - listitem [ref=f1e129]:
+                    - link "Kotlin" [ref=f1e130] [cursor=pointer]:
+                      - /url: https://github.com/search?q=mortex+language%3AKotlin&type=repositories
+                      - generic "Kotlin" [ref=f1e134]
+                  - listitem [ref=f1e135]:
+                    - link "ImageJ Macro" [ref=f1e136] [cursor=pointer]:
+                      - /url: https://github.com/search?q=mortex+language%3AImageJ+Macro&type=repositories
+                      - generic "ImageJ Macro" [ref=f1e140]
+                  - listitem [ref=f1e141]:
+                    - button "More languages..." [ref=f1e142] [cursor=pointer]:
+                      - generic "More languages..." [ref=f1e145]
+                  - listitem [aria-hidden] [ref=f1e146]
+              - listitem [ref=f1e147]:
+                - heading "Advanced" [level=3] [ref=f1e149]
+                - list "Advanced" [ref=f1e150]:
+                  - listitem [ref=f1e151]:
+                    - button "Owner" [ref=f1e152] [cursor=pointer]:
+                      - generic "Owner" [ref=f1e156]
+                  - listitem [ref=f1e157]:
+                    - button "Size" [ref=f1e158] [cursor=pointer]:
+                      - generic "Size" [ref=f1e162]
+                  - listitem [ref=f1e163]:
+                    - button "Number of followers" [ref=f1e164] [cursor=pointer]:
+                      - generic "Number of followers" [ref=f1e168]
+                  - listitem [ref=f1e169]:
+                    - button "Number of forks" [ref=f1e170] [cursor=pointer]:
+                      - generic "Number of forks" [ref=f1e174]
+                  - listitem [ref=f1e175]:
+                    - button "Number of stars" [ref=f1e176] [cursor=pointer]:
+                      - generic "Number of stars" [ref=f1e180]
+                  - listitem [ref=f1e181]:
+                    - button "Date created" [ref=f1e182] [cursor=pointer]:
+                      - generic "Date created" [ref=f1e186]
+                  - listitem [ref=f1e187]:
+                    - button "Date pushed" [ref=f1e188] [cursor=pointer]:
+                      - generic "Date pushed" [ref=f1e192]
+                  - listitem [ref=f1e193]:
+                    - button "Topic" [ref=f1e194] [cursor=pointer]:
+                      - generic "Topic" [ref=f1e198]
+                  - listitem [ref=f1e199]:
+                    - button "License" [ref=f1e200] [cursor=pointer]:
+                      - generic "License" [ref=f1e204]
+                  - listitem [ref=f1e205]:
+                    - button "Archived" [ref=f1e206] [cursor=pointer]:
+                      - generic "Archived" [ref=f1e210]
+                  - listitem [ref=f1e211]:
+                    - link "Public" [ref=f1e212] [cursor=pointer]:
+                      - /url: https://github.com/search?q=mortex+is%3Apublic&type=repositories
+                      - generic "Public" [ref=f1e216]
+                  - listitem [ref=f1e217]:
+                    - link "Private" [ref=f1e218] [cursor=pointer]:
+                      - /url: https://github.com/search?q=mortex+is%3Aprivate&type=repositories
+                      - generic "Private" [ref=f1e222]
+              - listitem [aria-hidden] [ref=f1e223]
+              - listitem [ref=f1e224]:
+                - link "Advanced search" [ref=f1e225] [cursor=pointer]:
+                  - /url: /search/advanced
+          - slider "Draggable pane splitter" [ref=f1e229]
+        - generic [ref=f1e233]:
+          - generic [ref=f1e235]:
+            - generic [ref=f1e236]:
+              - generic [ref=f1e237]:
+                - generic [ref=f1e238]: 56 results
+                - generic [ref=f1e239]: (155 ms)
+              - heading "56 results" [active] [level=2] [ref=f1e240]
+            - generic [ref=f1e241]:
+              - 'button "Sort by: Best match" [ref=f1e243] [cursor=pointer]'
+              - button "Open column options" [ref=f1e247] [cursor=pointer]
+          - generic [ref=f1e252]:
+            - generic [ref=f1e254]:
+              - generic [ref=f1e255]:
+                - heading "dkavargy/SkillMORTEX" [level=3] [ref=f1e256]:
+                  - link [ref=f1e260] [cursor=pointer]:
+                    - /url: /dkavargy/SkillMORTEX
+                    - generic [ref=f1e261]:
+                      - text: dkavargy/Skill
+                      - emphasis [ref=f1e262]: MORTEX
+                - generic [ref=f1e263]: Open-source framework for analyzing the life cycle of digital skills using survival analysis and epidemiological modeling
+                - generic [ref=f1e264]:
+                  - link "time-series" [ref=f1e266] [cursor=pointer]:
+                    - /url: /topics/time-series
+                  - link "stackoverflow" [ref=f1e268] [cursor=pointer]:
+                    - /url: /topics/stackoverflow
+                  - link "survival-analysis" [ref=f1e270] [cursor=pointer]:
+                    - /url: /topics/survival-analysis
+                  - link "user-experience" [ref=f1e272] [cursor=pointer]:
+                    - /url: /topics/user-experience
+                  - link "esco" [ref=f1e274] [cursor=pointer]:
+                    - /url: /topics/esco
+                - list [ref=f1e275]:
+                  - listitem [ref=f1e276]:
+                    - generic "Python language" [ref=f1e279]: Python
+                  - generic [aria-hidden] [ref=f1e280]: ·
+                  - listitem [ref=f1e281]:
+                    - link "13 stars" [ref=f1e282] [cursor=pointer]:
+                      - /url: /dkavargy/SkillMORTEX/stargazers
+                      - generic [ref=f1e285]: "13"
+                  - generic [aria-hidden] [ref=f1e286]: ·
+                  - listitem [ref=f1e287]:
+                    - generic [ref=f1e288]:
+                      - text: Updated
+                      - generic "May 9, 2025, 12:01 PM GMT+3:30" [ref=f1e289]: on May 9, 2025
+              - link "Star" [ref=f1e292] [cursor=pointer]:
+                - /url: /login?return_to=https%3A%2F%2Fgithub.com%2Fsearch%3Fq%3Dmortex%26type%3Drepositories
+            - generic [ref=f1e296]:
+              - generic [ref=f1e297]:
+                - heading "mortex/Mortex-System" [level=3] [ref=f1e298]:
+                  - link [ref=f1e302] [cursor=pointer]:
+                    - /url: /mortex/Mortex-System
+                    - generic [ref=f1e303]:
+                      - text: mortex/
+                      - emphasis [ref=f1e304]: Mortex
+                      - text: "-System"
+                - list [ref=f1e305]:
+                  - listitem [ref=f1e306]:
+                    - generic "JavaScript language" [ref=f1e309]: JavaScript
+                  - generic [aria-hidden] [ref=f1e310]: ·
+                  - listitem [ref=f1e311]:
+                    - link "2 stars" [ref=f1e312] [cursor=pointer]:
+                      - /url: /mortex/Mortex-System/stargazers
+                      - generic [ref=f1e315]: "2"
+                  - generic [aria-hidden] [ref=f1e316]: ·
+                  - listitem [ref=f1e317]:
+                    - generic [ref=f1e318]:
+                      - text: Updated
+                      - generic "Jan 20, 2013, 2:14 AM GMT+3:30" [ref=f1e319]: on Jan 20, 2013
+              - link "Star" [ref=f1e322] [cursor=pointer]:
+                - /url: /login?return_to=https%3A%2F%2Fgithub.com%2Fsearch%3Fq%3Dmortex%26type%3Drepositories
+            - generic [ref=f1e326]:
+              - generic [ref=f1e327]:
+                - heading "salim001122/Mortex" [level=3] [ref=f1e328]:
+                  - link [ref=f1e332] [cursor=pointer]:
+                    - /url: /salim001122/Mortex
+                    - generic [ref=f1e333]:
+                      - text: salim001122/
+                      - emphasis [ref=f1e334]: Mortex
+                - emphasis [ref=f1e337]: mortex
+                - list [ref=f1e338]:
+                  - listitem [ref=f1e339]:
+                    - generic "TypeScript language" [ref=f1e342]: TypeScript
+                  - generic [aria-hidden] [ref=f1e343]: ·
+                  - listitem [ref=f1e344]:
+                    - link "0 stars" [ref=f1e345] [cursor=pointer]:
+                      - /url: /salim001122/Mortex/stargazers
+                      - generic [ref=f1e348]: "0"
+                  - generic [aria-hidden] [ref=f1e349]: ·
+                  - listitem [ref=f1e350]:
+                    - generic [ref=f1e351]:
+                      - text: Updated
+                      - generic "Aug 5, 2026, 7:27 AM GMT+3:30" [ref=f1e352]: on Aug 5
+              - link "Star" [ref=f1e355] [cursor=pointer]:
+                - /url: /login?return_to=https%3A%2F%2Fgithub.com%2Fsearch%3Fq%3Dmortex%26type%3Drepositories
+            - generic [ref=f1e359]:
+              - generic [ref=f1e360]:
+                - heading "uwubolasios-creator/mortex1" [level=3] [ref=f1e361]:
+                  - link [ref=f1e365] [cursor=pointer]:
+                    - /url: /uwubolasios-creator/mortex1
+                    - generic [ref=f1e366]:
+                      - text: uwubolasios-creator/
+                      - emphasis [ref=f1e367]: mortex
+                      - text: "1"
+                - list [ref=f1e368]:
+                  - listitem [ref=f1e369]:
+                    - link "0 stars" [ref=f1e370] [cursor=pointer]:
+                      - /url: /uwubolasios-creator/mortex1/stargazers
+                      - generic [ref=f1e373]: "0"
+                  - generic [aria-hidden] [ref=f1e374]: ·
+                  - listitem [ref=f1e375]:
+                    - generic [ref=f1e376]:
+                      - text: Updated
+                      - generic "Apr 5, 2026, 5:53 PM GMT+3:30" [ref=f1e377]: on Apr 5
+              - link "Star" [ref=f1e380] [cursor=pointer]:
+                - /url: /login?return_to=https%3A%2F%2Fgithub.com%2Fsearch%3Fq%3Dmortex%26type%3Drepositories
+            - generic [ref=f1e384]:
+              - generic [ref=f1e385]:
+                - heading "mortezaRahimi/MortextCompose" [level=3] [ref=f1e386]:
+                  - link [ref=f1e390] [cursor=pointer]:
+                    - /url: /mortezaRahimi/MortextCompose
+                    - generic [ref=f1e391]:
+                      - text: mortezaRahimi/
+                      - emphasis [ref=f1e392]: MortextCompose
+                - generic [ref=f1e393]: Room+Hilt+Coroutines+MVVM+Kotlin
+                - list [ref=f1e394]:
+                  - listitem [ref=f1e395]:
+                    - generic "Kotlin language" [ref=f1e398]: Kotlin
+                  - generic [aria-hidden] [ref=f1e399]: ·
+                  - listitem [ref=f1e400]:
+                    - link "0 stars" [ref=f1e401] [cursor=pointer]:
+                      - /url: /mortezaRahimi/MortextCompose/stargazers
+                      - generic [ref=f1e404]: "0"
+                  - generic [aria-hidden] [ref=f1e405]: ·
+                  - listitem [ref=f1e406]:
+                    - generic [ref=f1e407]:
+                      - text: Updated
+                      - generic "Mar 4, 2025, 4:57 PM GMT+3:30" [ref=f1e408]: on Mar 4, 2025
+              - link "Star" [ref=f1e411] [cursor=pointer]:
+                - /url: /login?return_to=https%3A%2F%2Fgithub.com%2Fsearch%3Fq%3Dmortex%26type%3Drepositories
+            - generic [ref=f1e415]:
+              - generic [ref=f1e416]:
+                - heading "MortexAG/MortexAG" [level=3] [ref=f1e417]:
+                  - link [ref=f1e421] [cursor=pointer]:
+                    - /url: /MortexAG/MortexAG
+                    - generic [ref=f1e422]:
+                      - text: MortexAG/
+                      - emphasis [ref=f1e423]: Mortex
+                      - text: AG
+                - generic [ref=f1e424]: Config files for my GitHub profile.
+                - generic [ref=f1e425]:
+                  - link "config" [ref=f1e427] [cursor=pointer]:
+                    - /url: /topics/config
+                  - link "github-config" [ref=f1e429] [cursor=pointer]:
+                    - /url: /topics/github-config
+                - list [ref=f1e430]:
+                  - listitem [ref=f1e431]:
+                    - generic "HTML language" [ref=f1e434]: HTML
+                  - generic [aria-hidden] [ref=f1e435]: ·
+                  - listitem [ref=f1e436]:
+                    - link "0 stars" [ref=f1e437] [cursor=pointer]:
+                      - /url: /MortexAG/MortexAG/stargazers
+                      - generic [ref=f1e440]: "0"
+                  - generic [aria-hidden] [ref=f1e441]: ·
+                  - listitem [ref=f1e442]:
+                    - generic [ref=f1e443]:
+                      - text: Updated
+                      - generic "Jul 9, 2025, 4:11 PM GMT+3:30" [ref=f1e444]: on Jul 9, 2025
+              - link "Star" [ref=f1e447] [cursor=pointer]:
+                - /url: /login?return_to=https%3A%2F%2Fgithub.com%2Fsearch%3Fq%3Dmortex%26type%3Drepositories
+            - generic [ref=f1e451]:
+              - generic [ref=f1e452]:
+                - heading "javidaslami30-ops/mortex1545" [level=3] [ref=f1e453]:
+                  - link [ref=f1e457] [cursor=pointer]:
+                    - /url: /javidaslami30-ops/mortex1545
+                    - generic [ref=f1e458]:
+                      - text: javidaslami30-ops/
+                      - emphasis [ref=f1e459]: mortex
+                      - text: "1545"
+                - generic [ref=f1e460]: Ai uygulama apksı
+                - list [ref=f1e461]:
+                  - listitem [ref=f1e462]:
+                    - generic "JavaScript language" [ref=f1e465]: JavaScript
+                  - generic [aria-hidden] [ref=f1e466]: ·
+                  - listitem [ref=f1e467]:
+                    - link "0 stars" [ref=f1e468] [cursor=pointer]:
+                      - /url: /javidaslami30-ops/mortex1545/stargazers
+                      - generic [ref=f1e471]: "0"
+                  - generic [aria-hidden] [ref=f1e472]: ·
+                  - listitem [ref=f1e473]:
+                    - generic [ref=f1e474]:
+                      - text: Updated
+                      - generic "Sep 25, 2026, 12:26 AM GMT+3:30" [ref=f1e475]: 10 days ago
+              - link "Star" [ref=f1e478] [cursor=pointer]:
+                - /url: /login?return_to=https%3A%2F%2Fgithub.com%2Fsearch%3Fq%3Dmortex%26type%3Drepositories
+            - generic [ref=f1e482]:
+              - generic [ref=f1e483]:
+                - heading "javidaslami30-ops/MortexAi" [level=3] [ref=f1e484]:
+                  - link [ref=f1e488] [cursor=pointer]:
+                    - /url: /javidaslami30-ops/MortexAi
+                    - generic [ref=f1e489]:
+                      - text: javidaslami30-ops/
+                      - emphasis [ref=f1e490]: Mortex
+                      - text: Ai
+                - generic [ref=f1e491]: Ai yapay zeka apksı
+                - list [ref=f1e492]:
+                  - listitem [ref=f1e493]:
+                    - link "0 stars" [ref=f1e494] [cursor=pointer]:
+                      - /url: /javidaslami30-ops/MortexAi/stargazers
+                      - generic [ref=f1e497]: "0"
+                  - generic [aria-hidden] [ref=f1e498]: ·
+                  - listitem [ref=f1e499]:
+                    - generic [ref=f1e500]:
+                      - text: Updated
+                      - generic "Sep 25, 2026, 12:12 AM GMT+3:30" [ref=f1e501]: 10 days ago
+              - link "Star" [ref=f1e504] [cursor=pointer]:
+                - /url: /login?return_to=https%3A%2F%2Fgithub.com%2Fsearch%3Fq%3Dmortex%26type%3Drepositories
+            - generic [ref=f1e508]:
+              - generic [ref=f1e509]:
+                - heading "olaTechie/MortexVision" [level=3] [ref=f1e510]:
+                  - link [ref=f1e514] [cursor=pointer]:
+                    - /url: /olaTechie/MortexVision
+                    - generic [ref=f1e515]:
+                      - text: olaTechie/
+                      - emphasis [ref=f1e516]: Mortex
+                      - text: Vision
+                - generic [ref=f1e517]: Polished React analytics dashboard for global mortality determinants
+                - list [ref=f1e518]:
+                  - listitem [ref=f1e519]:
+                    - generic "Python language" [ref=f1e522]: Python
+                  - generic [aria-hidden] [ref=f1e523]: ·
+                  - listitem [ref=f1e524]:
+                    - link "0 stars" [ref=f1e525] [cursor=pointer]:
+                      - /url: /olaTechie/MortexVision/stargazers
+                      - generic [ref=f1e528]: "0"
+                  - generic [aria-hidden] [ref=f1e529]: ·
+                  - listitem [ref=f1e530]:
+                    - generic [ref=f1e531]:
+                      - text: Updated
+                      - generic "May 2, 2026, 10:00 PM GMT+3:30" [ref=f1e532]: on May 2
+              - link "Star" [ref=f1e535] [cursor=pointer]:
+                - /url: /login?return_to=https%3A%2F%2Fgithub.com%2Fsearch%3Fq%3Dmortex%26type%3Drepositories
+            - generic [ref=f1e539]:
+              - generic [ref=f1e540]:
+                - heading "Devx-01/Mortex" [level=3] [ref=f1e541]:
+                  - link [ref=f1e545] [cursor=pointer]:
+                    - /url: /Devx-01/Mortex
+                    - generic [ref=f1e546]:
+                      - text: Devx-01/
+                      - emphasis [ref=f1e547]: Mortex
+                - list [ref=f1e548]:
+                  - listitem [ref=f1e549]:
+                    - link "0 stars" [ref=f1e550] [cursor=pointer]:
+                      - /url: /Devx-01/Mortex/stargazers
+                      - generic [ref=f1e553]: "0"
+                  - generic [aria-hidden] [ref=f1e554]: ·
+                  - listitem [ref=f1e555]:
+                    - generic [ref=f1e556]:
+                      - text: Updated
+                      - generic "Jun 15, 2025, 12:53 AM GMT+3:30" [ref=f1e557]: on Jun 15, 2025
+              - link "Star" [ref=f1e560] [cursor=pointer]:
+                - /url: /login?return_to=https%3A%2F%2Fgithub.com%2Fsearch%3Fq%3Dmortex%26type%3Drepositories
+          - navigation "Pagination" [ref=f1e565]:
+            - generic [ref=f1e566]:
+              - generic [aria-hidden] [ref=f1e567]: Previous
+              - link "Page 1" [ref=f1e570] [cursor=pointer]:
+                - /url: https://github.com/search?q=mortex&type=repositories&p=1
+                - text: "1"
+              - link "Page 2" [ref=f1e571] [cursor=pointer]:
+                - /url: https://github.com/search?q=mortex&type=repositories&p=2
+                - text: "2"
+              - link "Page 3" [ref=f1e572] [cursor=pointer]:
+                - /url: https://github.com/search?q=mortex&type=repositories&p=3
+                - text: "3"
+              - link "Page 4" [ref=f1e573] [cursor=pointer]:
+                - /url: https://github.com/search?q=mortex&type=repositories&p=4
+                - text: "4"
+              - link "Page 5" [ref=f1e574] [cursor=pointer]:
+                - /url: https://github.com/search?q=mortex&type=repositories&p=5
+                - text: "5"
+              - link "Page 6" [ref=f1e575] [cursor=pointer]:
+                - /url: https://github.com/search?q=mortex&type=repositories&p=6
+                - text: "6"
+              - link "Next Page" [ref=f1e576] [cursor=pointer]:
+                - /url: https://github.com/search?q=mortex&type=repositories&p=2
+                - text: Next
+          - generic [ref=f1e580]:
+            - generic [ref=f1e581]:
+              - img "Package icon" [ref=f1e583]
+              - heading "Sponsor open source projects you depend on" [level=2] [ref=f1e584]
+              - generic [ref=f1e585]: Contributors are working behind the scenes to make open source better for everyone—give them the help and recognition they deserve.
+              - link "Explore sponsorable projects" [ref=f1e586] [cursor=pointer]:
+                - /url: https://github.com/sponsors/explore
+            - generic [ref=f1e589]:
+              - generic [ref=f1e590]: ProTip!
+              - generic [ref=f1e593]:
+                - text: Press the
+                - generic [ref=f1e594]: /
+                - text: key to activate the search input again and adjust your query.

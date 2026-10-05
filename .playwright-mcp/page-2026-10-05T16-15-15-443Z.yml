@@ -1,0 +1,735 @@
+- generic [active] [ref=f17e1]:
+  - generic [ref=f17e2]:
+    - navigation [ref=f17e4]:
+      - generic [ref=f17e5]:
+        - generic [ref=f17e6]:
+          - button "Menu" [ref=f17e7] [cursor=pointer]
+          - link "React" [ref=f17e12] [cursor=pointer]:
+            - /url: /
+          - link "v19.3" [ref=f17e21] [cursor=pointer]:
+            - /url: /versions
+        - button "Search Ctrl K" [ref=f17e23] [cursor=pointer]:
+          - text: Search
+          - generic [ref=f17e26]:
+            - generic [ref=f17e27]: Ctrl
+            - generic [ref=f17e28]: K
+        - generic [ref=f17e30]:
+          - button "Use Dark Mode" [ref=f17e32] [cursor=pointer]
+          - link "Translations" [ref=f17e38] [cursor=pointer]:
+            - /url: /community/translations
+          - link "Open on GitHub" [ref=f17e42] [cursor=pointer]:
+            - /url: https://github.com/react/react/releases
+    - main [ref=f17e47]:
+      - article [ref=f17e48]:
+        - generic [ref=f17e49]:
+          - generic [ref=f17e52]:
+            - generic [ref=f17e53]:
+              - link "Learn React" [ref=f17e57] [cursor=pointer]:
+                - /url: /learn
+              - button "Copy page" [ref=f17e61] [cursor=pointer]
+            - heading "Quick Start" [level=1] [ref=f17e66]
+          - generic [ref=f17e67]:
+            - generic [ref=f17e68]:
+              - generic [ref=f17e69]:
+                - paragraph [ref=f17e71]: Welcome to the React documentation! This page will give you an introduction to 80% of the React concepts that you will use on a daily basis.
+                - generic [ref=f17e72]:
+                  - heading "You will learn" [level=3] [ref=f17e73]
+                  - list [ref=f17e74]:
+                    - listitem [ref=f17e75]: How to create and nest components
+                    - listitem [ref=f17e76]: How to add markup and styles
+                    - listitem [ref=f17e77]: How to display data
+                    - listitem [ref=f17e78]: How to render conditions and lists
+                    - listitem [ref=f17e79]: How to respond to events and update the screen
+                    - listitem [ref=f17e80]: How to share data between components
+                - heading "Creating and nesting components Link for Creating and nesting components" [level=2] [ref=f17e81]:
+                  - text: Creating and nesting components
+                  - link "Link for Creating and nesting components":
+                    - /url: "#components"
+                - paragraph [ref=f17e82]:
+                  - text: React apps are made out of
+                  - emphasis [ref=f17e83]: components
+                  - text: . A component is a piece of the UI (user interface) that has its own logic and appearance. A component can be as small as a button, or as large as an entire page.
+                - paragraph [ref=f17e84]: "React components are JavaScript functions that return markup:"
+                - code [ref=f17e90]:
+                  - generic [ref=f17e91]: "function MyButton() {"
+                  - generic [ref=f17e92]: return (
+                  - generic [ref=f17e93]: <button>I'm a button</button>
+                  - generic [ref=f17e94]: );
+                  - generic [ref=f17e95]: "}"
+                - paragraph [ref=f17e96]:
+                  - text: Now that you’ve declared
+                  - code [ref=f17e97]: MyButton
+                  - text: ", you can nest it into another component:"
+                - code [ref=f17e103]:
+                  - generic [ref=f17e104]: "export default function MyApp() {"
+                  - generic [ref=f17e105]: return (
+                  - generic [ref=f17e106]: <div>
+                  - generic [ref=f17e107]: <h1>Welcome to my app</h1>
+                  - generic [ref=f17e108]: <MyButton />
+                  - generic [ref=f17e109]: </div>
+                  - generic [ref=f17e110]: );
+                  - generic [ref=f17e111]: "}"
+                - paragraph [ref=f17e112]:
+                  - text: Notice that
+                  - code [ref=f17e113]: <MyButton />
+                  - text: starts with a capital letter. That’s how you know it’s a React component. React component names must always start with a capital letter, while HTML tags must be lowercase.
+                - paragraph [ref=f17e114]: "Have a look at the result:"
+              - generic [ref=f17e117]:
+                - generic [ref=f17e118]:
+                  - button "App.js" [ref=f17e122] [cursor=pointer]
+                  - generic [ref=f17e124]:
+                    - button "Download" [ref=f17e125] [cursor=pointer]
+                    - button "Reload" [ref=f17e129] [cursor=pointer]
+                    - button "Clear" [ref=f17e133] [cursor=pointer]
+                    - link "Fork" [ref=f17e138] [cursor=pointer]:
+                      - /url: https://codesandbox.io/api/v1/sandboxes/define?undefined&environment=create-react-app
+                - generic [ref=f17e143]:
+                  - textbox "Code Editor for App.js" [ref=f17e146]:
+                    - generic [ref=f17e147]: "function MyButton() { return ( <button> I'm a button </button> ); } export default function MyApp() { return ( <div> <h1>Welcome to my app</h1> <MyButton /> </div> ); }"
+                  - iframe [ref=f17e150]
+                  - button "Show more" [ref=f17e151] [cursor=pointer]
+              - generic [ref=f17e157]:
+                - paragraph [ref=f17e158]:
+                  - text: The
+                  - code [ref=f17e159]: export default
+                  - text: keywords specify the main component in the file. If you’re not familiar with some piece of JavaScript syntax,
+                  - link "MDN" [ref=f17e160] [cursor=pointer]:
+                    - /url: https://developer.mozilla.org/en-US/docs/web/javascript/reference/statements/export
+                  - text: and
+                  - link "javascript.info" [ref=f17e161] [cursor=pointer]:
+                    - /url: https://javascript.info/import-export
+                  - text: have great references.
+                - heading "Writing markup with JSX Link for Writing markup with JSX" [level=2] [ref=f17e162]:
+                  - text: Writing markup with JSX
+                  - link "Link for Writing markup with JSX":
+                    - /url: "#writing-markup-with-jsx"
+                - paragraph [ref=f17e163]:
+                  - text: The markup syntax you’ve seen above is called
+                  - emphasis [ref=f17e164]: JSX
+                  - text: . It is optional, but most React projects use JSX for its convenience. All of the
+                  - link "tools we recommend for local development" [ref=f17e165] [cursor=pointer]:
+                    - /url: /learn/installation
+                  - text: support JSX out of the box.
+                - paragraph [ref=f17e166]:
+                  - text: JSX is stricter than HTML. You have to close tags like
+                  - code [ref=f17e167]: <br />
+                  - text: . Your component also can’t return multiple JSX tags. You have to wrap them into a shared parent, like a
+                  - code [ref=f17e168]: <div>...</div>
+                  - text: or an empty
+                  - code [ref=f17e169]: <>...</>
+                  - text: "wrapper:"
+                - code [ref=f17e175]:
+                  - generic [ref=f17e176]: "function AboutPage() {"
+                  - generic [ref=f17e177]: return (
+                  - generic [ref=f17e178]: <>
+                  - generic [ref=f17e179]: <h1>About</h1>
+                  - generic [ref=f17e180]: <p>Hello there.<br />How do you do?</p>
+                  - generic [ref=f17e181]: </>
+                  - generic [ref=f17e182]: );
+                  - generic [ref=f17e183]: "}"
+                - paragraph [ref=f17e184]:
+                  - text: If you have a lot of HTML to port to JSX, you can use an
+                  - link "online converter." [ref=f17e185] [cursor=pointer]:
+                    - /url: https://transform.tools/html-to-jsx
+                - heading "Adding styles Link for Adding styles" [level=2] [ref=f17e186]:
+                  - text: Adding styles
+                  - link "Link for Adding styles":
+                    - /url: "#adding-styles"
+                - paragraph [ref=f17e187]:
+                  - text: In React, you specify a CSS class with
+                  - code [ref=f17e188]: className
+                  - text: . It works the same way as the HTML
+                  - link [ref=f17e189] [cursor=pointer]:
+                    - /url: https://developer.mozilla.org/en-US/docs/Web/HTML/Global_attributes/class
+                    - code [ref=f17e190]: class
+                  - text: "attribute:"
+                - code [ref=f17e196]:
+                  - generic [ref=f17e197]: <img className="avatar" />
+                - paragraph [ref=f17e198]: "Then you write the CSS rules for it in a separate CSS file:"
+                - code [ref=f17e204]:
+                  - generic [ref=f17e205]: /* In your CSS */
+                  - generic [ref=f17e206]: ".avatar {"
+                  - generic [ref=f17e207]: "border-radius: 50%;"
+                  - generic [ref=f17e208]: "}"
+                - paragraph [ref=f17e209]:
+                  - text: React does not prescribe how you add CSS files. In the simplest case, you’ll add a
+                  - link [ref=f17e210] [cursor=pointer]:
+                    - /url: https://developer.mozilla.org/en-US/docs/Web/HTML/Element/link
+                    - code [ref=f17e211]: <link>
+                  - text: tag to your HTML. If you use a build tool or a framework, consult its documentation to learn how to add a CSS file to your project.
+                - heading "Displaying data Link for Displaying data" [level=2] [ref=f17e212]:
+                  - text: Displaying data
+                  - link "Link for Displaying data":
+                    - /url: "#displaying-data"
+                - paragraph [ref=f17e213]:
+                  - text: JSX lets you put markup into JavaScript. Curly braces let you “escape back” into JavaScript so that you can embed some variable from your code and display it to the user. For example, this will display
+                  - code [ref=f17e214]: user.name
+                  - text: ":"
+                - code [ref=f17e220]:
+                  - generic [ref=f17e221]: return (
+                  - generic [ref=f17e222]: <h1>
+                  - generic [ref=f17e223]: "{user.name}"
+                  - generic [ref=f17e224]: </h1>
+                  - generic [ref=f17e225]: );
+                - paragraph [ref=f17e226]:
+                  - text: You can also “escape into JavaScript” from JSX attributes, but you have to use curly braces
+                  - emphasis [ref=f17e227]: instead of
+                  - text: quotes. For example,
+                  - code [ref=f17e228]: className="avatar"
+                  - text: passes the
+                  - code [ref=f17e229]: "\"avatar\""
+                  - text: string as the CSS class, but
+                  - code [ref=f17e230]: "src={user.imageUrl}"
+                  - text: reads the JavaScript
+                  - code [ref=f17e231]: user.imageUrl
+                  - text: variable value, and then passes that value as the
+                  - code [ref=f17e232]: src
+                  - text: "attribute:"
+                - code [ref=f17e238]:
+                  - generic [ref=f17e239]: return (
+                  - generic [ref=f17e240]: <img
+                  - generic [ref=f17e241]: className="avatar"
+                  - generic [ref=f17e242]: "src={user.imageUrl}"
+                  - generic [ref=f17e243]: />
+                  - generic [ref=f17e244]: );
+                - paragraph [ref=f17e245]:
+                  - text: You can put more complex expressions inside the JSX curly braces too, for example,
+                  - link "string concatenation" [ref=f17e246] [cursor=pointer]:
+                    - /url: https://javascript.info/operators#string-concatenation-with-binary
+                  - text: ":"
+              - generic [ref=f17e249]:
+                - generic [ref=f17e250]:
+                  - button "App.js" [ref=f17e254] [cursor=pointer]
+                  - generic [ref=f17e256]:
+                    - button "Download" [ref=f17e257] [cursor=pointer]
+                    - button "Reload" [ref=f17e261] [cursor=pointer]
+                    - button "Clear" [ref=f17e265] [cursor=pointer]
+                    - link "Fork" [ref=f17e270] [cursor=pointer]:
+                      - /url: https://codesandbox.io/api/v1/sandboxes/define?undefined&environment=create-react-app
+                - generic [ref=f17e275]:
+                  - textbox "Code Editor for App.js" [ref=f17e278]:
+                    - generic [ref=f17e279]: "const user = { name: 'Hedy Lamarr', imageUrl: 'https://react.dev/images/docs/scientists/yXOvdOSs.jpg', imageSize: 90, }; export default function Profile() { return ( <> <h1>{user.name}</h1> <img className=\"avatar\" src={user.imageUrl} alt={'Photo of ' + user.name} style={{ width: user.imageSize, height: user.imageSize }} /> </> ); }"
+                  - iframe [ref=f17e282]
+                  - button "Show more" [ref=f17e283] [cursor=pointer]
+              - generic [ref=f17e289]:
+                - paragraph [ref=f17e290]:
+                  - text: In the above example,
+                  - code [ref=f17e291]: "style={{}}"
+                  - text: is not a special syntax, but a regular
+                  - code [ref=f17e292]: "{}"
+                  - text: object inside the
+                  - code [ref=f17e293]: "style={ }"
+                  - text: JSX curly braces. You can use the
+                  - code [ref=f17e294]: style
+                  - text: attribute when your styles depend on JavaScript variables.
+                - heading "Conditional rendering Link for Conditional rendering" [level=2] [ref=f17e295]:
+                  - text: Conditional rendering
+                  - link "Link for Conditional rendering":
+                    - /url: "#conditional-rendering"
+                - paragraph [ref=f17e296]:
+                  - text: In React, there is no special syntax for writing conditions. Instead, you’ll use the same techniques as you use when writing regular JavaScript code. For example, you can use an
+                  - link [ref=f17e297] [cursor=pointer]:
+                    - /url: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/if...else
+                    - code [ref=f17e298]: if
+                  - text: "statement to conditionally include JSX:"
+                - code [ref=f17e304]:
+                  - generic [ref=f17e305]: let content;
+                  - generic [ref=f17e306]: "if (isLoggedIn) {"
+                  - generic [ref=f17e307]: content = <AdminPanel />;
+                  - generic [ref=f17e308]: "} else {"
+                  - generic [ref=f17e309]: content = <LoginForm />;
+                  - generic [ref=f17e310]: "}"
+                  - generic [ref=f17e311]: return (
+                  - generic [ref=f17e312]: <div>
+                  - generic [ref=f17e313]: "{content}"
+                  - generic [ref=f17e314]: </div>
+                  - generic [ref=f17e315]: );
+                - paragraph [ref=f17e316]:
+                  - text: If you prefer more compact code, you can use the
+                  - link [ref=f17e317] [cursor=pointer]:
+                    - /url: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Conditional_Operator
+                    - text: conditional
+                    - code [ref=f17e318]: "?"
+                    - text: operator.
+                  - text: Unlike
+                  - code [ref=f17e319]: if
+                  - text: ", it works inside JSX:"
+                - code [ref=f17e325]:
+                  - generic [ref=f17e326]: <div>
+                  - generic [ref=f17e327]: "{isLoggedIn ? ("
+                  - generic [ref=f17e328]: <AdminPanel />
+                  - generic [ref=f17e329]: ") : ("
+                  - generic [ref=f17e330]: <LoginForm />
+                  - generic [ref=f17e331]: ")}"
+                  - generic [ref=f17e332]: </div>
+                - paragraph [ref=f17e333]:
+                  - text: When you don’t need the
+                  - code [ref=f17e334]: else
+                  - text: branch, you can also use a shorter
+                  - link [ref=f17e335] [cursor=pointer]:
+                    - /url: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Logical_AND#short-circuit_evaluation
+                    - text: logical
+                    - code [ref=f17e336]: "&&"
+                    - text: syntax
+                  - text: ":"
+                - code [ref=f17e342]:
+                  - generic [ref=f17e343]: <div>
+                  - generic [ref=f17e344]: "{isLoggedIn && <AdminPanel />}"
+                  - generic [ref=f17e345]: </div>
+                - paragraph [ref=f17e346]:
+                  - text: All of these approaches also work for conditionally specifying attributes. If you’re unfamiliar with some of this JavaScript syntax, you can start by always using
+                  - code [ref=f17e347]: if...else
+                  - text: .
+                - heading "Rendering lists Link for Rendering lists" [level=2] [ref=f17e348]:
+                  - text: Rendering lists
+                  - link "Link for Rendering lists":
+                    - /url: "#rendering-lists"
+                - paragraph [ref=f17e349]:
+                  - text: You will rely on JavaScript features like
+                  - link [ref=f17e350] [cursor=pointer]:
+                    - /url: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/for
+                    - code [ref=f17e351]: for
+                    - text: loop
+                  - text: and the
+                  - link [ref=f17e352] [cursor=pointer]:
+                    - /url: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/map
+                    - text: array
+                    - code [ref=f17e353]: map()
+                    - text: function
+                  - text: to render lists of components.
+                - paragraph [ref=f17e354]: "For example, let’s say you have an array of products:"
+                - code [ref=f17e360]:
+                  - generic [ref=f17e361]: const products = [
+                  - generic [ref=f17e362]: "{ title: 'Cabbage', id: 1 },"
+                  - generic [ref=f17e363]: "{ title: 'Garlic', id: 2 },"
+                  - generic [ref=f17e364]: "{ title: 'Apple', id: 3 },"
+                  - generic [ref=f17e365]: "];"
+                - paragraph [ref=f17e366]:
+                  - text: Inside your component, use the
+                  - code [ref=f17e367]: map()
+                  - text: function to transform an array of products into an array of
+                  - code [ref=f17e368]: <li>
+                  - text: "items:"
+                - code [ref=f17e374]:
+                  - generic [ref=f17e375]: const listItems = products.map(product =>
+                  - generic [ref=f17e376]: "<li key={product.id}>"
+                  - generic [ref=f17e377]: "{product.title}"
+                  - generic [ref=f17e378]: </li>
+                  - generic [ref=f17e379]: );
+                  - generic [ref=f17e381]: return (
+                  - generic [ref=f17e382]: "<ul>{listItems}</ul>"
+                  - generic [ref=f17e383]: );
+                - paragraph [ref=f17e384]:
+                  - text: Notice how
+                  - code [ref=f17e385]: <li>
+                  - text: has a
+                  - code [ref=f17e386]: key
+                  - text: attribute. For each item in a list, you should pass a string or a number that uniquely identifies that item among its siblings. Usually, a key should be coming from your data, such as a database ID. React uses your keys to know what happened if you later insert, delete, or reorder the items.
+              - generic [ref=f17e389]:
+                - generic [ref=f17e390]:
+                  - button "App.js" [ref=f17e394] [cursor=pointer]
+                  - generic [ref=f17e396]:
+                    - button "Download" [ref=f17e397] [cursor=pointer]
+                    - button "Reload" [ref=f17e401] [cursor=pointer]
+                    - button "Clear" [ref=f17e405] [cursor=pointer]
+                    - link "Fork" [ref=f17e410] [cursor=pointer]:
+                      - /url: https://codesandbox.io/api/v1/sandboxes/define?undefined&environment=create-react-app
+                - generic [ref=f17e415]:
+                  - textbox "Code Editor for App.js" [ref=f17e418]:
+                    - generic [ref=f17e419]: "const products = [ { title: 'Cabbage', isFruit: false, id: 1 }, { title: 'Garlic', isFruit: false, id: 2 }, { title: 'Apple', isFruit: true, id: 3 }, ]; export default function ShoppingList() { const listItems = products.map(product => <li key={product.id} style={{ color: product.isFruit ? 'magenta' : 'darkgreen' }} > {product.title} </li> ); return ( <ul>{listItems}</ul> ); }"
+                  - iframe [ref=f17e422]
+                  - button "Show more" [ref=f17e423] [cursor=pointer]
+              - generic [ref=f17e429]:
+                - heading "Responding to events Link for Responding to events" [level=2] [ref=f17e430]:
+                  - text: Responding to events
+                  - link "Link for Responding to events":
+                    - /url: "#responding-to-events"
+                - paragraph [ref=f17e431]:
+                  - text: You can respond to events by declaring
+                  - emphasis [ref=f17e432]: event handler
+                  - text: "functions inside your components:"
+                - code [ref=f17e438]:
+                  - generic [ref=f17e439]: "function MyButton() {"
+                  - generic [ref=f17e440]: "function handleClick() {"
+                  - generic [ref=f17e441]: alert('You clicked me!');
+                  - generic [ref=f17e442]: "}"
+                  - generic [ref=f17e444]: return (
+                  - generic [ref=f17e445]: "<button onClick={handleClick}>"
+                  - generic [ref=f17e446]: Click me
+                  - generic [ref=f17e447]: </button>
+                  - generic [ref=f17e448]: );
+                  - generic [ref=f17e449]: "}"
+                - paragraph [ref=f17e450]:
+                  - text: Notice how
+                  - code [ref=f17e451]: "onClick={handleClick}"
+                  - text: has no parentheses at the end! Do not
+                  - emphasis [ref=f17e452]: call
+                  - text: "the event handler function: you only need to"
+                  - emphasis [ref=f17e453]: pass it down
+                  - text: . React will call your event handler when the user clicks the button.
+                - heading "Updating the screen Link for Updating the screen" [level=2] [ref=f17e454]:
+                  - text: Updating the screen
+                  - link "Link for Updating the screen":
+                    - /url: "#updating-the-screen"
+                - paragraph [ref=f17e455]:
+                  - text: Often, you’ll want your component to “remember” some information and display it. For example, maybe you want to count the number of times a button is clicked. To do this, add
+                  - emphasis [ref=f17e456]: state
+                  - text: to your component.
+                - paragraph [ref=f17e457]:
+                  - text: First, import
+                  - link [ref=f17e458] [cursor=pointer]:
+                    - /url: /reference/react/useState
+                    - code [ref=f17e459]: useState
+                  - text: "from React:"
+                - code [ref=f17e465]:
+                  - generic [ref=f17e466]: "import { useState } from 'react';"
+                - paragraph [ref=f17e467]:
+                  - text: Now you can declare a
+                  - emphasis [ref=f17e468]: state variable
+                  - text: "inside your component:"
+                - code [ref=f17e474]:
+                  - generic [ref=f17e475]: "function MyButton() {"
+                  - generic [ref=f17e476]: const [count, setCount] = useState(0);
+                  - generic [ref=f17e477]: // ...
+                - paragraph [ref=f17e478]:
+                  - text: You’ll get two things from
+                  - code [ref=f17e479]: useState
+                  - text: ": the current state ("
+                  - code [ref=f17e480]: count
+                  - text: ), and the function that lets you update it (
+                  - code [ref=f17e481]: setCount
+                  - text: ). You can give them any names, but the convention is to write
+                  - code [ref=f17e482]: "[something, setSomething]"
+                  - text: .
+                - paragraph [ref=f17e483]:
+                  - text: The first time the button is displayed,
+                  - code [ref=f17e484]: count
+                  - text: will be
+                  - code [ref=f17e485]: "0"
+                  - text: because you passed
+                  - code [ref=f17e486]: "0"
+                  - text: to
+                  - code [ref=f17e487]: useState()
+                  - text: . When you want to change state, call
+                  - code [ref=f17e488]: setCount()
+                  - text: "and pass the new value to it. Clicking this button will increment the counter:"
+                - code [ref=f17e494]:
+                  - generic [ref=f17e495]: "function MyButton() {"
+                  - generic [ref=f17e496]: const [count, setCount] = useState(0);
+                  - generic [ref=f17e498]: "function handleClick() {"
+                  - generic [ref=f17e499]: setCount(count + 1);
+                  - generic [ref=f17e500]: "}"
+                  - generic [ref=f17e502]: return (
+                  - generic [ref=f17e503]: "<button onClick={handleClick}>"
+                  - generic [ref=f17e504]: "Clicked {count} times"
+                  - generic [ref=f17e505]: </button>
+                  - generic [ref=f17e506]: );
+                  - generic [ref=f17e507]: "}"
+                - paragraph [ref=f17e508]:
+                  - text: React will call your component function again. This time,
+                  - code [ref=f17e509]: count
+                  - text: will be
+                  - code [ref=f17e510]: "1"
+                  - text: . Then it will be
+                  - code [ref=f17e511]: "2"
+                  - text: . And so on.
+                - paragraph [ref=f17e512]: "If you render the same component multiple times, each will get its own state. Click each button separately:"
+              - generic [ref=f17e515]:
+                - generic [ref=f17e516]:
+                  - button "App.js" [ref=f17e520] [cursor=pointer]
+                  - generic [ref=f17e522]:
+                    - button "Download" [ref=f17e523] [cursor=pointer]
+                    - button "Reload" [ref=f17e527] [cursor=pointer]
+                    - button "Clear" [ref=f17e531] [cursor=pointer]
+                    - link "Fork" [ref=f17e536] [cursor=pointer]:
+                      - /url: https://codesandbox.io/api/v1/sandboxes/define?undefined&environment=create-react-app
+                - generic [ref=f17e541]:
+                  - textbox "Code Editor for App.js" [ref=f17e544]:
+                    - generic [ref=f17e545]: "import { useState } from 'react'; export default function MyApp() { return ( <div> <h1>Counters that update separately</h1> <MyButton /> <MyButton /> </div> ); } function MyButton() { const [count, setCount] = useState(0); function handleClick() { setCount(count + 1); } return ( <button onClick={handleClick}> Clicked {count} times </button> ); }"
+                  - iframe [ref=f17e548]
+                  - button "Show more" [ref=f17e549] [cursor=pointer]
+              - generic [ref=f17e555]:
+                - paragraph [ref=f17e556]:
+                  - text: Notice how each button “remembers” its own
+                  - code [ref=f17e557]: count
+                  - text: state and doesn’t affect other buttons.
+                - heading "Using Hooks Link for Using Hooks" [level=2] [ref=f17e558]:
+                  - text: Using Hooks
+                  - link "Link for Using Hooks":
+                    - /url: "#using-hooks"
+                - paragraph [ref=f17e559]:
+                  - text: Functions starting with
+                  - code [ref=f17e560]: use
+                  - text: are called
+                  - emphasis [ref=f17e561]: Hooks
+                  - text: .
+                  - code [ref=f17e562]: useState
+                  - text: is a built-in Hook provided by React. You can find other built-in Hooks in the
+                  - link "API reference." [ref=f17e563] [cursor=pointer]:
+                    - /url: /reference/react
+                  - text: You can also write your own Hooks by combining the existing ones.
+                - paragraph [ref=f17e564]:
+                  - text: Hooks are more restrictive than other functions. You can only call Hooks
+                  - emphasis [ref=f17e565]: at the top
+                  - text: of your components (or other Hooks). If you want to use
+                  - code [ref=f17e566]: useState
+                  - text: in a condition or a loop, extract a new component and put it there.
+                - heading "Sharing data between components Link for Sharing data between components" [level=2] [ref=f17e567]:
+                  - text: Sharing data between components
+                  - link "Link for Sharing data between components":
+                    - /url: "#sharing-data-between-components"
+                - paragraph [ref=f17e568]:
+                  - text: In the previous example, each
+                  - code [ref=f17e569]: MyButton
+                  - text: had its own independent
+                  - code [ref=f17e570]: count
+                  - text: ", and when each button was clicked, only the"
+                  - code [ref=f17e571]: count
+                  - text: "for the button clicked changed:"
+                - generic [ref=f17e572]:
+                  - figure [ref=f17e573]:
+                    - img "Diagram showing a tree of three components, one parent labeled MyApp and two children labeled MyButton. Both MyButton components contain a count with value zero." [ref=f17e575]
+                    - paragraph [ref=f17e578]:
+                      - text: Initially, each
+                      - code [ref=f17e579]: MyButton
+                      - text: ’s
+                      - code [ref=f17e580]: count
+                      - text: state is
+                      - code [ref=f17e581]: "0"
+                  - figure [ref=f17e582]:
+                    - img "The same diagram as the previous, with the count of the first child MyButton component highlighted indicating a click with the count value incremented to one. The second MyButton component still contains value zero." [ref=f17e584]
+                    - paragraph [ref=f17e587]:
+                      - text: The first
+                      - code [ref=f17e588]: MyButton
+                      - text: updates its
+                      - code [ref=f17e589]: count
+                      - text: to
+                      - code [ref=f17e590]: "1"
+                - paragraph [ref=f17e591]:
+                  - text: However, often you’ll need components to
+                  - emphasis [ref=f17e592]: share data and always update together
+                  - text: .
+                - paragraph [ref=f17e593]:
+                  - text: To make both
+                  - code [ref=f17e594]: MyButton
+                  - text: components display the same
+                  - code [ref=f17e595]: count
+                  - text: and update together, you need to move the state from the individual buttons “upwards” to the closest component containing all of them.
+                - paragraph [ref=f17e596]:
+                  - text: In this example, it is
+                  - code [ref=f17e597]: MyApp
+                  - text: ":"
+                - generic [ref=f17e598]:
+                  - figure [ref=f17e599]:
+                    - img "Diagram showing a tree of three components, one parent labeled MyApp and two children labeled MyButton. MyApp contains a count value of zero which is passed down to both of the MyButton components, which also show value zero." [ref=f17e601]
+                    - paragraph [ref=f17e604]:
+                      - text: Initially,
+                      - code [ref=f17e605]: MyApp
+                      - text: ’s
+                      - code [ref=f17e606]: count
+                      - text: state is
+                      - code [ref=f17e607]: "0"
+                      - text: and is passed down to both children
+                  - figure [ref=f17e608]:
+                    - img "The same diagram as the previous, with the count of the parent MyApp component highlighted indicating a click with the value incremented to one. The flow to both of the children MyButton components is also highlighted, and the count value in each child is set to one indicating the value was passed down." [ref=f17e610]
+                    - paragraph [ref=f17e613]:
+                      - text: On click,
+                      - code [ref=f17e614]: MyApp
+                      - text: updates its
+                      - code [ref=f17e615]: count
+                      - text: state to
+                      - code [ref=f17e616]: "1"
+                      - text: and passes it down to both children
+                - paragraph [ref=f17e617]:
+                  - text: Now when you click either button, the
+                  - code [ref=f17e618]: count
+                  - text: in
+                  - code [ref=f17e619]: MyApp
+                  - text: will change, which will change both of the counts in
+                  - code [ref=f17e620]: MyButton
+                  - text: . Here’s how you can express this in code.
+                - paragraph [ref=f17e621]:
+                  - text: First,
+                  - emphasis [ref=f17e622]: move the state up
+                  - text: from
+                  - code [ref=f17e623]: MyButton
+                  - text: into
+                  - code [ref=f17e624]: MyApp
+                  - text: ":"
+                - code [ref=f17e630]:
+                  - generic [ref=f17e631]: "export default function MyApp() {"
+                  - generic [ref=f17e632]: const [count, setCount] = useState(0);
+                  - generic [ref=f17e634]: "function handleClick() {"
+                  - generic [ref=f17e635]: setCount(count + 1);
+                  - generic [ref=f17e636]: "}"
+                  - generic [ref=f17e638]: return (
+                  - generic [ref=f17e639]: <div>
+                  - generic [ref=f17e640]: <h1>Counters that update separately</h1>
+                  - generic [ref=f17e641]: <MyButton />
+                  - generic [ref=f17e642]: <MyButton />
+                  - generic [ref=f17e643]: </div>
+                  - generic [ref=f17e644]: );
+                  - generic [ref=f17e645]: "}"
+                  - generic [ref=f17e647]: "function MyButton() {"
+                  - generic [ref=f17e648]: // ... we're moving code from here ...
+                  - generic [ref=f17e649]: "}"
+                - paragraph [ref=f17e650]:
+                  - text: Then,
+                  - emphasis [ref=f17e651]: pass the state down
+                  - text: from
+                  - code [ref=f17e652]: MyApp
+                  - text: to each
+                  - code [ref=f17e653]: MyButton
+                  - text: ", together with the shared click handler. You can pass information to"
+                  - code [ref=f17e654]: MyButton
+                  - text: using the JSX curly braces, just like you previously did with built-in tags like
+                  - code [ref=f17e655]: <img>
+                  - text: ":"
+                - code [ref=f17e661]:
+                  - generic [ref=f17e662]: "export default function MyApp() {"
+                  - generic [ref=f17e663]: const [count, setCount] = useState(0);
+                  - generic [ref=f17e665]: "function handleClick() {"
+                  - generic [ref=f17e666]: setCount(count + 1);
+                  - generic [ref=f17e667]: "}"
+                  - generic [ref=f17e669]: return (
+                  - generic [ref=f17e670]: <div>
+                  - generic [ref=f17e671]: <h1>Counters that update together</h1>
+                  - generic [ref=f17e672]: "<MyButton count={count} onClick={handleClick} />"
+                  - generic [ref=f17e673]: "<MyButton count={count} onClick={handleClick} />"
+                  - generic [ref=f17e674]: </div>
+                  - generic [ref=f17e675]: );
+                  - generic [ref=f17e676]: "}"
+                - paragraph [ref=f17e677]:
+                  - text: The information you pass down like this is called
+                  - emphasis [ref=f17e678]: props
+                  - text: . Now the
+                  - code [ref=f17e679]: MyApp
+                  - text: component contains the
+                  - code [ref=f17e680]: count
+                  - text: state and the
+                  - code [ref=f17e681]: handleClick
+                  - text: event handler, and
+                  - emphasis [ref=f17e682]: passes both of them down as props
+                  - text: to each of the buttons.
+                - paragraph [ref=f17e683]:
+                  - text: Finally, change
+                  - code [ref=f17e684]: MyButton
+                  - text: to
+                  - emphasis [ref=f17e685]: read
+                  - text: "the props you have passed from its parent component:"
+                - code [ref=f17e691]:
+                  - generic [ref=f17e692]: "function MyButton({ count, onClick }) {"
+                  - generic [ref=f17e693]: return (
+                  - generic [ref=f17e694]: "<button onClick={onClick}>"
+                  - generic [ref=f17e695]: "Clicked {count} times"
+                  - generic [ref=f17e696]: </button>
+                  - generic [ref=f17e697]: );
+                  - generic [ref=f17e698]: "}"
+                - paragraph [ref=f17e699]:
+                  - text: When you click the button, the
+                  - code [ref=f17e700]: onClick
+                  - text: handler fires. Each button’s
+                  - code [ref=f17e701]: onClick
+                  - text: prop was set to the
+                  - code [ref=f17e702]: handleClick
+                  - text: function inside
+                  - code [ref=f17e703]: MyApp
+                  - text: ", so the code inside of it runs. That code calls"
+                  - code [ref=f17e704]: setCount(count + 1)
+                  - text: ", incrementing the"
+                  - code [ref=f17e705]: count
+                  - text: state variable. The new
+                  - code [ref=f17e706]: count
+                  - text: value is passed as a prop to each button, so they all show the new value. This is called “lifting state up”. By moving state up, you’ve shared it between components.
+              - generic [ref=f17e709]:
+                - generic [ref=f17e710]:
+                  - button "App.js" [ref=f17e714] [cursor=pointer]
+                  - generic [ref=f17e716]:
+                    - button "Download" [ref=f17e717] [cursor=pointer]
+                    - button "Reload" [ref=f17e721] [cursor=pointer]
+                    - button "Clear" [ref=f17e725] [cursor=pointer]
+                    - link "Fork" [ref=f17e730] [cursor=pointer]:
+                      - /url: https://codesandbox.io/api/v1/sandboxes/define?undefined&environment=create-react-app
+                - generic [ref=f17e735]:
+                  - textbox "Code Editor for App.js" [ref=f17e738]:
+                    - generic [ref=f17e739]: "import { useState } from 'react'; export default function MyApp() { const [count, setCount] = useState(0); function handleClick() { setCount(count + 1); } return ( <div> <h1>Counters that update together</h1> <MyButton count={count} onClick={handleClick} /> <MyButton count={count} onClick={handleClick} /> </div> ); } function MyButton({ count, onClick }) { return ( <button onClick={onClick}> Clicked {count} times </button> ); }"
+                  - iframe [ref=f17e742]
+                  - button "Show more" [ref=f17e743] [cursor=pointer]
+              - generic [ref=f17e749]:
+                - heading "Next Steps Link for Next Steps" [level=2] [ref=f17e750]:
+                  - text: Next Steps
+                  - link "Link for Next Steps":
+                    - /url: "#next-steps"
+                - paragraph [ref=f17e751]: By now, you know the basics of how to write React code!
+                - paragraph [ref=f17e752]:
+                  - text: Check out the
+                  - link "Tutorial" [ref=f17e753] [cursor=pointer]:
+                    - /url: /learn/tutorial-tic-tac-toe
+                  - text: to put them into practice and build your first mini-app with React.
+            - 'link "Next Tutorial: Tic-Tac-Toe" [ref=f17e756] [cursor=pointer]':
+              - /url: /learn/tutorial-tic-tac-toe
+              - generic [ref=f17e761]:
+                - generic [ref=f17e762]: Next
+                - generic [ref=f17e763]: "Tutorial: Tic-Tac-Toe"
+      - generic [ref=f17e764]:
+        - separator [ref=f17e766]
+        - generic [ref=f17e769]:
+          - generic [ref=f17e770]:
+            - link "Meta Open Source" [ref=f17e771] [cursor=pointer]:
+              - /url: https://opensource.fb.com/
+            - generic [ref=f17e803]: Copyright © Meta Platforms, Inc
+            - generic [ref=f17e804] [cursor=pointer]: uwu?
+          - generic [ref=f17e805]:
+            - link "Learn React" [ref=f17e807] [cursor=pointer]:
+              - /url: /learn
+            - link "Quick Start" [ref=f17e809] [cursor=pointer]:
+              - /url: /learn
+            - link "Installation" [ref=f17e811] [cursor=pointer]:
+              - /url: /learn/installation
+            - link "Describing the UI" [ref=f17e813] [cursor=pointer]:
+              - /url: /learn/describing-the-ui
+            - link "Adding Interactivity" [ref=f17e815] [cursor=pointer]:
+              - /url: /learn/adding-interactivity
+            - link "Managing State" [ref=f17e817] [cursor=pointer]:
+              - /url: /learn/managing-state
+            - link "Escape Hatches" [ref=f17e819] [cursor=pointer]:
+              - /url: /learn/escape-hatches
+          - generic [ref=f17e820]:
+            - link "API Reference" [ref=f17e822] [cursor=pointer]:
+              - /url: /reference/react
+            - link "React APIs" [ref=f17e824] [cursor=pointer]:
+              - /url: /reference/react
+            - link "React DOM APIs" [ref=f17e826] [cursor=pointer]:
+              - /url: /reference/react-dom
+          - generic [ref=f17e827]:
+            - link "Community" [ref=f17e829] [cursor=pointer]:
+              - /url: /community
+            - link "Code of Conduct" [ref=f17e831] [cursor=pointer]:
+              - /url: https://github.com/react/react/blob/main/CODE_OF_CONDUCT.md
+            - link "Meet the Team" [ref=f17e833] [cursor=pointer]:
+              - /url: /community/team
+            - link "Docs Contributors" [ref=f17e835] [cursor=pointer]:
+              - /url: /community/docs-contributors
+            - link "Acknowledgements" [ref=f17e837] [cursor=pointer]:
+              - /url: /community/acknowledgements
+          - generic [ref=f17e838]:
+            - generic [ref=f17e839]: More
+            - link "Blog" [ref=f17e841] [cursor=pointer]:
+              - /url: /blog
+            - link "React Native" [ref=f17e843] [cursor=pointer]:
+              - /url: https://reactnative.dev/
+            - link "Privacy" [ref=f17e845] [cursor=pointer]:
+              - /url: https://opensource.facebook.com/legal/privacy
+            - link "Terms" [ref=f17e847] [cursor=pointer]:
+              - /url: https://opensource.fb.com/legal/terms/
+            - generic [ref=f17e848]:
+              - link "React on Facebook" [ref=f17e849] [cursor=pointer]:
+                - /url: https://www.facebook.com/react
+              - link "React on Twitter" [ref=f17e853] [cursor=pointer]:
+                - /url: https://twitter.com/reactjs
+              - link "React on Bluesky" [ref=f17e857] [cursor=pointer]:
+                - /url: https://bsky.app/profile/react.dev
+                - img "Bluesky" [ref=f17e858]
+              - link "React on Github" [ref=f17e860] [cursor=pointer]:
+                - /url: https://github.com/react/react
+  - alert [ref=f17e863]

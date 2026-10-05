@@ -1,0 +1,126 @@
+- generic [active] [ref=f15e1]:
+  - generic [ref=f15e2]:
+    - generic [ref=f15e3]:
+      - link "Skip to content" [ref=f15e4] [cursor=pointer]:
+        - /url: "#start-of-content"
+      - banner [ref=f15e9]:
+        - heading "Navigation Menu" [level=2] [ref=f15e10]
+        - generic [ref=f15e12]:
+          - button "Toggle navigation" [ref=f15e14] [cursor=pointer]
+          - link "Homepage" [ref=f15e18] [cursor=pointer]:
+            - /url: /
+          - generic [ref=f15e21]:
+            - link "Sign in" [ref=f15e22] [cursor=pointer]:
+              - /url: /login?return_to=https%3A%2F%2Fgithub.com%2Fagalwood%2FMotrix%2Ftree%2Fmain%2F.claude
+            - button "Appearance settings" [ref=f15e25] [cursor=pointer]
+    - main [ref=f15e32]:
+      - generic [ref=f15e33]:
+        - generic [ref=f15e34]:
+          - generic [ref=f15e36]:
+            - link "agalwood" [ref=f15e40] [cursor=pointer]:
+              - /url: /agalwood
+            - generic [ref=f15e41]: /
+            - strong [ref=f15e42]:
+              - link "Motrix" [ref=f15e43] [cursor=pointer]:
+                - /url: /agalwood/Motrix
+            - generic [ref=f15e44]: Public
+          - generic [ref=f15e45]:
+            - list:
+              - listitem [ref=f15e46]:
+                - link "You must be signed in to change notification settings" [ref=f15e47] [cursor=pointer]:
+                  - /url: /login?return_to=%2Fagalwood%2FMotrix
+                  - text: Notifications
+              - listitem [ref=f15e50]:
+                - link "Fork 5k" [ref=f15e51] [cursor=pointer]:
+                  - /url: /login?return_to=%2Fagalwood%2FMotrix
+                  - text: Fork
+                  - generic "5,046" [ref=f15e54]: 5k
+              - listitem [ref=f15e55]:
+                - link "You must be signed in to star a repository" [ref=f15e57] [cursor=pointer]:
+                  - /url: /login?return_to=%2Fagalwood%2FMotrix
+                  - text: Star
+                  - generic "56106 users starred this repository" [ref=f15e60]: 56.1k
+        - navigation "Repository" [ref=f15e61]:
+          - list [ref=f15e62]:
+            - listitem [ref=f15e63]:
+              - link "Code" [ref=f15e64] [cursor=pointer]:
+                - /url: /agalwood/Motrix
+            - listitem [ref=f15e68]:
+              - link "Issues 140" [ref=f15e69] [cursor=pointer]:
+                - /url: /agalwood/Motrix/issues
+                - generic [ref=f15e73]: Issues
+                - generic "140" [ref=f15e74]
+            - listitem [ref=f15e75]:
+              - link "Pull requests 8" [ref=f15e76] [cursor=pointer]:
+                - /url: /agalwood/Motrix/pulls
+                - generic [ref=f15e79]: Pull requests
+                - generic "8" [ref=f15e80]
+            - listitem [ref=f15e81]:
+              - link "Discussions" [ref=f15e82] [cursor=pointer]:
+                - /url: /agalwood/Motrix/discussions
+            - listitem [ref=f15e86]:
+              - link "Actions" [ref=f15e87] [cursor=pointer]:
+                - /url: /agalwood/Motrix/actions
+            - listitem [ref=f15e91]:
+              - link "Projects" [ref=f15e92] [cursor=pointer]:
+                - /url: /agalwood/Motrix/projects
+            - listitem [ref=f15e96]:
+              - link "Wiki" [ref=f15e97] [cursor=pointer]:
+                - /url: /agalwood/Motrix/wiki
+            - listitem [ref=f15e101]
+            - listitem [ref=f15e102]
+          - button "Additional navigation options" [ref=f15e106] [cursor=pointer]
+      - generic [ref=f15e117]:
+        - generic [ref=f15e121]:
+          - generic [ref=f15e122]:
+            - heading "Expand file tree" [level=2] [ref=f15e124]:
+              - button "Expand file tree" [ref=f15e125] [cursor=pointer]
+            - button "main branch" [ref=f15e130] [cursor=pointer]:
+              - generic [ref=f15e131]: main
+            - generic [ref=f15e136]:
+              - navigation [ref=f15e137]:
+                - heading "Breadcrumbs" [level=2] [ref=f15e138]
+                - list [ref=f15e139]:
+                  - listitem [ref=f15e140]:
+                    - link "Motrix" [ref=f15e141] [cursor=pointer]:
+                      - /url: /agalwood/Motrix/tree/main
+              - generic [ref=f15e142]:
+                - text: /
+                - heading ".claude" [level=1] [ref=f15e143]
+                - text: /
+              - button "Copy path" [ref=f15e144] [cursor=pointer]
+          - generic [ref=f15e150]:
+            - heading "Directory actions" [level=2] [ref=f15e151]
+            - combobox "Go to file" [ref=f15e158]
+            - heading "More options" [level=2] [ref=f15e159]
+            - button "More options" [ref=f15e160] [cursor=pointer]
+        - generic [ref=f15e163]:
+          - generic [ref=f15e165]:
+            - heading "Latest commit" [level=2] [ref=f15e166]
+            - generic [ref=f15e169]:
+              - heading "History" [level=2] [ref=f15e170]
+              - link "View commit history for this file." [ref=f15e172] [cursor=pointer]:
+                - /url: /agalwood/Motrix/commits/main/.claude
+          - generic [ref=f15e175]:
+            - heading "Folders and files" [level=2] [ref=f15e176]
+            - table "Folders and files" [ref=f15e177]:
+              - rowgroup [ref=f15e178]:
+                - row [ref=f15e179]:
+                  - columnheader "Name" [ref=f15e180]
+                  - columnheader "Last commit message" [ref=f15e181]
+                  - columnheader "Last commit date" [ref=f15e183]
+              - rowgroup [ref=f15e185]:
+                - row [ref=f15e186]:
+                  - cell [ref=f15e187]:
+                    - heading "parent directory" [level=3] [ref=f15e188]
+                    - link "Parent directory" [ref=f15e189] [cursor=pointer]:
+                      - /url: /agalwood/Motrix/tree/main
+                      - generic [ref=f15e190]: ..
+                - row "rules, (Directory)" [ref=f15e193]:
+                  - cell [ref=f15e194]:
+                    - link "rules, (Directory)" [ref=f15e201] [cursor=pointer]:
+                      - /url: /agalwood/Motrix/tree/main/.claude/rules
+                      - text: rules
+                  - cell [ref=f15e202]
+                  - cell [ref=f15e204]
+  - alert [ref=f15e210]

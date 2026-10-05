@@ -1,0 +1,3 @@
+[     589ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://github.com/agalwood/Motrix/tree/master/claude:0
+[    1034ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://github.com/agalwood/Motrix/latest-commit/master/claude:0
+[    1144ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://github.com/agalwood/Motrix/tree-commit-info/master/claude:0

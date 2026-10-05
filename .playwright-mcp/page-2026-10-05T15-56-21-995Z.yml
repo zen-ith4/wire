@@ -1,0 +1,222 @@
+- generic [ref=f11e2]:
+  - generic [ref=f11e3]:
+    - link "Skip to content" [ref=f11e4] [cursor=pointer]:
+      - /url: "#start-of-content"
+    - banner [ref=f11e9]:
+      - heading "Navigation Menu" [level=2] [ref=f11e10]
+      - generic [ref=f11e12]:
+        - button "Toggle navigation" [ref=f11e14] [cursor=pointer]
+        - link "Homepage" [ref=f11e18] [cursor=pointer]:
+          - /url: /
+        - generic [ref=f11e21]:
+          - link "Sign in" [ref=f11e22] [cursor=pointer]:
+            - /url: /login?return_to=https%3A%2F%2Fgithub.com%2Fagalwood%2FMotrix%2Fdiscussions%2F1811
+          - button "Appearance settings" [ref=f11e25] [cursor=pointer]
+  - main [ref=f11e32]:
+    - generic [ref=f11e33]:
+      - generic [ref=f11e34]:
+        - generic [ref=f11e36]:
+          - link "agalwood" [ref=f11e40] [cursor=pointer]:
+            - /url: /agalwood
+          - generic [ref=f11e41]: /
+          - strong [ref=f11e42]:
+            - link "Motrix" [ref=f11e43] [cursor=pointer]:
+              - /url: /agalwood/Motrix
+          - generic [ref=f11e44]: Public
+        - generic [ref=f11e45]:
+          - list:
+            - listitem [ref=f11e46]:
+              - link "You must be signed in to change notification settings" [ref=f11e47] [cursor=pointer]:
+                - /url: /login?return_to=%2Fagalwood%2FMotrix
+                - text: Notifications
+            - listitem [ref=f11e50]:
+              - link "Fork 5k" [ref=f11e51] [cursor=pointer]:
+                - /url: /login?return_to=%2Fagalwood%2FMotrix
+                - text: Fork
+                - generic "5,046" [ref=f11e54]: 5k
+            - listitem [ref=f11e55]:
+              - link "You must be signed in to star a repository" [ref=f11e57] [cursor=pointer]:
+                - /url: /login?return_to=%2Fagalwood%2FMotrix
+                - text: Star
+                - generic "56106 users starred this repository" [ref=f11e60]: 56.1k
+      - navigation "Repository" [ref=f11e61]:
+        - list [ref=f11e62]:
+          - listitem [ref=f11e63]:
+            - link "Code" [ref=f11e64] [cursor=pointer]:
+              - /url: /agalwood/Motrix
+          - listitem [ref=f11e68]:
+            - link "Issues 139" [ref=f11e69] [cursor=pointer]:
+              - /url: /agalwood/Motrix/issues
+              - generic [ref=f11e73]: Issues
+              - generic "139" [ref=f11e74]
+          - listitem [ref=f11e75]:
+            - link "Pull requests 8" [ref=f11e76] [cursor=pointer]:
+              - /url: /agalwood/Motrix/pulls
+              - generic [ref=f11e79]: Pull requests
+              - generic "8" [ref=f11e80]
+          - listitem [ref=f11e81]:
+            - link "Discussions" [ref=f11e82] [cursor=pointer]:
+              - /url: /agalwood/Motrix/discussions
+          - listitem [ref=f11e86]:
+            - link "Actions" [ref=f11e87] [cursor=pointer]:
+              - /url: /agalwood/Motrix/actions
+          - listitem [ref=f11e91]:
+            - link "Projects" [ref=f11e92] [cursor=pointer]:
+              - /url: /agalwood/Motrix/projects
+          - listitem [ref=f11e96]:
+            - link "Wiki" [ref=f11e97] [cursor=pointer]:
+              - /url: /agalwood/Motrix/wiki
+          - listitem [ref=f11e101]
+          - listitem [ref=f11e102]
+        - button "Additional navigation options" [ref=f11e106] [cursor=pointer]
+    - generic [ref=f11e110]:
+      - generic [ref=f11e117]:
+        - 'heading "External tool: motrix-cli for terminal and AI agent automation #1811" [level=1] [ref=f11e118]'
+        - generic [ref=f11e120]:
+          - link "nufegia" [ref=f11e121] [cursor=pointer]:
+            - /url: /nufegia
+          - text: started this conversation in
+          - link "Show and tell" [ref=f11e122] [cursor=pointer]:
+            - /url: /agalwood/Motrix/discussions/categories/show-and-tell
+      - generic [ref=f11e124]:
+        - generic [ref=f11e125]:
+          - generic [ref=f11e130]:
+            - generic [ref=f11e132]:
+              - button "Discussion options" [ref=f11e137] [cursor=pointer]
+              - heading [level=2] [ref=f11e138]:
+                - generic [ref=f11e139]:
+                  - link "nufegia" [ref=f11e140] [cursor=pointer]:
+                    - /url: /nufegia
+                  - link "May 10, 2026on May 10" [ref=f11e144] [cursor=pointer]:
+                    - /url: "#discussion-10035895"
+            - generic [ref=f11e146]:
+              - generic [ref=f11e147]:
+                - paragraph [ref=f11e148]: Hi Motrix community 👋
+                - paragraph [ref=f11e149]: "I recently built a small open-source CLI wrapper for Motrix:"
+                - paragraph [ref=f11e150]:
+                  - link "https://github.com/nufegia/motrix-cli" [ref=f11e151] [cursor=pointer]:
+                    - /url: https://github.com/nufegia/motrix-cli
+                - paragraph [ref=f11e152]: It turns Motrix’s local aria2 JSON-RPC backend into a terminal- and AI-agent-friendly workflow.
+                - paragraph [ref=f11e153]: "The idea was simple:"
+                - paragraph [ref=f11e154]: Motrix already provides a great GUI download experience, but using it reliably from scripts, terminals, or AI coding agents is still a bit awkward. So I made a lightweight CLI layer on top of it.
+                - paragraph [ref=f11e155]: "Features include:"
+                - list [ref=f11e156]:
+                  - listitem [ref=f11e157]: add downloads from terminal
+                  - listitem [ref=f11e158]: list / inspect / pause / resume / remove tasks
+                  - listitem [ref=f11e159]: wait until downloads finish
+                  - listitem [ref=f11e160]: stable JSON output for automation
+                  - listitem [ref=f11e161]: automatic Motrix RPC config discovery on macOS
+                  - listitem [ref=f11e162]: reusable Codex skill for AI agents
+                - paragraph [ref=f11e163]: "Example:"
+                - generic [ref=f11e164]:
+                  - generic [ref=f11e165]:
+                    - text: motrix-cli add --json
+                    - generic [ref=f11e166]: "\"https://example.com/file.zip\""
+                    - text: motrix-cli wait --json <gid>
+                  - button "Copy code to clipboard" [ref=f11e168] [cursor=pointer]
+                - paragraph [ref=f11e172]: "The project is especially designed for workflows involving:"
+                - list [ref=f11e173]:
+                  - listitem [ref=f11e174]: Codex
+                  - listitem [ref=f11e175]: Claude Code
+                  - listitem [ref=f11e176]: terminal automation
+                  - listitem [ref=f11e177]: MCP / AI agents
+                  - listitem [ref=f11e178]: scripting around Motrix
+                - paragraph [ref=f11e179]: This is not meant to replace Motrix — only to make the existing Motrix ecosystem easier to automate and integrate into modern AI workflows.
+                - paragraph [ref=f11e180]: Would love to hear thoughts or feedback from Motrix users and maintainers 🙂
+              - 'button "Upvote: 1" [disabled] [ref=f11e187]':
+                - generic [ref=f11e190]: "1"
+          - generic [ref=f11e191]:
+            - generic [ref=f11e192]:
+              - 'heading "Replies: 1 comment" [level=2] [ref=f11e194]':
+                - generic [ref=f11e195]: "Replies:"
+                - text: 1 comment
+              - navigation "Sort comments" [ref=f11e196]:
+                - list "Sort comments" [ref=f11e198]:
+                  - listitem [ref=f11e199]:
+                    - link "Oldest" [ref=f11e200] [cursor=pointer]:
+                      - /url: /agalwood/Motrix/discussions/1811?sort=old
+                  - listitem [ref=f11e203]:
+                    - link "Newest" [ref=f11e204] [cursor=pointer]:
+                      - /url: /agalwood/Motrix/discussions/1811?sort=new
+                  - listitem [ref=f11e207]:
+                    - link "Top" [ref=f11e208] [cursor=pointer]:
+                      - /url: /agalwood/Motrix/discussions/1811?sort=top
+            - generic [ref=f11e216]:
+              - generic [ref=f11e218]:
+                - button "Comment options" [ref=f11e223] [cursor=pointer]
+                - heading [level=3] [ref=f11e224]:
+                  - generic [ref=f11e225]:
+                    - link "upstairsupstairs33" [ref=f11e226] [cursor=pointer]:
+                      - /url: /upstairsupstairs33
+                    - link "May 14, 2026on May 14" [ref=f11e230] [cursor=pointer]:
+                      - /url: "#discussioncomment-16922050"
+              - generic [ref=f11e232]:
+                - paragraph [ref=f11e234]:
+                  - link "https://github.com/upstairsupstairs33/chatgpt-browser-terminal-agent" [ref=f11e235] [cursor=pointer]:
+                    - /url: https://github.com/upstairsupstairs33/chatgpt-browser-terminal-agent
+                  - text: this simple script works with any browser ui based ai like chatgpt.com gemini whatever as long as there is a chat ui this works, no need for api keys anymore, if you dont use chatgpt then youll have to update the selectors for whatever ai ui your using but thats it, 20 bucks a months for an autonomous agent isnt bad api keys are exspensive
+                - generic [ref=f11e237]:
+                  - 'button "Upvote: 1" [disabled] [ref=f11e242]':
+                    - generic [ref=f11e245]: "1"
+                  - generic [ref=f11e246]: 0 replies
+        - generic [ref=f11e248]:
+          - link "Sign up for free" [ref=f11e249] [cursor=pointer]:
+            - /url: /join?source=comment-repo
+          - strong [ref=f11e250]: to join this conversation on GitHub
+          - text: . Already have an account?
+          - link "Sign in to comment" [ref=f11e251] [cursor=pointer]:
+            - /url: /login?return_to=https%3A%2F%2Fgithub.com%2Fagalwood%2FMotrix%2Fdiscussions%2F1811
+      - generic [ref=f11e252]:
+        - generic [ref=f11e255]:
+          - generic [ref=f11e256]: Category
+          - link "Show and tell" [ref=f11e257] [cursor=pointer]:
+            - /url: /agalwood/Motrix/discussions/categories/show-and-tell
+            - generic [ref=f11e259]: 🙌
+            - text: Show and tell
+        - generic [ref=f11e260]:
+          - generic [ref=f11e261]: Labels
+          - generic [ref=f11e262]: None yet
+        - generic [ref=f11e264]:
+          - generic [ref=f11e265]: 2 participants
+          - generic [ref=f11e266]:
+            - link [ref=f11e267] [cursor=pointer]:
+              - /url: /nufegia
+              - img "@nufegia" [ref=f11e268]
+            - link [ref=f11e269] [cursor=pointer]:
+              - /url: /upstairsupstairs33
+              - img "@upstairsupstairs33" [ref=f11e270]
+  - contentinfo [ref=f11e271]:
+    - heading "Footer" [level=2] [ref=f11e272]
+    - generic [ref=f11e273]:
+      - generic [ref=f11e274]:
+        - link "GitHub Homepage" [ref=f11e275] [cursor=pointer]:
+          - /url: https://github.com
+        - generic [ref=f11e278]: © 2026 GitHub, Inc.
+      - navigation "Footer" [ref=f11e279]:
+        - heading "Footer navigation" [level=3] [ref=f11e280]
+        - list "Footer navigation" [ref=f11e281]:
+          - listitem [ref=f11e282]:
+            - link "Terms" [ref=f11e283] [cursor=pointer]:
+              - /url: https://docs.github.com/site-policy/github-terms/github-terms-of-service
+          - listitem [ref=f11e284]:
+            - link "Privacy" [ref=f11e285] [cursor=pointer]:
+              - /url: https://docs.github.com/site-policy/privacy-policies/github-privacy-statement
+          - listitem [ref=f11e286]:
+            - link "Security" [ref=f11e287] [cursor=pointer]:
+              - /url: https://github.com/security
+          - listitem [ref=f11e288]:
+            - link "Status" [ref=f11e289] [cursor=pointer]:
+              - /url: https://www.githubstatus.com/
+          - listitem [ref=f11e290]:
+            - link "Community" [ref=f11e291] [cursor=pointer]:
+              - /url: https://github.community/
+          - listitem [ref=f11e292]:
+            - link "Docs" [ref=f11e293] [cursor=pointer]:
+              - /url: https://docs.github.com/
+          - listitem [ref=f11e294]:
+            - link "Contact" [ref=f11e295] [cursor=pointer]:
+              - /url: https://support.github.com?tags=dotcom-footer
+          - listitem [ref=f11e296]:
+            - button "Manage cookies" [ref=f11e298] [cursor=pointer]
+          - listitem [ref=f11e299]:
+            - button "Do not share my personal information" [ref=f11e301] [cursor=pointer]

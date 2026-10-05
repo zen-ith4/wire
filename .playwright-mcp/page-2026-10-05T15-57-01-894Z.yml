@@ -1,0 +1,107 @@
+- generic [ref=f13e2]:
+  - generic [ref=f13e3]:
+    - link "Skip to content" [ref=f13e4] [cursor=pointer]:
+      - /url: "#start-of-content"
+    - banner [ref=f13e9]:
+      - heading "Navigation Menu" [level=2] [ref=f13e10]
+      - generic [ref=f13e12]:
+        - button "Toggle navigation" [ref=f13e14] [cursor=pointer]
+        - link "Homepage" [ref=f13e18] [cursor=pointer]:
+          - /url: /
+        - generic [ref=f13e21]:
+          - link "Sign in" [ref=f13e22] [cursor=pointer]:
+            - /url: /login?return_to=https%3A%2F%2Fgithub.com%2Fagalwood%2FMotrix%2Ftree%2Fmaster%2Fclaude
+          - button "Appearance settings" [ref=f13e25] [cursor=pointer]
+  - main [ref=f13e32]:
+    - generic [ref=f13e33]:
+      - generic [ref=f13e34]:
+        - generic [ref=f13e36]:
+          - link "agalwood" [ref=f13e40] [cursor=pointer]:
+            - /url: /agalwood
+          - generic [ref=f13e41]: /
+          - strong [ref=f13e42]:
+            - link "Motrix" [ref=f13e43] [cursor=pointer]:
+              - /url: /agalwood/Motrix
+          - generic [ref=f13e44]: Public
+        - generic [ref=f13e45]:
+          - list:
+            - listitem [ref=f13e46]:
+              - link "You must be signed in to change notification settings" [ref=f13e47] [cursor=pointer]:
+                - /url: /login?return_to=%2Fagalwood%2FMotrix
+                - text: Notifications
+            - listitem [ref=f13e50]:
+              - link "Fork 5k" [ref=f13e51] [cursor=pointer]:
+                - /url: /login?return_to=%2Fagalwood%2FMotrix
+                - text: Fork
+                - generic "5,046" [ref=f13e54]: 5k
+            - listitem [ref=f13e55]:
+              - link "You must be signed in to star a repository" [ref=f13e57] [cursor=pointer]:
+                - /url: /login?return_to=%2Fagalwood%2FMotrix
+                - text: Star
+                - generic "56106 users starred this repository" [ref=f13e60]: 56.1k
+      - navigation "Repository" [ref=f13e61]:
+        - list [ref=f13e62]:
+          - listitem [ref=f13e63]:
+            - link "Code" [ref=f13e64] [cursor=pointer]:
+              - /url: /agalwood/Motrix/tree/master
+          - listitem [ref=f13e68]:
+            - link "Issues 139" [ref=f13e69] [cursor=pointer]:
+              - /url: /agalwood/Motrix/issues
+              - generic [ref=f13e73]: Issues
+              - generic "139" [ref=f13e74]
+          - listitem [ref=f13e75]:
+            - link "Pull requests 8" [ref=f13e76] [cursor=pointer]:
+              - /url: /agalwood/Motrix/pulls
+              - generic [ref=f13e79]: Pull requests
+              - generic "8" [ref=f13e80]
+          - listitem [ref=f13e81]:
+            - link "Discussions" [ref=f13e82] [cursor=pointer]:
+              - /url: /agalwood/Motrix/discussions
+          - listitem [ref=f13e86]:
+            - link "Actions" [ref=f13e87] [cursor=pointer]:
+              - /url: /agalwood/Motrix/actions
+          - listitem [ref=f13e91]:
+            - link "Projects" [ref=f13e92] [cursor=pointer]:
+              - /url: /agalwood/Motrix/projects
+          - listitem [ref=f13e96]:
+            - link "Wiki" [ref=f13e97] [cursor=pointer]:
+              - /url: /agalwood/Motrix/wiki
+          - listitem [ref=f13e101]
+          - listitem [ref=f13e102]
+        - button "Additional navigation options" [ref=f13e106] [cursor=pointer]
+    - generic [ref=f13e117]:
+      - generic [ref=f13e121]:
+        - generic [ref=f13e122]:
+          - heading "Expand file tree" [level=2] [ref=f13e124]:
+            - button "Expand file tree" [ref=f13e125] [cursor=pointer]
+          - button "master branch" [ref=f13e130] [cursor=pointer]:
+            - generic [ref=f13e131]: master
+          - generic [ref=f13e136]:
+            - navigation [ref=f13e137]:
+              - heading "Breadcrumbs" [level=2] [ref=f13e138]
+              - list [ref=f13e139]:
+                - listitem [ref=f13e140]:
+                  - link "Motrix" [ref=f13e141] [cursor=pointer]:
+                    - /url: /agalwood/Motrix/tree/master
+            - generic [ref=f13e142]:
+              - text: /
+              - heading "claude" [level=1] [ref=f13e143]
+              - text: /
+            - button "Copy path" [ref=f13e144] [cursor=pointer]
+        - generic [ref=f13e150]:
+          - heading "Directory actions" [level=2] [ref=f13e151]
+          - combobox "Go to file" [ref=f13e158]
+          - heading "More options" [level=2] [ref=f13e159]
+          - button "More options" [ref=f13e160] [cursor=pointer]
+      - generic [ref=f13e165]:
+        - heading "404 - page not found" [level=2] [ref=f13e170]
+        - paragraph [ref=f13e171]:
+          - generic [ref=f13e172]:
+            - text: The
+            - generic [ref=f13e173]: master
+            - text: branch of
+            - strong [ref=f13e174]: Motrix
+            - text: does not contain the path
+            - strong [ref=f13e175]: claude.
+        - link "Return to the repository overview" [ref=f13e177] [cursor=pointer]:
+          - /url: /agalwood/Motrix

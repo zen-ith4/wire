@@ -1,0 +1,245 @@
+- generic [ref=f2e2]:
+  - generic [ref=f2e3]:
+    - link "Skip to content" [ref=f2e4] [cursor=pointer]:
+      - /url: "#start-of-content"
+    - banner [ref=f2e9]:
+      - heading "Navigation Menu" [level=2] [ref=f2e10]
+      - generic [ref=f2e12]:
+        - button "Toggle navigation" [ref=f2e14] [cursor=pointer]
+        - link "Homepage" [ref=f2e18] [cursor=pointer]:
+          - /url: /
+        - generic [ref=f2e21]:
+          - link "Sign in" [ref=f2e22] [cursor=pointer]:
+            - /url: /login?return_to=https%3A%2F%2Fgithub.com%2Fmortex%2FMortex-System
+          - button "Appearance settings" [ref=f2e25] [cursor=pointer]
+  - main [ref=f2e32]:
+    - generic [ref=f2e33]:
+      - generic [ref=f2e34]:
+        - generic [ref=f2e36]:
+          - link "mortex" [ref=f2e40] [cursor=pointer]:
+            - /url: /mortex
+          - generic [ref=f2e41]: /
+          - strong [ref=f2e42]:
+            - link "Mortex-System" [ref=f2e43] [cursor=pointer]:
+              - /url: /mortex/Mortex-System
+          - generic [ref=f2e44]: Public
+        - generic [ref=f2e45]:
+          - list:
+            - listitem [ref=f2e46]:
+              - link "You must be signed in to change notification settings" [ref=f2e47] [cursor=pointer]:
+                - /url: /login?return_to=%2Fmortex%2FMortex-System
+                - text: Notifications
+            - listitem [ref=f2e50]:
+              - link "Fork 0" [ref=f2e51] [cursor=pointer]:
+                - /url: /login?return_to=%2Fmortex%2FMortex-System
+                - text: Fork
+                - generic "0" [ref=f2e54]
+            - listitem [ref=f2e55]:
+              - link "You must be signed in to star a repository" [ref=f2e57] [cursor=pointer]:
+                - /url: /login?return_to=%2Fmortex%2FMortex-System
+                - text: Star
+                - generic "2 users starred this repository" [ref=f2e60]: "2"
+      - navigation "Repository" [ref=f2e61]:
+        - list [ref=f2e62]:
+          - listitem [ref=f2e63]:
+            - link "Code" [ref=f2e64] [cursor=pointer]:
+              - /url: /mortex/Mortex-System
+          - listitem [ref=f2e68]:
+            - link "Issues" [ref=f2e69] [cursor=pointer]:
+              - /url: /mortex/Mortex-System/issues
+          - listitem [ref=f2e74]:
+            - link "Pull requests" [ref=f2e75] [cursor=pointer]:
+              - /url: /mortex/Mortex-System/pulls
+          - listitem [ref=f2e79]:
+            - link "Actions" [ref=f2e80] [cursor=pointer]:
+              - /url: /mortex/Mortex-System/actions
+          - listitem [ref=f2e84]:
+            - link "Projects" [ref=f2e85] [cursor=pointer]:
+              - /url: /mortex/Mortex-System/projects
+          - listitem [ref=f2e89]:
+            - link "Wiki" [ref=f2e90] [cursor=pointer]:
+              - /url: /mortex/Mortex-System/wiki
+          - listitem [ref=f2e94]:
+            - link "Security and quality" [ref=f2e95] [cursor=pointer]:
+              - /url: /mortex/Mortex-System/security
+          - listitem [ref=f2e99]:
+            - link "Insights" [ref=f2e100] [cursor=pointer]:
+              - /url: /mortex/Mortex-System/pulse
+    - generic [ref=f2e117]:
+      - generic [ref=f2e120]:
+        - generic [ref=f2e121]:
+          - generic [ref=f2e122]:
+            - button "dev branch" [ref=f2e124] [cursor=pointer]:
+              - generic [ref=f2e125]: dev
+            - generic [ref=f2e129]:
+              - link "Go to Branches page" [ref=f2e130] [cursor=pointer]:
+                - /url: /mortex/Mortex-System/branches
+              - link "Go to Tags page" [ref=f2e133] [cursor=pointer]:
+                - /url: /mortex/Mortex-System/tags
+          - generic [ref=f2e136]:
+            - button "Go to file" [ref=f2e139] [cursor=pointer]
+            - button "Code" [ref=f2e142] [cursor=pointer]
+        - generic [ref=f2e146]:
+          - generic [ref=f2e148]:
+            - heading "Latest commit" [level=2] [ref=f2e149]
+            - generic [ref=f2e152]:
+              - heading "History" [level=2] [ref=f2e153]
+              - link "View commit history for this file." [ref=f2e155] [cursor=pointer]:
+                - /url: /mortex/Mortex-System/commits/dev/
+          - heading "Folders and files" [level=2] [ref=f2e157]
+          - table "Folders and files" [ref=f2e158]:
+            - rowgroup:
+              - row "Name Last commit message Last commit date":
+                - columnheader "Name"
+                - columnheader "Last commit message"
+                - columnheader "Last commit date"
+            - rowgroup [ref=f2e159]:
+              - row "database, (Directory)" [ref=f2e160]:
+                - cell [ref=f2e161]:
+                  - link "database, (Directory)" [ref=f2e168] [cursor=pointer]:
+                    - /url: /mortex/Mortex-System/tree/dev/database
+                    - text: database
+                - cell [ref=f2e169]
+                - cell [ref=f2e171]
+              - row "local, (Directory)" [ref=f2e174]:
+                - cell [ref=f2e175]:
+                  - link "local, (Directory)" [ref=f2e182] [cursor=pointer]:
+                    - /url: /mortex/Mortex-System/tree/dev/local
+                    - text: local
+                - cell [ref=f2e183]
+                - cell [ref=f2e185]
+              - row "media/admin, (Directory)" [ref=f2e188]:
+                - cell [ref=f2e189]:
+                  - link "media/admin, (Directory)" [ref=f2e196] [cursor=pointer]:
+                    - /url: /mortex/Mortex-System/tree/dev/media/admin
+                    - text: media/admin
+                - cell [ref=f2e197]
+                - cell [ref=f2e199]
+              - row "sales, (Directory)" [ref=f2e202]:
+                - cell [ref=f2e203]:
+                  - link "sales, (Directory)" [ref=f2e210] [cursor=pointer]:
+                    - /url: /mortex/Mortex-System/tree/dev/sales
+                    - text: sales
+                - cell [ref=f2e211]
+                - cell [ref=f2e213]
+              - row "static/common, (Directory)" [ref=f2e216]:
+                - cell [ref=f2e217]:
+                  - link "static/common, (Directory)" [ref=f2e224] [cursor=pointer]:
+                    - /url: /mortex/Mortex-System/tree/dev/static/common
+                    - text: static/common
+                - cell [ref=f2e225]
+                - cell [ref=f2e227]
+              - row "templates, (Directory)" [ref=f2e230]:
+                - cell [ref=f2e231]:
+                  - link "templates, (Directory)" [ref=f2e238] [cursor=pointer]:
+                    - /url: /mortex/Mortex-System/tree/dev/templates
+                    - text: templates
+                - cell [ref=f2e239]
+                - cell [ref=f2e241]
+              - row "templatetags, (Directory)" [ref=f2e244]:
+                - cell [ref=f2e245]:
+                  - link "templatetags, (Directory)" [ref=f2e252] [cursor=pointer]:
+                    - /url: /mortex/Mortex-System/tree/dev/templatetags
+                    - text: templatetags
+                - cell [ref=f2e253]
+                - cell [ref=f2e255]
+              - row ".gitignore, (File)" [ref=f2e258]:
+                - cell [ref=f2e259]:
+                  - link ".gitignore, (File)" [ref=f2e266] [cursor=pointer]:
+                    - /url: /mortex/Mortex-System/blob/dev/.gitignore
+                    - text: .gitignore
+                - cell [ref=f2e267]
+                - cell [ref=f2e269]
+              - row "__init__.py, (File)" [ref=f2e272]:
+                - cell [ref=f2e273]:
+                  - link "__init__.py, (File)" [ref=f2e280] [cursor=pointer]:
+                    - /url: /mortex/Mortex-System/blob/dev/__init__.py
+                    - text: __init__.py
+                - cell [ref=f2e281]
+                - cell [ref=f2e283]
+              - row "manage.py, (File)" [ref=f2e286]:
+                - cell [ref=f2e287]:
+                  - link "manage.py, (File)" [ref=f2e294] [cursor=pointer]:
+                    - /url: /mortex/Mortex-System/blob/dev/manage.py
+                    - text: manage.py
+                - cell [ref=f2e295]
+                - cell [ref=f2e297]
+              - row "settings.py, (File)" [ref=f2e300]:
+                - cell [ref=f2e301]:
+                  - link "settings.py, (File)" [ref=f2e308] [cursor=pointer]:
+                    - /url: /mortex/Mortex-System/blob/dev/settings.py
+                    - text: settings.py
+                - cell [ref=f2e309]
+                - cell [ref=f2e311]
+              - row "urls.py, (File)" [ref=f2e314]:
+                - cell [ref=f2e315]:
+                  - link "urls.py, (File)" [ref=f2e322] [cursor=pointer]:
+                    - /url: /mortex/Mortex-System/blob/dev/urls.py
+                    - text: urls.py
+                - cell [ref=f2e323]
+                - cell [ref=f2e325]
+      - generic [ref=f2e330]:
+        - generic [ref=f2e331]:
+          - heading "About" [level=2] [ref=f2e332]
+          - generic [ref=f2e333]: No description, website, or topics provided.
+          - generic [ref=f2e334]:
+            - generic [ref=f2e335]:
+              - link "Activity" [ref=f2e337] [cursor=pointer]:
+                - /url: /mortex/Mortex-System/activity
+              - link "Custom properties" [ref=f2e341] [cursor=pointer]:
+                - /url: /mortex/Mortex-System/custom-properties
+            - generic [ref=f2e344]:
+              - heading "Stars" [level=3] [ref=f2e345]
+              - generic [ref=f2e347]:
+                - strong [ref=f2e350]: "2"
+                - text: stars
+              - heading "Watchers" [level=3] [ref=f2e351]
+              - generic [ref=f2e353]:
+                - strong [ref=f2e356]: "1"
+                - text: watching
+              - heading "Forks" [level=3] [ref=f2e357]
+              - link [ref=f2e359] [cursor=pointer]:
+                - /url: /mortex/Mortex-System/forks
+                - strong [ref=f2e363]: "0"
+                - text: forks
+          - link "Report repository" [ref=f2e365] [cursor=pointer]:
+            - /url: /contact/report-content?content_url=https%3A%2F%2Fgithub.com%2Fmortex%2FMortex-System&report=mortex+%28user%29
+        - heading "Releases" [level=2] [ref=f2e367]
+        - heading "Packages" [level=2] [ref=f2e371]
+        - heading "Contributors" [level=2] [ref=f2e374]
+        - heading "Languages" [level=2] [ref=f2e377]
+  - contentinfo [ref=f2e380]:
+    - heading "Footer" [level=2] [ref=f2e381]
+    - generic [ref=f2e382]:
+      - generic [ref=f2e383]:
+        - link "GitHub Homepage" [ref=f2e384] [cursor=pointer]:
+          - /url: https://github.com
+        - generic [ref=f2e387]: © 2026 GitHub, Inc.
+      - navigation "Footer" [ref=f2e388]:
+        - heading "Footer navigation" [level=3] [ref=f2e389]
+        - list "Footer navigation" [ref=f2e390]:
+          - listitem [ref=f2e391]:
+            - link "Terms" [ref=f2e392] [cursor=pointer]:
+              - /url: https://docs.github.com/site-policy/github-terms/github-terms-of-service
+          - listitem [ref=f2e393]:
+            - link "Privacy" [ref=f2e394] [cursor=pointer]:
+              - /url: https://docs.github.com/site-policy/privacy-policies/github-privacy-statement
+          - listitem [ref=f2e395]:
+            - link "Security" [ref=f2e396] [cursor=pointer]:
+              - /url: https://github.com/security
+          - listitem [ref=f2e397]:
+            - link "Status" [ref=f2e398] [cursor=pointer]:
+              - /url: https://www.githubstatus.com/
+          - listitem [ref=f2e399]:
+            - link "Community" [ref=f2e400] [cursor=pointer]:
+              - /url: https://github.community/
+          - listitem [ref=f2e401]:
+            - link "Docs" [ref=f2e402] [cursor=pointer]:
+              - /url: https://docs.github.com/
+          - listitem [ref=f2e403]:
+            - link "Contact" [ref=f2e404] [cursor=pointer]:
+              - /url: https://support.github.com?tags=dotcom-footer
+          - listitem [ref=f2e405]:
+            - button "Manage cookies" [ref=f2e407] [cursor=pointer]
+          - listitem [ref=f2e408]:
+            - button "Do not share my personal information" [ref=f2e410] [cursor=pointer]

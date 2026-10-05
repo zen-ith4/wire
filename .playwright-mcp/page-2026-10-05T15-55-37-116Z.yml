@@ -1,0 +1,111 @@
+- generic [ref=f8e2]:
+  - generic [ref=f8e3]:
+    - link "Skip to content" [ref=f8e4] [cursor=pointer]:
+      - /url: "#start-of-content"
+    - banner [ref=f8e9]:
+      - heading "Navigation Menu" [level=2] [ref=f8e10]
+      - generic [ref=f8e12]:
+        - button "Toggle navigation" [ref=f8e14] [cursor=pointer]
+        - link "Homepage" [ref=f8e18] [cursor=pointer]:
+          - /url: /
+        - generic [ref=f8e21]:
+          - link "Sign in" [ref=f8e22] [cursor=pointer]:
+            - /url: /login?return_to=https%3A%2F%2Fgithub.com%2Fsearch%3Fq%3Drepo%253Aagalwood%252FMotrix%2Bfolder%253Aclaude%26type%3Drepositories
+          - button "Appearance settings" [ref=f8e25] [cursor=pointer]
+  - main [ref=f8e31]:
+    - generic [ref=f8e34]:
+      - heading "repositories Search Results · repo:agalwood/Motrix folder:claude" [level=1] [ref=f8e35]
+      - generic [ref=f8e38]:
+        - generic [ref=f8e39]:
+          - generic [ref=f8e40]:
+            - heading "Filter by" [level=2] [ref=f8e41]
+            - list "Filter by" [ref=f8e46]:
+              - listitem [ref=f8e47]:
+                - list [ref=f8e48]:
+                  - listitem [ref=f8e49]:
+                    - link "Code (...) results" [ref=f8e50] [cursor=pointer]:
+                      - /url: https://github.com/search?q=repo%3Aagalwood%2FMotrix+folder%3Aclaude&type=code
+                      - generic [ref=f8e51]:
+                        - generic [ref=f8e52]: Code
+                        - generic:
+                          - generic [aria-hidden]: ...
+                          - generic: (...)
+                          - generic: results
+                  - listitem [ref=f8e53]:
+                    - link "Issues results" [ref=f8e54] [cursor=pointer]:
+                      - /url: https://github.com/search?q=repo%3Aagalwood%2FMotrix+folder%3Aclaude&type=issues
+                      - generic [ref=f8e55]:
+                        - generic [ref=f8e56]: Issues
+                        - generic: results
+                  - listitem [ref=f8e57]:
+                    - link "Pull requests results" [ref=f8e58] [cursor=pointer]:
+                      - /url: https://github.com/search?q=repo%3Aagalwood%2FMotrix+folder%3Aclaude&type=pullrequests
+                      - generic [ref=f8e59]:
+                        - generic [ref=f8e60]: Pull requests
+                        - generic: results
+                  - listitem [ref=f8e61]:
+                    - link "Discussions results" [ref=f8e62] [cursor=pointer]:
+                      - /url: https://github.com/search?q=repo%3Aagalwood%2FMotrix+folder%3Aclaude&type=discussions
+                      - generic [ref=f8e63]:
+                        - generic [ref=f8e64]: Discussions
+                        - generic: results
+                  - listitem [ref=f8e65]:
+                    - link "Commits results" [ref=f8e66] [cursor=pointer]:
+                      - /url: https://github.com/search?q=repo%3Aagalwood%2FMotrix+folder%3Aclaude&type=commits
+                      - generic [ref=f8e67]:
+                        - generic [ref=f8e68]: Commits
+                        - generic: results
+                  - listitem [ref=f8e69]:
+                    - link "Packages results" [ref=f8e70] [cursor=pointer]:
+                      - /url: https://github.com/search?q=repo%3Aagalwood%2FMotrix+folder%3Aclaude&type=registrypackages
+                      - generic [ref=f8e71]:
+                        - generic [ref=f8e72]: Packages
+                        - generic: results
+                  - listitem [ref=f8e73]:
+                    - link "Wikis results" [ref=f8e74] [cursor=pointer]:
+                      - /url: https://github.com/search?q=repo%3Aagalwood%2FMotrix+folder%3Aclaude&type=wikis
+                      - generic [ref=f8e75]:
+                        - generic [ref=f8e76]: Wikis
+                        - generic: results
+              - listitem [aria-hidden] [ref=f8e77]
+              - listitem [ref=f8e78]:
+                - link "Advanced search" [ref=f8e79] [cursor=pointer]:
+                  - /url: /search/advanced
+          - slider "Draggable pane splitter" [ref=f8e83]
+        - generic [ref=f8e87]:
+          - generic [ref=f8e89]:
+            - generic [ref=f8e90]:
+              - generic [ref=f8e91]:
+                - generic [ref=f8e92]: 0 files
+                - generic [ref=f8e93]: (98 ms)
+              - heading "0 files" [active] [level=2] [ref=f8e94]
+              - generic [ref=f8e95]:
+                - text: in
+                - generic [ref=f8e96]:
+                  - link "agalwood/Motrix (press backspace or delete to remove)" [ref=f8e97] [cursor=pointer]:
+                    - /url: /agalwood/Motrix
+                    - text: agalwood/Motrix
+                    - generic [ref=f8e98]: (press backspace or delete to remove)
+                  - generic [aria-hidden] [ref=f8e99] [cursor=pointer]
+            - generic [ref=f8e102]:
+              - 'button "Sort by: Best match" [ref=f8e104] [cursor=pointer]'
+              - button "Open column options" [ref=f8e108] [cursor=pointer]
+          - generic [ref=f8e112]:
+            - img "Mona looking through a globe hologram for code" [ref=f8e116]
+            - generic [ref=f8e117]:
+              - generic [ref=f8e119]:
+                - heading "Your search did not match any code" [level=3] [ref=f8e120]
+                - paragraph [ref=f8e121]: Try one of the tips below to find more code
+              - generic [ref=f8e123]:
+                - group [ref=f8e124]:
+                  - generic "Search across repositories" [ref=f8e125] [cursor=pointer]
+                - group [ref=f8e129]:
+                  - generic "Search across an organization" [ref=f8e130] [cursor=pointer]
+                - group [ref=f8e134]:
+                  - generic "Find a particular file extension" [ref=f8e135] [cursor=pointer]
+                - group [ref=f8e139]:
+                  - generic "Why wasn't my code found?" [ref=f8e140] [cursor=pointer]
+                - group [ref=f8e144]:
+                  - generic "Regular expressions" [ref=f8e145] [cursor=pointer]
+                - group [ref=f8e149]:
+                  - generic "Saved searches" [ref=f8e150] [cursor=pointer]

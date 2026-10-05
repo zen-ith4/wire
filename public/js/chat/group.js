@@ -60,6 +60,7 @@ async function confirmInDialog(panel, message, opts) {
     }
 }
 import { openDialog } from '../files/dialog.js';
+import { newChatFabHtml, bindNewChatFab } from '../ui/new-chat-fab.js';
 import { isUserOnline } from './presence.js';
 import { createTypingEmitter, createTypingIndicator, wireTypingInput } from './typing.js';
 import { getSocket } from '../core/socket.js';
@@ -325,13 +326,21 @@ function paintGroupList() {
         return;
     }
 
-    list.innerHTML = groupsList
+    const q = (document.getElementById('group-conv-search')?.value || '').trim().toLowerCase();
+    const shown = q ? groupsList.filter((g) => String(g.name || '').toLowerCase().includes(q)) : groupsList;
+
+    if (shown.length === 0) {
+        list.innerHTML = emptyState(ICONS.search, 'No matches', `No group found for “${escapeHtml(q)}”`);
+        return;
+    }
+
+    list.innerHTML = shown
         .map((g) => `
-            <div class="conv-row group-row${g.id === activeGroupId ? ' active' : ''}" data-group-id="${Number(g.id)}" role="option" tabindex="0">
+            <div class="dm-conv group-row${g.id === activeGroupId ? ' active' : ''}" data-group-id="${Number(g.id)}" role="option" tabindex="0">
                 ${groupAvatarHtml(g, 'conv-avatar')}
                 <div class="conv-info">
-                    <div class="conv-name">${escapeHtml(g.name)}</div>
-                    <div class="conv-preview">${g.role === 'owner' ? 'Owner' : g.role === 'admin' ? 'Admin' : ''}</div>
+                    <div class="dm-conv-name">${escapeHtml(g.name)}</div>
+                    <div class="dm-conv-preview">${g.role === 'owner' ? 'Owner' : g.role === 'admin' ? 'Admin' : 'Member'}</div>
                 </div>
             </div>
         `)
@@ -339,6 +348,12 @@ function paintGroupList() {
 
     list.querySelectorAll('.group-row').forEach((row) => {
         row.addEventListener('click', () => openGroup(Number(row.dataset.groupId)));
+        row.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                openGroup(Number(row.dataset.groupId));
+            }
+        });
     });
 }
 
@@ -405,6 +420,7 @@ export async function openGroup(groupId) {
     activeGroupId = groupId;
     groupTypingIndicator.clearAll();
     paintGroupList(); // update the "active" highlight
+    document.querySelector('.dm-layout')?.classList.add('showing-thread');
 
     const panel = document.getElementById('group-active-panel');
     if (!panel) return;
@@ -464,6 +480,7 @@ function renderActiveGroupShell(group) {
 
     panel.innerHTML = `
         <div class="chat-top-bar">
+            <button type="button" class="icon-btn dm-back-btn" title="Back" aria-label="Back" data-action="group-back">${ICONS.arrowLeft}</button>
             ${groupAvatarHtml(group, 'chat-top-avatar')}
             <div class="grp-top-main">
                 <div class="chat-top-name">${escapeHtml(group?.name || 'Group')}</div>
@@ -543,19 +560,36 @@ export async function showGroups() {
     if (!main) return;
 
     main.innerHTML = `
-        <div class="dm-panel">
-            <div class="conv-list-panel">
-                <div class="conv-list-header">
-                    <span>Groups</span>
-                    <button type="button" class="btn btn-sm btn-primary" data-action="group-new">+ New</button>
+        <div class="dm-layout">
+            <div class="dm-sidebar">
+                <div class="conv-header">
+                    <div class="conv-header-row">
+                        <span class="conv-header-label">Groups</span>
+                    </div>
+                    <div class="conv-search-wrap">
+                        <span class="conv-search-icon">${ICONS.search}</span>
+                        <input type="text" class="conv-search-input" id="group-conv-search" placeholder="Search groups…" autocomplete="off">
+                    </div>
                 </div>
-                <div class="conv-list" id="group-list">${groupsLoaded ? '' : loadingState()}</div>
+                <div class="dm-conv-list" id="group-list">${groupsLoaded ? '' : loadingState()}</div>
+                ${newChatFabHtml()}
             </div>
-            <div class="chat-panel" id="group-active-panel">
-                ${emptyState(ICONS.chat, 'Select a group', 'Choose a group from the list, or create a new one.')}
+            <div class="dm-thread" id="group-active-panel">
+                ${emptyState(ICONS.users, 'Select a group', 'Choose a group from the list, or create a new one with the + button.')}
             </div>
         </div>
     `;
+
+    bindNewChatFab(main, {
+        onMessage: async () => {
+            const { navigate } = await import('../core/router.js');
+            await navigate('messages');
+            window.openNewDmPicker?.();
+        },
+        onGroup: () => window.openCreateGroupDialog(),
+    });
+
+    document.getElementById('group-conv-search').addEventListener('input', paintGroupList);
 
     if (groupsLoaded) {
         paintGroupList();
@@ -563,50 +597,128 @@ export async function showGroups() {
         await loadGroupsList();
     }
 
-    if (activeGroupId && groupsList.some((g) => g.id === activeGroupId)) {
+    // On phones the list is the landing screen; only auto-open the last
+    // group on wide layouts where the thread sits beside the list.
+    const wide = window.matchMedia ? window.matchMedia('(min-width: 761px)').matches : true;
+    if (wide && activeGroupId && groupsList.some((g) => g.id === activeGroupId)) {
         await openGroup(activeGroupId);
     }
 }
 
 // ---------- Create group ----------
 
-window.openCreateGroupDialog = function () {
+window.openCreateGroupDialog = async function () {
     const { panel, close } = openDialog({ label: 'Create group' });
+    const selected = new Set();
+    let users = [];
 
     panel.innerHTML = `
         <h3>New group</h3>
-        <input type="text" id="new-group-name" placeholder="Group name" maxlength="100" class="input grp-name-input">
+        <input type="text" id="new-group-name" placeholder="Group name" maxlength="100" class="input grp-name-input" autocomplete="off">
+        <div class="grp-picker-label">Add people <span class="grp-picker-count" id="new-group-count"></span></div>
+        <div class="conv-search-wrap grp-picker-search">
+            <span class="conv-search-icon">${ICONS.search}</span>
+            <input type="text" class="conv-search-input" id="new-group-search" placeholder="Search people…" autocomplete="off">
+        </div>
+        <div class="grp-picker-list" id="new-group-list">${loadingState()}</div>
         <div class="grp-dialog-actions">
             <button type="button" class="btn btn-ghost" id="new-group-cancel">Cancel</button>
             <button type="button" class="btn btn-primary" id="new-group-create">Create</button>
         </div>
     `;
 
+    const listEl = panel.querySelector('#new-group-list');
+    const countEl = panel.querySelector('#new-group-count');
+    const searchEl = panel.querySelector('#new-group-search');
+    const meId = Number(getCurrentUser()?.id);
+
+    function paintPeople() {
+        const q = searchEl.value.trim().toLowerCase();
+        const rows = users.filter((u) => !q || String(u.username || '').toLowerCase().includes(q));
+        countEl.textContent = selected.size ? `· ${selected.size} selected` : '';
+        if (rows.length === 0) {
+            listEl.innerHTML = emptyState(ICONS.users, q ? 'No matches' : 'No one to add yet', q ? '' : 'You can add people later from group settings.');
+            return;
+        }
+        listEl.innerHTML = rows
+            .map((u) => `
+                <div class="dm-picker-row grp-picker-row${selected.has(Number(u.id)) ? ' selected' : ''}" role="option" tabindex="0" aria-selected="${selected.has(Number(u.id))}" data-user-id="${Number(u.id)}">
+                    ${avatarHtml(u.id, u.username, 'conv-avatar dm-picker-avatar')}
+                    <div class="dm-picker-info"><div class="dm-picker-name">${escapeHtml(u.username)}</div></div>
+                    <span class="grp-picker-check">${ICONS.check || '✓'}</span>
+                </div>
+            `)
+            .join('');
+    }
+
+    function toggleRow(row) {
+        const id = Number(row.dataset.userId);
+        if (selected.has(id)) selected.delete(id); else selected.add(id);
+        paintPeople();
+    }
+
+    listEl.addEventListener('click', (e) => {
+        const row = e.target.closest('.grp-picker-row');
+        if (row) toggleRow(row);
+    });
+    listEl.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        const row = e.target.closest('.grp-picker-row');
+        if (row) { e.preventDefault(); toggleRow(row); const again = listEl.querySelector(`[data-user-id="${row.dataset.userId}"]`); again?.focus(); }
+    });
+    searchEl.addEventListener('input', paintPeople);
+
     panel.querySelector('#new-group-cancel').addEventListener('click', close);
 
-    panel.querySelector('#new-group-create').addEventListener('click', async () => {
-        const nameInput = panel.querySelector('#new-group-name');
-        const name = nameInput.value.trim();
+    const createBtn = panel.querySelector('#new-group-create');
+    createBtn.addEventListener('click', async () => {
+        const name = panel.querySelector('#new-group-name').value.trim();
         if (!name) {
             showToast('Group name is required', 'error');
             return;
         }
 
+        createBtn.disabled = true;
         try {
             const group = await api('/api/groups', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name }),
             });
+
+            const failed = [];
+            for (const userId of selected) {
+                try {
+                    await api(`/api/groups/${group.id}/members`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ user_id: userId }),
+                    });
+                } catch {
+                    failed.push(userId);
+                }
+            }
+            if (failed.length) showToast(`Couldn't add ${failed.length} ${failed.length === 1 ? 'person' : 'people'}`, 'error');
+
             close();
             await loadGroupsList();
             await openGroup(group.id);
         } catch (e) {
+            createBtn.disabled = false;
             showToast(e.message, 'error');
         }
     });
 
     panel.querySelector('#new-group-name').focus();
+
+    try {
+        const all = await api('/api/share/users');
+        users = all.filter((u) => Number(u.id) !== meId);
+    } catch (e) {
+        listEl.innerHTML = emptyState(ICONS.empty, 'Couldn’t load people', escapeHtml(e.message));
+        return;
+    }
+    paintPeople();
 };
 
 // The app's CSP has no 'unsafe-inline' in script-src, so inline
@@ -620,6 +732,9 @@ if (typeof document !== 'undefined') document.addEventListener('click', (e) => {
     switch (btn.dataset.action) {
         case 'group-new':
             window.openCreateGroupDialog();
+            break;
+        case 'group-back':
+            document.querySelector('.dm-layout')?.classList.remove('showing-thread');
             break;
         case 'group-send':
             window.sendGroupMessage();

@@ -15,7 +15,6 @@ import { openEmojiPicker } from '../ui/emoji-picker.js';
 import { ICONS } from '../icons.js';
 
 const MESSAGES_CONTAINER_ID = {
-  chat: 'chat-messages',
   dm: 'dm-messages',
   group: 'group-messages',
 };
@@ -43,7 +42,7 @@ export function reactionEndpoint(scope, messageId) {
     return `/api/groups/${groupId}/messages/${messageId}/reactions`;
   }
 
-  return `/api/chat/messages/${messageId}/reactions`;
+  throw new Error(`Unknown reaction scope: ${scope}`);
 }
 
 /**

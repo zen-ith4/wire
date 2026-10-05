@@ -33,7 +33,6 @@ const { getDb } = require('../config/database');
 
 function resourceTypeFromBaseUrl(baseUrl) {
   if (baseUrl.startsWith('/api/dm')) return 'dm';
-  if (baseUrl.startsWith('/api/chat')) return 'chat';
   if (baseUrl.startsWith('/api/groups')) return 'group';
   return null;
 }

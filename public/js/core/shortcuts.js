@@ -39,24 +39,17 @@ export const DEFAULT_SHORTCUTS = [
     action: () => navigate('files'),
   },
   {
-    id: 'nav-chat',
-    label: 'Go to Chat',
-    sublabel: 'Switch to the Chat tab',
-    combo: { ctrl: false, alt: true, shift: false, meta: false, code: 'Digit2' },
-    action: () => navigate('chat'),
-  },
-  {
     id: 'nav-messages',
     label: 'Go to Messages',
     sublabel: 'Switch to the Messages tab',
-    combo: { ctrl: false, alt: true, shift: false, meta: false, code: 'Digit3' },
+    combo: { ctrl: false, alt: true, shift: false, meta: false, code: 'Digit2' },
     action: () => navigate('messages'),
   },
   {
     id: 'nav-settings',
     label: 'Go to Settings',
     sublabel: 'Switch to the Settings tab',
-    combo: { ctrl: false, alt: true, shift: false, meta: false, code: 'Digit4' },
+    combo: { ctrl: false, alt: true, shift: false, meta: false, code: 'Digit3' },
     action: () => navigate('settings'),
   },
 ];

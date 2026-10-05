@@ -36,15 +36,6 @@ function oldReactionEndpoint(scope, messageId) {
         : `/api/chat/messages/${messageId}/reactions`;
 }
 
-test('reactionEndpoint("chat", id) is byte-identical to the pre-change ternary', () => {
-    for (const id of [1, 42, 999999]) {
-        const before = oldReactionEndpoint('chat', id);
-        const after = reactionEndpoint('chat', id);
-        assert.equal(after, before, `mismatch for chat id=${id}`);
-        console.log(`chat  id=${id}: before="${before}" after="${after}"`);
-    }
-});
-
 test('reactionEndpoint("dm", id) is byte-identical to the pre-change ternary', () => {
     for (const id of [1, 42, 999999]) {
         const before = oldReactionEndpoint('dm', id);
@@ -54,16 +45,9 @@ test('reactionEndpoint("dm", id) is byte-identical to the pre-change ternary', (
     }
 });
 
-test('an unrecognized scope still falls through to the chat URL, exactly like the old two-way ternary did', () => {
-    // The old ternary had no third branch — anything that wasn't
-    // 'dm' fell through to the chat URL. Confirm reactionEndpoint
-    // preserves that exact fallthrough for any scope that isn't
-    // explicitly 'dm' or 'group' (not just 'chat' itself), since
-    // that's the literal behavior being preserved.
-    const before = oldReactionEndpoint('anything-else', 7);
-    const after = reactionEndpoint('anything-else', 7);
-    assert.equal(after, before);
-    console.log(`other id=7: before="${before}" after="${after}"`);
+test('the removed "chat" scope (and any unknown scope) now throws instead of building a dead /api/chat URL', () => {
+    assert.throws(() => reactionEndpoint('chat', 7), /Unknown reaction scope/);
+    assert.throws(() => reactionEndpoint('anything-else', 7), /Unknown reaction scope/);
 });
 
 test('new: scope "group" builds a groupId-scoped URL via the registered getter (did not exist before)', () => {

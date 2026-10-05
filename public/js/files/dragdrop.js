@@ -2,10 +2,9 @@
 // Drag & drop upload
 //
 // Single window-level drop zone that detects the currently open view
-// (Group Chat / DM / My Files) and forwards dropped files to the
+// (DM / My Files) and forwards dropped files to the
 // existing upload functions.
 // ============================================================
-import { uploadChatFiles } from '../chat/chat.js';
 import { uploadDmFiles, getDmActivePeer } from '../chat/dm.js';
 import { uploadFilesMultiple, canUploadToCurrentFolder } from './files.js';
 import { showToast } from '../core/utils.js';
@@ -37,7 +36,6 @@ function resetOverlay() {
 
 function getDropContext() {
   const hasDmView = !!document.getElementById('dm-messages');
-  const hasChatView = !!document.getElementById('chat-messages');
   const hasFilesView = !!document.getElementById('files-root');
   const hasDmList = !!document.getElementById('dm-conv-list');
 
@@ -45,12 +43,6 @@ function getDropContext() {
     return {
       type: 'dm',
       message: `Send to ${getDmActivePeer().username}`,
-    };
-  }
-  if (hasChatView) {
-    return {
-      type: 'chat',
-      message: 'Files will be posted to Group Chat',
     };
   }
   if (hasFilesView) {
@@ -78,10 +70,6 @@ function handleDrop(files) {
 
   if (type === 'dm') {
     uploadDmFiles(files);
-    return;
-  }
-  if (type === 'chat') {
-    uploadChatFiles(files);
     return;
   }
   if (type === 'files') {

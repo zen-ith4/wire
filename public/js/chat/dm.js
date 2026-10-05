@@ -1,3 +1,4 @@
+import { newChatFabHtml, bindNewChatFab } from '../ui/new-chat-fab.js';
 import { api } from '../core/api.js';
 import { ICONS } from '../icons.js';
 import {
@@ -672,7 +673,6 @@ export async function renderDm(openPeerId, opts) {
         <div class="conv-header">
           <div class="conv-header-row">
             <span class="conv-header-label">Conversations</span>
-            <button class="btn-new-message" onclick="window.openNewDmPicker()">${ICONS.plus} New message</button>
           </div>
           <div class="conv-search-wrap">
             <span class="conv-search-icon">${ICONS.search}</span>
@@ -680,6 +680,7 @@ export async function renderDm(openPeerId, opts) {
           </div>
         </div>
         <div id="dm-conv-list" class="dm-conv-list">${fromCache ? '' : loadingState()}</div>
+        ${newChatFabHtml()}
       </div>
       <div class="dm-thread" id="dm-thread">
         ${emptyState(ICONS.mail, 'Select a conversation', 'Or start a new one with a friend.')}
@@ -688,6 +689,15 @@ export async function renderDm(openPeerId, opts) {
   `;
 
   bindDmThreadBackground();
+
+  bindNewChatFab(main, {
+    onMessage: () => window.openNewDmPicker(),
+    onGroup: async () => {
+      const { navigate } = await import('../core/router.js');
+      await navigate('groups');
+      window.openCreateGroupDialog?.();
+    },
+  });
 
   const list = document.getElementById('dm-conv-list');
   list.addEventListener('click', (e) => {

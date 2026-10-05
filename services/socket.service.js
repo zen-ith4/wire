@@ -20,14 +20,6 @@ function emit(room, event, payload) {
     .emit(event, payload);
 }
 
-function emitNewChatMessage(message) {
-  emit(
-    'chat',
-    'new-chat-message',
-    message
-  );
-}
-
 function emitNewDirectMessage(message) {
   emit(
     `user:${message.sender_id}`,
@@ -51,14 +43,6 @@ function emitNewDirectMessage(message) {
   sendDmPush(message).catch((e) => {
     console.error('[Push] sendDmPush threw:', e.message);
   });
-}
-
-function emitChatMessageDeleted(id) {
-  emit(
-    'chat',
-    'chat-message-deleted',
-    { id }
-  );
 }
 
 // Read receipts ("seen" ticks) — told only to the original sender
@@ -106,14 +90,6 @@ function emitDirectMessageEdited(message) {
     `user:${message.recipient_id}`,
     'dm-message-edited',
     message
-  );
-}
-
-function emitChatReactionUpdate(payload) {
-  emit(
-    'chat',
-    'chat-reaction-update',
-    payload
   );
 }
 
@@ -223,13 +199,10 @@ module.exports = {
   setIo,
   getIo,
   emit,
-  emitNewChatMessage,
   emitNewDirectMessage,
-  emitChatMessageDeleted,
   emitDirectMessageDeleted,
   emitDirectMessageEdited,
   emitDmMessagesSeen,
-  emitChatReactionUpdate,
   emitDirectReactionUpdate,
   emitProfileAvatarUpdate,
   emitProfileBannerUpdate,

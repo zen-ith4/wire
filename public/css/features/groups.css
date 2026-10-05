@@ -65,3 +65,48 @@
 
 /* Inert note shown instead of an attachment card in group threads (chat/thread.js). */
 .chat-attachment.chat-attachment-unsupported { cursor: default; opacity: .7; pointer-events: none; }
+
+/* ---------- Create-group dialog: member picker ---------- */
+
+.grp-picker-label {
+  font-size: calc(12px * var(--wire-font-scale));
+  font-weight: 550;
+  color: var(--muted);
+  margin: 4px 0 8px;
+  letter-spacing: -0.005em;
+}
+.grp-picker-count { font-weight: 450; }
+.grp-picker-search { margin-bottom: 8px; }
+
+.grp-picker-list {
+  max-height: 260px;
+  min-height: 80px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 14px;
+  overscroll-behavior: contain;
+}
+
+.grp-picker-row { min-height: 52px; }
+.grp-picker-row.selected { background: var(--accent-bg); }
+
+.grp-picker-check {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: transparent;
+  transition: background var(--ease-fast), border-color var(--ease-fast), color var(--ease-fast);
+}
+.grp-picker-check svg { width: 13px; height: 13px; }
+.grp-picker-row.selected .grp-picker-check {
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--void, #000);
+}

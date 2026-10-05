@@ -6,13 +6,6 @@ import {
   getServerEndpoint
 } from './server.js';
 
-import {
-  addChatMessage,
-  removeChatMessage,
-  showChatTyping,
-  hideChatTyping,
-  clearAllChatTyping
-} from '../chat/chat.js';
 
 import {
   addDmMessage,
@@ -146,7 +139,6 @@ export function initSocket(token) {
       details || null
     );
 
-    clearAllChatTyping();
     clearAllDmTyping();
     clearAllGroupTyping();
 
@@ -214,27 +206,6 @@ export function initSocket(token) {
         socket.io?.engine?.transport?.name || null,
     });
   });
-
-  // Chat events
-  socket.on(
-    'new-chat-message',
-    handleChatMessage
-  );
-
-  socket.on(
-    'chat-message-deleted',
-    handleChatMessageDeleted
-  );
-
-  socket.on(
-    'chat:typing',
-    handleChatTyping
-  );
-
-  socket.on(
-    'chat:stop-typing',
-    handleChatStopTyping
-  );
 
   // DM events
   socket.on(
@@ -320,17 +291,6 @@ export function initSocket(token) {
   );
 
   // Reactions
-  socket.on(
-    'chat-reaction-update',
-    ({ message_id, reactions }) => {
-      updateMessageReactions(
-        'chat',
-        message_id,
-        reactions
-      );
-    }
-  );
-
   socket.on(
     'dm-reaction-update',
     ({ message_id, reactions }) => {
@@ -442,31 +402,9 @@ export function disconnectSocket() {
   // Mirror the same cleanup the 'disconnect' handler does, in case the
   // socket was torn down before ever reaching a connected state (so
   // that handler never got a chance to run).
-  clearAllChatTyping();
   clearAllDmTyping();
   clearAllGroupTyping();
   setOnlineSnapshot([]);
-}
-
-function handleChatMessage(message) {
-  const container =
-    document.getElementById('chat-messages');
-
-  if (!container) {
-    return;
-  }
-
-  addChatMessage(message);
-
-  const input =
-    document.getElementById('chat-input');
-
-  if (
-    input &&
-    message.user_id === getCurrentUser()?.id
-  ) {
-    input.value = '';
-  }
 }
 
 function handleDirectMessage(message) {
@@ -506,10 +444,6 @@ function handleDirectMessage(message) {
   refreshUnreadBadge();
 }
 
-function handleChatMessageDeleted({ id }) {
-  removeChatMessage(id);
-}
-
 // The sender's own edit also arrives here (emitDirectMessageEdited
 // fans out to both sender and recipient rooms — see
 // services/socket.service.js) — updateDmMessage() is naturally a
@@ -529,29 +463,6 @@ function handleDirectMessageDeleted({ id }) {
   }
 
   refreshUnreadBadge();
-}
-
-function handleChatTyping({
-  user_id,
-  username
-}) {
-  // The server excludes the sender's own socket.
-  // This also prevents another tab of the same account
-  // from displaying its own typing indicator.
-  if (
-    user_id === getCurrentUser()?.id
-  ) {
-    return;
-  }
-
-  showChatTyping(
-    user_id,
-    username
-  );
-}
-
-function handleChatStopTyping({ user_id }) {
-  hideChatTyping(user_id);
 }
 
 function handleDmTyping({
@@ -618,7 +529,7 @@ function handleGroupTypingEvent({
   sender_id,
   sender_username
 }) {
-  // Same reasoning as handleChatTyping: the server already excludes
+  // Same reasoning as handleDmTyping: the server already excludes
   // the sender's own socket, but a second tab of the same account
   // would still see it without this guard.
   if (

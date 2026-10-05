@@ -85,12 +85,6 @@ const NAV_ITEMS = [
   },
 
   {
-    view: 'chat',
-    label: 'Chat',
-    icon: ICONS.chat
-  },
-
-  {
     view: 'messages',
     label: 'Messages',
     icon: ICONS.mail,

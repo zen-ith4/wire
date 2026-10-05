@@ -88,7 +88,6 @@ async function startServer() {
       require('./routes/settings.routes')
     );
     app.use('/api/files', require('./routes/files.routes'));
-    app.use('/api/chat', require('./routes/chat.routes'));
     app.use('/api/dm', require('./routes/dm.routes'));
     app.use('/api/groups', require('./routes/groups.routes'));
     app.use('/api/share', require('./routes/share.routes'));

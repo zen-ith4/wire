@@ -3,7 +3,6 @@ const jwt = require('jsonwebtoken');
 
 const { JWT_SECRET } = require('./constants');
 const { getDb } = require('./database');
-const { setupChatSocket } = require('../sockets/chat.socket');
 const { setupDmSocket } = require('../sockets/dm.socket');
 const { setupGroupSocket } = require('../sockets/group.socket');
 const { setIo } = require('../services/socket.service');
@@ -99,7 +98,6 @@ function setupSocketIO(server) {
       online_user_ids: filterVisiblePresenceIds(getOnlineUserIds()),
     });
 
-    setupChatSocket(io, socket);
     setupDmSocket(io, socket);
     setupGroupSocket(io, socket);
 

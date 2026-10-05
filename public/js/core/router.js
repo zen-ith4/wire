@@ -8,10 +8,6 @@ import { perfNavStart } from './perf.js';
 import { showFiles } from '../files/files.js';
 import { renderSharedFile } from '../files/share-view.js';
 import {
-  showChat,
-  destroyChatComposer,
-} from '../chat/chat.js';
-import {
   showDm,
   destroyDmComposer,
 } from '../chat/dm.js';
@@ -50,11 +46,6 @@ const routes = {
     flush: true,
   },
 
-  chat: {
-    title: 'Chat',
-    render: showChat,
-    flush: true,
-  },
 
   messages: {
     title: 'Messages',
@@ -933,7 +924,6 @@ export function navigate(
   );
 
   // Release any in-progress voice recording before switching views.
-  destroyChatComposer();
   destroyDmComposer();
   destroyGroupComposer();
 

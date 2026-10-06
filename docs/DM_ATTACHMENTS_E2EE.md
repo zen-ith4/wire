@@ -30,11 +30,44 @@ Client code: `public/js/crypto/messages/attachment-stream.js`.
   reordered, truncated, appended or modified chunks fail.
 - A file that fails authentication yields no plaintext; the UI shows
   "Attachment unavailable".
-- Limit: `DM_UPLOAD_MAX_MB` (default 50) of plaintext. The 32-bit chunk
-  counter would allow 256 TiB. Playback decrypts the whole file into a Blob
-  first (about the file size in memory); seeking works once decrypted.
-  Seeking before the download finishes would need a Service Worker or MSE
-  and is not implemented.
+- Limit: `DM_UPLOAD_MAX_MB` (default 50) of plaintext, exact: a file of
+  exactly that size is accepted (the multer cap is overhead + 1 because
+  multer's limit is exclusive; this was a bug in the first version).
+  Container constants live in one server file, `config/dm-stream.js`, and a
+  test fails if the browser module `attachment-stream.js` disagrees. The
+  32-bit chunk counter would allow 256 TiB.
+
+## Size pre-check (client)
+
+`prepareDmAttachmentUpload` asks `GET /api/dm/limits` (authenticated) for the
+configured maximum and rejects a larger file BEFORE reading or encrypting it,
+with "File is larger than N MB" (shown as a toast). Only `File.size` is
+touched, so there is no memory spike. File input, drag/drop, paste and voice
+recordings all reach upload through the composer's `prepareUpload` hook, so
+they share the check. If the limits request fails, 50 MB is assumed and the
+server still enforces its own limit. There is no maximum voice-recording
+duration; a very long recording is simply refused by the same check.
+
+## Playback: lazy decrypt
+
+Encrypted audio and video are rendered as a player WITHOUT a source: nothing
+is downloaded, decrypted or turned into a Blob until the first play. Pressing
+play (button, click on the video, or keyboard) downloads the ciphertext with
+the session Authorization header (never a token in the URL), decrypts it into
+a Blob, sets the element's `src` and plays. The Blob URL is stamped as
+`data-blob-url` and revoked when the message is removed or the chat is left;
+a Blob that finishes decrypting after its player is gone is revoked at once.
+Images (small) and voice notes (small; the waveform needs the data) are still
+decrypted when rendered. Decrypted Blobs are cached (64 MB cap) so pressing
+play twice does not download twice. Seeking works once the file has been
+decrypted; seeking before that would need a Service Worker or MSE and is not
+implemented. Peak memory while decrypting a file is roughly twice its size
+(not measured on a phone). Browsers that require `play()` inside the user
+gesture (notably Safari/iOS) may refuse the automatic play after a long
+download; the player is then loaded and a second tap plays it (not tested).
+
+Note: X's own classifier treats a file NAMED `*.webm` as audio before it
+checks for video, so a `.webm` video is shown with the audio player.
 
 ## Server behaviour
 
@@ -50,6 +83,15 @@ Client code: `public/js/crypto/messages/attachment-stream.js`.
   the ciphertext.
 - The receiver uses the IV inside the encrypted envelope, never the
   server-stored `attachment_iv`.
+
+## Notifications
+
+- Server push (FCM): every new attachment shows the generic "📎 File".
+- Conversation list: the (decrypted) caption, or "📎 Attachment".
+- In-app/web notifications are built from the already-decrypted message, so
+  they keep "📷 Photo", "🎞️ Video" and "🎤 Voice message" (checked in real
+  Chromium with a stubbed Notification). They never include the file name or
+  caption, and nothing is sent to the server.
 
 ## Legacy plaintext attachments
 

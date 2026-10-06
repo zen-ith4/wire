@@ -7,6 +7,21 @@ would silently break those controls. The Groups UI (`js/chat/group.js`,
 `js/chat/thread.js`, `js/crypto/groups/*`) and every other file added by the
 group port have **cap 0** and are clean under enforcement.
 
+> **CSP_ENFORCE=true is STILL NOT SAFE.** The confirm modal (`#confirm-modal`, used by group message
+> Delete, Remove member and DM delete) was converted to `data-action` + one delegated listener and is
+> proven under the enforced header by `tests/csp-confirm-enforced-browser.test.mjs`, but these remain
+> and are blocked when enforced:
+> - **10 inline handlers in `public/index.html`**: image viewer (lines 211, 216, 241, 285, 311),
+>   lines 348 and 349, profile card (lines 402, 407, 411; they were 404/409/413 before the confirm
+>   modal lost two lines above them); plus the inline `<script>` at `index.html:19` (setVh) and
+>   `style="display:none;"` at `index.html:92`;
+> - **`public/js/core/auth.js:1324`** (login template, agent A);
+> - **12 inline handlers in `public/js/chat/dm.js`**, including the DM delete button (`dm.js:2095`,
+>   `window.deleteDmMessage`) and the DM Send button (`dm.js:1503`, `window.sendDm`): with enforcement
+>   the confirm modal works, but the DM delete *button* never reaches it (agent B). The test lists this
+>   as a `todo` (expected failure) until `dm.js` is converted;
+> - the other legacy rows in the table below.
+
 ## These counts are enforced
 
 `tests/csp-static.test.mjs` holds a per-file cap for every number in the table
@@ -15,14 +30,14 @@ not listed has cap 0. Caps may only go down: when legacy code is converted, lowe
 or delete its entry in the test and its row here. `tests/groups/group-csp-browser.test.mjs`
 runs the group UI in real Chromium with `CSP_ENFORCE=true` and requires zero violations.
 
-Totals: **58 inline event-handler attributes**, **60 inline `style=""` attributes**, **5 `setAttribute('style'|'on*')`/`.cssText=` writes**, **0 `escapeHtml()` inside a quoted attribute** (was 20; all converted to `escapeHtmlAttr()`), **1 inline `<script>`** (all in `index.html`).
+Totals: **54 inline event-handler attributes**, **60 inline `style=""` attributes**, **5 `setAttribute('style'|'on*')`/`.cssText=` writes**, **0 `escapeHtml()` inside a quoted attribute** (was 20; all converted to `escapeHtmlAttr()`), **1 inline `<script>`** (all in `index.html`).
 
 | File | `on*=` | `style=` | setAttribute/cssText | escapeHtml in attr | inline `<script>` |
 |---|---:|---:|---:|---:|---:|
 | `public/js/settings/settings-render.js` | 8 | 16 | 0 | 0 | 0 |
 | `public/js/core/auth.js` | 0 | 21 | 0 | 0 | 0 |
 | `public/js/chat/dm.js` | 12 | 3 | 1 | 0 | 0 |
-| `public/index.html` | 14 | 1 | 0 | 0 | 1 |
+| `public/index.html` | 10 | 1 | 0 | 0 | 1 |
 | `public/js/settings/admin.js` | 7 | 3 | 0 | 0 | 0 |
 | `public/js/media/attachments.js` | 3 | 1 | 4 | 0 | 0 |
 | `public/js/chat/chat.js` | 5 | 1 | 0 | 0 | 0 |

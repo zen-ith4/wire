@@ -77,7 +77,7 @@ const LEGACY_CAPS = {
     'js/chat/dm.js': 0,
     'js/settings/settings-bubble-gradient.js': 0,
   },
-  indexHtml: {"inlineScripts": 1, "styleBlocks": 0, "handlerAttrs": 14, "styleAttrs": 1},
+  indexHtml: {"inlineScripts": 1, "styleBlocks": 0, "handlerAttrs": 10, "styleAttrs": 1},
 };
 
 // Files whose count exceeds their cap. Same shape as the old allowlist

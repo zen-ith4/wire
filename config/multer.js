@@ -280,7 +280,10 @@ const dmUpload = createUploader({
   dir: constants.DM_UPLOAD_DIR,
   maxSizeMB: constants.DM_UPLOAD_MAX_MB,
   opaqueNames: true,
-  extraBytes: dmCiphertextOverheadBytes(constants.DM_UPLOAD_MAX_MB * 1024 * 1024),
+  // +1: multer/busboy treat `fileSize` as EXCLUSIVE (a body of exactly
+  // that many bytes is rejected), so without it a file of exactly
+  // DM_UPLOAD_MAX_MB could never be sent.
+  extraBytes: dmCiphertextOverheadBytes(constants.DM_UPLOAD_MAX_MB * 1024 * 1024) + 1,
   // Same relaxed policy as chatUpload above — see comment there.
 });
 

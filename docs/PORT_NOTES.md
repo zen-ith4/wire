@@ -219,3 +219,7 @@ Depends on other agents
 - `public/js/crypto/groups/*` (10 files)
 
 Not touched (protected): `dm.js`, `composer.js`, `chat.js`, `media/attachments.js`, `media/mediaToken.js`, the audio/video players, `ui/mobile-shell.js`, `sw.js`, `sw-manifest.js`, `index.html`, `settings/*`, `dm.controller`/`dm.service`, `messages.css`, `responsive.css`, and everything for push, APK, appearance, shortcuts, fonts and message sounds.
+
+## Task B: DM attachments E2EE
+
+See docs/DM_ATTACHMENTS_E2EE.md. Files touched: config/multer.js, controllers/dm.controller.js, services/dm.service.js, database/migrations.js, database/tables/directMessages.tabels.js, public/js/chat/dm.js and composer.js (attachment hunks only), public/js/media/{attachments,mediaToken,audio-player,video-player,voice-message}.js. New: public/js/crypto/messages/attachment-stream.js, public/js/media/attachment-e2ee.js, tests/dm-attachments/*.

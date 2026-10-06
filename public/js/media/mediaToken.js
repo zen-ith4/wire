@@ -1,4 +1,5 @@
 import { api } from '../core/api.js';
+import { getAttachmentSecret, fetchDecryptedAttachment } from './attachment-e2ee.js';
 
 // ======================================================
 // SCOPED MEDIA URLS
@@ -66,6 +67,31 @@ export async function getMediaSrcUrl(scope, id) {
     console.error('Failed to obtain media token:', err);
     return baseUrl;
   }
+}
+
+/**
+ * Resolves what an <audio>/<video> element should use as its src.
+ *
+ *  - End-to-end encrypted attachment (a key is registered for it):
+ *    downloads the ciphertext, decrypts it, and returns a NEW blob: URL
+ *    -> { src, isBlob: true }. The caller owns that URL and MUST revoke
+ *    it when the element goes away (see revokeMediaPlayerBlobUrls() in
+ *    attachments.js) or if it ends up never being used.
+ *  - Legacy plaintext attachment: the scoped token URL, as before
+ *    -> { src, isBlob: false }.
+ *
+ * Rejects (AttachmentDecryptError) when an encrypted file fails
+ * authentication, so callers show their normal "failed to load" state.
+ */
+export async function resolveMediaSrc(msg, scope = 'dm') {
+  const id = msg && msg.id;
+
+  if (getAttachmentSecret(scope, id)) {
+    const blob = await fetchDecryptedAttachment(scope, id);
+    return { src: URL.createObjectURL(blob), isBlob: true };
+  }
+
+  return { src: await getMediaSrcUrl(scope, id), isBlob: false };
 }
 
 export function clearMediaTokenCache() {

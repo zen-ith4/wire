@@ -1,6 +1,6 @@
 import { ICONS } from '../icons.js';
 import { downloadAttachment } from './attachments.js';
-import { getMediaSrcUrl } from './mediaToken.js';
+import { resolveMediaSrc } from './mediaToken.js';
 import { resolveServerUrl } from '../core/server.js';
 
 // ======================================================
@@ -53,13 +53,25 @@ export async function renderVideo(
   // MEDIA URL
   // ====================================================
 
-  let relativeAttachmentUrl;
+  // E2EE attachments resolve to a decrypted blob: URL the player owns
+  // (and must revoke); legacy ones keep the token-URL path.
+  let attachmentUrl;
+  let attachmentIsBlob = false;
 
   try {
-    relativeAttachmentUrl = await getMediaSrcUrl(
-      scope,
-      msg.id
+    const resolved = await resolveMediaSrc(
+      msg,
+      scope
     );
+
+    if (!resolved || !resolved.src) {
+      throw new Error('No media source');
+    }
+
+    attachmentIsBlob = !!resolved.isBlob;
+    attachmentUrl = attachmentIsBlob
+      ? resolved.src
+      : resolveServerUrl(resolved.src);
   } catch (error) {
     console.error(
       '[Video] Failed to get media URL:',
@@ -68,24 +80,15 @@ export async function renderVideo(
     return;
   }
 
-  const attachmentUrl =
-    resolveServerUrl(relativeAttachmentUrl);
-
-  console.log(
-    '[Video] Media URL:',
-    relativeAttachmentUrl,
-    '→',
-    attachmentUrl
-  );
-
   // The message may have disappeared while
-  // getMediaSrcUrl() was running.
+  // resolveMediaSrc() was running.
   if (
     !document.body.contains(container) ||
     container.querySelector(
       `#vplayer-${escapedMessageId}`
     )
   ) {
+    if (attachmentIsBlob) URL.revokeObjectURL(attachmentUrl);
     return;
   }
 
@@ -101,6 +104,7 @@ export async function renderVideo(
       <video
         id="video-${escapedMessageId}"
         src="${attachmentUrl}"
+        ${attachmentIsBlob ? `data-blob-url="${attachmentUrl}"` : ''}
         preload="auto"
         playsinline
         webkit-playsinline

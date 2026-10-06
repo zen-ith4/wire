@@ -158,13 +158,20 @@ function fixFilenameEncoding(name) {
   return reDecoded;
 }
 
-function createStorage(uploadDir, useUserPrefix = false) {
+function createStorage(uploadDir, useUserPrefix = false, opaqueNames = false) {
   return multer.diskStorage({
     destination(req, file, cb) {
       cb(null, uploadDir);
     },
 
     filename(req, file, cb) {
+      // DM attachments are end-to-end encrypted ciphertext: the server
+      // must not learn (or persist on disk) anything about the original
+      // file type, so no extension is kept.
+      if (opaqueNames) {
+        return cb(null, crypto.randomUUID());
+      }
+
       const ext = path.extname(file.originalname).toLowerCase();
 
       if (useUserPrefix) {
@@ -204,11 +211,13 @@ function createUploader({
   maxSizeMB,
   mimeMap,
   userPrefix = false,
+  opaqueNames = false,
+  extraBytes = 0,
 }) {
   const options = {
-    storage: createStorage(dir, userPrefix),
+    storage: createStorage(dir, userPrefix, opaqueNames),
     limits: {
-      fileSize: maxSizeMB * 1024 * 1024,
+      fileSize: maxSizeMB * 1024 * 1024 + extraBytes,
     },
     // Always attach the filter: even when there's no mimeMap to
     // restrict against (chatUpload/dmUpload), it still needs to run
@@ -253,9 +262,25 @@ const chatUpload = createUploader({
   // encoding and never rejects on type.
 });
 
+// DM_UPLOAD_MAX_MB limits the *plaintext* file. What reaches the server
+// is STREAM ciphertext (8-byte header + 16-byte GCM tag per 64 KiB
+// chunk), so the multer limit gets exactly that overhead on top.
+// Keep these two constants in sync with
+// public/js/crypto/messages/attachment-stream.js.
+const DM_STREAM_CHUNK_SIZE = 64 * 1024;
+const DM_STREAM_HEADER_BYTES = 8;
+const DM_STREAM_TAG_BYTES = 16;
+
+function dmCiphertextOverheadBytes(maxPlainBytes) {
+  const chunks = Math.max(1, Math.ceil(maxPlainBytes / DM_STREAM_CHUNK_SIZE));
+  return DM_STREAM_HEADER_BYTES + chunks * DM_STREAM_TAG_BYTES;
+}
+
 const dmUpload = createUploader({
   dir: constants.DM_UPLOAD_DIR,
   maxSizeMB: constants.DM_UPLOAD_MAX_MB,
+  opaqueNames: true,
+  extraBytes: dmCiphertextOverheadBytes(constants.DM_UPLOAD_MAX_MB * 1024 * 1024),
   // Same relaxed policy as chatUpload above — see comment there.
 });
 
@@ -297,6 +322,9 @@ module.exports = {
   bannerUpload,
   chatUpload,
   dmUpload,
+  dmCiphertextOverheadBytes,
+  DM_STREAM_HEADER_BYTES,
+  DM_STREAM_TAG_BYTES,
   fileUpload,
   groupAvatarUpload,
   groupUpload,

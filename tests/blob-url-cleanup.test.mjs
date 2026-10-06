@@ -105,6 +105,8 @@ mock.module(jsPath('vendor/capacitor.js'), {
     namedExports: {
         Capacitor: { isNativePlatform: () => false },
         FileTransfer: {},
+        Directory: {},
+        Filesystem: {},
     },
 });
 
@@ -116,6 +118,7 @@ let mediaSrcQueue = [];
 mock.module(jsPath('media/mediaToken.js'), {
     namedExports: {
         getMediaSrcUrl: async () => '/api/dm/attachments/1',
+        refreshMediaSrcUrl: async () => '/api/dm/attachments/1',
         clearMediaTokenCache: () => {},
         resolveMediaSrc: async (msg) => {
             const next = mediaSrcQueue.shift();

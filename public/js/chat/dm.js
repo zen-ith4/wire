@@ -19,8 +19,15 @@ import {
   mountAttachmentMedia,
   cleanupImageUrls,
   revokeAttachmentImage,
+  revokeMediaPlayerBlobUrls,
   imageDownloadButtonHtml
 } from '../media/attachments.js';
+import {
+  applyAttachmentMeta,
+  applyReplyAttachmentMeta,
+  forgetAttachmentSecret,
+  prepareDmAttachmentUpload
+} from '../media/attachment-e2ee.js';
 import { avatarHtml } from '../ui/avatar.js';
 import { getCurrentUser } from '../core/auth.js';
 import { claimRender } from '../core/view-session.js';
@@ -443,11 +450,26 @@ async function decryptDmMessage(msg) {
     }
   }
 
-  return {
-    ...msg,
-    content: decryptedContent,
-    reply_to: decryptedReplyTo,
-  };
+  // E2EE attachment: decrypt the opaque envelope into the real
+  // name/mime/size/dimensions/voice flag and register the per-file key
+  // in memory. Never throws: an unreadable envelope becomes a safe
+  // placeholder attachment instead of failing the whole message.
+  if (decryptedReplyTo && decryptedReplyTo.attachment_meta) {
+    decryptedReplyTo = await applyReplyAttachmentMeta(
+      decryptedReplyTo,
+      peerId
+    );
+  }
+
+  return applyAttachmentMeta(
+    {
+      ...msg,
+      content: decryptedContent,
+      reply_to: decryptedReplyTo,
+    },
+    peerId,
+    'dm'
+  );
 }
 
 async function decryptDmMessages(messages) {
@@ -644,6 +666,9 @@ export function destroyDmComposer() {
     dmComposer.destroy();
     dmComposer = null;
   }
+
+  // Navigating away: audio/video/voice players own decrypted blob URLs.
+  revokeMediaPlayerBlobUrls(document.getElementById('dm-messages'));
 }
 
 // ---------- Render ----------
@@ -667,6 +692,7 @@ export async function renderDm(openPeerId, opts) {
   dmEntry = null;
 
   cleanupImageUrls(document.getElementById('dm-messages'), 'dm');
+  revokeMediaPlayerBlobUrls(document.getElementById('dm-messages'));
 
   main.innerHTML = `
     <div class="dm-layout">
@@ -1443,6 +1469,7 @@ window.openDmConversation = async function (peerId, username, opts = {}) {
 
   document.querySelector('.dm-layout')?.classList.add('showing-thread');
   cleanupImageUrls(document.getElementById('dm-messages'), 'dm');
+  revokeMediaPlayerBlobUrls(document.getElementById('dm-messages'));
 
   const list = document.getElementById('dm-conv-list');
   if (list) {
@@ -1528,6 +1555,16 @@ thread.innerHTML = `
       };
     },
     buildFormExtra: (form) => form.append('recipient_id', dmActivePeer.id),
+    // Encrypts the file (and caption) before upload. Needs the
+    // composer's prepareUpload hook (composer.js hunk, pending approval).
+    prepareUpload: ({ file, caption, isVoice }) =>
+      prepareDmAttachmentUpload({
+        file,
+        caption,
+        isVoice,
+        senderId: Number(getCurrentUser().id),
+        recipientId: Number(dmActivePeer.id),
+      }),
     onMessage: (message) => {
       addDmMessage(message);
       // The composer only calls onMessage after the send succeeded
@@ -1838,6 +1875,7 @@ async function loadRecentDm() {
     if (dmEntry !== entry || !container.isConnected) return;
 
     cleanupImageUrls(container, 'dm');
+    revokeMediaPlayerBlobUrls(container);
     container.innerHTML = '';
     entry.initialized = true;
 
@@ -2586,6 +2624,7 @@ export function removeDmMessage(id) {
   }
 
   revokeAttachmentImage(id, 'dm');
+  forgetAttachmentSecret('dm', id);
 
   const container = document.getElementById('dm-messages');
   if (!container) return;
@@ -2594,6 +2633,7 @@ export function removeDmMessage(id) {
   if (!el) return;
 
   cleanupImageUrls(el, 'dm');
+  revokeMediaPlayerBlobUrls(el);
 
   // Rows around the one being removed, found before it leaves the DOM.
   const siblingRow = (start, dir) => {

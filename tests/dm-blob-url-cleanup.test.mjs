@@ -50,7 +50,7 @@ function resetBlobSpies() {
 // ---------- Mock dm.js's genuinely-unrelated dependencies ----------
 
 mock.module(jsPath('core/auth.js'), {
-    namedExports: {
+    namedExports: { attemptAutoUnlock: () => {}, renderLogin: () => {}, renderUnlock: () => {}, setCurrentUser: () => {},
         getToken: () => 'test-token',
         logout: () => {},
         getCurrentUser: () => ({ id: 1, username: 'alice' }),
@@ -81,12 +81,15 @@ mock.module(jsPath('vendor/capacitor.js'), {
     namedExports: {
         Capacitor: { isNativePlatform: () => false },
         FileTransfer: {},
+        Directory: {},
+        Filesystem: {},
     },
 });
 let mediaSrcQueue = [];
 mock.module(jsPath('media/mediaToken.js'), {
     namedExports: {
         getMediaSrcUrl: async () => '/api/dm/attachments/1',
+        refreshMediaSrcUrl: async () => '/api/dm/attachments/1',
         clearMediaTokenCache: () => {},
         resolveMediaSrc: async () => {
             const next = mediaSrcQueue.shift();
@@ -96,16 +99,16 @@ mock.module(jsPath('media/mediaToken.js'), {
     },
 });
 mock.module(jsPath('ui/avatar.js'), {
-    namedExports: { avatarHtml: () => '<div class="avatar-stub"></div>' },
+    namedExports: { applyAvatar: () => {}, bannerHtml: () => {}, getAvatarUrl: () => {}, refreshAvatarEverywhere: () => {}, refreshBannerEverywhere: () => {}, avatarHtml: () => '<div class="avatar-stub"></div>' },
 });
 mock.module(jsPath('ui/confirm.js'), {
     namedExports: { showConfirm: async () => true },
 });
 mock.module(jsPath('ui/emoji-picker.js'), {
-    namedExports: { openEmojiPicker: () => {} },
+    namedExports: { isEmojiPickerOpen: () => {}, openEmojiPicker: () => {} },
 });
 mock.module(jsPath('chat/reactions.js'), {
-    namedExports: { renderReactionsRow: () => '', onReactionsUpdated: () => {}, updateMessageReactions: () => {} },
+    namedExports: { renderReactionsRow: () => '', onReactionsUpdated: () => {}, updateMessageReactions: () => {}, reactButtonHtml: () => '', setActiveGroupIdGetter: () => {}, reactionEndpoint: () => '' },
 });
 mock.module(jsPath('chat/reply.js'), {
     namedExports: { buildReplyQuoteHtml: () => '', buildReplyPreview: (msg) => ({ id: msg.id }) },
@@ -118,7 +121,7 @@ mock.module(jsPath('chat/typing.js'), {
     },
 });
 mock.module(jsPath('core/socket.js'), {
-    namedExports: { getSocket: () => null },
+    namedExports: { disconnectSocket: () => {}, initSocket: () => {}, getSocket: () => null },
 });
 mock.module(jsPath('chat/composer.js'), {
     namedExports: {

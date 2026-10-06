@@ -44,6 +44,11 @@ const VALID_COLUMNS = {
     attachment_width: "attachment_width INTEGER",
     attachment_height: "attachment_height INTEGER",
 
+    // End-to-end encrypted DM attachments (see dm.controller.js).
+    // NULL for every pre-existing (legacy plaintext) attachment row.
+    attachment_meta: "attachment_meta TEXT",
+    attachment_iv: "attachment_iv TEXT",
+
     // Read-receipt ("seen tick") visible to the SENDER. Distinct from
     // read_at (below): read_at is the recipient's own read/unread
     // state and is always set when they open the conversation;

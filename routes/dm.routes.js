@@ -11,6 +11,7 @@ const {
   getConversations,
   getUnreadCount,
   getRecentMessages,
+  getUploadLimits,
   getMessagesBefore,
   getMessagesSince,
   sendMessage,
@@ -25,6 +26,13 @@ const {
 
 
 // Conversation list
+// Configured max attachment size, so the client can pre-check
+router.get(
+  '/limits',
+  authenticate,
+  getUploadLimits
+);
+
 router.get(
   '/conversations',
   authenticate,

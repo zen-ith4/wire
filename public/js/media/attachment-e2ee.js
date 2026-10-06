@@ -15,6 +15,7 @@
 // `${scope}:${messageId}`, and is dropped when the message is removed.
 
 import { getToken, logout } from '../core/auth.js';
+import { api } from '../core/api.js';
 import { resolveServerUrl } from '../core/server.js';
 import { encryptOutgoingMessage, decryptIncomingMessage } from '../crypto/messages/message-crypto.js';
 import { computeImageDimensions } from '../crypto/messages/attachment-crypto.js';
@@ -236,6 +237,45 @@ export async function fetchDecryptedAttachment(scope, id, { signal } = {}) {
 }
 
 /* =========================================================
+ * Upload size limit (pre-check, before anything is read/encrypted)
+ * ========================================================= */
+
+// Used only if the server cannot be asked; the server still enforces its
+// own limit and stays the authority.
+export const DEFAULT_DM_UPLOAD_MAX_MB = 50;
+
+export class AttachmentTooLargeError extends Error {
+  constructor(maxMb) {
+    super(`File is larger than ${maxMb} MB`);
+    this.name = 'AttachmentTooLargeError';
+    this.maxMb = maxMb;
+  }
+}
+
+let uploadLimitPromise = null;
+
+export function resetUploadLimitCache() {
+  uploadLimitPromise = null;
+}
+
+async function getUploadLimitMb() {
+  if (!uploadLimitPromise) {
+    uploadLimitPromise = (async () => {
+      try {
+        const data = await api('/api/dm/limits');
+        const n = Number(data && data.upload_max_mb);
+        return Number.isFinite(n) && n > 0 ? n : DEFAULT_DM_UPLOAD_MAX_MB;
+      } catch {
+        // Do not cache a failure: ask again next time.
+        uploadLimitPromise = null;
+        return DEFAULT_DM_UPLOAD_MAX_MB;
+      }
+    })();
+  }
+  return uploadLimitPromise;
+}
+
+/* =========================================================
  * Upload preparation (used by the composer's prepareUpload hook)
  * ========================================================= */
 
@@ -251,6 +291,15 @@ const DIMENSIONS_TIMEOUT_MS = 5000;
  */
 export async function prepareDmAttachmentUpload({ file, caption, isVoice, senderId, recipientId }) {
   if (!file || typeof file.size !== 'number') throw new Error('No file to encrypt');
+
+  // Size gate FIRST: file.size is metadata only, so nothing is read,
+  // sliced or encrypted for an oversized file (no memory spike). Every
+  // way of attaching (file input, drag/drop, paste, voice recording)
+  // ends up here via the composer's prepareUpload hook.
+  const maxMb = await getUploadLimitMb();
+  if (file.size > maxMb * 1024 * 1024) {
+    throw new AttachmentTooLargeError(maxMb);
+  }
 
   let width = null;
   let height = null;

@@ -231,6 +231,12 @@ async function sendEncryptedAttachment(req, res, recipientId, cleanup) {
   return res.json(fullMsg);
 }
 
+// Lets the client refuse an oversized file BEFORE reading/encrypting it
+// (it otherwise has no way to know the configured limit).
+function getUploadLimitsHandler(req, res) {
+  res.json({ upload_max_mb: constants.DM_UPLOAD_MAX_MB });
+}
+
 function getConversationsHandler(req, res) {
   // getConversationsSummary() batches what used to be 1 + 3 queries
   // per conversation (peer lookup, last message, unread count) into
@@ -879,6 +885,7 @@ function toggleReactionHandler(req, res) {
 }
 
 module.exports = {
+  getUploadLimits: getUploadLimitsHandler,
   getConversations: getConversationsHandler,
   getUnreadCount: getUnreadCountHandler,
   getRecentMessages: getRecentMessagesHandler,

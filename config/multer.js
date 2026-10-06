@@ -263,18 +263,11 @@ const chatUpload = createUploader({
 });
 
 // DM_UPLOAD_MAX_MB limits the *plaintext* file. What reaches the server
-// is STREAM ciphertext (8-byte header + 16-byte GCM tag per 64 KiB
-// chunk), so the multer limit gets exactly that overhead on top.
-// Keep these two constants in sync with
-// public/js/crypto/messages/attachment-stream.js.
-const DM_STREAM_CHUNK_SIZE = 64 * 1024;
-const DM_STREAM_HEADER_BYTES = 8;
-const DM_STREAM_TAG_BYTES = 16;
-
-function dmCiphertextOverheadBytes(maxPlainBytes) {
-  const chunks = Math.max(1, Math.ceil(maxPlainBytes / DM_STREAM_CHUNK_SIZE));
-  return DM_STREAM_HEADER_BYTES + chunks * DM_STREAM_TAG_BYTES;
-}
+// is STREAM ciphertext (header + one GCM tag per chunk), so the multer
+// limit gets exactly that overhead on top. The format constants live in
+// config/dm-stream.js (checked against the browser module by a test).
+const dmStream = require('./dm-stream');
+const dmCiphertextOverheadBytes = dmStream.ciphertextOverheadBytes;
 
 const dmUpload = createUploader({
   dir: constants.DM_UPLOAD_DIR,
@@ -326,8 +319,6 @@ module.exports = {
   chatUpload,
   dmUpload,
   dmCiphertextOverheadBytes,
-  DM_STREAM_HEADER_BYTES,
-  DM_STREAM_TAG_BYTES,
   fileUpload,
   groupAvatarUpload,
   groupUpload,

@@ -1,11 +1,8 @@
 const path = require('path');
 const fs = require('fs');
 const constants = require('../config/constants');
-const {
-  CHAT_MIME_MAP,
-  DM_STREAM_HEADER_BYTES,
-  DM_STREAM_TAG_BYTES,
-} = require('../config/multer');
+const { CHAT_MIME_MAP } = require('../config/multer');
+const dmStream = require('../config/dm-stream');
 const { readImageDimensions } = require('../utils/imageDimensions');
 const { detectMimeFromBytes } = require('../utils/detectFileType');
 const { normalizeSniffedMime, resolveVoiceMime } = require('../utils/voiceMime');
@@ -106,8 +103,9 @@ function isVoiceMessageFlag(rawValue, mime) {
 // When OFF, an upload WITHOUT attachment_meta takes the legacy
 // plaintext path unchanged. An upload that carries attachment_meta is
 // always handled as encrypted, whatever the flag says.
-const DM_STREAM_MAGIC = Buffer.from('WAT1', 'latin1');
-const DM_STREAM_CHUNK_SIZE = 64 * 1024;
+const DM_STREAM_CHUNK_SIZE = dmStream.CHUNK_SIZE;
+const DM_STREAM_HEADER_BYTES = dmStream.HEADER_BYTES;
+const DM_STREAM_TAG_BYTES = dmStream.TAG_BYTES;
 const DM_ATTACHMENT_META_MAX = 8 * 1024;
 const BASE64_RE = /^[A-Za-z0-9+/]+={0,2}$/;
 
@@ -159,10 +157,7 @@ async function hasStreamHeader(filePath) {
     handle = await fs.promises.open(filePath, 'r');
     const buf = Buffer.alloc(DM_STREAM_HEADER_BYTES);
     const { bytesRead } = await handle.read(buf, 0, DM_STREAM_HEADER_BYTES, 0);
-    return bytesRead === DM_STREAM_HEADER_BYTES &&
-      buf.subarray(0, 4).equals(DM_STREAM_MAGIC) &&
-      buf[4] === 16 && // chunk size = 2^16
-      buf[5] === 0 && buf[6] === 0 && buf[7] === 0;
+    return bytesRead === DM_STREAM_HEADER_BYTES && buf.equals(dmStream.HEADER);
   } catch {
     return false;
   } finally {

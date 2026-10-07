@@ -46,5 +46,8 @@ test('one plaintext byte over the maximum is refused and leaves no file behind',
   const res = await uploadSized(MB + 1);
   assert.equal(res.status, 400);
   assert.equal(res.body.error, 'Upload failed');
+  // the server unlinks the rejected upload just after answering: let it settle
+  const deadline = Date.now() + 3000;
+  while (fs.readdirSync(process.env.DM_UPLOAD_DIR).length !== before && Date.now() < deadline) await new Promise((r) => setTimeout(r, 25));
   assert.equal(fs.readdirSync(process.env.DM_UPLOAD_DIR).length, before);
 });

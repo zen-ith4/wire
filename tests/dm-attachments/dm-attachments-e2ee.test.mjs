@@ -222,6 +222,15 @@ async function rawPost(form, user = alice) {
 
 function countFiles() { return walk(DM_DIR).length; }
 
+// The server unlinks a rejected upload right AFTER it has answered, so the
+// file may still exist for a few milliseconds. Wait for it to settle; a
+// real leak never settles and still fails here.
+async function assertFileCountSettles(expected, label) {
+  const deadline = Date.now() + 3000;
+  while (countFiles() !== expected && Date.now() < deadline) await new Promise((r) => setTimeout(r, 25));
+  assert.equal(countFiles(), expected, label);
+}
+
 test('enforced: plaintext uploads are rejected and leave no file behind', async () => {
   const before = countFiles();
   const plainPng = pngBytes();
@@ -233,7 +242,7 @@ test('enforced: plaintext uploads are rejected and leave no file behind', async 
     const r = await rawPost(rawForm(fields, file, 'a.png', type));
     assert.equal(r.status, 400, label);
   }
-  assert.equal(countFiles(), before, 'rejected uploads must be unlinked');
+  await assertFileCountSettles(before, 'rejected uploads must be unlinked');
 });
 
 test('enforced: malformed encrypted-shape uploads are rejected', async () => {
@@ -257,7 +266,7 @@ test('enforced: malformed encrypted-shape uploads are rejected', async () => {
     const r = await rawPost(rawForm(fields, bytes));
     assert.equal(r.status, 400, `${label}: ${JSON.stringify(r.body)}`);
   }
-  assert.equal(countFiles(), before);
+  await assertFileCountSettles(before, 'malformed uploads must be unlinked');
   // and the well-formed one still passes
   assert.equal((await rawPost(rawForm(f, goodBytes))).status, 200);
 });

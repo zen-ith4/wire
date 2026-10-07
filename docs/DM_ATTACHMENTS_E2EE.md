@@ -66,8 +66,6 @@ implemented. Peak memory while decrypting a file is roughly twice its size
 gesture (notably Safari/iOS) may refuse the automatic play after a long
 download; the player is then loaded and a second tap plays it (not tested).
 
-Note: X's own classifier treats a file NAMED `*.webm` as audio before it
-checks for video, so a `.webm` video is shown with the audio player.
 
 ## Server behaviour
 

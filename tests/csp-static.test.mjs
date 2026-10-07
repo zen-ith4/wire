@@ -33,7 +33,7 @@ const require = createRequire(import.meta.url);
 // regexes below; derived from docs/CSP_TODO.md). Missing file => cap 0.
 const LEGACY_CAPS = {
   handlers: {
-    'js/chat/dm.js': 12,
+    'js/chat/dm.js': 9,
     'js/settings/settings-render.js': 8,
     'js/settings/admin.js': 7,
     'js/chat/composer.js': 4,

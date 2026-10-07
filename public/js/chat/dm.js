@@ -1527,7 +1527,7 @@ thread.innerHTML = `
         <button class="btn btn-ghost btn-icon emoji-trigger" title="Emoji" onclick="window.openDmEmojiPicker(this)">${ICONS.emoji}</button>
         <textarea id="dm-input" rows="1" placeholder="Message ${escapeHtmlAttr(username)}…"></textarea>
         <button class="composer-mic-btn" id="dm-mic-btn" aria-label="Record a voice message">${ICONS.mic}</button>
-        <button onclick="window.sendDm()" class="btn-send" title="Send message (Enter) — Shift+Enter for a new line">${ICONS.send}</button>
+        <button data-action="dm-send" class="btn-send" title="Send message (Enter) — Shift+Enter for a new line">${ICONS.send}</button>
       </div>
     </div>
   `;
@@ -1619,6 +1619,12 @@ thread.innerHTML = `
   // the phone layout a rightward swipe that starts in the left edge
   // strip belongs to swipe-back, so it is not started here.
   bindDmMessageActions(container);
+
+  // Send button: delegated, no inline onclick (CSP). The input area is
+  // rebuilt for every conversation, so listeners never accumulate.
+  document.getElementById('dm-input-area')?.addEventListener('click', (e) => {
+    if (e.target.closest('[data-action="dm-send"]')) window.sendDm();
+  });
 
   bindSwipeToReply(container, {
     onReply: (id) => window.replyToDmMessage(id),
@@ -2130,7 +2136,7 @@ function buildDmMessageEl(msg, currentUser) {
         ${imageDownloadButtonHtml(msg, 'dm')}
         ${
           canDelete
-            ? `<button type="button" class="chat-msg-delete" title="Delete message" aria-label="Delete message" onclick="window.deleteDmMessage(${msg.id})">${ICONS.trash}</button>`
+            ? `<button type="button" class="chat-msg-delete" title="Delete message" aria-label="Delete message" data-action="dm-delete" data-msg-id="${msg.id}">${ICONS.trash}</button>`
             : ''
         }
         </div>
@@ -2256,6 +2262,13 @@ function bindDmMessageActions(container) {
       e.preventDefault();
       void copyDmMessageText(copyBtn);
       return;
+    }
+
+    const delBtn = e.target.closest('[data-action="dm-delete"]');
+    if (delBtn && container.contains(delBtn)) {
+      void window.deleteDmMessage(Number(delBtn.dataset.msgId));
+      // deliberately no `return`: the old inline handler also let the click
+      // reach the tap logic below (it resets lastTap for button clicks)
     }
 
     if (!isTouchClick(e)) return;

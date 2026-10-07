@@ -1,3 +1,5 @@
+const { ensureCredentialSchema } = require('./credentialSchema');
+
 const VALID_COLUMNS = {
   users: {
     email: "email TEXT",
@@ -20,7 +22,19 @@ const VALID_COLUMNS = {
     // simply never having connected since upgrading. Online/offline
     // itself stays in-memory only (services/presence.service.js) —
     // this is only the timestamp of their last disconnect.
-    last_seen_at: "last_seen_at TEXT DEFAULT NULL"
+    last_seen_at: "last_seen_at TEXT DEFAULT NULL",
+
+    // F12 login scheme (see database/credentialSchema.js and the design doc).
+    // Existing rows become auth_scheme = 1 (legacy: bcrypt of the raw password);
+    // every code path that creates an account sets 2 explicitly.
+    auth_scheme: "auth_scheme INTEGER NOT NULL DEFAULT 1",
+    kdf_salt: "kdf_salt TEXT",
+    kdf_iterations: "kdf_iterations INTEGER",
+    scheme_migrated_at: "scheme_migrated_at TEXT",
+    legacy_last_login_at: "legacy_last_login_at TEXT",
+    must_change_password: "must_change_password INTEGER NOT NULL DEFAULT 0",
+    legacy_login_closed: "legacy_login_closed INTEGER NOT NULL DEFAULT 0",
+    legacy_login_closed_at: "legacy_login_closed_at TEXT"
   },
 
   folders: {
@@ -98,6 +112,8 @@ function runMigrations(db) {
   `);
 
   migrateMessageReactionsToAllowGroup(db);
+
+  ensureCredentialSchema(db);
 }
 
 /*

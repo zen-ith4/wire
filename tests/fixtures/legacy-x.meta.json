@@ -1,0 +1,48 @@
+{
+  "built_from": "wire-no-chat_4.zip (sha256 1c4f5157cf67c378dda1d103db8cf7594968529e0fdd6462f675e94753e0321e) + 4 test files from wire-phase0.5-ad52de1.zip (sha256 66a89f7b65a0d81cd6d14ad3298923f4b5824c1792a2cc76b3ffff478d36c7b0)",
+  "note": "Built by tests/fixtures/make-legacy-db.mjs from the BASE tree (wire-no-chat_4.zip + Phase 0.5 patch). Test data only.",
+  "sha256": "904fd1906e9b9094affeb9df77bd4adff6373a78ef8e347c6b75abd0a1c08225",
+  "passwords": {
+    "alice": "alice-legacy-pass",
+    "bob": "bob-legacy-pass",
+    "carol": "carol-legacy-pass",
+    "Admin": "admin-legacy-pass",
+    "dave": "dave-legacy-pass",
+    "erin": "erin-legacy-pass",
+    "frank": "frank-legacy-pass",
+    "MixedCase": "mixed-legacy-pass"
+  },
+  "ids": {
+    "alice": 2,
+    "bob": 3,
+    "carol": 4,
+    "dave": 5,
+    "erin": 6,
+    "frank": 7,
+    "Admin": 1,
+    "MixedCase": 8
+  },
+  "public_keys": {
+    "alice": "YLipGBv/E8DPjkRgfHxeV5jJ4PDPi13xWRahxPdYZF4=",
+    "bob": "ZQq4/gS6zw12BEyIxcBOwjtsPmLDUZrZmC9jzQOtPTk=",
+    "dave": "E5pajh/XylXKm5DLxZRCG14njE0eO+Wu3EQehKJY6WY=",
+    "frank": "CEwJM87wCmA5lFfzCZvfjtSTKK6Sop1KTEv0f7a4MF0="
+  },
+  "private_keys_pkcs8": {
+    "alice": "MC4CAQAwBQYDK2VuBCIEILgFQgEn+2+9B/H9hHdnz/wnZ/kK9kXeGVzhU8N3M5B9",
+    "bob": "MC4CAQAwBQYDK2VuBCIEIAApwjXaXhNCA2MlpuuIeVaxCYXWgJk+ZsexDk99BCNX",
+    "dave": "MC4CAQAwBQYDK2VuBCIEIBDV3kq2m9XkrbsUbM4O+BdSqAYgwMHJlNgX5+I4ASR1",
+    "frank": "MC4CAQAwBQYDK2VuBCIEILg3ZmjT/RT9I/ssxmVairrBdj8DcTOz1c3PVcHSN+hv"
+  },
+  "identity_iterations": {
+    "alice": 100000,
+    "bob": 600000,
+    "dave": 600000,
+    "frank": 600000
+  },
+  "dm": {
+    "sender": "alice",
+    "recipient": "bob",
+    "plaintext": "hello bob, this DM predates the credential migration"
+  }
+}

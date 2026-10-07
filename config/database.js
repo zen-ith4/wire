@@ -3,6 +3,7 @@ const constants = require('./constants');
 
 const { ensureSchema } = require('../database/schema');
 const { seedDatabase } = require('../database/seed');
+const { backupBeforeCredentialMigration } = require('../database/backup');
 
 let db = null;
 
@@ -32,6 +33,10 @@ function initDatabase() {
   // writes without surfacing a user-facing error, short enough that
   // a genuinely stuck request doesn't hang the caller indefinitely.
   db.pragma('busy_timeout = 5000');
+
+  // F12: snapshot an existing database BEFORE its first credential-scheme upgrade.
+  // Throws (server refuses to start) if the backup cannot be written.
+  backupBeforeCredentialMigration(db, constants.DB_PATH);
 
   ensureSchema(db);
 

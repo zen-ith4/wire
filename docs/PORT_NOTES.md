@@ -97,6 +97,52 @@ Only the group half of that file (`encryptAttachmentForGroup`,
 - Merge note: `dm.js`/`composer.js` got one added import line (`escapeHtmlAttr,`) plus one
   edited site each, in their own commit.
 
+## Task C, phase 2: automated acceptance checks (new tests only, no app changes)
+The original acceptance checklist file is not in the repo; this maps the items named in Task C.
+Run with `npm test` (real Chromium needed; without it these tests SKIP, which is not a pass).
+
+Automated now
+- Server never stores plaintext, group text and DM text: `tests/acceptance-no-plaintext.test.mjs`
+  runs the REAL `node server.js` and real Chromium, then scans `.db`, `-wal`, `-shm`, every
+  upload dir and multer's temp dir (all redirected into one work dir; a control fails if the
+  server writes anywhere else) and the captured stdout/stderr, once live and once after stop.
+- DM attachments (bytes + caption) must leave no marker: same file, **depends on agent B's patch**.
+  On a tree without it the test is `todo` and fails with the exact hit (file bytes in
+  `dm-uploads/`, caption in `wire.db-wal`). It becomes a hard test automatically when
+  `controllers/dm.controller.js` mentions `attachment_iv`, or with `DM_ATTACH_E2EE=1`.
+- Group attachments: uploads without a valid `attachment_iv` (missing, non-base64, oversized,
+  no session, non-member) are rejected and leave no file behind.
+- Log leak: no JWT / Bearer / base64-or-hex 32-byte key / wrapped-key field / password patterns,
+  and none of the exact secret values the server holds (tokens, the password, every value of
+  key-ish DB columns) appear in the server logs.
+- XSS sweep, real Chromium, Report-Only CSP so handlers WOULD run: `tests/acceptance-xss-sweep-browser.test.mjs`.
+  Paths: group name (create + rename), username, profile bio, DM text, group text, link text,
+  reply quote (DM + group), reaction emoji (DM + group), attachment filename, member role.
+  Seen by sender and receiver; `window.__pwned` must stay false. This app has no display-name
+  field, so the profile `bio` stands in for it.
+
+Findings from phase 2 (reported, NOT fixed here; both are `todo` tests that pass once fixed)
+1. Stored XSS via attachment filename (confirmed, executes on click for sender and receiver):
+   `escapeAttr()` in `public/js/core/utils.js` does not escape `&`, and its result is placed
+   inside a single-quoted JS string in inline `onclick="window.downloadAttachment(id, '<name>', ...)"`
+   (`media/attachments.js` 886 and 995, `media/audio-player.js` 249). A file named
+   `x&#39;);__pwned=1;(&#39;.txt` closes the string after HTML decoding. Escaping `&` first fixes it
+   (verified on a scratch tree). Enforced CSP would also block it, but CSP is not enforceable yet.
+2. `services/auth.service.js registerUser()` only checks that the username is non-empty;
+   `isValidUsername()` runs only in `createUser()`. `/api/auth/register` therefore accepts
+   usernames like `"><img src=x onerror=...>`. The sweep shows they currently render inert.
+   Agent A's area.
+
+Still manual
+- Real push notifications, APK build, Capacitor shell, real multi-device group use, TLS/network
+  deployment, visual/UX review, mobile layout (Phase 3).
+- Enforced CSP (`CSP_ENFORCE=true`) is not safe yet: see docs/CSP_TODO.md.
+- Group attachments through the UI (disabled by design; only the server-side rejection is automated).
+
+Depends on other agents
+- Agent B: DM attachment E2EE (above); `dm.js:1503` (Send) and `dm.js:2095` (delete) inline onclick.
+- Agent A: the 6 known baseline failures (stale selectors), register username validation.
+
 ## Files changed vs the X base (verified)
 `git diff --name-status 7655a7e..HEAD -- ':!tests' ':!docs'` was compared against an independently written list; they match exactly. Nothing else outside `tests/` and `docs/` differs from X.
 

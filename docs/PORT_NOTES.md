@@ -141,13 +141,28 @@ Findings from phase 2
 
 Still manual
 - Real push notifications, APK build, Capacitor shell, real multi-device group use, TLS/network
-  deployment, visual/UX review, mobile layout (Phase 3).
+  deployment, visual/UX review, a real phone (notch / home indicator).
 - Enforced CSP (`CSP_ENFORCE=true`) is not safe yet: see docs/CSP_TODO.md.
 - Group attachments through the UI (disabled by design; only the server-side rejection is automated).
 
 Depends on other agents
 - Agent B: DM attachment E2EE (above); `dm.js:1503` (Send) and `dm.js:2095` (delete) inline onclick.
 - Agent A: the 6 known baseline failures (stale selectors), register username validation.
+
+## Task C, phase 3: mobile Groups tab
+- The phone bottom bar had 3 tabs (My Files, Messages, Settings; the old "four primary tabs" comment
+  was stale). With `groups_enabled` it now has 4: `core/app.js buildNav()` passes the same
+  `GROUPS_NAV_ITEM` the desktop sidebar uses as `groupsTab` to `renderMobileNav()` (`ui/mobile-shell.js`),
+  which appends it. Same `navigate('groups')` route, no new routing; `router.js`, `navBadgeHtml` and the
+  admin "More" menu are untouched. With groups off `groupsItems[0]` is `undefined`, `groupsTab` is null
+  and nothing is rendered differently (mobile DOM is byte-identical to the previous commit).
+- Layout: tabs are `flex:1 1 0; min-width:0`; the icon pill is 58px (63.4px at density 1.15). 4 tabs
+  fit at 320/375/414 even with the largest font (1.25) and density settings; 5 tabs would only start
+  truncating "Messages" at 320px with the largest font. Landscape-short (max-height 480px) shows all 4.
+- Test: `tests/mobile-groups-tab-browser.test.mjs` (real server, real Chromium, mobile viewport, touch
+  tap; `SHOTS_DIR=<dir>` also writes screenshots).
+- Not tested: real phone, notch / home-indicator insets (Chromium reports 0; safe-area was evaluated
+  from the CSS only), native WebView, Capacitor, APK.
 
 ## Files changed vs the X base (verified)
 `git diff --name-status 7655a7e..HEAD -- ':!tests' ':!docs'` was compared against an independently written list; they match exactly. Nothing else outside `tests/` and `docs/` differs from X.

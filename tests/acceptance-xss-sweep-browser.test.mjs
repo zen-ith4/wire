@@ -161,7 +161,7 @@ async function run() {
     await page.waitForSelector('#dm-attach-staging .attach-chip', { timeout: 10000 });
     await page.evaluate(() => window.sendDm());
     out.controls.attachmentSent = await waitFor(async () => (await page.$$eval('#dm-thread .chat-msg', (e) => e.length)) > before, 25000, 250);
-    // second filename: escapeAttr() (public/js/core/utils.js) escapes \\ ' " and newlines but NOT '&', and the
+    // second filename: before the fix escapeAttr() (public/js/core/utils.js) escaped \\ ' " and newlines but NOT '&', and the
     // result sits inside a single-quoted JS string in an inline onclick="...". The HTML parser decodes
     // &#39; BEFORE the JS parser runs, so this name would close the string if '&' is left alone.
     const breakName = `x&#39;);__pwned=1;(&#39;~fname2.txt`; // a filename cannot contain '/', so close the call and reopen a parenthesis instead of using //
@@ -279,8 +279,9 @@ test('B username (rendering): a user whose username is markup renders as inert t
     assert.ok(bobView.includes('~hdm'), 'bob rendered the hostile-username user\'s DM');
 });
 
-test('I filename (FINDING): an entity-encoded quote in a filename cannot break out of the inline onclick JS string (real click)',
-    { todo: 'FINDING, confirmed in real Chromium: escapeAttr() (public/js/core/utils.js:131) escapes \\ \' " and newlines but not "&"; used inside inline onclick="...(\'<name>\')" (media/attachments.js:886,995, media/audio-player.js:249). A filename like x&#39;);__pwned=1;(&#39; executes on click. Fix = escape "&" first (or stop embedding names in inline JS). Not in this lane.' },
+test('I filename: an entity-encoded quote in a filename cannot break out of the inline onclick JS string (real click)',
+    // Was a confirmed stored XSS (escapeAttr did not escape '&'); fixed in public/js/core/utils.js. Unit-level
+    // coverage of the same contract lives in tests/escape-attr-js-string.test.mjs.
     async (t) => {
         const s = await scenario(); if (blocked(t, s)) return;
         assert.ok(s.controls.attachment2Sent, 'control: the breakout-filename attachment was sent');

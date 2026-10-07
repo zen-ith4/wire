@@ -110,6 +110,7 @@ Automated now
   On a tree without it the test is `todo` and fails with the exact hit (file bytes in
   `dm-uploads/`, caption in `wire.db-wal`). It becomes a hard test automatically when
   `controllers/dm.controller.js` mentions `attachment_iv`, or with `DM_ATTACH_E2EE=1`.
+- `escapeAttr()` JS-string contract: `tests/escape-attr-js-string.test.mjs` (jsdom, no browser needed).
 - Group attachments: uploads without a valid `attachment_iv` (missing, non-base64, oversized,
   no session, non-member) are rejected and leave no file behind.
 - Log leak: no JWT / Bearer / base64-or-hex 32-byte key / wrapped-key field / password patterns,
@@ -121,13 +122,18 @@ Automated now
   Seen by sender and receiver; `window.__pwned` must stay false. This app has no display-name
   field, so the profile `bio` stands in for it.
 
-Findings from phase 2 (reported, NOT fixed here; both are `todo` tests that pass once fixed)
-1. Stored XSS via attachment filename (confirmed, executes on click for sender and receiver):
-   `escapeAttr()` in `public/js/core/utils.js` does not escape `&`, and its result is placed
-   inside a single-quoted JS string in inline `onclick="window.downloadAttachment(id, '<name>', ...)"`
-   (`media/attachments.js` 886 and 995, `media/audio-player.js` 249). A file named
-   `x&#39;);__pwned=1;(&#39;.txt` closes the string after HTML decoding. Escaping `&` first fixes it
-   (verified on a scratch tree). Enforced CSP would also block it, but CSP is not enforceable yet.
+Findings from phase 2
+1. FIXED: stored XSS via attachment filename (executed on click for sender and receiver).
+   `escapeAttr()` in `public/js/core/utils.js` did not escape `&`, and its result is placed inside a
+   single-quoted JS string in inline `onclick="window.downloadAttachment(id, '<name>', ...)"`
+   (`media/attachments.js` 886-888 and 995-997, `media/audio-player.js` 249). A file named
+   `x&#39;);__pwned=1;(&#39;.txt` closed the string after HTML decoding. `escapeAttr()` now escapes `&`
+   first (and lone CR / U+2028 / U+2029). Tests: `tests/escape-attr-js-string.test.mjs` (real
+   renderers, HTML parser then JS evaluation) and the real-Chromium click in the XSS sweep.
+   Call sites that embed escapeAttr output in a JS string inside an inline handler: only those
+   three files/lines above; every other caller puts it in a plain attribute (title, data-*, alt,
+   aria-label, src, accept), where the fix also makes names containing `&` display exactly.
+   The inline handlers themselves are still blocked by an enforced CSP (docs/CSP_TODO.md).
 2. `services/auth.service.js registerUser()` only checks that the username is non-empty;
    `isValidUsername()` runs only in `createUser()`. `/api/auth/register` therefore accepts
    usernames like `"><img src=x onerror=...>`. The sweep shows they currently render inert.

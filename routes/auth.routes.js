@@ -7,7 +7,9 @@ const {
   register,
   verifyEmail,
   resendVerification,
-  verifyTwoFactor
+  verifyTwoFactor,
+  getKdfParams,
+  migrateCredentials
 } = require('../controllers/auth.controller');
 
 const {
@@ -15,12 +17,33 @@ const {
   registerRateLimiter,
   verifyEmailRateLimiter,
   resendVerificationRateLimiter,
-  verifyTwoFactorRateLimiter
+  verifyTwoFactorRateLimiter,
+  kdfParamsRateLimiter,
+  migrateCredentialsRateLimiter
 } = require('../middleware/rateLimiter');
+
+const {
+  authenticate
+} = require('../middleware/authenticate');
 
 const {
   asyncHandler
 } = require('../middleware/asyncHandler');
+
+
+router.get(
+  '/kdf-params',
+  kdfParamsRateLimiter,
+  getKdfParams
+);
+
+
+router.post(
+  '/migrate-credentials',
+  migrateCredentialsRateLimiter,
+  authenticate,
+  asyncHandler(migrateCredentials)
+);
 
 
 router.post(

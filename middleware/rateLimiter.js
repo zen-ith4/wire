@@ -593,7 +593,28 @@ const pushTokenLimiter =
   });
 
 
+// Public salt lookup used before every login/registration (F12). Cheap, but
+// unauthenticated, so keep it from being a scraping/DoS surface.
+const kdfParamsRateLimiter =
+  createRateLimiter({
+    windowMs: 60 * 1000,
+    max: 60,
+    keyFn: req => `kdf-params:${req.ip}`,
+    message: 'Too many requests, please try again later'
+  });
+
+// One bcrypt + one transaction per call; a ticket is single-use anyway.
+const migrateCredentialsRateLimiter =
+  createRateLimiter({
+    windowMs: 10 * 60 * 1000,
+    max: 20,
+    keyFn: req => `migrate-credentials:${req.ip}`,
+    message: 'Too many requests, please try again later'
+  });
+
 module.exports = {
+  kdfParamsRateLimiter,
+  migrateCredentialsRateLimiter,
   loginRateLimiter,
   registerRateLimiter,
   verifyEmailRateLimiter,

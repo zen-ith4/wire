@@ -62,9 +62,26 @@ const {
   isEmailEnabled
 } = require('./email.service');
 
+const { isValidAuthKey, isValidKdfSalt, isValidIterations } = require('../utils/credentials');
+const { issueTicket } = require('./credentialMigration.service');
 
-async function authenticateUser(username, password) {
+
+// F12: `credentials` is either
+//   { password }  - legacy raw-password login (scheme 1 accounts only), or
+//   { authKey }   - browser-derived key (scheme 2 accounts only).
+// A bare string is treated as { password } for older callers.
+// Any mismatch (wrong form for the account's scheme, closed legacy login,
+// unknown/inactive user) costs the same bcrypt comparison and returns null.
+async function authenticateUser(username, credentials) {
   const db = getDb();
+
+  const creds =
+    typeof credentials === 'string'
+      ? { password: credentials }
+      : (credentials || {});
+
+  const useAuthKey = typeof creds.authKey === 'string';
+  const secret = useAuthKey ? creds.authKey : creds.password;
 
   username = String(username || '')
     .trim()
@@ -80,7 +97,9 @@ async function authenticateUser(username, password) {
       password_hash,
       is_admin,
       is_active,
-      accent_color
+      accent_color,
+      auth_scheme,
+      legacy_login_closed
     FROM users
     WHERE username = ?
   `).get(username);
@@ -89,7 +108,7 @@ async function authenticateUser(username, password) {
     // No such user — still pay the bcrypt cost of a real comparison
     // so this doesn't return measurably faster than a wrong password
     // for a real username (see the timing side-channel note above).
-    await compareAgainstDummyHash(password);
+    await compareAgainstDummyHash(secret);
     return null;
   }
 
@@ -97,18 +116,39 @@ async function authenticateUser(username, password) {
     // Same reasoning: a deactivated account shouldn't be
     // distinguishable from a wrong password by response timing
     // either.
-    await compareAgainstDummyHash(password);
+    await compareAgainstDummyHash(secret);
+    return null;
+  }
+
+  const isLegacy = user.auth_scheme === 1;
+
+  // Anti-downgrade: a migrated account never accepts a raw password, and an
+  // unmigrated one never accepts an authKey. A closed legacy login behaves
+  // exactly like a wrong password.
+  const formAllowed =
+    useAuthKey
+      ? (!isLegacy && isValidAuthKey(secret))
+      : (isLegacy && !user.legacy_login_closed && typeof secret === 'string' && secret.length > 0);
+
+  if (!formAllowed) {
+    await compareAgainstDummyHash(secret);
     return null;
   }
 
   const passwordValid =
     await comparePassword(
-      password,
+      secret,
       user.password_hash
     );
 
   if (!passwordValid) {
     return null;
+  }
+
+  if (isLegacy) {
+    db.prepare(
+      'UPDATE users SET legacy_last_login_at = CURRENT_TIMESTAMP WHERE id = ?'
+    ).run(user.id);
   }
 
   /*
@@ -182,18 +222,32 @@ async function authenticateUser(username, password) {
       : Boolean(user.email_verified),
     is_admin: Boolean(user.is_admin),
     accent_color: user.accent_color || null,
+    auth_scheme: user.auth_scheme,
 
     token: signToken({
       id: user.id,
       username: user.username,
       is_admin: Boolean(user.is_admin)
-    })
+    }),
+
+    ...(isLegacy
+      ? { credential_migration: issueTicket(user.id) }
+      : {})
   };
 }
 
 
+// `password` is either a raw string (legacy clients; the account starts on
+// scheme 1 and migrates at its first login) or
+// { authKey, kdfSalt, kdfIterations } (scheme 2, the server never sees the
+// password).
 async function registerUser(username, email, password) {
   const db = getDb();
+
+  const v2 =
+    password && typeof password === 'object'
+      ? password
+      : null;
 
   username = String(username || '')
     .trim()
@@ -226,7 +280,20 @@ async function registerUser(username, email, password) {
     throw error;
   }
 
-  if (!password || password.length < 6) {
+  if (
+    v2 &&
+    (
+      !isValidAuthKey(v2.authKey) ||
+      !isValidKdfSalt(v2.kdfSalt) ||
+      !isValidIterations(v2.kdfIterations)
+    )
+  ) {
+    const error = new Error('Invalid credentials');
+    error.code = 'INVALID_CREDENTIALS';
+    throw error;
+  }
+
+  if (!v2 && (!password || password.length < 6)) {
     const error = new Error(
       'Password must be at least 6 characters'
     );
@@ -274,7 +341,7 @@ async function registerUser(username, email, password) {
 
 
   const passwordHash =
-    await hashPassword(password);
+    await hashPassword(v2 ? v2.authKey : password);
 
   /*
    * When email is disabled there is no verification mechanism
@@ -294,14 +361,20 @@ async function registerUser(username, email, password) {
         username,
         email,
         password_hash,
-        email_verified
+        email_verified,
+        auth_scheme,
+        kdf_salt,
+        kdf_iterations
       )
-      VALUES (?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(
       username,
       email,
       passwordHash,
-      initialEmailVerified
+      initialEmailVerified,
+      v2 ? 2 : 1,
+      v2 ? v2.kdfSalt : null,
+      v2 ? v2.kdfIterations : null
     );
 
     userId =

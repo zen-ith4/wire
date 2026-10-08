@@ -20,7 +20,7 @@ export async function bootServer(dbPath, dir, extraEnv = {}) {
         const env = {
             ...process.env, DB_PATH: dbPath, USER_DATA_ROOT: path.join(dir, 'user-data'), SETUP_COMPLETED: 'true',
             JWT_SECRET, HOST: '127.0.0.1', PORT: String(port), NODE_ENV: 'test',
-            EMAIL_ENABLED: 'false', BCRYPT_ROUNDS: '4', ALLOWED_SUBNET: '127.0.0.0/8', ...extraEnv,
+            EMAIL_ENABLED: 'false', BCRYPT_ROUNDS: '4', IDENTITY_ROTATE_MAX_PER_HOUR: '100', ALLOWED_SUBNET: '127.0.0.0/8', ...extraEnv,
         };
         const child = spawn(process.execPath, ['server.js'], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
         let out = '';
@@ -83,4 +83,42 @@ export function unwrapIdentityV2(identity, password) {
     const d = crypto.createDecipheriv('aes-256-gcm', wrapKey, Buffer.from(identity.iv, 'base64'));
     d.setAuthTag(raw.subarray(raw.length - 16));
     return Buffer.concat([d.update(raw.subarray(0, raw.length - 16)), d.final()]).toString('base64');
+}
+
+/** Logs a fixture user in with the legacy password and migrates it. Returns session data. */
+export async function migrateLegacyUser(srv, META, user, { withIdentity = true } = {}) {
+    const password = META.passwords[user];
+    const login = await srv.call('POST', '/api/auth/login', { body: { username: user, password } });
+    if (login.status !== 200) throw new Error(`legacy login failed for ${user}: ${login.status}`);
+    const { token, credential_migration } = login.body;
+    const salt = cred.newKdfSalt();
+    const iterations = cred.KDF_ITERATIONS;
+    let authKey, identity;
+    if (withIdentity) {
+        ({ authKey, identity } = wrapIdentityV2(META.private_keys_pkcs8[user], META.public_keys[user], password, salt, iterations));
+    } else {
+        ({ authKey } = cred.deriveCredentialsNode(password, salt, iterations));
+    }
+    const r = await srv.call('POST', '/api/auth/migrate-credentials', {
+        token,
+        body: { ticket: credential_migration.ticket, auth_key: authKey, kdf_salt: salt, kdf_iterations: iterations, ...(identity ? { identity } : {}) },
+    });
+    if (r.status !== 200) throw new Error(`migration failed for ${user}: ${r.status} ${JSON.stringify(r.body)}`);
+    return { token, password, authKey, salt, iterations, identity };
+}
+
+/** Body for PUT /me/password built like the browser does it. */
+export function changePasswordBody(session, newPassword, pkcs8B64, publicKeyB64, { keepSalt = false } = {}) {
+    const newSalt = keepSalt ? session.salt : cred.newKdfSalt();
+    const w = pkcs8B64
+        ? wrapIdentityV2(pkcs8B64, publicKeyB64, newPassword, newSalt)
+        : { authKey: cred.deriveCredentialsNode(newPassword, newSalt).authKey, identity: undefined };
+    return {
+        newSalt, newAuthKey: w.authKey, identity: w.identity,
+        body: {
+            current_auth_key: session.authKey, new_auth_key: w.authKey,
+            new_kdf_salt: newSalt, new_kdf_iterations: cred.KDF_ITERATIONS,
+            ...(w.identity ? { identity: w.identity } : {}),
+        },
+    };
 }

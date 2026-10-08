@@ -57,7 +57,10 @@ function findUserWithPassword(id) {
         id,
         username,
         password_hash,
-        is_admin
+        is_admin,
+        auth_scheme,
+        kdf_salt,
+        kdf_iterations
       FROM users
       WHERE id = ?
     `)
@@ -617,69 +620,61 @@ async function updatePassword(userId, newPassword) {
  * Password changes must never create or replace an
  * E2EE identity.
  */
-async function changePasswordWithIdentity(
+// F12: change of the account credentials (scheme 2 only). The new authKey is
+// bcrypt'd, the account salt is replaced by a FRESH one, and the identity is
+// re-wrapped in the browser under the new wrap key. Password and identity are
+// committed in one transaction; the public key is never part of the update.
+// Compare-and-set on the old hash makes two concurrent changes mutually
+// exclusive instead of last-writer-wins.
+async function changeCredentialsV2(
   userId,
-  newPassword,
-  identity
+  {
+    currentHash,
+    newAuthKey,
+    kdfSalt,
+    kdfIterations,
+    identity
+  }
 ) {
 
   const db = getDb();
 
   const hash =
     await hashPassword(
-      newPassword
+      newAuthKey
     );
-
 
   const transaction =
     db.transaction(() => {
 
-      /*
-       * Update the normal account password.
-       */
-      const passwordResult =
+      const r =
         db.prepare(`
           UPDATE users
-          SET password_hash = ?
+          SET
+            password_hash = ?,
+            kdf_salt = ?,
+            kdf_iterations = ?,
+            must_change_password = 0
           WHERE id = ?
+            AND auth_scheme = 2
+            AND password_hash = ?
         `).run(
           hash,
-          userId
+          kdfSalt,
+          kdfIterations,
+          userId,
+          currentHash
         );
 
-
-      if (passwordResult.changes !== 1) {
-        throw new Error(
-          'Failed to update password'
-        );
+      if (r.changes !== 1) {
+        return { ok: false, reason: 'conflict' };
       }
 
-
-      /*
-       * If there is no identity payload,
-       * only change the account password.
-       *
-       * This keeps password changing possible
-       * for accounts that do not have an identity
-       * key yet.
-       */
       if (!identity) {
-        return;
+        return { ok: true };
       }
 
-
-      /*
-       * Update ONLY the encrypted identity data.
-       *
-       * public_key is intentionally absent here.
-       *
-       * Therefore:
-       *
-       *     old public key === new public key
-       *
-       * and the X25519 identity itself never changes.
-       */
-      const identityResult =
+      const i =
         db.prepare(`
           UPDATE identity_keys
           SET
@@ -703,28 +698,17 @@ async function changePasswordWithIdentity(
           userId
         );
 
-
-      if (identityResult.changes !== 1) {
+      if (i.changes !== 1) {
+        // rolls the password change back as well
         throw new Error(
           'Failed to update identity encryption'
         );
       }
+
+      return { ok: true };
     });
 
-
-  /*
-   * better-sqlite3 transactions are synchronous,
-   * so the callback itself is synchronous.
-   *
-   * The password hash was already generated
-   * before entering the transaction.
-   */
-  transaction();
-
-
-  return {
-    success: true
-  };
+  return transaction();
 }
 
 
@@ -910,7 +894,7 @@ module.exports = {
   updateAvatar,
   updateBanner,
   updatePassword,
-  changePasswordWithIdentity,
+  changeCredentialsV2,
 
   getStorageUsage,
 

@@ -4,11 +4,12 @@ const router = express.Router();
 const { authenticate } = require('../middleware/authenticate');
 const { avatarMediaAuth } = require('../middleware/mediaAuth');
 const { asyncHandler } = require('../middleware/asyncHandler');
-const { pushTokenLimiter } = require('../middleware/rateLimiter');
+const { pushTokenLimiter, identityRotateRateLimiter } = require('../middleware/rateLimiter');
 
 const {
     getIdentityKey,
-    saveIdentityKey
+    saveIdentityKey,
+    rotateIdentityKey
 } = require('../controllers/me.controller');
 
 const {
@@ -104,6 +105,13 @@ router.put(
     '/identity-key',
     authenticate,
     saveIdentityKey
+);
+
+router.post(
+    '/identity-key/rotate',
+    authenticate,
+    identityRotateRateLimiter,
+    asyncHandler(rotateIdentityKey)
 );
 
 router.get(

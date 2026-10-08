@@ -612,7 +612,17 @@ const migrateCredentialsRateLimiter =
     message: 'Too many requests, please try again later'
   });
 
+// Replacing an identity key pair is rare and security-critical.
+const identityRotateRateLimiter =
+  createRateLimiter({
+    windowMs: 60 * 60 * 1000,
+    max: Number(process.env.IDENTITY_ROTATE_MAX_PER_HOUR) || 5,
+    keyFn: userOrIpKey,
+    message: 'Too many requests, please try again later'
+  });
+
 module.exports = {
+  identityRotateRateLimiter,
   kdfParamsRateLimiter,
   migrateCredentialsRateLimiter,
   loginRateLimiter,

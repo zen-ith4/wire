@@ -24,7 +24,18 @@ mock.module(jsPath('crypto/identity.js'), {
         encryptIdentityPrivateKey: async () => ({}),
         deriveIdentityUnlockKey: async () => ({}),
         decryptIdentityPrivateKeyWithDerivedKey: async () => ({}),
+        decryptIdentityPkcs8: async () => ({}),
+        encryptIdentityPkcs8: async () => ({}),
+        assertKnownIdentityFormat: () => {},
     },
+});
+// identity-service.js now also imports the account-KDF helpers and the migration builder
+// (F12); they pull in api.js/auth.js, which this test does not need.
+mock.module(jsPath('crypto/account-kdf.js'), {
+    namedExports: { fetchOwnKdfParams: async () => ({ scheme: 1 }), pinScheme2: () => {} },
+});
+mock.module(jsPath('crypto/credential-migration.js'), {
+    namedExports: { buildMigrationPayload: async () => ({ body: {} }) },
 });
 mock.module(jsPath('core/server.js'), {
     namedExports: { resolveServerUrl: (u) => u },

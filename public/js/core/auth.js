@@ -9,8 +9,21 @@ import {
 import {
   createIdentity,
   restoreIdentity,
-  restoreIdentityWithUnlockKey
+  restoreIdentityWithUnlockKey,
+  migrateLegacyAccount
 } from '../crypto/identity-service.js';
+
+import {
+  deriveCredentials,
+  generateKdfSalt,
+  KDF_ITERATIONS
+} from '../crypto/credentials.js';
+
+import {
+  fetchPublicKdfParams,
+  pinScheme2,
+  MIN_PASSWORD_LENGTH
+} from '../crypto/account-kdf.js';
 
 import {
   idbStoreUnlockKey,
@@ -28,6 +41,14 @@ let token = localStorage.getItem('token');
  * Never store this in localStorage/sessionStorage.
  */
 let pendingVerification = null;
+
+/*
+ * F12: set when a LEGACY login (raw password, account not upgraded yet) hands out
+ * a single-use migration ticket. initializeIdentity() consumes it right after the
+ * login, while the password is still at hand, and upgrades the account. Memory
+ * only.
+ */
+let pendingMigration = null;
 
 /* =========================================================
  * Token / User
@@ -386,9 +407,59 @@ export async function initializeIdentity(
     );
   }
 
+  /*
+   * F12: a legacy login was just completed with this password. Upgrade the
+   * account now (new credentials + identity re-wrapped, same key pair). It is
+   * all-or-nothing on the server; if anything fails here the account simply
+   * stays legacy and the next login tries again. The cached auto-unlock key
+   * belonged to the old wrapper, so it is dropped either way.
+   */
+  let migrated = false;
+
+  if (pendingMigration) {
+    const m = pendingMigration;
+
+    pendingMigration = null;
+
+    try {
+      await migrateLegacyAccount(
+        password,
+        m.ticket,
+        token,
+        m.username
+      );
+
+      migrated = true;
+
+      await clearPersistedUnlockKey(
+        currentUser
+      );
+
+    } catch (error) {
+      console.warn(
+        '[Identity] Credential migration skipped, account stays on the legacy login:',
+        error?.message || error
+      );
+    }
+  }
+
+  const identityNow =
+    migrated
+      ? await api(
+          '/api/me/identity-key',
+          {
+            method: 'GET',
+
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          }
+        )
+      : identity;
+
   let result;
 
-  if (!identity.exists) {
+  if (!identityNow.exists) {
     console.log(
       '[Identity] Creating identity...'
     );
@@ -508,6 +579,43 @@ export async function login(
   username,
   password
 ) {
+  pendingMigration = null;
+
+  // F12: ask which scheme this account uses. Upgraded accounts: derive in the
+  // browser and send only the authKey (the salt is public; unknown usernames get
+  // a deterministic fake one, so this reveals nothing). Accounts not upgraded
+  // yet are logged in with the raw password ONE last time and migrated right
+  // after (see initializeIdentity). If this browser has seen the account
+  // upgraded, fetchPublicKdfParams() refuses to fall back to a raw password.
+  const kdf =
+    await fetchPublicKdfParams(
+      username
+    );
+
+  let credentials;
+
+  if (kdf.scheme === 2) {
+    const { authKey, wrapKeyBytes } =
+      await deriveCredentials(
+        password,
+        kdf.salt,
+        kdf.iterations
+      );
+
+    wrapKeyBytes.fill(0);
+
+    credentials = {
+      username,
+      auth_key: authKey
+    };
+
+  } else {
+    credentials = {
+      username,
+      password
+    };
+  }
+
   const data =
     await api(
       '/api/auth/login',
@@ -518,10 +626,7 @@ export async function login(
           'Content-Type': 'application/json'
         },
 
-        body: JSON.stringify({
-          username,
-          password
-        })
+        body: JSON.stringify(credentials)
       }
     );
 
@@ -583,7 +688,23 @@ export async function login(
     accent_color: data.accent_color ?? null
   });
 
+  if (kdf.scheme === 2) {
+    pinScheme2(data.username);
+  }
+
+  rememberMigrationTicket(data);
+
   return data;
+}
+
+function rememberMigrationTicket(data) {
+  const ticket =
+    data?.credential_migration?.ticket;
+
+  pendingMigration =
+    typeof ticket === 'string' && ticket
+      ? { ticket, username: data.username }
+      : null;
 }
 
 /* =========================================================
@@ -642,6 +763,8 @@ export async function verifyTwoFactor(
     accent_color: data.accent_color ?? null
   });
 
+  rememberMigrationTicket(data);
+
   return data;
 }
 
@@ -654,6 +777,32 @@ export async function register(
   email,
   password
 ) {
+  // Client-side policy: the server never sees the password, so it cannot
+  // enforce a length. (Not checked at login: accounts created earlier may have
+  // shorter passwords and must still be able to sign in.)
+  if (
+    typeof password !== 'string' ||
+    password.length < MIN_PASSWORD_LENGTH
+  ) {
+    throw new Error(
+      `Password must be at least ${MIN_PASSWORD_LENGTH} characters`
+    );
+  }
+
+  // F12: a fresh salt is generated here and the KDF runs in the browser; the
+  // server receives the authKey and the salt, never the password.
+  const kdfSalt =
+    generateKdfSalt();
+
+  const { authKey, wrapKeyBytes } =
+    await deriveCredentials(
+      password,
+      kdfSalt,
+      KDF_ITERATIONS
+    );
+
+  wrapKeyBytes.fill(0);
+
   const data =
     await api(
       '/api/auth/register',
@@ -667,7 +816,9 @@ export async function register(
         body: JSON.stringify({
           username,
           email,
-          password
+          auth_key: authKey,
+          kdf_salt: kdfSalt,
+          kdf_iterations: KDF_ITERATIONS
         })
       }
     );
@@ -689,6 +840,8 @@ export async function register(
       );
     }
 
+    pinScheme2(data.username);
+
     pendingVerification = {
       userId: data.id,
       username: data.username,
@@ -706,6 +859,8 @@ export async function register(
   }
 
   setToken(data.token);
+
+  pinScheme2(data.username);
 
   setCurrentUser({
     id: data.id,

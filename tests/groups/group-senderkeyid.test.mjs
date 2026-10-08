@@ -43,10 +43,10 @@ test('decorate() attaches senderKeyId, usable with decryptAttachmentForGroup', a
     t.after(() => bob.window.close());
 
     const aliceId = await signUpAndUnlock(alice, {
-        username: 'alice_sk', email: 'alice_sk@example.test', password: 'pw-alice-sk-1',
+        username: 'alice_sk', email: 'alice_sk@example.test', password: 'pw-alice-sk-0001',
     });
     const bobId = await signUpAndUnlock(bob, {
-        username: 'bob_sk', email: 'bob_sk@example.test', password: 'pw-bob-sk-1',
+        username: 'bob_sk', email: 'bob_sk@example.test', password: 'pw-bob-sk-0001',
     });
 
     const group = await apiCall(server.origin, aliceId.token, '/api/groups', {

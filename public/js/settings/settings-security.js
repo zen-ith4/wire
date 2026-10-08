@@ -5,8 +5,17 @@ import {
 } from '../core/utils.js';
 
 import {
-  reencryptIdentity
+  prepareCredentialChange
 } from '../crypto/identity-service.js';
+
+import {
+  MIN_PASSWORD_LENGTH
+} from '../crypto/account-kdf.js';
+
+import {
+  clearPersistedUnlockKey,
+  getCurrentUser
+} from '../core/auth.js';
 
 import {
   renderSettings
@@ -73,9 +82,10 @@ async function changePassword() {
     return;
   }
 
-  if (newPassword.length < 6) {
+  // Client-side policy only: the server never sees the password.
+  if (newPassword.length < MIN_PASSWORD_LENGTH) {
     errorElement.textContent =
-      'New password must be at least 6 characters';
+      `New password must be at least ${MIN_PASSWORD_LENGTH} characters`;
 
     return;
   }
@@ -99,11 +109,11 @@ async function changePassword() {
 
   try {
     /*
-     * The encrypted identity must be re-encrypted with the new
-     * password before the backend accepts the password change.
+     * F12: the browser derives everything (authKeys, a fresh salt, the
+     * re-encrypted identity). The server never receives a password.
      */
-    const encryptedIdentity =
-      await reencryptIdentity(
+    const change =
+      await prepareCredentialChange(
         currentPassword,
         newPassword,
         localStorage.getItem('token')
@@ -121,18 +131,15 @@ async function changePassword() {
             'application/json'
         },
 
-        body: JSON.stringify({
-          current_password:
-            currentPassword,
-
-          new_password:
-            newPassword,
-
-          identity:
-            encryptedIdentity
-        })
+        body: JSON.stringify(change)
       }
     );
+
+    // The cached auto-unlock key belongs to the old wrapKey and can no longer
+    // open the identity: drop it (the next launch asks for the new password).
+    await clearPersistedUnlockKey(
+      getCurrentUser()
+    ).catch(() => {});
 
     currentInput.value = '';
     newInput.value = '';

@@ -22,6 +22,7 @@ const {
   updateBio,
   updateAccentColor,
   changePassword,
+  getOwnKdfParams,
   uploadAvatar,
   removeAvatar,
   getAvatar,
@@ -36,6 +37,8 @@ const {
 
 
 router.get('/', authenticate, getMe);
+
+router.get('/kdf-params', authenticate, getOwnKdfParams);
 
 router.put('/', authenticate, updateBio);
 

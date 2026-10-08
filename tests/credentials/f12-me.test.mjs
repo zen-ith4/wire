@@ -206,3 +206,11 @@ test('concurrent password changes: exactly one wins and identity + password stay
     assert.equal(row('SELECT kdf_salt FROM users WHERE id = ?', META.ids.bob).kdf_salt, winner.newSalt);
     assert.equal(row('SELECT salt FROM identity_keys WHERE user_id = ?', META.ids.bob).salt, winner.newSalt);
 });
+
+test('GET /me/kdf-params: {scheme:1} while legacy, the account salt once migrated, 401 without a session', async () => {
+    const legacy = await srv.call('POST', '/api/auth/register', { body: { username: 'kdfparams1', email: 'k1@x.invalid', password: 'legacy-kdf-params-pass' } });
+    assert.deepEqual((await srv.call('GET', '/api/me/kdf-params', { token: legacy.body.token })).body, { scheme: 1 });
+    const s = await migrateLegacyUser(srv, META, 'dave');
+    assert.deepEqual((await srv.call('GET', '/api/me/kdf-params', { token: s.token })).body, { scheme: 2, salt: s.salt, iterations: cred.KDF_ITERATIONS });
+    assert.equal((await srv.call('GET', '/api/me/kdf-params')).status, 401);
+});

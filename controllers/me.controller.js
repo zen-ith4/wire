@@ -106,6 +106,31 @@ function updateBio(req, res) {
 }
 
 
+// GET /me/kdf-params  -  the caller's own account KDF parameters. The browser
+// needs them to derive the current authKey for "confirm your password" steps
+// and the wrapKey for identity creation. {scheme:1} while not yet migrated.
+function getOwnKdfParams(req, res) {
+  const user =
+    findUserWithPassword(req.user.id);
+
+  if (!user) {
+    return res.status(404).json({
+      error: 'User not found'
+    });
+  }
+
+  if (user.auth_scheme !== 2) {
+    return res.json({ scheme: 1 });
+  }
+
+  return res.json({
+    scheme: 2,
+    salt: user.kdf_salt,
+    iterations: user.kdf_iterations
+  });
+}
+
+
 // PUT /me/password
 //
 // F12: no raw password ever reaches the server. The browser derives, from the
@@ -1054,6 +1079,7 @@ module.exports = {
   updateBio,
   updateAccentColor,
   changePassword,
+  getOwnKdfParams,
   uploadAvatar,
   removeAvatar,
   getAvatar,

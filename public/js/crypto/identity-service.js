@@ -1,8 +1,9 @@
 import {
     createEncryptedIdentity,
     restoreIdentityFromServer,
-    decryptIdentityPrivateKey,
-    encryptIdentityPrivateKey,
+    decryptIdentityPkcs8,
+    encryptIdentityPkcs8,
+    assertKnownIdentityFormat,
     deriveIdentityUnlockKey,
     decryptIdentityPrivateKeyWithDerivedKey
 } from "./identity.js";
@@ -10,6 +11,21 @@ import {
 import {
     resolveServerUrl
 } from "../core/server.js";
+
+import {
+    fetchOwnKdfParams,
+    pinScheme2
+} from "./account-kdf.js";
+
+import {
+    deriveCredentials,
+    generateKdfSalt,
+    KDF_ITERATIONS
+} from "./credentials.js";
+
+import {
+    buildMigrationPayload
+} from "./credential-migration.js";
 
 const IDENTITY_ENDPOINT =
     "/api/me/identity-key";
@@ -324,9 +340,22 @@ export async function createIdentity(
         "[IdentityService] Generating encrypted identity..."
     );
 
+    // Scheme 2: the identity is wrapped under THIS account's KDF parameters
+    // (the server refuses anything else), so any device can re-derive the
+    // wrapKey from the password alone. A not-yet-migrated account gets the
+    // legacy v1 wrapper (it moves to v2 at migration).
+    const accountKdf =
+        await fetchOwnKdfParams();
+
     const identity =
         await createEncryptedIdentity(
-            password
+            password,
+            accountKdf.scheme === 2
+                ? {
+                    salt: accountKdf.salt,
+                    iterations: accountKdf.iterations
+                }
+                : null
         );
 
     console.log(
@@ -368,7 +397,8 @@ export async function createIdentity(
         await deriveIdentityUnlockKey(
             password,
             identity.salt,
-            identity.kdfParams
+            identity.kdfParams,
+            identity.version
         );
 
     return {
@@ -449,7 +479,8 @@ export async function restoreIdentity(
         await deriveIdentityUnlockKey(
             password,
             identity.salt,
-            identity.kdfParams
+            identity.kdfParams,
+            identity.version
         );
 
     return {
@@ -501,21 +532,9 @@ export async function restoreIdentityWithUnlockKey(
         );
     }
 
-    if (
-        identity.version !== 1
-    ) {
-        throw new Error(
-            "Unsupported identity version"
-        );
-    }
-
-    if (
-        identity.kdf !== "PBKDF2-SHA-256"
-    ) {
-        throw new Error(
-            "Unsupported identity KDF"
-        );
-    }
+    assertKnownIdentityFormat(
+        identity
+    );
 
     console.log(
         "[IdentityService] Auto-unlocking identity..."
@@ -546,19 +565,104 @@ export async function restoreIdentityWithUnlockKey(
 }
 
 /* =========================================================
- * Re-encrypt identity
+ * Migrate a legacy account (one time, right after a legacy login)
  * ========================================================= */
 
 /*
- * Re-encrypt the existing identity private key
- * with a new account password.
+ * The legacy login just succeeded with the raw password and the server handed
+ * out a single-use ticket. Derive the new credentials locally, re-wrap the
+ * identity under the new wrapKey (same key pair, same public key) and send both
+ * in ONE request; the server commits them in one transaction.
  *
- * Does NOT generate a new X25519 key pair.
- * Does NOT upload anything.
- * Public key remains unchanged.
+ * Throws (account stays legacy, nothing changed) if the identity cannot be
+ * decrypted with this password or does not match its public key.
  */
+export async function migrateLegacyAccount(
+    password,
+    ticket,
+    token,
+    username
+) {
+    requireToken(token);
 
-export async function reencryptIdentity(
+    const identity =
+        await fetchIdentity(token);
+
+    const { body } =
+        await buildMigrationPayload({
+            password,
+            ticket,
+            identity
+        });
+
+    const response =
+        await fetch(
+            resolveServerUrl(
+                "/api/auth/migrate-credentials"
+            ),
+            {
+                method: "POST",
+
+                headers: {
+                    "Content-Type":
+                        "application/json",
+
+                    "Authorization":
+                        `Bearer ${token}`
+                },
+
+                body: JSON.stringify(body)
+            }
+        );
+
+    let data = null;
+
+    try {
+        data = await response.json();
+    } catch {
+        data = null;
+    }
+
+    // 409 already_migrated: an earlier attempt of ours (response lost) or another
+    // device won. The password is the same, so the account is on scheme 2 either way.
+    if (
+        !response.ok &&
+        !(response.status === 409 && data?.code === "already_migrated")
+    ) {
+        throw new Error(
+            data?.error ||
+            `Credential migration failed (${response.status})`
+        );
+    }
+
+    pinScheme2(username);
+
+    return {
+        migrated: true
+    };
+}
+
+/* =========================================================
+ * Change password (client side of PUT /api/me/password)
+ * ========================================================= */
+
+/*
+ * F12: prepares EVERYTHING the server needs to change the password without it
+ * ever seeing a password:
+ *
+ *   - current_auth_key: derived from the current password (proves knowledge),
+ *   - a fresh salt, and new_auth_key / wrapKey derived from the new password,
+ *   - the existing identity private key, decrypted with the OLD wrapKey and
+ *     re-encrypted with the NEW wrapKey.
+ *
+ * Works on the raw PKCS#8 bytes: the restored identity CryptoKey is
+ * non-extractable on purpose, so it cannot be re-exported (the pre-F12 code
+ * tried exactly that and failed).
+ *
+ * Does NOT generate a new X25519 key pair. Does NOT upload anything.
+ * The public key remains unchanged.
+ */
+export async function prepareCredentialChange(
     currentPassword,
     newPassword,
     token
@@ -583,53 +687,101 @@ export async function reencryptIdentity(
         );
     }
 
+    const oldKdf =
+        await fetchOwnKdfParams();
+
+    if (oldKdf.scheme !== 2) {
+        const err =
+            new Error(
+                "Log out and sign in again to upgrade this account before changing the password"
+            );
+
+        err.code = "migrate_first";
+
+        throw err;
+    }
+
+    const old =
+        await deriveCredentials(
+            currentPassword,
+            oldKdf.salt,
+            oldKdf.iterations
+        );
+
+    old.wrapKeyBytes.fill(0);
+
+    const newSalt =
+        generateKdfSalt();
+
+    const next =
+        await deriveCredentials(
+            newPassword,
+            newSalt,
+            KDF_ITERATIONS
+        );
+
+    next.wrapKeyBytes.fill(0);
+
+    const result = {
+        current_auth_key:
+            old.authKey,
+
+        new_auth_key:
+            next.authKey,
+
+        new_kdf_salt:
+            newSalt,
+
+        new_kdf_iterations:
+            KDF_ITERATIONS
+    };
+
     const identity =
         await fetchIdentity(token);
 
     if (!identity.exists) {
-        return null;
+        return result;
     }
 
-    if (
-        identity.version !== 1
-    ) {
-        throw new Error(
-            "Unsupported identity version"
-        );
-    }
-
-    if (
-        identity.kdf !== "PBKDF2-SHA-256"
-    ) {
-        throw new Error(
-            "Unsupported identity KDF"
-        );
-    }
+    assertKnownIdentityFormat(
+        identity
+    );
 
     console.log(
         "[IdentityService] Decrypting existing identity..."
     );
 
-    const privateKey =
-        await decryptIdentityPrivateKey(
+    const pkcs8 =
+        await decryptIdentityPkcs8(
             identity.encryptedPrivateKey,
             currentPassword,
             identity.salt,
             identity.iv,
-            identity.kdfParams
+            identity.kdfParams,
+            identity.version
         );
 
     console.log(
         "[IdentityService] Re-encrypting identity with new password..."
     );
 
-    const encrypted =
-        await encryptIdentityPrivateKey(
-            privateKey,
-            newPassword
-        );
+    let encrypted;
 
-    return {
+    try {
+        encrypted =
+            await encryptIdentityPkcs8(
+                pkcs8,
+                newPassword,
+                {
+                    salt: newSalt,
+                    iterations: KDF_ITERATIONS
+                }
+            );
+    } finally {
+        new Uint8Array(pkcs8).fill(0);
+    }
+
+    result.identity = {
         encryptedPrivateKey:
             encrypted.encryptedPrivateKey,
 
@@ -648,6 +800,8 @@ export async function reencryptIdentity(
         version:
             encrypted.version
     };
+
+    return result;
 }
 
 /* =========================================================

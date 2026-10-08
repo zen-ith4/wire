@@ -6,6 +6,13 @@ const PRIVATE_KEY_ALGORITHM = {
     name: "X25519",
 };
 
+import {
+    deriveCredentials,
+    KDF_ITERATIONS as V2_KDF_ITERATIONS,
+    KDF_NAME as V2_KDF_NAME,
+    IDENTITY_VERSION as V2_IDENTITY_VERSION
+} from "./credentials.js";
+
 const KDF_NAME = "PBKDF2-SHA-256";
 const KDF_HASH = "SHA-256";
 const KDF_ITERATIONS = 600000;
@@ -247,9 +254,105 @@ async function deriveEncryptionKey(
 }
 
 
+/*
+ * F12 (scheme 2) wrapper: the identity is encrypted with the wrapKey that the
+ * password derives together with the authKey (credentials.js). The salt and
+ * iteration count are the ACCOUNT's (the server enforces that they match
+ * users.kdf_salt), so any device re-derives the same wrapKey from the password.
+ * The wrapKey is never sent anywhere; the authKey cannot be turned into it.
+ */
+async function deriveWrapKey(password, saltB64, iterations) {
+    validatePassword(password);
+
+    const { wrapKeyBytes } =
+        await deriveCredentials(password, saltB64, iterations);
+
+    try {
+        return await importAesGcmKey(wrapKeyBytes, false);
+    } finally {
+        wrapKeyBytes.fill(0);
+    }
+}
+
+
+/*
+ * Wrap an already-exported PKCS#8 buffer (v2). The password-change and
+ * migration paths use this so the identity never has to be imported as an
+ * extractable CryptoKey.
+ */
+export async function encryptIdentityPkcs8(
+    privateKeyBytes,
+    password,
+    kdf
+) {
+    ensureWebCrypto();
+    validatePassword(password);
+
+    if (
+        !kdf ||
+        typeof kdf.salt !== "string" ||
+        !Number.isInteger(kdf.iterations)
+    ) {
+        throw new Error(
+            "Account KDF parameters are required"
+        );
+    }
+
+    const iv =
+        crypto.getRandomValues(
+            new Uint8Array(AES_IV_LENGTH)
+        );
+
+    const encryptionKey =
+        await deriveWrapKey(
+            password,
+            kdf.salt,
+            kdf.iterations
+        );
+
+    const encrypted =
+        await crypto.subtle.encrypt(
+            {
+                name: "AES-GCM",
+                iv
+            },
+            encryptionKey,
+            privateKeyBytes
+        );
+
+    return {
+        encryptedPrivateKey:
+            arrayBufferToBase64(encrypted),
+
+        salt:
+            kdf.salt,
+
+        iv:
+            arrayBufferToBase64(iv),
+
+        kdf:
+            V2_KDF_NAME,
+
+        kdfParams: {
+            iterations:
+                kdf.iterations,
+
+            hash:
+                KDF_HASH
+        },
+
+        version:
+            V2_IDENTITY_VERSION
+    };
+}
+
+
+// kdf = { salt, iterations } of the account -> v2 wrapper (scheme 2).
+// kdf omitted -> the legacy v1 wrapper (only reachable for unmigrated accounts).
 export async function encryptIdentityPrivateKey(
     privateKey,
-    password
+    password,
+    kdf = null
 ) {
     ensureWebCrypto();
     validatePassword(password);
@@ -265,6 +368,18 @@ export async function encryptIdentityPrivateKey(
             "pkcs8",
             privateKey
         );
+
+    if (kdf) {
+        try {
+            return await encryptIdentityPkcs8(
+                privateKeyBytes,
+                password,
+                kdf
+            );
+        } finally {
+            new Uint8Array(privateKeyBytes).fill(0);
+        }
+    }
 
     const salt =
         crypto.getRandomValues(
@@ -320,12 +435,18 @@ export async function encryptIdentityPrivateKey(
 }
 
 
-export async function decryptIdentityPrivateKey(
+/*
+ * Decrypts to the raw PKCS#8 bytes (caller must zero them). Handles both
+ * wrappers: v1 (PBKDF2(password, identity salt) -> AES-GCM) and v2 (account
+ * salt, PBKDF2+HKDF wrapKey).
+ */
+export async function decryptIdentityPkcs8(
     encryptedPrivateKey,
     password,
     salt,
     iv,
-    kdfParams
+    kdfParams,
+    version = 1
 ) {
     ensureWebCrypto();
     validatePassword(password);
@@ -352,9 +473,12 @@ export async function decryptIdentityPrivateKey(
     const hash =
         params.hash;
 
+    const isV2 =
+        version === V2_IDENTITY_VERSION;
+
     if (
         !Number.isInteger(iterations) ||
-        iterations < 100000
+        iterations < (isV2 ? V2_KDF_ITERATIONS : 100000)
     ) {
         throw new Error(
             "Invalid PBKDF2 iterations"
@@ -367,11 +491,6 @@ export async function decryptIdentityPrivateKey(
         );
     }
 
-    const saltBytes =
-        new Uint8Array(
-            base64ToArrayBuffer(salt)
-        );
-
     const ivBytes =
         new Uint8Array(
             base64ToArrayBuffer(iv)
@@ -383,14 +502,6 @@ export async function decryptIdentityPrivateKey(
         );
 
     if (
-        saltBytes.length !== SALT_LENGTH
-    ) {
-        throw new Error(
-            "Invalid salt length"
-        );
-    }
-
-    if (
         ivBytes.length !== AES_IV_LENGTH
     ) {
         throw new Error(
@@ -398,39 +509,85 @@ export async function decryptIdentityPrivateKey(
         );
     }
 
-    const encryptionKey =
-        await deriveEncryptionKey(
-            password,
-            saltBytes,
-            iterations
-        );
+    let encryptionKey;
 
-    let decrypted;
+    if (isV2) {
+        encryptionKey =
+            await deriveWrapKey(
+                password,
+                salt,
+                iterations
+            );
+    } else {
+        const saltBytes =
+            new Uint8Array(
+                base64ToArrayBuffer(salt)
+            );
+
+        if (
+            saltBytes.length !== SALT_LENGTH
+        ) {
+            throw new Error(
+                "Invalid salt length"
+            );
+        }
+
+        encryptionKey =
+            await deriveEncryptionKey(
+                password,
+                saltBytes,
+                iterations
+            );
+    }
 
     try {
-        decrypted =
-            await crypto.subtle.decrypt(
-                {
-                    name: "AES-GCM",
-                    iv: ivBytes
-                },
-                encryptionKey,
-                encryptedBytes
-            );
+        return await crypto.subtle.decrypt(
+            {
+                name: "AES-GCM",
+                iv: ivBytes
+            },
+            encryptionKey,
+            encryptedBytes
+        );
     } catch {
         throw new Error(
             "Unable to decrypt identity key"
         );
     }
+}
 
-    return importPrivateKey(
-        decrypted
-    );
+
+export async function decryptIdentityPrivateKey(
+    encryptedPrivateKey,
+    password,
+    salt,
+    iv,
+    kdfParams,
+    version = 1
+) {
+    const decrypted =
+        await decryptIdentityPkcs8(
+            encryptedPrivateKey,
+            password,
+            salt,
+            iv,
+            kdfParams,
+            version
+        );
+
+    try {
+        return await importPrivateKey(
+            decrypted
+        );
+    } finally {
+        new Uint8Array(decrypted).fill(0);
+    }
 }
 
 
 export async function createEncryptedIdentity(
-    password
+    password,
+    kdf = null
 ) {
     validatePassword(password);
 
@@ -445,7 +602,8 @@ export async function createEncryptedIdentity(
     const encrypted =
         await encryptIdentityPrivateKey(
             keyPair.privateKey,
-            password
+            password,
+            kdf
         );
 
     return {
@@ -453,6 +611,24 @@ export async function createEncryptedIdentity(
         publicKey,
         ...encrypted
     };
+}
+
+
+// (version, kdf) must be exactly one of the two known pairs.
+export function assertKnownIdentityFormat(identity) {
+    const v1 =
+        identity?.version === IDENTITY_VERSION &&
+        identity?.kdf === KDF_NAME;
+
+    const v2 =
+        identity?.version === V2_IDENTITY_VERSION &&
+        identity?.kdf === V2_KDF_NAME;
+
+    if (!v1 && !v2) {
+        throw new Error(
+            "Unsupported identity version or KDF"
+        );
+    }
 }
 
 
@@ -469,21 +645,7 @@ export async function restoreIdentityFromServer(
         );
     }
 
-    if (
-        identity.version !== IDENTITY_VERSION
-    ) {
-        throw new Error(
-            "Unsupported identity version"
-        );
-    }
-
-    if (
-        identity.kdf !== KDF_NAME
-    ) {
-        throw new Error(
-            "Unsupported identity KDF"
-        );
-    }
+    assertKnownIdentityFormat(identity);
 
     const privateKey =
         await decryptIdentityPrivateKey(
@@ -491,7 +653,8 @@ export async function restoreIdentityFromServer(
             password,
             identity.salt,
             identity.iv,
-            identity.kdfParams
+            identity.kdfParams,
+            identity.version
         );
 
     return {
@@ -528,13 +691,32 @@ export async function restoreIdentityFromServer(
 export async function deriveIdentityUnlockKey(
     password,
     salt,
-    kdfParams
+    kdfParams,
+    version = 1
 ) {
     ensureWebCrypto();
     validatePassword(password);
 
     if (typeof salt !== "string") {
         throw new Error("Invalid salt");
+    }
+
+    if (version === V2_IDENTITY_VERSION) {
+        // v2: the cached secret is the wrapKey (never the password, never the
+        // authKey). The floor on the iteration count is enforced by
+        // deriveCredentials().
+        const { wrapKeyBytes } =
+            await deriveCredentials(
+                password,
+                salt,
+                kdfParams?.iterations
+            );
+
+        try {
+            return arrayBufferToBase64(wrapKeyBytes);
+        } finally {
+            wrapKeyBytes.fill(0);
+        }
     }
 
     const params =

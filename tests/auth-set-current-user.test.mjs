@@ -46,6 +46,7 @@ mock.module('/home/claude/wire/public/js/crypto/identity-service.js', {
         createIdentity: async () => ({}),
         restoreIdentity: async () => ({}),
         restoreIdentityWithUnlockKey: async () => ({}),
+        migrateLegacyAccount: async () => ({ migrated: true }),
     },
 });
 mock.module('/home/claude/wire/public/js/crypto/keys/unlock-key-store.js', {

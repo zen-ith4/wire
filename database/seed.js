@@ -1,5 +1,10 @@
 const bcrypt = require('bcryptjs');
 const constants = require('../config/constants');
+const {
+  deriveCredentialsNode,
+  newKdfSalt,
+  KDF_ITERATIONS
+} = require('../utils/credentials');
 
 function seedDatabase(db) {
   createDefaultAdmin(db);
@@ -17,31 +22,50 @@ function createDefaultAdmin(db) {
     return; 
   }
 
+  // Usernames are matched case-insensitively here: an existing 'Admin' (created
+  // by an older build) must not be shadowed by a second 'admin'.
   const existing = db.prepare(`
     SELECT id 
     FROM users 
-    WHERE username = ?
+    WHERE username = ? COLLATE NOCASE
   `).get(DEFAULT_ADMIN_USER);
 
   if (existing) {
     return existing.id;
   }
 
-  const hash = bcrypt.hashSync(
+  // F12: the seed is the one place where the SERVER HOST is handed a plaintext
+  // password (by its operator, via the environment). It derives exactly what a
+  // browser would (PBKDF2 + HKDF with a fresh salt) and stores bcrypt(authKey),
+  // so the account is a normal scheme-2 account and logs in like any other.
+  const kdfSalt = newKdfSalt();
+
+  const { authKey } = deriveCredentialsNode(
     DEFAULT_ADMIN_PASS,
-    12
+    kdfSalt,
+    KDF_ITERATIONS
+  );
+
+  const hash = bcrypt.hashSync(
+    authKey,
+    Number(process.env.BCRYPT_ROUNDS) || 12
   );
 
   const info = db.prepare(`
     INSERT INTO users (
       username,
       password_hash,
-      is_admin
+      is_admin,
+      auth_scheme,
+      kdf_salt,
+      kdf_iterations
     )
-    VALUES (?, ?, 1)
+    VALUES (?, ?, 1, 2, ?, ?)
   `).run(
-    DEFAULT_ADMIN_USER,
-    hash
+    String(DEFAULT_ADMIN_USER).trim().toLowerCase(),
+    hash,
+    kdfSalt,
+    KDF_ITERATIONS
   );
 
   console.log('✅ Default admin account created');

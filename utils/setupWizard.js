@@ -4,6 +4,11 @@ const path = require('path');
 const { Writable } = require('stream');
 
 const { hashPassword } = require('./password');
+const {
+    deriveCredentialsNode,
+    newKdfSalt,
+    KDF_ITERATIONS
+} = require('./credentials');
 const constants = require('../config/constants');
 const tlsSetup = require('./tlsSetup');
 
@@ -508,9 +513,9 @@ class SetupWizard {
                     true
                 );
 
-            if (password.length < 6) {
+            if (password.length < 12) {
                 console.log(
-                    'Error: Password must be at least 6 characters.\n'
+                    'Error: Password must be at least 12 characters.\n'
                 );
 
                 continue;
@@ -580,8 +585,19 @@ class SetupWizard {
             // 7. Hash Admin Password
             // ----------------------------------------------------
 
+            // F12: store exactly what a browser would derive (PBKDF2 + HKDF,
+            // fresh salt) so the admin logs in like any other account.
+            const kdfSalt = newKdfSalt();
+
+            const { authKey } =
+                deriveCredentialsNode(
+                    password,
+                    kdfSalt,
+                    KDF_ITERATIONS
+                );
+
             const hashedPassword =
-                await hashPassword(password);
+                await hashPassword(authKey);
 
             // Remove plaintext password reference
             password = null;
@@ -618,16 +634,21 @@ class SetupWizard {
                     email,
                     password_hash,
                     email_verified,
-                    is_admin
+                    is_admin,
+                    auth_scheme,
+                    kdf_salt,
+                    kdf_iterations
                 )
-                VALUES (?, ?, ?, ?, 1)
+                VALUES (?, ?, ?, ?, 1, 2, ?, ?)
             `);
 
             const result = stmt.run(
-                username,
+                String(username).trim().toLowerCase(),
                 email,
                 hashedPassword,
-                emailVerified
+                emailVerified,
+                kdfSalt,
+                KDF_ITERATIONS
             );
 
             const userId =

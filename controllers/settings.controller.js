@@ -11,6 +11,48 @@ const {
 } = require('../services/user.service');
 
 const { isOnline } = require('../services/presence.service');
+const { getDb } = require('../config/database');
+const { isValidAuthKey } = require('../utils/credentials');
+
+// F12: "confirm your password" steps send the authKey the browser derives from
+// the typed password (never the password). Returns the key to compare against
+// the stored bcrypt hash, or sends the error response itself and returns null.
+function readCurrentAuthKey(req, res) {
+  const body = req.body || {};
+
+  if ('current_password' in body) {
+    res.status(400).json({
+      error: 'Raw passwords are not accepted. Update the app.',
+      code: 'raw_password_rejected'
+    });
+
+    return null;
+  }
+
+  if (!isValidAuthKey(body.current_auth_key)) {
+    res.status(400).json({
+      error: 'Current password is required'
+    });
+
+    return null;
+  }
+
+  const user =
+    getDb()
+      .prepare('SELECT auth_scheme FROM users WHERE id = ?')
+      .get(req.user.id);
+
+  if (!user || user.auth_scheme !== 2) {
+    res.status(409).json({
+      error: 'Log in again to upgrade this account first',
+      code: 'migrate_first'
+    });
+
+    return null;
+  }
+
+  return body.current_auth_key;
+}
 const { emit } = require('../services/socket.service');
 
 
@@ -28,14 +70,10 @@ async function enableEmail2FA(req, res) {
   const userId = req.user.id;
 
   const currentPassword =
-    typeof req.body?.current_password === 'string'
-      ? req.body.current_password
-      : '';
+    readCurrentAuthKey(req, res);
 
   if (!currentPassword) {
-    return res.status(400).json({
-      error: 'Current password is required'
-    });
+    return;
   }
 
   try {
@@ -156,14 +194,10 @@ async function disableEmail2FA(req, res) {
   const userId = req.user.id;
 
   const currentPassword =
-    typeof req.body?.current_password === 'string'
-      ? req.body.current_password
-      : '';
+    readCurrentAuthKey(req, res);
 
   if (!currentPassword) {
-    return res.status(400).json({
-      error: 'Current password is required'
-    });
+    return;
   }
 
   try {

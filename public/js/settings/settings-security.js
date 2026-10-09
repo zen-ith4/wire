@@ -9,7 +9,8 @@ import {
 } from '../crypto/identity-service.js';
 
 import {
-  MIN_PASSWORD_LENGTH
+  MIN_PASSWORD_LENGTH,
+  deriveOwnAuthKey
 } from '../crypto/account-kdf.js';
 
 import {
@@ -379,8 +380,10 @@ function createEmail2FAController() {
               },
 
               body: JSON.stringify({
-                current_password:
-                  password
+                current_auth_key:
+                  await deriveOwnAuthKey(
+                    password
+                  )
               })
             }
           );
@@ -551,8 +554,10 @@ function createEmail2FAController() {
             },
 
             body: JSON.stringify({
-              current_password:
-                password
+              current_auth_key:
+                await deriveOwnAuthKey(
+                  password
+                )
             })
           }
         );

@@ -1,6 +1,7 @@
 const {
   authenticateUser,
-  registerUser
+  registerUser,
+  issueSession
 } = require('../services/auth.service');
 
 const {
@@ -354,7 +355,8 @@ async function verifyEmail(req, res) {
         email_verified,
         is_admin,
         is_active,
-        accent_color
+        accent_color,
+        must_change_password
       FROM users
       WHERE id = ?
     `).get(userId);
@@ -371,14 +373,8 @@ async function verifyEmail(req, res) {
   }
 
 
-  const token =
-    signToken({
-      id: user.id,
-      username: user.username,
-      is_admin: Boolean(
-        user.is_admin
-      )
-    });
+  const session =
+    issueSession(user);
 
 
   return res.json({
@@ -390,7 +386,7 @@ async function verifyEmail(req, res) {
       user.is_admin
     ),
     accent_color: user.accent_color || null,
-    token
+    ...session
   });
 }
 
@@ -570,7 +566,8 @@ async function verifyTwoFactor(req, res) {
         is_active,
         accent_color,
         auth_scheme,
-        legacy_login_closed
+        legacy_login_closed,
+        must_change_password
       FROM users
       WHERE id = ?
       LIMIT 1
@@ -615,14 +612,8 @@ async function verifyTwoFactor(req, res) {
     });
   }
 
-  const token =
-    signToken({
-      id: user.id,
-      username: user.username,
-      is_admin: Boolean(
-        user.is_admin
-      )
-    });
+  const session =
+    issueSession(user);
 
 
   return res.json({
@@ -636,7 +627,7 @@ async function verifyTwoFactor(req, res) {
     accent_color: user.accent_color || null,
     email_2fa_enabled: true,
     auth_scheme: user.auth_scheme,
-    token,
+    ...session,
     ...(isLegacy
       ? { credential_migration: issueTicket(user.id) }
       : {})

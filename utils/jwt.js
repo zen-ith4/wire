@@ -46,7 +46,57 @@ function verifySessionToken(token) {
     throw err;
   }
 
+  // A session token carries no `typ` at all. Any other typed token (the
+  // password-change token below, or one added later) is scoped to something
+  // narrower and must never open a general session.
+  if (payload.typ !== undefined) {
+    const err = new Error(
+      'This token cannot be used as a session token'
+    );
+    err.code = 'TOKEN_TYPE_NOT_ALLOWED';
+    throw err;
+  }
+
   return payload;
+}
+
+// ======================================================
+// PASSWORD-CHANGE TOKEN (typ: 'pcr')
+//
+// An account created by an admin has a temporary password and
+// must_change_password = 1. Logging in with it does NOT yield a session: it
+// yields this short-lived token, which is accepted ONLY by the three routes
+// the forced password change needs (authenticatePasswordChange in
+// middleware/authenticate.js). verifySessionToken() rejects it everywhere
+// else, and the socket handshake rejects it too.
+// ======================================================
+
+const PASSWORD_CHANGE_TOKEN_TTL_SECONDS = 15 * 60;
+
+function signPasswordChangeToken(user) {
+  return jwt.sign(
+    {
+      id: user.id,
+      username: user.username,
+      typ: 'pcr',
+    },
+    constants.JWT_SECRET,
+    { expiresIn: PASSWORD_CHANGE_TOKEN_TTL_SECONDS }
+  );
+}
+
+// Accepts a normal session token OR a password-change token; nothing else.
+function verifySessionOrPasswordChangeToken(token) {
+  const payload = verifyToken(token);
+
+  if (payload.typ === 'pcr') {
+    return { payload, isPasswordChangeToken: true };
+  }
+
+  return {
+    payload: verifySessionToken(token),
+    isPasswordChangeToken: false,
+  };
 }
 
 // ======================================================
@@ -189,6 +239,8 @@ module.exports = {
   signToken,
   verifyToken,
   verifySessionToken,
+  signPasswordChangeToken,
+  verifySessionOrPasswordChangeToken,
   signMediaToken,
   verifyMediaToken,
   MEDIA_TOKEN_TTL_SECONDS,

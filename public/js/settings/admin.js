@@ -5,6 +5,8 @@ import { getCurrentUser } from '../core/auth.js';   // to protect self-deletion
 import { showConfirm } from '../ui/confirm.js';
 import { avatarHtml } from '../ui/avatar.js';
 import { claimRender } from '../core/view-session.js';
+import { deriveCredentials, generateKdfSalt, KDF_ITERATIONS } from '../crypto/credentials.js';
+import { MIN_PASSWORD_LENGTH } from '../crypto/account-kdf.js';
 
 /* ==================== USERS ==================== */
 export async function renderAdminUsers() {
@@ -70,7 +72,7 @@ export async function renderAdminUsers() {
         <input
           type="password"
           id="new-password"
-          placeholder="Password"
+          placeholder="Temporary password (user must change it)"
           autocomplete="new-password"
         >
 
@@ -146,6 +148,27 @@ window.addUser = async function() {
   errEl.textContent = '';
 
   try {
+    // Client-side policy: the server never sees the temporary password.
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      throw new Error(
+        `Temporary password must be at least ${MIN_PASSWORD_LENGTH} characters`
+      );
+    }
+
+    // F12: derive the new account's credentials here (fresh salt); only the
+    // authKey and the salt are sent. The user must replace the password at
+    // their first login.
+    const kdfSalt = generateKdfSalt();
+
+    const { authKey, wrapKeyBytes } =
+      await deriveCredentials(
+        password,
+        kdfSalt,
+        KDF_ITERATIONS
+      );
+
+    wrapKeyBytes.fill(0);
+
     await api('/api/admin/users', {
       method: 'POST',
 
@@ -156,7 +179,9 @@ window.addUser = async function() {
       body: JSON.stringify({
         username,
         email,
-        password,
+        auth_key: authKey,
+        kdf_salt: kdfSalt,
+        kdf_iterations: KDF_ITERATIONS,
         is_admin
       }),
     });

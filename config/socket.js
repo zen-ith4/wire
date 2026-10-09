@@ -1,5 +1,5 @@
 const { Server } = require('socket.io');
-const jwt = require('jsonwebtoken');
+const { verifySessionToken } = require('../utils/jwt');
 
 const { JWT_SECRET } = require('./constants');
 const { getDb } = require('./database');
@@ -42,7 +42,9 @@ function setupSocketIO(server) {
     }
 
     try {
-      const user = jwt.verify(token, JWT_SECRET);
+      // Session tokens only: media tokens and the restricted password-change
+      // token (typ: 'pcr') are valid JWTs but must never open a socket.
+      const user = verifySessionToken(token);
 
       if (!user || user.id == null) {
         return next(new Error('Invalid token payload'));

@@ -8,6 +8,11 @@ const {
   isValidPassword,
 } = require('../utils/validator');
 const { isEmailEnabled } = require('./email.service');
+const {
+  isValidAuthKey,
+  isValidKdfSalt,
+  isValidIterations,
+} = require('../utils/credentials');
 const constants = require('../config/constants');
 
 // Same pattern registerUser() (auth.service.js) and the setup wizard
@@ -166,7 +171,13 @@ function findDuplicateUserError(db, username, email) {
 // no verification email — the account belongs to someone else.
 //
 // Resolves to the created user's safe fields (never password_hash).
-async function createUser(username, email, password, isAdmin) {
+// F12: the admin's browser derives the NEW account's credentials from the
+// temporary password it was given (fresh salt, PBKDF2+HKDF) and sends only
+//   creds = { authKey, kdfSalt, kdfIterations }
+// so the server never sees the temporary password. The account is created on
+// scheme 2 with must_change_password = 1: the first login yields only the
+// restricted password-change token until the user picks their own password.
+async function createUser(username, email, creds, isAdmin) {
 
   const db = getDb();
 
@@ -214,24 +225,16 @@ async function createUser(username, email, password, isAdmin) {
     );
   }
 
-  // The password is kept exactly as entered (never trimmed).
-  requireString(
-    password,
-    'Password',
-    'INVALID_PASSWORD'
-  );
-
-  if (!password) {
+  if (
+    !creds ||
+    typeof creds !== 'object' ||
+    !isValidAuthKey(creds.authKey) ||
+    !isValidKdfSalt(creds.kdfSalt) ||
+    !isValidIterations(creds.kdfIterations)
+  ) {
     throw createUserError(
-      'INVALID_PASSWORD',
-      'Password is required'
-    );
-  }
-
-  if (!isValidPassword(password)) {
-    throw createUserError(
-      'INVALID_PASSWORD',
-      'Password must be between 6 and 128 characters'
+      'INVALID_CREDENTIALS',
+      'Invalid credentials'
     );
   }
 
@@ -260,7 +263,7 @@ async function createUser(username, email, password, isAdmin) {
 
 
   const passwordHash =
-    await hashPassword(password);
+    await hashPassword(creds.authKey);
 
   // Same rule as registerUser(): with the email subsystem disabled
   // nothing could ever verify the address, so the account counts as
@@ -278,15 +281,21 @@ async function createUser(username, email, password, isAdmin) {
         email,
         password_hash,
         email_verified,
-        is_admin
+        is_admin,
+        auth_scheme,
+        kdf_salt,
+        kdf_iterations,
+        must_change_password
       )
-      VALUES (?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, 2, ?, ?, 1)
     `).run(
       username,
       email,
       passwordHash,
       emailVerified,
-      isAdmin ? 1 : 0
+      isAdmin ? 1 : 0,
+      creds.kdfSalt,
+      creds.kdfIterations
     );
 
     userId =
@@ -337,6 +346,7 @@ async function createUser(username, email, password, isAdmin) {
     email_verified: Boolean(user.email_verified),
     is_admin: Boolean(user.is_admin),
     created_at: user.created_at,
+    must_change_password: true,
   };
 }
 

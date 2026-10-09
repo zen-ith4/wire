@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 
-const { authenticate } = require('../middleware/authenticate');
+const { authenticate, authenticatePasswordChange } = require('../middleware/authenticate');
 const { avatarMediaAuth } = require('../middleware/mediaAuth');
 const { asyncHandler } = require('../middleware/asyncHandler');
 const { pushTokenLimiter, identityRotateRateLimiter } = require('../middleware/rateLimiter');
@@ -38,7 +38,7 @@ const {
 
 router.get('/', authenticate, getMe);
 
-router.get('/kdf-params', authenticate, getOwnKdfParams);
+router.get('/kdf-params', authenticatePasswordChange, getOwnKdfParams);
 
 router.put('/', authenticate, updateBio);
 
@@ -50,7 +50,7 @@ router.put(
 
 router.put(
   '/password',
-  authenticate,
+  authenticatePasswordChange,
   asyncHandler(changePassword)
 );
 
@@ -100,7 +100,7 @@ router.get(
 
 router.get(
     '/identity-key',
-    authenticate,
+    authenticatePasswordChange,
     getIdentityKey
 );
 

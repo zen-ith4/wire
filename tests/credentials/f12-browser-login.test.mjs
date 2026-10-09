@@ -267,3 +267,90 @@ test('change password in the browser: fresh salt, same identity, DM history stil
     assert.equal(await old.page.$('.nav-link'), null, 'old password must not open the app');
     await old.page.close();
 });
+
+test('admin-created account: first login in the browser shows the forced-change step, then a normal session with a new identity', async (t) => {
+    if (!browser) return t.skip(`BLOCKED: no Chromium (${skipReason})`);
+    // admin on the new scheme, promoted directly in the DB
+    const aSalt = cred.newKdfSalt();
+    const { authKey: aKey } = cred.deriveCredentialsNode('the admin account password', aSalt);
+    await srv.call('POST', '/api/auth/register', { body: { username: 'bossman', email: 'boss@x.invalid', auth_key: aKey, kdf_salt: aSalt, kdf_iterations: cred.KDF_ITERATIONS } });
+    const w = new Database(dbPath); w.prepare("UPDATE users SET is_admin = 1 WHERE username = 'bossman'").run(); w.close();
+    const adminTok = (await srv.call('POST', '/api/auth/login', { body: { username: 'bossman', auth_key: aKey } })).body.token;
+
+    const tempPw = 'temporary password 1';
+    const tSalt = cred.newKdfSalt();
+    const { authKey: tKey } = cred.deriveCredentialsNode(tempPw, tSalt);
+    const created = await srv.call('POST', '/api/admin/users', { token: adminTok, body: { username: 'freshhire', email: 'fh@x.invalid', auth_key: tKey, kdf_salt: tSalt, kdf_iterations: cred.KDF_ITERATIONS, is_admin: false } });
+    assert.equal(created.status, 201);
+
+    const { page, log } = await newPage();
+    await page.goto(`${srv.base}/`, { waitUntil: 'domcontentloaded' });
+    await page.evaluate(() => { localStorage.clear(); sessionStorage.clear(); });
+    await page.goto(`${srv.base}/`, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#auth-username');
+    await page.type('#auth-username', 'freshhire');
+    await page.type('#auth-password', tempPw);
+    await page.click('#auth-form button');
+    await page.waitForSelector('#forced-new-password', { timeout: 30000 });
+    assert.equal(await page.$('.nav-link'), null, 'no app before the password is changed');
+
+    const newPw = 'my own chosen password';
+    // too short / same as temporary are refused in the browser
+    await page.type('#forced-new-password', 'short');
+    await page.type('#forced-new-password-confirm', 'short');
+    await page.click('#forced-change-form button');
+    await page.waitForFunction(() => /at least 12/.test(document.body.innerText));
+    await page.$eval('#forced-new-password', (e) => { e.value = ''; });
+    await page.$eval('#forced-new-password-confirm', (e) => { e.value = ''; });
+    await page.type('#forced-new-password', newPw);
+    await page.type('#forced-new-password-confirm', newPw);
+    await Promise.all([page.click('#forced-change-form button'), page.waitForSelector('.nav-link', { timeout: 45000 })]);
+    await sleep(600);
+
+    const u = row("SELECT must_change_password AS m, auth_scheme AS s FROM users WHERE username = 'freshhire'");
+    assert.deepEqual({ ...u }, { m: 0, s: 2 });
+    const id = row("SELECT version FROM identity_keys WHERE user_id = (SELECT id FROM users WHERE username = 'freshhire')");
+    assert.equal(id?.version, 2, 'identity created after the change, wrapped under the new salt');
+    assert.ok(!log.some((r) => r.body.includes(tempPw) || r.body.includes(newPw)), 'neither password appears in any request');
+    const pcrCalls = log.filter((r) => r.method !== 'GET' || /\/api\/me\//.test(r.url)).map((r) => `${r.method} ${r.url.split('?')[0]}`);
+    assert.ok(pcrCalls.includes('PUT /api/me/password'));
+    await page.close();
+});
+
+test('admin UI "Add user": the temporary password is derived in the browser (auth_key + salt only), < 12 refused', async (t) => {
+    if (!browser) return t.skip(`BLOCKED: no Chromium (${skipReason})`);
+    const { page, log } = await newPage();
+    await uiLogin(page, 'bossman', 'the admin account password');
+    await page.evaluate(async () => {
+        (await import('/js/core/router.js')).navigate('admin-users');
+    });
+    await page.waitForSelector('#new-username', { timeout: 8000 }).catch(async (e) => { throw new Error(e.message + ' :: ' + (await page.evaluate(() => (document.getElementById('content-area')?.innerText || 'NO CONTENT AREA').slice(0, 300)))); });
+    const fill = async (user, pw) => {
+        await page.$eval('#new-username', (e, v) => { e.value = v; }, user);
+        await page.$eval('#new-email', (e, v) => { e.value = v; }, `${user}@x.invalid`);
+        await page.$eval('#new-password', (e, v) => { e.value = v; }, pw);
+    };
+
+    await fill('uihire', 'too short');
+    const n0 = log.length;
+    await page.evaluate(() => window.addUser());
+    await page.waitForFunction(() => /at least 12/.test(document.getElementById('admin-user-error').textContent));
+    assert.equal(log.slice(n0).filter((r) => r.url.startsWith('/api/admin/users') && r.method === 'POST').length, 0);
+
+    const tempPw = 'ui temporary password';
+    await fill('uihire', tempPw);
+    await page.evaluate(() => window.addUser());
+    for (let i = 0; i < 60 && !row("SELECT 1 AS x FROM users WHERE username = 'uihire'"); i++) await sleep(250);
+    const u = row("SELECT auth_scheme AS s, must_change_password AS m, kdf_salt FROM users WHERE username = 'uihire'");
+    assert.deepEqual({ s: u.s, m: u.m }, { s: 2, m: 1 });
+    const posts = log.filter((r) => r.method === 'POST' && r.url.startsWith('/api/admin/users'));
+    assert.equal(posts.length, 1);
+    const sent = JSON.parse(posts[0].body);
+    assert.equal('password' in sent, false);
+    assert.ok(cred.isValidAuthKey(sent.auth_key));
+    assert.ok(!posts[0].body.includes(tempPw));
+    // and the temporary password really works as that account's first login
+    const login = await srv.call('POST', '/api/auth/login', { body: { username: 'uihire', auth_key: cred.deriveCredentialsNode(tempPw, u.kdf_salt).authKey } });
+    assert.equal(login.body.requiresPasswordChange, true);
+    await page.close();
+});

@@ -10,7 +10,8 @@ import {
   createIdentity,
   restoreIdentity,
   restoreIdentityWithUnlockKey,
-  migrateLegacyAccount
+  migrateLegacyAccount,
+  prepareCredentialChange
 } from '../crypto/identity-service.js';
 
 import {
@@ -670,6 +671,19 @@ export async function login(
     );
   }
 
+  // An admin-set temporary password: the server only issued the restricted
+  // password-change token. No session, no current user, no identity yet; the
+  // caller shows the "choose a new password" step.
+  if (data.requiresPasswordChange === true) {
+    setToken(data.token);
+
+    if (kdf.scheme === 2) {
+      pinScheme2(data.username);
+    }
+
+    return data;
+  }
+
   setToken(data.token);
 
   setCurrentUser({
@@ -743,6 +757,13 @@ export async function verifyTwoFactor(
     throw new Error(
       'Invalid two-factor authentication response'
     );
+  }
+
+  // Restricted password-change token (see login()): no session yet.
+  if (data.requiresPasswordChange === true) {
+    setToken(data.token);
+
+    return data;
   }
 
   setToken(data.token);
@@ -1262,6 +1283,195 @@ function renderVerification(
  * Two-Factor Authentication UI
  * ========================================================= */
 
+/* =========================================================
+ * Forced password change (admin-created account, first login)
+ * ========================================================= */
+
+function renderForcedPasswordChange(
+  username,
+  temporaryPassword,
+  onSuccess
+) {
+  const wrap =
+    document.getElementById(
+      'login-wrap'
+    );
+
+  if (!wrap) {
+    console.error(
+      'Login container not found'
+    );
+    return;
+  }
+
+  wrap.style.display = 'flex';
+
+  wrap.innerHTML = `
+<div class="card login-card">
+
+  <div class="login-mark">
+    <img
+      src="/img/logo.jpg"
+      alt="Wire"
+    />
+  </div>
+
+  <h1>
+    Choose a new password
+  </h1>
+
+  <p class="hint">
+    An administrator set a temporary password for
+    <strong>${escapeHtml(username)}</strong>.
+    Choose your own (at least ${MIN_PASSWORD_LENGTH} characters) to continue.
+    It also protects your encryption keys and cannot be recovered.
+  </p>
+
+  <form id="forced-change-form">
+
+    <input
+      type="password"
+      id="forced-new-password"
+      placeholder="New password"
+      autocomplete="new-password"
+      required
+    >
+
+    <input
+      type="password"
+      id="forced-new-password-confirm"
+      placeholder="Confirm new password"
+      autocomplete="new-password"
+      required
+    >
+
+    <button
+      type="submit"
+      class="btn btn-primary"
+    >
+      Change password
+    </button>
+
+  </form>
+
+  <div
+    id="forced-change-error"
+    class="field-error"
+  ></div>
+
+</div>
+`;
+
+  const form =
+    document.getElementById(
+      'forced-change-form'
+    );
+
+  const errorEl =
+    document.getElementById(
+      'forced-change-error'
+    );
+
+  form.onsubmit = async (event) => {
+    event.preventDefault();
+
+    const next =
+      document.getElementById(
+        'forced-new-password'
+      ).value;
+
+    const confirmation =
+      document.getElementById(
+        'forced-new-password-confirm'
+      ).value;
+
+    const button =
+      form.querySelector(
+        'button[type="submit"]'
+      );
+
+    errorEl.textContent = '';
+
+    if (next.length < MIN_PASSWORD_LENGTH) {
+      errorEl.textContent =
+        `Password must be at least ${MIN_PASSWORD_LENGTH} characters`;
+      return;
+    }
+
+    if (next !== confirmation) {
+      errorEl.textContent =
+        'Passwords do not match';
+      return;
+    }
+
+    if (next === temporaryPassword) {
+      errorEl.textContent =
+        'Choose a password different from the temporary one';
+      return;
+    }
+
+    button.disabled = true;
+
+    try {
+      const change =
+        await prepareCredentialChange(
+          temporaryPassword,
+          next,
+          token
+        );
+
+      await api(
+        '/api/me/password',
+        {
+          method: 'PUT',
+
+          headers: {
+            'Content-Type': 'application/json'
+          },
+
+          body: JSON.stringify(change)
+        }
+      );
+
+      // The restricted token is spent. Sign in normally with the new password.
+      setToken(null);
+
+      await login(
+        username,
+        next
+      );
+
+      await initializeIdentity(
+        next,
+        async () => {
+          if (
+            typeof onSuccess === 'function'
+          ) {
+            await onSuccess();
+          }
+        }
+      );
+
+    } catch (error) {
+      console.error(
+        'Forced password change failed:',
+        error
+      );
+
+      errorEl.textContent =
+        error.message ||
+        'Failed to change password';
+
+      button.disabled = false;
+    }
+  };
+
+  document.getElementById(
+    'forced-new-password'
+  )?.focus();
+}
+
+
 function renderTwoFactor(
   twoFactor,
   password,
@@ -1392,11 +1602,22 @@ function renderTwoFactor(
       }
 
       try {
-        await verifyTwoFactor(
-          twoFactor.id,
-          twoFactor.challengeId,
-          code
-        );
+        const verified =
+          await verifyTwoFactor(
+            twoFactor.id,
+            twoFactor.challengeId,
+            code
+          );
+
+        if (verified.requiresPasswordChange === true) {
+          renderForcedPasswordChange(
+            verified.username,
+            password,
+            onSuccess
+          );
+
+          return;
+        }
 
         await initializeIdentity(
           password,
@@ -2096,6 +2317,16 @@ function renderAuthCard(
           username,
           password
         );
+
+      if (data.requiresPasswordChange === true) {
+        renderForcedPasswordChange(
+          data.username,
+          password,
+          onSuccess
+        );
+
+        return;
+      }
 
       if (
         data.email &&

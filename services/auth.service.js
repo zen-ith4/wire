@@ -5,7 +5,7 @@ const {
   comparePassword
 } = require('../utils/password');
 
-const { signToken } = require('../utils/jwt');
+const { signToken, signPasswordChangeToken } = require('../utils/jwt');
 
 // ======================================================
 // TIMING SIDE-CHANNEL MITIGATION
@@ -72,6 +72,29 @@ const { issueTicket } = require('./credentialMigration.service');
 // A bare string is treated as { password } for older callers.
 // Any mismatch (wrong form for the account's scheme, closed legacy login,
 // unknown/inactive user) costs the same bcrypt comparison and returns null.
+// Normal session token, or - while an admin-set temporary password has not been
+// replaced yet - the restricted password-change token instead.
+function issueSession(user) {
+  if (user.must_change_password === 1) {
+    return {
+      requiresPasswordChange: true,
+      token: signPasswordChangeToken({
+        id: user.id,
+        username: user.username
+      })
+    };
+  }
+
+  return {
+    token: signToken({
+      id: user.id,
+      username: user.username,
+      is_admin: Boolean(user.is_admin)
+    })
+  };
+}
+
+
 async function authenticateUser(username, credentials) {
   const db = getDb();
 
@@ -99,7 +122,8 @@ async function authenticateUser(username, credentials) {
       is_active,
       accent_color,
       auth_scheme,
-      legacy_login_closed
+      legacy_login_closed,
+      must_change_password
     FROM users
     WHERE username = ?
   `).get(username);
@@ -224,11 +248,7 @@ async function authenticateUser(username, credentials) {
     accent_color: user.accent_color || null,
     auth_scheme: user.auth_scheme,
 
-    token: signToken({
-      id: user.id,
-      username: user.username,
-      is_admin: Boolean(user.is_admin)
-    }),
+    ...issueSession(user),
 
     ...(isLegacy
       ? { credential_migration: issueTicket(user.id) }
@@ -490,6 +510,7 @@ async function registerUser(username, email, password) {
 
 
 module.exports = {
+  issueSession,
   authenticateUser,
   registerUser
 };

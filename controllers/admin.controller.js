@@ -33,6 +33,7 @@ const CREATE_USER_ERROR_STATUS = new Map([
   ['INVALID_USERNAME', 400],
   ['INVALID_EMAIL', 400],
   ['INVALID_PASSWORD', 400],
+  ['INVALID_CREDENTIALS', 400],
   ['INVALID_IS_ADMIN', 400],
   ['USERNAME_EXISTS', 409],
   ['EMAIL_EXISTS', 409],
@@ -44,9 +45,22 @@ async function createUser(req, res) {
   const {
     username,
     email,
-    password,
+    auth_key,
+    kdf_salt,
+    kdf_iterations,
     is_admin,
   } = req.body || {};
+
+  // F12: the temporary password is turned into credentials in the admin's
+  // browser; a raw password is never accepted.
+  if (
+    'password' in (req.body || {})
+  ) {
+    return res.status(400).json({
+      error: 'Raw passwords are not accepted. Update the app.',
+      code: 'raw_password_rejected',
+    });
+  }
 
   try {
 
@@ -54,7 +68,11 @@ async function createUser(req, res) {
       await createUserService(
         username,
         email,
-        password,
+        {
+          authKey: auth_key,
+          kdfSalt: kdf_salt,
+          kdfIterations: kdf_iterations,
+        },
         is_admin
       );
 

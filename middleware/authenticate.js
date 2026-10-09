@@ -1,5 +1,8 @@
 const { getDb } = require('../config/database');
-const { verifySessionToken } = require('../utils/jwt');
+const {
+  verifySessionToken,
+  verifySessionOrPasswordChangeToken
+} = require('../utils/jwt');
 
 
 function authenticate(req, res, next) {
@@ -75,6 +78,71 @@ function authenticate(req, res, next) {
 
 
 
+// For the three routes a forced password change needs (GET /me/kdf-params,
+// GET /me/identity-key, PUT /me/password): accepts a normal session token or the
+// restricted password-change token. Every other route uses authenticate().
+function authenticatePasswordChange(req, res, next) {
+
+  const header = req.headers.authorization;
+
+  if (
+    !header ||
+    !header.startsWith('Bearer ')
+  ) {
+    return res.status(401).json({
+      error: 'Unauthorized'
+    });
+  }
+
+  try {
+
+    const { payload, isPasswordChangeToken } =
+      verifySessionOrPasswordChangeToken(
+        header.split(' ')[1]
+      );
+
+    const user = getDb()
+      .prepare(`
+        SELECT id, username, is_admin, is_active, must_change_password
+        FROM users
+        WHERE id = ?
+      `)
+      .get(payload.sub || payload.id);
+
+    if (!user || user.is_active === 0) {
+      return res.status(401).json({
+        error: 'Unauthorized'
+      });
+    }
+
+    // A password-change token is only meaningful while a change is pending.
+    if (isPasswordChangeToken && !user.must_change_password) {
+      return res.status(401).json({
+        error: 'Unauthorized'
+      });
+    }
+
+    req.user = {
+      id: user.id,
+      username: user.username,
+      is_admin: Boolean(user.is_admin)
+    };
+
+    req.viaPasswordChangeToken = isPasswordChangeToken;
+
+    next();
+
+  } catch (e) {
+
+    return res.status(401).json({
+      error: 'Invalid token'
+    });
+
+  }
+}
+
+
+
 function adminOnly(req, res, next) {
 
   if (
@@ -94,5 +162,6 @@ function adminOnly(req, res, next) {
 
 module.exports = {
   authenticate,
+  authenticatePasswordChange,
   adminOnly
 };

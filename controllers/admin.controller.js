@@ -22,6 +22,84 @@ const {
   revokePermission,
 } = require('../services/share.service');
 
+const credentialAdmin = require('../services/credentialAdmin.service');
+
+function credentialStatus(req, res) {
+  return res.json(credentialAdmin.listCredentialStatus());
+}
+
+function sendCredentialAdminError(res, err) {
+  switch (err.code) {
+    case 'INVALID_DAYS':
+      return res.status(400).json({ error: err.message, code: 'invalid_days' });
+    case 'NOT_FOUND':
+      return res.status(404).json({ error: err.message });
+    case 'NOT_LEGACY':
+      return res.status(409).json({ error: err.message, code: 'not_legacy' });
+    case 'COUNT_MISMATCH':
+      return res.status(409).json({ error: err.message, code: 'count_mismatch', count: err.count });
+    default:
+      throw err;
+  }
+}
+
+// GET /api/admin/credentials/legacy-login/inactive?days=90  (preview, changes nothing)
+function previewInactiveLegacy(req, res) {
+  try {
+    return res.json(
+      credentialAdmin.inactiveLegacyCandidates(req.query?.days, req.user.id)
+    );
+  } catch (err) {
+    return sendCredentialAdminError(res, err);
+  }
+}
+
+// POST /api/admin/credentials/legacy-login/close-inactive  { days, confirm_count }
+function closeInactiveLegacy(req, res) {
+  try {
+    const result =
+      credentialAdmin.closeInactiveLegacy(
+        req.body?.days,
+        req.body?.confirm_count,
+        req.user.id
+      );
+
+    console.log(
+      `[admin] ${req.user.username} closed legacy login for ${result.closed} inactive unmigrated account(s) (>${result.days} days)`
+    );
+
+    return res.json({ success: true, ...result });
+  } catch (err) {
+    return sendCredentialAdminError(res, err);
+  }
+}
+
+// PUT /api/admin/users/:id/legacy-login  { closed: boolean }
+function setLegacyLogin(req, res) {
+  const id = Number(req.params.id);
+
+  if (!Number.isInteger(id) || id <= 0 || typeof req.body?.closed !== 'boolean') {
+    return res.status(400).json({ error: 'closed must be a boolean' });
+  }
+
+  if (id === req.user.id) {
+    return res.status(400).json({ error: 'You cannot change your own legacy login' });
+  }
+
+  try {
+    const result = credentialAdmin.setLegacyLoginClosed(id, req.body.closed);
+
+    console.log(
+      `[admin] ${req.user.username} ${req.body.closed ? 'closed' : 'reopened'} legacy login for ${result.username}`
+    );
+
+    return res.json({ success: true, ...result });
+  } catch (err) {
+    return sendCredentialAdminError(res, err);
+  }
+}
+
+
 function listUsersHandler(req, res) {
   res.json(listUsers());
 }
@@ -362,6 +440,10 @@ function revokePermissionHandler(req, res) {
 
 module.exports = {
   listUsers: listUsersHandler,
+  credentialStatus,
+  previewInactiveLegacy,
+  closeInactiveLegacy,
+  setLegacyLogin,
   createUser,
   setUserAdmin,
   deleteUser,

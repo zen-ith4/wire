@@ -858,7 +858,11 @@ function listUsers() {
         id,
         username,
         email,
-        is_admin
+        is_admin,
+        auth_scheme,
+        must_change_password,
+        legacy_login_closed,
+        legacy_last_login_at
       FROM users
       ORDER BY username
     `)

@@ -13,6 +13,10 @@ const {
 
 const {
   listUsers,
+  credentialStatus,
+  previewInactiveLegacy,
+  closeInactiveLegacy,
+  setLegacyLogin,
   createUser,
   setUserAdmin,
   deleteUser,
@@ -51,6 +55,27 @@ router.post(
 router.put(
   '/users/:id/is-admin',
   setUserAdmin
+);
+
+// F12 migration tools
+router.get(
+  '/credentials/status',
+  credentialStatus
+);
+
+router.get(
+  '/credentials/legacy-login/inactive',
+  previewInactiveLegacy
+);
+
+router.post(
+  '/credentials/legacy-login/close-inactive',
+  closeInactiveLegacy
+);
+
+router.put(
+  '/users/:id/legacy-login',
+  setLegacyLogin
 );
 
 router.delete(

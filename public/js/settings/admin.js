@@ -36,6 +36,25 @@ export async function renderAdminUsers() {
             <button class="btn btn-danger btn-sm" onclick="window.deleteUser(${u.id})">Delete</button>
           </div>`;
 
+      // F12: where this account is in the credential migration.
+      let signIn;
+      if (Number(u.auth_scheme) === 2) {
+        signIn = u.must_change_password
+          ? '<span class="badge"><span class="badge-dot"></span>Must change password</span>'
+          : '<span class="badge badge-green"><span class="badge-dot"></span>Upgraded</span>';
+      } else if (u.legacy_login_closed) {
+        signIn = '<span class="badge"><span class="badge-dot"></span>Legacy login closed</span>';
+      } else {
+        signIn = '<span class="badge"><span class="badge-dot"></span>Not upgraded yet</span>';
+      }
+
+      let legacyAction = '';
+      if (!isSelf && Number(u.auth_scheme) !== 2) {
+        legacyAction = u.legacy_login_closed
+          ? `<button class="btn btn-sm" data-legacy-toggle="${Number(u.id)}" data-legacy-close="0">Reopen legacy login</button>`
+          : `<button class="btn btn-sm" data-legacy-toggle="${Number(u.id)}" data-legacy-close="1">Close legacy login</button>`;
+      }
+
       return `
       <tr class="file-row">
         <td>
@@ -46,6 +65,7 @@ export async function renderAdminUsers() {
         </td>
         <td>${u.email ? escapeHtml(u.email) : '<span class="text-muted">—</span>'}</td>
         <td>${u.is_admin ? '<span class="badge badge-green"><span class="badge-dot"></span>Admin</span>' : '<span class="text-muted">User</span>'}</td>
+        <td>${signIn} ${legacyAction}</td>
         <td class="col-right">${actions}</td>
       </tr>
     `;
@@ -98,6 +118,7 @@ export async function renderAdminUsers() {
               <th>Username</th>
               <th>Email</th>
               <th>Role</th>
+              <th>Sign-in</th>
               <th></th>
             </tr>
           </thead>
@@ -106,7 +127,7 @@ export async function renderAdminUsers() {
             ${
               rows ||
               `<tr>
-                <td colspan="4">
+                <td colspan="5">
                   ${emptyState(ICONS.users, 'No users yet')}
                 </td>
               </tr>`
@@ -114,7 +135,28 @@ export async function renderAdminUsers() {
           </tbody>
         </table>
       </div>
+
+      <div class="toolbar">
+        <button class="btn btn-sm" id="close-inactive-legacy">
+          Close inactive legacy logins…
+        </button>
+      </div>
     </div>`;
+
+    // No inline handlers (CSP): wire the F12 migration controls here.
+    main.querySelectorAll('[data-legacy-toggle]').forEach((btn) => {
+      btn.addEventListener('click', () =>
+        setLegacyLogin(
+          Number(btn.dataset.legacyToggle),
+          btn.dataset.legacyClose === '1',
+          btn
+        )
+      );
+    });
+
+    document
+      .getElementById('close-inactive-legacy')
+      ?.addEventListener('click', closeInactiveLegacyLogins);
   } catch (e) {
     if (!isCurrent()) return;
 
@@ -125,6 +167,76 @@ export async function renderAdminUsers() {
         escapeHtml(e.message)
       )}
     </div>`;
+  }
+}
+
+async function setLegacyLogin(id, closed, btn) {
+  if (
+    closed &&
+    !await showConfirm(
+      'This account has not signed in with the upgraded login yet. Closing the legacy login means the user cannot sign in until you reopen it. Continue?',
+      { title: 'Close legacy login', confirmText: 'Close' }
+    )
+  ) {
+    return;
+  }
+
+  if (btn) btn.disabled = true;
+
+  try {
+    await api(`/api/admin/users/${id}/legacy-login`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ closed }),
+    });
+
+    await renderAdminUsers();
+
+    showToast(closed ? 'Legacy login closed' : 'Legacy login reopened', 'success');
+  } catch (e) {
+    if (btn) btn.disabled = false;
+    showToast(e.message, 'error');
+  }
+}
+
+async function closeInactiveLegacyLogins() {
+  const days = 90;
+
+  try {
+    const preview = await api(
+      `/api/admin/credentials/legacy-login/inactive?days=${days}`
+    );
+
+    if (preview.count === 0) {
+      showToast(`No inactive unupgraded accounts (over ${days} days)`, 'success');
+      return;
+    }
+
+    const names = preview.users.map(u => u.username).join(', ');
+
+    if (
+      !await showConfirm(
+        `Close the legacy login for ${preview.count} account(s) not upgraded and inactive for over ${days} days? ${names}`,
+        { title: 'Close inactive legacy logins', confirmText: 'Close them' }
+      )
+    ) {
+      return;
+    }
+
+    const result = await api(
+      '/api/admin/credentials/legacy-login/close-inactive',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ days, confirm_count: preview.count }),
+      }
+    );
+
+    await renderAdminUsers();
+
+    showToast(`Closed ${result.closed} account(s)`, 'success');
+  } catch (e) {
+    showToast(e.message, 'error');
   }
 }
 

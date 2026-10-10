@@ -6,6 +6,7 @@ const {
 } = require('../utils/password');
 
 const { signToken, signPasswordChangeToken } = require('../utils/jwt');
+const { validateNewUsername } = require('../utils/username');
 
 // ======================================================
 // TIMING SIDE-CHANNEL MITIGATION
@@ -125,8 +126,10 @@ async function authenticateUser(username, credentials) {
       legacy_login_closed,
       must_change_password
     FROM users
-    WHERE username = ?
-  `).get(username);
+    WHERE username = ? COLLATE NOCASE
+    ORDER BY (username = ?) DESC, id
+    LIMIT 1
+  `).get(username, username);
 
   if (!user) {
     // No such user — still pay the bcrypt cost of a real comparison
@@ -269,23 +272,25 @@ async function registerUser(username, email, password) {
       ? password
       : null;
 
-  username = String(username || '')
-    .trim()
-    .toLowerCase();
-
   email = String(email || '')
     .trim()
     .toLowerCase();
 
-  if (!username) {
+  // New accounts only: trim + lowercase, then the username rules (utils/username.js).
+  const usernameCheck =
+    validateNewUsername(username);
+
+  if (!usernameCheck.ok) {
     const error = new Error(
-      'Username is required'
+      usernameCheck.message
     );
 
     error.code = 'INVALID_USERNAME';
 
     throw error;
   }
+
+  username = usernameCheck.username;
 
   if (
     !email ||
@@ -327,7 +332,7 @@ async function registerUser(username, email, password) {
   const existingUsername = db.prepare(`
     SELECT id
     FROM users
-    WHERE username = ?
+    WHERE username = ? COLLATE NOCASE
     LIMIT 1
   `).get(username);
 
@@ -413,7 +418,7 @@ async function registerUser(username, email, password) {
         db.prepare(`
           SELECT id
           FROM users
-          WHERE username = ?
+          WHERE username = ? COLLATE NOCASE
           LIMIT 1
         `).get(username);
 

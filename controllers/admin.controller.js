@@ -23,6 +23,13 @@ const {
 } = require('../services/share.service');
 
 const credentialAdmin = require('../services/credentialAdmin.service');
+const { auditUsernames } = require('../services/usernameAudit.service');
+const { getDb } = require('../config/database');
+
+// GET /api/admin/usernames/audit  (read-only)
+function usernameAudit(req, res) {
+  return res.json(auditUsernames(getDb()));
+}
 
 function credentialStatus(req, res) {
   return res.json(credentialAdmin.listCredentialStatus());
@@ -440,6 +447,7 @@ function revokePermissionHandler(req, res) {
 
 module.exports = {
   listUsers: listUsersHandler,
+  usernameAudit,
   credentialStatus,
   previewInactiveLegacy,
   closeInactiveLegacy,

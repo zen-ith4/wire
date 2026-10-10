@@ -13,6 +13,7 @@ const {
 
 const {
   listUsers,
+  usernameAudit,
   credentialStatus,
   previewInactiveLegacy,
   closeInactiveLegacy,
@@ -58,6 +59,11 @@ router.put(
 );
 
 // F12 migration tools
+router.get(
+  '/usernames/audit',
+  usernameAudit
+);
+
 router.get(
   '/credentials/status',
   credentialStatus

@@ -64,8 +64,10 @@ function getKdfParams(req, res) {
     getDb().prepare(`
       SELECT auth_scheme, kdf_salt, kdf_iterations, is_active
       FROM users
-      WHERE username = ?
-    `).get(username);
+      WHERE username = ? COLLATE NOCASE
+      ORDER BY (username = ?) DESC, id
+      LIMIT 1
+    `).get(username, username);
 
   if (row && row.is_active !== 0) {
     if (row.auth_scheme === 1) {

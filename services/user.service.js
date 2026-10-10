@@ -4,9 +4,9 @@ const path = require('path');
 const { getDb } = require('../config/database');
 const { hashPassword } = require('../utils/password');
 const {
-  isValidUsername,
   isValidPassword,
 } = require('../utils/validator');
+const { validateNewUsername } = require('../utils/username');
 const { isEmailEnabled } = require('./email.service');
 const {
   isValidAuthKey,
@@ -29,8 +29,13 @@ function findUserByUsername(username) {
   username = normalizeUsername(username);
 
   return getDb()
-    .prepare('SELECT * FROM users WHERE username = ?')
-    .get(username);
+    .prepare(`
+      SELECT * FROM users
+      WHERE username = ? COLLATE NOCASE
+      ORDER BY (username = ?) DESC, id
+      LIMIT 1
+    `)
+    .get(username, username);
 }
 
 
@@ -137,7 +142,7 @@ function findDuplicateUserError(db, username, email) {
     db.prepare(`
       SELECT id
       FROM users
-      WHERE username = ?
+      WHERE username = ? COLLATE NOCASE
       LIMIT 1
     `).get(username)
   ) {
@@ -196,12 +201,18 @@ async function createUser(username, email, creds, isAdmin) {
     );
   }
 
-  if (!isValidUsername(username)) {
+  // trim + lowercase (done above) and then the rules for new accounts
+  const usernameCheck =
+    validateNewUsername(username);
+
+  if (!usernameCheck.ok) {
     throw createUserError(
       'INVALID_USERNAME',
-      'Username must be 3-20 characters: letters, numbers and underscores'
+      usernameCheck.message
     );
   }
+
+  username = usernameCheck.username;
 
   email = requireString(
     email,

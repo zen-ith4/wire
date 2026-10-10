@@ -733,14 +733,23 @@ window.openCreateGroupDialog = async function () {
 
     panel.querySelector('#new-group-name').focus();
 
+    // The loaded people list is shorter/taller than the loading state, and the dialog
+    // is vertically centred on desktop, so the Create button moves when the list
+    // arrives. A click aimed at the old position then lands on the backdrop and closes
+    // the dialog (files/dialog.js). Create stays disabled until the list is painted
+    // (or failed), i.e. until the layout has settled.
+    createBtn.disabled = true;
+
     try {
         const all = await api('/api/share/users');
         users = all.filter((u) => Number(u.id) !== meId);
     } catch (e) {
         listEl.innerHTML = emptyState(ICONS.empty, 'Couldn’t load people', escapeHtml(e.message));
+        createBtn.disabled = false;
         return;
     }
     paintPeople();
+    createBtn.disabled = false;
 };
 
 // The app's CSP has no 'unsafe-inline' in script-src, so inline

@@ -120,6 +120,10 @@ test('group settings: the Remove-member confirmation is visible, topmost and wor
     await page.click('#new-chat-fab');
     await page.click('[data-fab-action="group"]');
     await page.waitForSelector('#new-group-name');
+    // The Create button moves when the people list finishes loading and is disabled until
+    // then (see group-dialog-create-settled-browser.test.mjs): wait for it, or a click
+    // aimed at the old position lands on the backdrop and closes the dialog.
+    await page.waitForSelector('#new-group-create:not([disabled])');
     await page.type('#new-group-name', 'confirm regression');
     await page.click('#new-group-create');
     await page.waitForSelector('#group-input');

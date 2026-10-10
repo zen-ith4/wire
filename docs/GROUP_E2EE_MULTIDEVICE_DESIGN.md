@@ -81,6 +81,23 @@ Tests: `tests/groups/group-multidevice.test.mjs` (MD-1..MD-6),
   confusion.
 * One X25519 identity per account, restored on every device: no forward secrecy
   on key distribution, one browser cannot be revoked, KDMs are unsigned.
-* The account password is both the login credential and the wrapping
-  passphrase of the server-stored identity key (see F12 report).
+* Account password (F12, login scheme 2): one password, two independent secrets.
+  PBKDF2-SHA-256 (600,000 iterations, per-account salt) turns the password into a
+  master key; HKDF splits it into an auth key (sent to the server, which stores only
+  a bcrypt hash of it) and a wrap key (never leaves the browser; wraps the identity
+  key). The server never sees the password. New passwords must be at least 12
+  characters (enforced in the browser, not at login, so existing accounts can still
+  sign in). Accounts not yet migrated still use the legacy raw-password login until
+  they sign in once, or until an admin closes that login.
+* Replay protection (F4) is a per-sender-key seen-set in the browser's IndexedDB with
+  a SOFT cap of 100,000 rows per key: pruning is only attempted after a new claim
+  and then for 1 in 64 of them, so a key can overshoot the cap by a few dozen rows.
+  A prune deletes the oldest rows ordered by (claim time, counter) down to about
+  90,000. The counter breaks ties when a device claims a synced history in one burst.
+  Replay window at eviction: a hostile server can re-post the stored ciphertext of
+  an EVICTED nonce under a fresh message id, and it is accepted once as new. Rows
+  among the newest ~90,000 of a key are never affected, and eviction never rejects a
+  legitimate message. In practice the window is about 90,000 messages by one sender
+  key (months to years in an ordinary group, weeks in a very chatty bot group). A
+  per-prefix high-water mark would close most of it; it is not implemented.
 * No history backfill for a newly added member (by design).

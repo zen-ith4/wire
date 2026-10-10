@@ -242,6 +242,15 @@ export async function deleteAllSenderKeysForGroup(groupId) {
 // key keeps decrypting history, so it must keep rejecting replays. A hard cap per
 // key bounds growth; evicting the OLDEST rows only ever weakens replay protection
 // for ancient messages, it can never reject a legitimate one.
+//
+// The cap is SOFT: pruning is only attempted after a new claim, and only for 1 in 64
+// of them, so a key can exceed the cap by a few dozen rows before it is pruned. A
+// prune drops the oldest rows by (at, counter) down to about 90% of the cap.
+//
+// Replay window at eviction: a hostile server can re-post the stored ciphertext of an
+// EVICTED nonce under a fresh message id and it is accepted once as new. Rows among
+// the newest ~90,000 of a key are never affected, and no eviction ever rejects a
+// legitimate message. (See docs/GROUP_E2EE_MULTIDEVICE_DESIGN.md.)
 export const SEEN_CAP_PER_KEY = 100000;
 
 function deleteSeenInTx(seenStore, senderKeyId) {
@@ -318,7 +327,12 @@ export async function countSeen(senderKeyId) {
     });
 }
 
-/** Drops the oldest ~10% of a key's seen rows when it holds more than `cap`. */
+/**
+ * Drops the oldest ~10% of a key's seen rows when it holds more than `cap`.
+ * "Oldest" is (at, counter): `at` is the local claim time, so a device that syncs a
+ * long history in one burst claims thousands of nonces in the same millisecond; the
+ * counter then orders them by message order instead of arbitrarily.
+ */
 export async function pruneSeen(senderKeyId, cap = SEEN_CAP_PER_KEY) {
     if ((await countSeen(senderKeyId)) <= cap) return 0;
 
@@ -331,11 +345,15 @@ export async function pruneSeen(senderKeyId, cap = SEEN_CAP_PER_KEY) {
     req.onsuccess = () => {
         const cursor = req.result;
         if (cursor) {
-            rows.push({ id: cursor.value.id, at: cursor.value.at });
+            rows.push({
+                id: cursor.value.id,
+                at: Number(cursor.value.at) || 0,
+                counter: Number(cursor.value.counter) || 0
+            });
             cursor.continue();
             return;
         }
-        rows.sort((a, b) => a.at - b.at);
+        rows.sort((a, b) => (a.at - b.at) || (a.counter - b.counter));
         const drop = Math.max(rows.length - cap, 0) + Math.ceil(cap / 10);
         for (const r of rows.slice(0, drop)) store.delete(r.id);
     };

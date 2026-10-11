@@ -72,7 +72,9 @@ function runRequest(request) {
 
 /**
  * @param {object} record {senderKeyId, groupId, ownerUserId, epoch,
- *   isMine, wrappedKey: {iv, ciphertext}, createdAt}
+ *   isMine, wrappedKey: {iv, ciphertext}, createdAt,
+ *   signPub (base64, 65 raw bytes: every row),
+ *   signKeyWrapped {iv, ciphertext} (PKCS#8, own rows only)}
  */
 export async function putSenderKeyRecord(record) {
     const db = await openDatabase();
@@ -148,10 +150,71 @@ export async function getMySenderKeyForGroup(groupId, ownerUserId = null) {
 
     if (rows.length === 0) return null;
 
-    // Defensive: should never happen (rotation.js always deletes the
-    // previous "mine" row for a group before writing the new one),
-    // but if it ever did, the highest epoch is the live one.
-    return rows.reduce((a, b) => (b.epoch > a.epoch ? b : a));
+    // Phase C: a row without a signing private key is UNUSABLE for sending (a
+    // pre-signing row, or one whose signing key was dropped after it was
+    // superseded). It stays on disk for history but is never selected, so the
+    // caller finds no sending key and re-keys.
+    rows = rows.filter((r) => r.signKeyWrapped && r.signPub);
+
+    if (rows.length === 0) return null;
+
+    // Rotation does not delete the superseded "mine" row (it keeps decrypting its
+    // own history), so there can be several: the live one is the highest epoch, and
+    // within one epoch (a same-epoch re-key) the most recently created.
+    return rows.reduce((a, b) => {
+        if (b.epoch !== a.epoch) return b.epoch > a.epoch ? b : a;
+        return String(b.createdAt || '') > String(a.createdAt || '') ? b : a;
+    });
+}
+
+/**
+ * Phase C (condition B): drops the signing PRIVATE key of every own row that
+ * `keepSenderKeyId` supersedes (lower epoch, or the same epoch and not newer),
+ * keeping the row itself (root and public key) so its history still decrypts and
+ * verifies. Runs in ONE readwrite transaction that first re-reads the keep row: if
+ * the new key is not durably stored with its own signing key, nothing is touched.
+ * A row that is NOT superseded by the keep row (a newer epoch committed by another
+ * tab) is never touched.
+ *
+ * @returns {Promise<string[]>} ids whose signing key was dropped
+ */
+export async function clearSupersededSigningKeys(groupId, ownerUserId, keepSenderKeyId) {
+    const db = await openDatabase();
+    const tx = db.transaction(KEYS_STORE, 'readwrite');
+    const store = tx.objectStore(KEYS_STORE);
+    const cleared = [];
+
+    const keepReq = store.get(keepSenderKeyId);
+    keepReq.onsuccess = () => {
+        const keep = keepReq.result;
+
+        if (!keep || !keep.signKeyWrapped || !keep.signPub || keep.isMine !== 1
+            || Number(keep.ownerUserId) !== Number(ownerUserId) || Number(keep.groupId) !== Number(groupId)) {
+            return;
+        }
+
+        const rowsReq = store.index('by_group_mine').getAll(IDBKeyRange.only([groupId, 1]));
+        rowsReq.onsuccess = () => {
+            for (const row of rowsReq.result) {
+                if (row.senderKeyId === keep.senderKeyId || !row.signKeyWrapped) continue;
+                if (Number(row.ownerUserId) !== Number(ownerUserId)) continue;
+
+                const superseded = row.epoch < keep.epoch
+                    || (row.epoch === keep.epoch && String(row.createdAt || '') <= String(keep.createdAt || ''));
+                if (!superseded) continue;
+
+                const { signKeyWrapped, ...rest } = row;
+                store.put(rest);
+                cleared.push(row.senderKeyId);
+            }
+        };
+    };
+
+    return new Promise((resolve, reject) => {
+        tx.oncomplete = () => resolve(cleared);
+        tx.onerror = () => reject(tx.error);
+        tx.onabort = () => reject(tx.error || new Error('clearSupersededSigningKeys aborted'));
+    });
 }
 
 /**

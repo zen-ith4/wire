@@ -12,9 +12,10 @@
 // a Web Lock — see plan_prompt.md 2.2.
 
 import { encryptBytes, decryptBytes } from './aead.js';
-import { base64ToBytes, encodeFields } from './codec.js';
+import { base64ToBytes, bytesToBase64, encodeFields } from './codec.js';
 import { reserveNextCounter, getNoncePrefix } from './nonce-lock.js';
-import { getMySenderKey, loadSenderKey } from './sender-key.js';
+import { getMySenderKey, loadSenderKeyBundle } from './sender-key.js';
+import { signMessage, verifyMessage, SIGNATURE_LENGTH } from './signing.js';
 import { claimNonce } from './sender-key-store.js';
 
 const ENVELOPE_VERSION = 2;
@@ -84,9 +85,13 @@ export function attachmentAad(groupId, senderKeyId, counter, iv) {
  * @returns {Promise<string>} JSON string ready to send as
  *   group_messages.content
  */
-export async function encryptGroupMessage(identity, groupId, plaintext) {
+export async function encryptGroupMessage(identity, groupId, plaintext, { replyToId = null } = {}) {
     if (typeof plaintext !== 'string' || !plaintext.length) {
         throw new Error('Message cannot be empty');
+    }
+
+    if (replyToId !== null && !(Number.isSafeInteger(replyToId) && replyToId > 0)) {
+        throw new Error('Invalid reply_to_id');
     }
 
     const mine = await getMySenderKey(identity, groupId);
@@ -108,6 +113,20 @@ export async function encryptGroupMessage(identity, groupId, plaintext) {
         messageAad(groupId, mine.senderKeyId, counter, nonce)
     );
 
+    // Phase C3: sign what the receiver verifies BEFORE decrypting. The signing key
+    // belongs to THIS device's Sender Key only. reply_to_id is part of the signed
+    // bytes (and of the envelope); the attachment slot is empty (group attachments
+    // are disabled: see UNBOUND_ENVELOPE_KEYS).
+    const signature = await signMessage(mine.signKey, {
+        groupId: Number(groupId),
+        senderKeyId: mine.senderKeyId,
+        counter,
+        iv: nonce,
+        ciphertext: base64ToBytes(ciphertext),
+        replyToId,
+        attachment: new Uint8Array(0),
+    });
+
     return JSON.stringify({
         v: ENVELOPE_VERSION,
         alg: 'AES-GCM',
@@ -115,8 +134,36 @@ export async function encryptGroupMessage(identity, groupId, plaintext) {
         counter,
         iv,
         ciphertext,
+        reply_to_id: replyToId,
+        sig: bytesToBase64(signature),
     });
 }
+
+/**
+ * Thrown for a message that must not be rendered because it cannot be attributed to
+ * the owner of its Sender Key: no or malformed signature, a signature that does not
+ * verify, a verified owner that is not the server's sender, a reply target that the
+ * server contradicts, an unexpected attachment field, or a key that cannot verify.
+ * PERMANENT: callers never retry it (only "key not arrived" is retried).
+ * `reason` is a fixed enum, never message content.
+ */
+export class UnverifiedMessageError extends Error {
+    constructor(reason, message) {
+        super(message || `Group message authentication failed: could not be verified (${reason})`);
+        this.name = 'UnverifiedMessageError';
+        this.reason = reason;
+        this.permanent = true;
+    }
+}
+
+/**
+ * Envelope fields that would carry attachment data. Group attachments are DISABLED
+ * and the signed bytes only contain an EMPTY attachment slot, so an envelope that
+ * carries any of these is unverified: attachment SENDING can only be enabled after
+ * its bytes are bound into the signature (signing.js header), and this refusal makes
+ * a half-wired attachment path fail loudly instead of passing unauthenticated.
+ */
+const UNBOUND_ENVELOPE_KEYS = ['att', 'attachment', 'attachments'];
 
 /**
  * Thrown when a ciphertext authenticates correctly but its (senderKeyId, nonce)
@@ -182,8 +229,8 @@ export class MissingSenderKeyError extends Error {
  *   (plan_prompt.md's acceptance checklist: "losing one member's KDM
  *   doesn't corrupt the group for everyone else").
  */
-export async function decryptGroupMessage(identity, groupId, envelopeJson, messageId) {
-    const { plaintext } = await decryptGroupMessageDetailed(identity, groupId, envelopeJson, messageId);
+export async function decryptGroupMessage(identity, groupId, envelopeJson, messageId, expect = {}) {
+    const { plaintext } = await decryptGroupMessageDetailed(identity, groupId, envelopeJson, messageId, expect);
     return plaintext;
 }
 
@@ -196,7 +243,7 @@ export async function decryptGroupMessage(identity, groupId, envelopeJson, messa
  *
  * @returns {Promise<{plaintext: string, senderKeyId: string}>}
  */
-export async function decryptGroupMessageDetailed(identity, groupId, envelopeJson, messageId) {
+export async function decryptGroupMessageDetailed(identity, groupId, envelopeJson, messageId, expect = {}) {
     const ref = messageRef(messageId);
 
     let envelope;
@@ -237,14 +284,81 @@ export async function decryptGroupMessageDetailed(identity, groupId, envelopeJso
         throw new Error('Group message counter does not match its nonce');
     }
 
-    const cryptoKey = await loadSenderKey(identity, senderKeyId);
+    // ---- Phase C3: structure of the signed envelope. Every problem is "unverified",
+    // never an exception that could break a thread (fail closed).
+    for (const key of UNBOUND_ENVELOPE_KEYS) {
+        if (Object.hasOwn(envelope, key)) {
+            throw new UnverifiedMessageError('attachment-not-bound');
+        }
+    }
 
-    if (!cryptoKey) {
+    let signature;
+    let ciphertextBytes;
+    try {
+        signature = base64ToBytes(envelope.sig);
+        ciphertextBytes = base64ToBytes(envelope.ciphertext);
+    } catch {
+        throw new UnverifiedMessageError('no-signature');
+    }
+
+    if (typeof envelope.sig !== 'string' || signature.length !== SIGNATURE_LENGTH) {
+        throw new UnverifiedMessageError('no-signature');
+    }
+
+    const signedReplyToId = envelope.reply_to_id;
+    if (!Object.hasOwn(envelope, 'reply_to_id') ||
+        (signedReplyToId !== null && !(Number.isSafeInteger(signedReplyToId) && signedReplyToId > 0))) {
+        throw new UnverifiedMessageError('bad-reply-id');
+    }
+
+    let bundle;
+    try {
+        bundle = await loadSenderKeyBundle(identity, senderKeyId);
+    } catch (e) {
+        if (e?.permanent === true) throw new UnverifiedMessageError('key-unusable');
+        throw e;
+    }
+
+    if (!bundle) {
         throw new MissingSenderKeyError(senderKeyId);
     }
 
+    // VERIFY first: before the AES-GCM decrypt, before anything is rendered, and
+    // before the nonce is claimed (a forgery must not burn a nonce).
+    const valid = await verifyMessage(bundle.verifyKey, signature, {
+        groupId: Number(groupId),
+        senderKeyId,
+        counter: envelope.counter,
+        iv,
+        ciphertext: ciphertextBytes,
+        replyToId: signedReplyToId,
+        attachment: new Uint8Array(0),
+    });
+
+    if (!valid) {
+        throw new UnverifiedMessageError('bad-signature', 'Group message authentication failed: the signature does not verify');
+    }
+
+    // Attribution is the owner of the VERIFIED key, never the server's sender_id. The
+    // server's sender_id must agree (an honest flow always does); otherwise this is a
+    // re-post of somebody else's signed message or a server relabelling, and it is
+    // refused BEFORE the nonce is claimed so it cannot burn the genuine message's nonce.
+    const ownerUserId = Number(bundle.ownerUserId);
+
+    if (expect.expectedSenderId !== undefined && Number(expect.expectedSenderId) !== ownerUserId) {
+        throw new UnverifiedMessageError('sender-mismatch');
+    }
+
+    // The SIGNED reply target is authoritative. A non-null server value that differs
+    // from it is a swap. A null server value with a signed target is allowed (the
+    // target was deleted, or lives in another group and the server dropped it).
+    if (expect.serverReplyToId !== undefined && expect.serverReplyToId !== null &&
+        Number(expect.serverReplyToId) !== signedReplyToId) {
+        throw new UnverifiedMessageError('reply-mismatch');
+    }
+
     const plaintextBytes = await decryptBytes(
-        cryptoKey,
+        bundle.cryptoKey,
         envelope,
         messageAad(groupId, senderKeyId, envelope.counter, iv)
     );
@@ -255,5 +369,7 @@ export async function decryptGroupMessageDetailed(identity, groupId, envelopeJso
     return {
         plaintext: new TextDecoder('utf-8', { fatal: true }).decode(plaintextBytes),
         senderKeyId,
+        ownerUserId,
+        replyToId: signedReplyToId,
     };
 }

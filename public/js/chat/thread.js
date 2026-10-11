@@ -502,6 +502,7 @@ export function createMessageThread(config) {
             ...rawMsg,
             __placeholder: true,
             __placeholderHtml: placeholder.html,
+            __permanent: placeholder.permanent === true,
             __raw: rawMsg,
         };
 
@@ -540,14 +541,35 @@ export function createMessageThread(config) {
      * cached entry and, if drawn, the DOM node in place.
      */
     async function retryPlaceholders() {
-        const pending = cache.messages.filter((m) => m.__placeholder);
+        // A PERMANENT placeholder (e.g. "could not be verified") is never retried: only
+        // "key not arrived" is.
+        const pending = cache.messages.filter((m) => m.__placeholder && !m.__permanent);
         let resolved = 0;
 
         for (const ph of pending) {
             let decorated = null;
             try {
                 [decorated] = await decorate([ph.__raw], { live: true });
-            } catch {
+            } catch (e) {
+                // The key arrived but turned out to be unusable for verification: the
+                // message becomes a permanent unverified placeholder instead of waiting
+                // for a key forever.
+                if (e?.permanent === true && onDecorateError) {
+                    const permanent = onDecorateError(e, ph.__raw);
+                    if (permanent?.permanent) {
+                        const idx = cache.messages.findIndex((m) => m.id === ph.id);
+                        if (idx !== -1) {
+                            const next = { ...ph, __placeholderHtml: permanent.html, __permanent: true };
+                            cache.messages[idx] = next;
+                            cache.byId.set(ph.id, next);
+                            const el = container();
+                            if (el && isMounted()) {
+                                const old = el.querySelector(`.chat-msg[data-msg-id="${Number(ph.id)}"]`);
+                                if (old) old.replaceWith(buildMessageEl(next));
+                            }
+                        }
+                    }
+                }
                 continue; // still no key (or unreadable) — keep the placeholder
             }
             if (!decorated) continue;

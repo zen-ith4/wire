@@ -163,9 +163,9 @@ test('C2-1: the signing key is generated extractable only to be exported once; e
             const cached = sk.__cachedKeysForTests();
             assert.ok(cached.length >= 3, 'AES, verify and signing keys are cached');
             for (const k of cached) {
-                assert.equal(k.extractable, false, `cached ${k.type}/${k.algorithm.name} must be non-extractable`);
+                assert.equal(k.extractable, false, `cached ${k.type}/${k.algorithm} must be non-extractable`);
             }
-            assert.equal(cached.filter((k) => k.type === 'private' && k.algorithm.name === 'ECDSA').length, 1);
+            assert.equal(cached.filter((k) => k.type === 'private' && k.algorithm === 'ECDSA').length, 1);
             assert.equal(cached.filter((k) => k.extractable).length, 0, 'no extractable copy is reachable from the cache');
         });
     } finally {

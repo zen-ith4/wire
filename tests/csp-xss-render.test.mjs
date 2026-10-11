@@ -125,19 +125,27 @@ mock.module(jsPath('media/attachments.js'), {
 
 class MissingSenderKeyError extends Error {}
 class ReplayedMessageError extends Error {}
+class UnverifiedMessageError extends Error {} // Phase C3: group.js imports it
 mock.module(jsPath('crypto/messages/group-message-crypto.js'), {
     namedExports: {
         encryptOutgoingGroupMessage: async (_g, t) => t,
         decryptIncomingGroupMessage: async (_g, c) => c,
         // A's group.js decrypts reply previews via the Detailed variant.
         // Pure passthrough: the payload must reach the renderer unsanitized.
-        decryptIncomingGroupMessageDetailed: async (_g, c) => ({ plaintext: c }),
+        // Phase C3: a faithful passthrough also reports what a verified envelope would: the owner
+        // the server claimed and the reply target the server claimed.
+        decryptIncomingGroupMessageDetailed: async (_g, c, _id, expect = {}) => ({
+            plaintext: c,
+            ownerUserId: expect.expectedSenderId,
+            replyToId: expect.serverReplyToId ?? null,
+        }),
         readEnvelopeSenderKeyId: () => '1',
         ensureSenderKeyForGroup: async () => {},
         drainGroupKdms: async () => {},
         forgetGroupKeys: async () => {},
         MissingSenderKeyError,
         ReplayedMessageError,
+        UnverifiedMessageError,
     },
 });
 

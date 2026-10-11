@@ -76,6 +76,7 @@ import {
     forgetGroupKeys,
     MissingSenderKeyError,
     ReplayedMessageError,
+    UnverifiedMessageError,
 } from '../crypto/messages/group-message-crypto.js';
 
 // F7: the server answered 426 update_required (see core/api.js): this build is
@@ -210,30 +211,71 @@ function canDeleteGroupMessage(msg, currentUser) {
 // like any other message or the quote renders raw JSON. A quote that cannot
 // be decrypted (keyless, corrupt, older epoch) degrades to a neutral label
 // and never affects the reply itself; the envelope is never shown.
+//
+// Phase C3: the quote is verified exactly like a message (its own signature, and the
+// verified owner must be the user the server names as its author). A quote that does not
+// verify shows a static "unverified" label and nothing from the envelope.
+const UNVERIFIED_HTML = '<span class="text-muted">⚠️ Message could not be verified</span>';
+const UNVERIFIED_QUOTE_TEXT = '⚠️ Unverified message';
+
 async function decryptReplyPreview(groupId, replyTo) {
     if (!replyTo || typeof replyTo.content !== 'string' || replyTo.content === '') {
         return replyTo;
     }
     try {
-        const { plaintext } = await decryptIncomingGroupMessageDetailed(groupId, replyTo.content, replyTo.id);
+        const expect = replyTo.user_id != null ? { expectedSenderId: replyTo.user_id } : {};
+        const { plaintext } = await decryptIncomingGroupMessageDetailed(groupId, replyTo.content, replyTo.id, expect);
         return { ...replyTo, content: plaintext };
-    } catch {
-        return { ...replyTo, content: '🔒 Encrypted message' };
+    } catch (e) {
+        return {
+            ...replyTo,
+            content: e instanceof UnverifiedMessageError ? UNVERIFIED_QUOTE_TEXT : '🔒 Encrypted message',
+        };
     }
+}
+
+// A message that must not be rendered: static text only, nothing interpolated, built
+// from the SAME shape thread.js already renders for "waiting for key" placeholders.
+// __permanent: it is never retried (only "key not arrived" is).
+function unverifiedPlaceholder(raw) {
+    return {
+        ...raw,
+        content: '',
+        reply_to: null,
+        __placeholder: true,
+        __placeholderHtml: UNVERIFIED_HTML,
+        __permanent: true,
+        __raw: raw,
+    };
 }
 
 export async function decorateGroupMessages(groupId, rawMessages, { live = false } = {}) {
     const out = [];
+    const unverified = new Map();
     for (const raw of rawMessages) {
         try {
             // senderKeyId comes back from the SAME lookup that selected the
             // key which authenticated this envelope (not a second parse).
-            const { plaintext, senderKeyId } = await decryptIncomingGroupMessageDetailed(groupId, raw.content, raw.id);
+            // The server's claims (author, reply target) are checked against the
+            // VERIFIED envelope before anything is decrypted or rendered.
+            const { plaintext, senderKeyId, ownerUserId, replyToId } = await decryptIncomingGroupMessageDetailed(
+                groupId, raw.content, raw.id,
+                { expectedSenderId: raw.sender_id, serverReplyToId: raw.reply_to_id ?? null }
+            );
+
+            // The SIGNED reply target is authoritative: the quote is built from it, and
+            // only from a server row that really is that message (otherwise "deleted").
+            const quoted = replyToId !== null && raw.reply_to && Number(raw.reply_to.id) === replyToId
+                ? await decryptReplyPreview(groupId, raw.reply_to)
+                : null;
+
             out.push({
                 ...raw,
+                sender_id: ownerUserId,
                 content: plaintext,
                 senderKeyId,
-                reply_to: await decryptReplyPreview(groupId, raw.reply_to),
+                reply_to_id: replyToId,
+                reply_to: quoted,
             });
         } catch (e) {
             // Live arrival: let thread.js see the error so it can show a
@@ -242,6 +284,14 @@ export async function decorateGroupMessages(groupId, rawMessages, { live = false
             // function used to — made the placeholder path dead code and
             // lost the message entirely.
             if (live) throw e;
+
+            // Unverified messages are shown as a static placeholder (never dropped,
+            // never retried). One aggregated console line per batch, not per message.
+            if (e instanceof UnverifiedMessageError) {
+                unverified.set(e.reason, (unverified.get(e.reason) || 0) + 1);
+                out.push(unverifiedPlaceholder(raw));
+                continue;
+            }
 
             // Bulk history fetch: isolate failures PER MESSAGE. Any member
             // can POST arbitrary text as "ciphertext" (the server cannot
@@ -253,6 +303,11 @@ export async function decorateGroupMessages(groupId, rawMessages, { live = false
             console.warn(`[group] skipping undecryptable message ${raw.id} (${why})`);
         }
     }
+
+    if (unverified.size > 0) {
+        console.warn(`[group] ${[...unverified].reduce((n, [, c]) => n + c, 0)} unverified message(s): ${[...unverified].map(([r, c]) => `${r}: ${c}`).join(', ')}`);
+    }
+
     return out;
 }
 
@@ -266,6 +321,11 @@ async function drainAndRetry(groupId) {
 }
 
 function onGroupDecorateError(error, rawMsg) {
+    // Phase C3: permanent. No drain, no retry, static text only.
+    if (error instanceof UnverifiedMessageError) {
+        return { html: UNVERIFIED_HTML, permanent: true };
+    }
+
     if (error instanceof ReplayedMessageError) {
         // F4: a stored ciphertext re-posted under a new message id. Drop it.
         console.warn(`[group] dropped replayed message ${rawMsg?.id}`);
@@ -538,9 +598,14 @@ function renderActiveGroupShell(group) {
         stagingId: 'group-staging-area',
         replyPreviewId: 'group-reply-preview',
         sendTextUrl: `/api/groups/${group?.id}/messages`,
-        buildTextBody: async (content) => ({
-            content: await encryptOutgoingGroupMessage(group.id, content),
-        }),
+        // The reply target is part of the SIGNED envelope (the composer sends the same id
+        // in the request body); it is normalised here so the signed and the sent value agree.
+        buildTextBody: async (content, replyToId) => {
+            const replyTo = replyToId == null ? null : Number(replyToId);
+            return {
+                content: await encryptOutgoingGroupMessage(group.id, content, { replyToId: replyTo }),
+            };
+        },
         onMessage: () => {}, // the message comes back over the socket (new-group-message) and lands via addGroupMessage; avoids double-adding it here
         typingEmitter: groupTypingEmitter,
         inputAreaId: 'group-input-area',

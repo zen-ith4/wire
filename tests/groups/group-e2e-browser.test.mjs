@@ -269,4 +269,29 @@ test('group lifecycle in real Chromium: create, send, receive, reply, delete, ad
     }
 
     assert.deepEqual(problems, [], `no page errors or KDM/verification problems: ${JSON.stringify(problems)}`);
+
+    // --- a hostile server relabels the author of Alice's first message: Bob must NOT see it
+    const { getDb } = require('../../config/database');
+    const db = getDb();
+    const bobId = db.prepare("SELECT id FROM users WHERE username = 'bob'").get().id;
+    const groupId = db.prepare("SELECT id FROM groups WHERE name = 'lifecycle'").get().id;
+    const first = db.prepare('SELECT id FROM group_messages WHERE group_id = ? ORDER BY id ASC LIMIT 1').get(groupId);
+    db.prepare('UPDATE group_messages SET sender_id = ? WHERE id = ?').run(bobId, first.id);
+
+    await bob.page.reload({ waitUntil: 'domcontentloaded' });
+    await bob.page.waitForSelector('.nav-link, #unlock-password', { timeout: 40000 });
+    if (!(await bob.page.$('.nav-link'))) {
+        await bob.page.type('#unlock-password', PASSWORD);
+        await Promise.all([bob.page.click('#unlock-form button[type="submit"], #unlock-form button'), bob.page.waitForSelector('.nav-link', { timeout: 30000 })]);
+    }
+    await sleep(800);
+    await openGroup(bob.page, 'lifecycle');
+    await bob.page.waitForFunction(
+        () => [...document.querySelectorAll('#group-messages .chat-bubble')].some((e) => e.textContent.includes('Message could not be verified')),
+        { timeout: 20000 }
+    );
+    const afterTamper = await bubbles(bob.page);
+    assert.ok(!afterTamper.includes('hello from alice'), 'the relabelled message is not rendered');
+    assert.ok(afterTamper.includes('after removal'), 'the rest of the thread is intact');
+    assert.equal(afterTamper.filter((t) => t.includes('Message could not be verified')).length, 1);
 });

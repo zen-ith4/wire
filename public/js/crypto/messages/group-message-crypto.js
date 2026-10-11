@@ -20,13 +20,14 @@ import {
     decryptGroupMessageDetailed,
     MissingSenderKeyError,
     ReplayedMessageError,
+    UnverifiedMessageError,
 } from '../groups/message-crypto.js';
 import { rotateSenderKey } from '../groups/rotation.js';
 import { receiveKdm } from '../groups/kdm.js';
 import { getMySenderKey } from '../groups/sender-key.js';
 import { deleteAllSenderKeysForGroup, getOrCreateDeviceId } from '../groups/sender-key-store.js';
 
-export { MissingSenderKeyError, ReplayedMessageError };
+export { MissingSenderKeyError, ReplayedMessageError, UnverifiedMessageError };
 
 export function getGroupIdentity() {
     const identity = getCurrentIdentity();
@@ -42,17 +43,22 @@ export function getGroupIdentity() {
     return { ...identity, userId: Number(user.id) };
 }
 
-export async function encryptOutgoingGroupMessage(groupId, plaintext) {
-    return encryptGroupMessage(getGroupIdentity(), groupId, plaintext);
+export async function encryptOutgoingGroupMessage(groupId, plaintext, options = {}) {
+    return encryptGroupMessage(getGroupIdentity(), groupId, plaintext, options);
 }
 
-export async function decryptIncomingGroupMessage(groupId, envelopeJson, messageId) {
-    return decryptGroupMessage(getGroupIdentity(), groupId, envelopeJson, messageId);
+export async function decryptIncomingGroupMessage(groupId, envelopeJson, messageId, expect = {}) {
+    return decryptGroupMessage(getGroupIdentity(), groupId, envelopeJson, messageId, expect);
 }
 
-/** {plaintext, senderKeyId} where senderKeyId is the id of the key that actually decrypted it. */
-export async function decryptIncomingGroupMessageDetailed(groupId, envelopeJson, messageId) {
-    return decryptGroupMessageDetailed(getGroupIdentity(), groupId, envelopeJson, messageId);
+/**
+ * {plaintext, senderKeyId, ownerUserId, replyToId}: senderKeyId is the id of the key that
+ * actually decrypted it, ownerUserId the owner of the key whose signature VERIFIED, and
+ * replyToId the SIGNED reply target. `expect` = {expectedSenderId?, serverReplyToId?}
+ * are the server's claims, checked after the signature and before the nonce is claimed.
+ */
+export async function decryptIncomingGroupMessageDetailed(groupId, envelopeJson, messageId, expect = {}) {
+    return decryptGroupMessageDetailed(getGroupIdentity(), groupId, envelopeJson, messageId, expect);
 }
 
 /**

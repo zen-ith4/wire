@@ -231,6 +231,35 @@ async function persistWrapped(identity, meta, rawBytes, { ifAbsent = false } = {
     return true;
 }
 
+/**
+ * Thrown by loadSenderKeyBundle when a row EXISTS but cannot be trusted or used for
+ * verification: a received row without a signing public key (a pre-signing row), an
+ * invalid public key, or an id that no longer re-derives. It is PERMANENT: messages
+ * under such a key are "unverified" for good (never "waiting for key"), so they are
+ * never retried. Rows are kept (not deleted): deleting them would turn the messages
+ * into an endless "waiting for key" retry. Logged once per key id per session.
+ */
+export class UnverifiableSenderKeyError extends Error {
+    constructor(senderKeyId, reason) {
+        super(`Sender Key ${senderKeyId} cannot be used to verify messages (${reason})`);
+        this.name = 'UnverifiableSenderKeyError';
+        this.senderKeyId = senderKeyId;
+        this.reason = reason;
+        this.permanent = true;
+    }
+}
+
+const warnedUnverifiable = new Set();
+
+function unverifiable(senderKeyId, reason) {
+    if (!warnedUnverifiable.has(senderKeyId)) {
+        warnedUnverifiable.add(senderKeyId);
+        console.warn(`[group-e2ee] stored Sender Key ${senderKeyId} is unusable for verification (${reason}); its messages stay unverified`);
+    }
+
+    return new UnverifiableSenderKeyError(senderKeyId, reason);
+}
+
 /** Thrown when a KDM re-uses a stored senderKeyId with a different owner / group / epoch / signing key. */
 export class SenderKeyConflictError extends Error {
     constructor(senderKeyId) {
@@ -345,7 +374,9 @@ export async function storeReceivedSenderKey(identity, params, rawBytes) {
  * key, the signing PUBLIC key as a verify-only CryptoKey, and, only for a row
  * generated on THIS device, the signing private key (non-extractable).
  *
- * Fails closed (returns null, one console line) when the row cannot be trusted:
+ * Returns null when there is no such row (or it belongs to another account): the
+ * message is "waiting for key". Fails closed with UnverifiableSenderKeyError (permanent,
+ * one console line per key id) when the row cannot be trusted:
  *  - it has no signing public key (a pre-signing row),
  *  - its signing public key is not a valid P-256 point,
  *  - the id no longer re-derives from (root, group, owner, epoch, signPub), i.e.
@@ -378,8 +409,7 @@ export async function loadSenderKeyBundle(identity, senderKeyId) {
 
     try {
         if (typeof record.signPub !== 'string' || !record.signPub) {
-            console.warn('[group-e2ee] stored Sender Key has no signing public key (pre-signing row); ignoring it', senderKeyId);
-            return null;
+            throw unverifiable(senderKeyId, 'no signing public key');
         }
 
         let signPub;
@@ -388,14 +418,12 @@ export async function loadSenderKeyBundle(identity, senderKeyId) {
             signPub = base64ToBytes(record.signPub);
             verifyKey = await importVerifyKey(signPub);
         } catch {
-            console.warn('[group-e2ee] stored Sender Key has an invalid signing public key; ignoring it', senderKeyId);
-            return null;
+            throw unverifiable(senderKeyId, 'invalid signing public key');
         }
 
         const derived = await deriveSenderKeyId(record.groupId, record.ownerUserId, record.epoch, rawBytes, signPub);
         if (derived !== senderKeyId) {
-            console.warn('[group-e2ee] stored Sender Key does not match its id (altered row?); ignoring it', senderKeyId);
-            return null;
+            throw unverifiable(senderKeyId, 'does not match its id');
         }
 
         let signKey = null;
@@ -434,8 +462,13 @@ export async function loadSenderKeyBundle(identity, senderKeyId) {
 }
 
 export async function loadSenderKey(identity, senderKeyId) {
-    const bundle = await loadSenderKeyBundle(identity, senderKeyId);
-    return bundle ? bundle.cryptoKey : null;
+    try {
+        const bundle = await loadSenderKeyBundle(identity, senderKeyId);
+        return bundle ? bundle.cryptoKey : null;
+    } catch (e) {
+        if (e instanceof UnverifiableSenderKeyError) return null;
+        throw e;
+    }
 }
 
 /**
@@ -458,7 +491,12 @@ export async function getMySenderKey(identity, groupId) {
         const record = await getMySenderKeyForGroup(groupId, identity.userId);
         if (!record || record.senderKeyId === previousId) return null;
 
-        const bundle = await loadSenderKeyBundle(identity, record.senderKeyId);
+        let bundle = null;
+        try {
+            bundle = await loadSenderKeyBundle(identity, record.senderKeyId);
+        } catch (e) {
+            if (!(e instanceof UnverifiableSenderKeyError)) throw e;
+        }
 
         if (bundle?.signKey) {
             return {
@@ -484,12 +522,21 @@ export async function forgetSenderKey(senderKeyId) {
 export function clearSenderKeyCache() {
     // Drops every unwrapped key, the signing private keys included.
     bundleCache.clear();
+    warnedUnverifiable.clear();
     // Called on every identity lock: the next unlock draws a fresh random nonce
     // prefix (nonce-lock.js, F10).
     resetNoncePrefix();
 }
 
-/** Test-only: every CryptoKey (AES, verify, signing private) currently held in the in-memory cache. */
+/**
+ * TEST-ONLY. Describes every CryptoKey currently held in the in-memory cache as plain
+ * METADATA ({type, algorithm, extractable, usages}); it never returns a CryptoKey
+ * reference. Not attached to window or any global: it is only reachable by importing
+ * this module, like every other export here.
+ */
 export function __cachedKeysForTests() {
-    return [...bundleCache.values()].flatMap((b) => [b.cryptoKey, b.verifyKey, b.signKey]).filter(Boolean);
+    return [...bundleCache.values()]
+        .flatMap((b) => [b.cryptoKey, b.verifyKey, b.signKey])
+        .filter(Boolean)
+        .map((k) => ({ type: k.type, algorithm: k.algorithm.name, extractable: k.extractable, usages: [...k.usages] }));
 }

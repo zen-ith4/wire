@@ -208,6 +208,9 @@ test('L-1: a received key never overwrites an existing id, is decrypt-only, and 
     const sk = await alice.actor.importModule('crypto/groups/sender-key.js');
     const store = await alice.actor.importModule('crypto/groups/sender-key-store.js');
     const idmod = await alice.actor.importModule('crypto/groups/sender-key-id.js');
+    // call-site change (Phase C2): a Sender Key id commits to the key's signing public key
+    const signingmod = await alice.actor.importModule('crypto/groups/signing.js');
+    const newPub = async () => (await signingmod.generateSigningKeyPair()).publicKeyRaw;
 
     const mine = await sk.getMySenderKey(ident, group.id);
     assert.ok(mine?.senderKeyId, 'control: Alice has a current sending key');
@@ -215,8 +218,9 @@ test('L-1: a received key never overwrites an existing id, is decrypt-only, and 
     // A received key (even one whose owner is Alice herself, i.e. a self-KDM
     // from another device) is never promoted to a sending key.
     const rawSelf = crypto.getRandomValues(new Uint8Array(32));
-    const selfId = await idmod.deriveSenderKeyId(group.id, ident.userId, mine.epoch + 5, rawSelf);
-    await sk.storeReceivedSenderKey(ident, { senderKeyId: selfId, groupId: group.id, ownerUserId: ident.userId, epoch: mine.epoch + 5 }, rawSelf);
+    const pubSelf = await newPub();
+    const selfId = await idmod.deriveSenderKeyId(group.id, ident.userId, mine.epoch + 5, rawSelf, pubSelf);
+    await sk.storeReceivedSenderKey(ident, { senderKeyId: selfId, groupId: group.id, ownerUserId: ident.userId, epoch: mine.epoch + 5, signPub: pubSelf }, rawSelf);
     const stillMine = await sk.getMySenderKey(ident, group.id);
     assert.equal(stillMine.senderKeyId, mine.senderKeyId, 'a received key must never be selected for sending');
 
@@ -224,7 +228,8 @@ test('L-1: a received key never overwrites an existing id, is decrypt-only, and 
     const rawA = crypto.getRandomValues(new Uint8Array(32));
     const rawB = crypto.getRandomValues(new Uint8Array(32));
     const fixedId = 'f'.repeat(64);
-    const p = { senderKeyId: fixedId, groupId: group.id, ownerUserId: 4242, epoch: 3 };
+    const pubA = await newPub();
+    const p = { senderKeyId: fixedId, groupId: group.id, ownerUserId: 4242, epoch: 3, signPub: pubA };
     await sk.storeReceivedSenderKey(ident, p, rawA);
     const first = await store.getSenderKeyRecord(fixedId);
     await sk.storeReceivedSenderKey(ident, p, rawB);
@@ -233,9 +238,9 @@ test('L-1: a received key never overwrites an existing id, is decrypt-only, and 
     assert.equal(second.isMine, 0, 'received keys are decrypt-only');
 
     // The derivation is a function of the key: same inputs, different key => different id.
-    const a = await idmod.deriveSenderKeyId(group.id, 1, 0, rawA);
-    const b = await idmod.deriveSenderKeyId(group.id, 1, 0, rawB);
-    const a2 = await idmod.deriveSenderKeyId(group.id, 1, 0, rawA);
+    const a = await idmod.deriveSenderKeyId(group.id, 1, 0, rawA, pubA);
+    const b = await idmod.deriveSenderKeyId(group.id, 1, 0, rawB, pubA);
+    const a2 = await idmod.deriveSenderKeyId(group.id, 1, 0, rawA, pubA);
     assert.notEqual(a, b);
     assert.equal(a, a2, 'deterministic for the same key');
     assert.match(a, /^[0-9a-f]{64}$/);

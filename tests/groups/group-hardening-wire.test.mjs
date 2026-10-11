@@ -173,8 +173,9 @@ test('F8-a: the stored/transmitted root is never the AES key; id and enc keys ar
         direct, codec.base64ToBytes(env.ciphertext)
     ), 'root used directly as the AES key must not decrypt');
 
-    // The id is a function of (root, group, owner, epoch) with length-prefixed fields.
-    const id = (g, o, e) => ids.deriveSenderKeyId(g, o, e, root);
+    // The id is a function of (root, group, owner, epoch, signPub) with length-prefixed fields.
+    const signPub = codec.base64ToBytes(rec.signPub); // call-site change (Phase C2): the id now commits to the signing public key
+    const id = (g, o, e) => ids.deriveSenderKeyId(g, o, e, root, signPub);
     const base = await id(54, 1, 0);
     assert.equal(base, s.senderKeyId, 'recipient derives the same id as the sender');
     assert.match(base, /^[0-9a-f]{64}$/);
@@ -183,7 +184,7 @@ test('F8-a: the stored/transmitted root is never the AES key; id and enc keys ar
     assert.notEqual(base, await id(54, 1, 1));
     assert.notEqual(await id(1, 23, 4), await id(12, 3, 4));
     const other = crypto.getRandomValues(new Uint8Array(32));
-    assert.notEqual(base, await ids.deriveSenderKeyId(54, 1, 0, other));
+    assert.notEqual(base, await ids.deriveSenderKeyId(54, 1, 0, other, signPub));
     root.fill(0);
 });
 
@@ -233,15 +234,19 @@ test('F3-c: swapped groupId / senderKeyId / another group\'s envelope fail on AA
     const wrap = await s.bobDev.run(async () => (await import('../../public/js/crypto/groups/local-wrap-key.js')).deriveLocalWrapKey(s.bob));
     const { decryptBytes } = await import('../../public/js/crypto/groups/aead.js');
     const root = await decryptBytes(wrap, rec.wrappedKey);
-    await s.bobDev.run(() => sk.storeReceivedSenderKey(s.bob, { senderKeyId: 'b'.repeat(64), groupId: 59, ownerUserId: 1, epoch: 0 }, root.slice()));
+    // call-site change (Phase C2): ids are derived from (root, group, owner, epoch, signPub) and a stored id that
+    // does not re-derive is refused on load, so the second id is the real derived id for group 59 (same key bytes).
+    const signPub = codec.base64ToBytes(rec.signPub);
+    const otherId = await ids.deriveSenderKeyId(59, 1, 0, root, signPub);
+    await s.bobDev.run(() => sk.storeReceivedSenderKey(s.bob, { senderKeyId: otherId, groupId: 59, ownerUserId: 1, epoch: 0, signPub }, root.slice()));
     root.fill(0);
 
     // control
     assert.equal(await open(s, JSON.stringify(env)), 'bound');
 
     await assert.rejects(() => open(s, JSON.stringify(env), 59), /authentication failed/i, 'same envelope presented as another group');
-    await assert.rejects(() => open(s, JSON.stringify({ ...env, senderKeyId: 'b'.repeat(64) })), /authentication failed/i, 'senderKeyId swapped to another id holding the same key');
-    await assert.rejects(() => open(s, JSON.stringify({ ...env, senderKeyId: 'b'.repeat(64) }), 59), /authentication failed/i, 'both swapped');
+    await assert.rejects(() => open(s, JSON.stringify({ ...env, senderKeyId: otherId })), /authentication failed/i, 'senderKeyId swapped to another id holding the same key');
+    await assert.rejects(() => open(s, JSON.stringify({ ...env, senderKeyId: otherId }), 59), /authentication failed/i, 'both swapped');
 });
 
 test('F3-d: message and attachment AADs are distinct contexts', () => {

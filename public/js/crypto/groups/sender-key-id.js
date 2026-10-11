@@ -12,9 +12,17 @@
 // and the public senderKeyId is
 //
 //     id = hex(HMAC-SHA-256(idKey, encodeFields("group-sender-key-id-v2",
-//                                               groupId, ownerUserId, epoch)))
+//                                               groupId, ownerUserId, epoch,
+//                                               signPub)))
 //
-// (length-prefixed fields, not "|" joins). The id is a PRF of the key, so two
+// (length-prefixed fields, not "|" joins). signPub is the 65-byte raw ECDSA public
+// key of this Sender Key's message-signing key pair (signing.js, Phase C): the id
+// COMMITS to it. Every message carries the id inside its AES-GCM AAD and inside the
+// signed bytes, so the ciphertext and the signature are bound to this exact key
+// pair, a second KDM carrying the same root with a different signing key yields a
+// different id (it can never alias or overwrite an existing key), and a stored row
+// whose signPub or owner/epoch/group metadata was altered no longer re-derives to
+// its own id (sender-key.js checks that on load). The id is a PRF of the key, so two
 // distinct keys (e.g. minted by two devices of one account at the same epoch)
 // get distinct ids while every recipient arrives at the same id after
 // unwrapping the KDM, without it being transmitted. Because encKey and idKey
@@ -45,7 +53,11 @@ export async function deriveSenderEncKey(rootBytes) {
     );
 }
 
-export async function deriveSenderKeyId(groupId, ownerUserId, epoch, rootBytes) {
+export async function deriveSenderKeyId(groupId, ownerUserId, epoch, rootBytes, signPub) {
+    if (!(signPub instanceof Uint8Array) || signPub.length !== 65 || signPub[0] !== 0x04) {
+        throw new Error('A Sender Key id commits to a 65-byte uncompressed signing public key');
+    }
+
     const root = await importRoot(rootBytes);
     const idKey = await crypto.subtle.deriveKey(
         { name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(32), info: ID_INFO },
@@ -57,7 +69,7 @@ export async function deriveSenderKeyId(groupId, ownerUserId, epoch, rootBytes) 
     const mac = await crypto.subtle.sign(
         'HMAC',
         idKey,
-        encodeFields('group-sender-key-id-v2', Number(groupId), Number(ownerUserId), Number(epoch))
+        encodeFields('group-sender-key-id-v2', Number(groupId), Number(ownerUserId), Number(epoch), signPub)
     );
 
     return Array.from(new Uint8Array(mac))

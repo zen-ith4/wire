@@ -121,6 +121,10 @@ export async function ensureSenderKeyForGroup(groupId, memberUserIds, epoch) {
             return false;
         }
 
+        // Phase C: `mine` only exists when this device has an OWN row with a usable
+        // signing private key (getMySenderKey), so a row without one triggers a
+        // re-key here. The commit below (after the 201, under this lock) also drops
+        // the signing keys of the keys it supersedes.
         // F1 / MD-6: the new key is held in memory only. It is written to
         // IndexedDB AFTER the server confirmed the KDM batch (201), so:
         //  - fetch throws            -> nothing was ever persisted, discard;
@@ -188,14 +192,29 @@ export async function drainGroupKdms(groupId = null) {
     }
 
     const consumedIds = [];
+    const failedIds = [];
+    const failureKinds = new Map();
 
     for (const row of rows) {
         try {
             await receiveKdm(identity, row);
             consumedIds.push(row.id);
         } catch (e) {
-            console.error('Failed to consume group KDM', row.id, e);
+            // Left UNACKED on purpose (see above): never lost, retried by the next
+            // drain. A legacy (pre-signing) or otherwise unusable KDM must not
+            // flood the console on every drain, so failures are summarised in ONE
+            // line per drain below.
+            failedIds.push(row.id);
+            const kind = e?.name || 'Error';
+            failureKinds.set(kind, (failureKinds.get(kind) || 0) + 1);
         }
+    }
+
+    if (failedIds.length > 0) {
+        console.warn(
+            `[group-e2ee] ${failedIds.length} KDM(s) could not be consumed and were left unacked ` +
+            `(${[...failureKinds].map(([k, n]) => `${k}: ${n}`).join(', ')}); first id ${failedIds[0]}`
+        );
     }
 
     if (consumedIds.length > 0) {

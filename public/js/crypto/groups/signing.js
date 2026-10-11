@@ -150,6 +150,58 @@ export async function importVerifyKey(publicKeyRaw) {
 }
 
 /**
+ * Exports an EXTRACTABLE signing private key as PKCS#8 bytes (138 bytes), for
+ * wrapping into IndexedDB. The caller must zero() the returned buffer as soon as
+ * it has been wrapped and must drop the extractable key handle.
+ *
+ * @param {CryptoKey} privateKey
+ * @returns {Promise<Uint8Array>}
+ */
+export async function exportSigningPrivateKey(privateKey) {
+    return new Uint8Array(await crypto.subtle.exportKey('pkcs8', privateKey));
+}
+
+/**
+ * Imports PKCS#8 bytes as a NON-extractable, sign-only key: the only form in
+ * which a signing private key is ever kept in memory after it was stored.
+ * Fails closed with SigningFormatError.
+ *
+ * @param {Uint8Array} pkcs8
+ * @returns {Promise<CryptoKey>}
+ */
+export async function importSigningPrivateKey(pkcs8) {
+    if (!(pkcs8 instanceof Uint8Array) || pkcs8.length === 0) {
+        throw new SigningFormatError('Invalid signing private key encoding');
+    }
+
+    try {
+        return await crypto.subtle.importKey('pkcs8', pkcs8, ALGORITHM, false, ['sign']);
+    } catch {
+        throw new SigningFormatError('Signing private key is not a valid P-256 key');
+    }
+}
+
+/**
+ * True iff `privateKey` is the private half of `verifyKey` (sign a random probe,
+ * verify it). Used when a stored signing key is restored, so a row whose private
+ * key and public key do not belong together is never used for sending.
+ *
+ * @param {CryptoKey} privateKey
+ * @param {CryptoKey} verifyKey
+ * @returns {Promise<boolean>}
+ */
+export async function signingKeyMatchesPublic(privateKey, verifyKey) {
+    try {
+        const probe = crypto.getRandomValues(new Uint8Array(32));
+        const sig = await crypto.subtle.sign(SIGN_PARAMS, privateKey, probe);
+
+        return (await crypto.subtle.verify(SIGN_PARAMS, verifyKey, sig, probe)) === true;
+    } catch {
+        return false;
+    }
+}
+
+/**
  * @param {CryptoKey} privateKey ECDSA P-256 private key (sign usage)
  * @param {object} fields see encodeSignedBytes
  * @returns {Promise<Uint8Array>} exactly 64 bytes (raw r||s)

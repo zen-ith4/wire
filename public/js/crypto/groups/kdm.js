@@ -20,8 +20,33 @@ import { encryptBytes, decryptBytes } from './aead.js';
 import { zero, encodeFields } from './codec.js';
 import { storeReceivedSenderKey } from './sender-key.js';
 import { deriveSenderKeyId } from './sender-key-id.js';
+import { importVerifyKey } from './signing.js';
 
 const KDM_VERSION = 2;
+
+// Phase C: the KDM plaintext is root(32) || signPub(65, uncompressed P-256 point
+// 0x04||X||Y) = 97 bytes, inside the AES-GCM that is already bound (AAD) to the
+// group, sender, recipient, epoch and version. A 32-byte plaintext is the
+// pre-signing format.
+const ROOT_LENGTH = 32;
+const SIGN_PUB_LENGTH = 65;
+const KDM_PAYLOAD_LENGTH = ROOT_LENGTH + SIGN_PUB_LENGTH;
+
+/** A KDM whose plaintext is not exactly root(32)||signPub(65) with a 0x04 point prefix. */
+export class KdmFormatError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = 'KdmFormatError';
+    }
+}
+
+/** A pre-signing KDM (32-byte plaintext): unusable, never acked, test groups must be recreated. */
+export class LegacyKdmError extends KdmFormatError {
+    constructor() {
+        super('Legacy KDM format (no signing key); recreate the group');
+        this.name = 'LegacyKdmError';
+    }
+}
 
 /**
  * additionalData of a KDM wrap: binds the wrapped key to the group, sender,
@@ -42,23 +67,41 @@ export function kdmAad({ groupId, fromUserId, toUserId, epoch }) {
 }
 
 /**
- * Wraps one Sender Key for one recipient.
+ * Wraps one Sender Key (root + its signing public key) for one recipient.
  *
- * @param {Uint8Array} rawSenderKeyBytes
+ * @param {Uint8Array} rawSenderKeyBytes the 32-byte root
+ * @param {Uint8Array} signPub the 65-byte raw signing public key
  * @param {number} recipientUserId
  * @param {{groupId: number, fromUserId: number, epoch: number}} context
  * @returns {Promise<string>} JSON string — this is exactly what goes
  *   in group_key_distributions.wrapped_key; the server only ever
  *   sees this opaque string.
  */
-export async function wrapSenderKeyForRecipient(rawSenderKeyBytes, recipientUserId, context) {
-    const wrapKey = await getOrCreateGroupKdmKey(recipientUserId);
-    const envelope = await encryptBytes(
-        wrapKey,
-        rawSenderKeyBytes,
-        undefined,
-        kdmAad({ ...context, toUserId: recipientUserId })
-    );
+export async function wrapSenderKeyForRecipient(rawSenderKeyBytes, signPub, recipientUserId, context) {
+    if (!(rawSenderKeyBytes instanceof Uint8Array) || rawSenderKeyBytes.length !== ROOT_LENGTH) {
+        throw new KdmFormatError('Sender Key root must be 32 bytes');
+    }
+
+    if (!(signPub instanceof Uint8Array) || signPub.length !== SIGN_PUB_LENGTH || signPub[0] !== 0x04) {
+        throw new KdmFormatError('Signing public key must be 65 bytes, uncompressed');
+    }
+
+    const payload = new Uint8Array(KDM_PAYLOAD_LENGTH);
+    payload.set(rawSenderKeyBytes, 0);
+    payload.set(signPub, ROOT_LENGTH);
+
+    let envelope;
+    try {
+        const wrapKey = await getOrCreateGroupKdmKey(recipientUserId);
+        envelope = await encryptBytes(
+            wrapKey,
+            payload,
+            undefined,
+            kdmAad({ ...context, toUserId: recipientUserId })
+        );
+    } finally {
+        zero(payload);
+    }
 
     return JSON.stringify({
         v: KDM_VERSION,
@@ -76,13 +119,14 @@ export async function wrapSenderKeyForRecipient(rawSenderKeyBytes, recipientUser
  * with no shared state.
  *
  * @param {Uint8Array} rawSenderKeyBytes
+ * @param {Uint8Array} signPub
  * @param {number[]} recipientUserIds
  * @param {{groupId: number, fromUserId: number, epoch: number}} context
  * @returns {Promise<Array<{user_id: number, wrapped_key: string}>>}
  *   Ready to POST as the `recipients` array to
  *   POST /api/groups/:groupId/kdms.
  */
-export async function distributeSenderKey(rawSenderKeyBytes, recipientUserIds, context) {
+export async function distributeSenderKey(rawSenderKeyBytes, signPub, recipientUserIds, context) {
     if (!Array.isArray(recipientUserIds) || recipientUserIds.length === 0) {
         throw new Error('At least one recipient is required');
     }
@@ -92,7 +136,7 @@ export async function distributeSenderKey(rawSenderKeyBytes, recipientUserIds, c
     return Promise.all(
         uniqueIds.map(async (userId) => ({
             user_id: userId,
-            wrapped_key: await wrapSenderKeyForRecipient(rawSenderKeyBytes, userId, context),
+            wrapped_key: await wrapSenderKeyForRecipient(rawSenderKeyBytes, signPub, userId, context),
         }))
     );
 }
@@ -108,6 +152,7 @@ export async function distributeSenderKey(rawSenderKeyBytes, recipientUserIds, c
  *   (an identity ECDH'd with itself is a well-defined X25519 operation).
  * @returns {Promise<Uint8Array>} raw Sender Key bytes (32 bytes) —
  *   caller is responsible for importing + zeroing per sender-key.js.
+ * @throws {KdmFormatError|LegacyKdmError} on any structural problem (fail closed)
  */
 export async function unwrapKdm(wrappedKeyJson, context) {
     const { rawBytes } = await unwrapKdmDetailed(wrappedKeyJson, context);
@@ -115,8 +160,10 @@ export async function unwrapKdm(wrappedKeyJson, context) {
 }
 
 /**
- * Same as unwrapKdm but also reports the KDM version (always 2: it is the
- * only format).
+ * Same as unwrapKdm but also returns the signing public key carried in the KDM
+ * (65 raw bytes) and the KDM version (always 2: it is the only format).
+ * Fails closed: wrong plaintext length, a first point byte other than 0x04 and a
+ * point that is not on the curve all throw before the caller can store anything.
  */
 export async function unwrapKdmDetailed(wrappedKeyJson, context) {
     let envelope;
@@ -131,14 +178,37 @@ export async function unwrapKdmDetailed(wrappedKeyJson, context) {
         throw new Error('Unsupported KDM version/algorithm');
     }
 
+    // The pairwise key of the CLAIMED sender (context.fromUserId = the row's
+    // from_user_id): a KDM that was not wrapped by that sender fails here, before
+    // anything is parsed or stored.
     const wrapKey = await getOrCreateGroupKdmKey(context.fromUserId);
-    const rawBytes = await decryptBytes(wrapKey, envelope, kdmAad(context));
+    const payload = await decryptBytes(wrapKey, envelope, kdmAad(context));
 
-    if (rawBytes.length !== 32) {
-        throw new Error('Unwrapped KDM is not a valid AES-256 key');
+    try {
+        if (payload.length === ROOT_LENGTH) {
+            throw new LegacyKdmError();
+        }
+
+        if (payload.length !== KDM_PAYLOAD_LENGTH) {
+            throw new KdmFormatError('Unwrapped KDM has an invalid length');
+        }
+
+        if (payload[ROOT_LENGTH] !== 0x04) {
+            throw new KdmFormatError('KDM signing public key is not an uncompressed point');
+        }
+
+        const signPub = payload.slice(ROOT_LENGTH);
+
+        try {
+            await importVerifyKey(signPub);
+        } catch {
+            throw new KdmFormatError('KDM signing public key is not a valid P-256 point');
+        }
+
+        return { rawBytes: payload.slice(0, ROOT_LENGTH), signPub, version: envelope.v };
+    } finally {
+        zero(payload);
     }
-
-    return { rawBytes, version: envelope.v };
 }
 
 /**
@@ -161,7 +231,7 @@ export async function unwrapKdmDetailed(wrappedKeyJson, context) {
  * @returns {Promise<{senderKeyId: string}>}
  */
 export async function receiveKdm(identity, kdmRow) {
-    const { rawBytes } = await unwrapKdmDetailed(kdmRow.wrapped_key, {
+    const { rawBytes, signPub } = await unwrapKdmDetailed(kdmRow.wrapped_key, {
         groupId: kdmRow.group_id,
         fromUserId: kdmRow.from_user_id,
         toUserId: kdmRow.to_user_id,
@@ -169,13 +239,16 @@ export async function receiveKdm(identity, kdmRow) {
     });
 
     try {
-        const senderKeyId = await deriveSenderKeyId(kdmRow.group_id, kdmRow.from_user_id, kdmRow.epoch, rawBytes);
+        // The id commits to (root, group, owner, epoch, signPub), where the owner is
+        // the sender whose pairwise key just unwrapped this KDM.
+        const senderKeyId = await deriveSenderKeyId(kdmRow.group_id, kdmRow.from_user_id, kdmRow.epoch, rawBytes, signPub);
 
         await storeReceivedSenderKey(identity, {
             senderKeyId,
             groupId: kdmRow.group_id,
             ownerUserId: kdmRow.from_user_id,
             epoch: kdmRow.epoch,
+            signPub,
         }, rawBytes);
 
         return { senderKeyId };

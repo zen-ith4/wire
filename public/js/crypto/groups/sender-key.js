@@ -25,26 +25,41 @@
 
 import { deriveLocalWrapKey } from './local-wrap-key.js';
 import { encryptBytes, decryptBytes } from './aead.js';
-import { zero } from './codec.js';
+import { zero, bytesToBase64, base64ToBytes, encodeFields } from './codec.js';
 import { deriveSenderKeyId, deriveSenderEncKey } from './sender-key-id.js';
 import { resetNoncePrefix } from './nonce-lock.js';
+import {
+    generateSigningKeyPair,
+    exportSigningPrivateKey,
+    importSigningPrivateKey,
+    importVerifyKey,
+    signingKeyMatchesPublic,
+} from './signing.js';
 import {
     putSenderKeyRecord,
     putSenderKeyRecordIfAbsent,
     getSenderKeyRecord,
     getMySenderKeyForGroup,
     deleteSenderKeyRecord,
+    clearSupersededSigningKeys,
 } from './sender-key-store.js';
 
 const SENDER_KEY_BYTE_LENGTH = 32; // AES-256
 
-// senderKeyId -> non-extractable CryptoKey. Never persisted as-is;
-// this is purely a per-tab in-memory speed-up so every encrypt/
-// decrypt call doesn't have to unwrap from IndexedDB again. Cleared
-// on identity lock (clearSenderKeyCache, called alongside
+// senderKeyId -> bundle {cryptoKey, verifyKey, signKey, signPub, ownerUserId,
+// groupId, epoch}. Every CryptoKey in it is NON-extractable. Never persisted
+// as-is; this is purely a per-tab in-memory speed-up so every encrypt/decrypt/
+// sign/verify call doesn't have to unwrap from IndexedDB again. `signKey` (the
+// signing PRIVATE key) is only ever present for a row generated on THIS device.
+// Cleared on identity lock (clearSenderKeyCache, called alongside
 // clearLocalWrapKeyCache — see identity-service.js integration in
 // Phase 3).
-const cryptoKeyCache = new Map();
+const bundleCache = new Map();
+
+/** additionalData of the wrapped signing private key: binds it to its key id and owner. */
+function signKeyAad(senderKeyId, ownerUserId) {
+    return encodeFields('group-sig-priv-v1', senderKeyId, Number(ownerUserId));
+}
 
 // The stored/transmitted 32 bytes are the ROOT secret; the AES key is a
 // derived subkey (sender-key-id.js key schedule).
@@ -82,9 +97,38 @@ export async function generateSenderKey(identity, groupId, epoch, { deferPersist
     // The id is derived FROM the key (sender-key-id.js), so two
     // devices of one account can never mint the same id for different keys.
     const rawBytes = crypto.getRandomValues(new Uint8Array(SENDER_KEY_BYTE_LENGTH));
-    const senderKeyId = await deriveSenderKeyId(groupId, identity.userId, epoch, rawBytes);
 
-    const cryptoKey = await importSenderKeyBytes(rawBytes);
+    // Phase C: every Sender Key has its OWN message-signing key pair. The private
+    // key is generated extractable ONLY so it can be exported once and wrapped; the
+    // key used from here on is a NON-extractable re-import, every temporary byte
+    // buffer is zeroed, and the extractable handle is not kept anywhere.
+    let signKey;
+    let signPub;
+    let signKeyWrapped;
+    let senderKeyId;
+    let cryptoKey;
+
+    try {
+        const pair = await generateSigningKeyPair();
+        signPub = pair.publicKeyRaw;
+        const pkcs8 = await exportSigningPrivateKey(pair.privateKey);
+
+        try {
+            signKey = await importSigningPrivateKey(pkcs8);
+            senderKeyId = await deriveSenderKeyId(groupId, identity.userId, epoch, rawBytes, signPub);
+            const wrapKey = await deriveLocalWrapKey(identity);
+            signKeyWrapped = await encryptBytes(wrapKey, pkcs8, undefined, signKeyAad(senderKeyId, identity.userId));
+        } finally {
+            zero(pkcs8);
+        }
+
+        cryptoKey = await importSenderKeyBytes(rawBytes);
+    } catch (e) {
+        zero(rawBytes);
+        throw e;
+    }
+
+    const verifyKey = await importVerifyKey(signPub);
 
     const meta = {
         senderKeyId,
@@ -95,6 +139,17 @@ export async function generateSenderKey(identity, groupId, epoch, { deferPersist
         // key this device may ever ENCRYPT with" (nonce-lock.js counters
         // are per device).
         isMine: 1,
+        signPub: bytesToBase64(signPub),
+        signKeyWrapped,
+    };
+    const bundle = {
+        cryptoKey,
+        verifyKey,
+        signKey,
+        signPub,
+        ownerUserId: Number(identity.userId),
+        groupId: Number(groupId),
+        epoch,
     };
 
     if (deferPersist) {
@@ -107,13 +162,21 @@ export async function generateSenderKey(identity, groupId, epoch, { deferPersist
             senderKeyId,
             cryptoKey,
             rawBytes,
+            signPub,
+            signKey,
             async commit() {
                 try {
+                    // The root, the public key and the WRAPPED signing key land in
+                    // ONE put. Only after that put completed (durably stored, and
+                    // after the caller's 201) are the signing keys of the keys this
+                    // one supersedes dropped.
                     await persistWrapped(identity, meta, rawBytes);
-                    cryptoKeyCache.set(senderKeyId, cryptoKey);
+                    bundleCache.set(senderKeyId, bundle);
                 } finally {
                     zero(rawBytes);
                 }
+
+                await dropSupersededSigningKeys(identity.userId, groupId, senderKeyId);
             },
             discard() {
                 zero(rawBytes);
@@ -121,11 +184,34 @@ export async function generateSenderKey(identity, groupId, epoch, { deferPersist
         };
     }
 
+    // Direct (non-deferred) callers have no KDM POST to wait for, so nothing
+    // superseded is dropped here: the next deferred commit() does that.
     await persistWrapped(identity, meta, rawBytes);
 
-    cryptoKeyCache.set(senderKeyId, cryptoKey);
+    bundleCache.set(senderKeyId, bundle);
 
-    return { senderKeyId, cryptoKey, rawBytes };
+    return { senderKeyId, cryptoKey, rawBytes, signPub, signKey };
+}
+
+/**
+ * Condition B: the superseded own signing private keys are dropped only AFTER the
+ * new key is durably stored, by the caller that holds the sender-key lock
+ * (messages/group-message-crypto.js ensureSenderKeyForGroup). A failure here never
+ * fails the rotation: the old key simply stays usable (and is dropped by the next
+ * rotation). A send already in flight keeps the CryptoKey it loaded, so it still
+ * signs.
+ */
+async function dropSupersededSigningKeys(ownerUserId, groupId, keepSenderKeyId) {
+    try {
+        const cleared = await clearSupersededSigningKeys(groupId, ownerUserId, keepSenderKeyId);
+
+        for (const id of cleared) {
+            const bundle = bundleCache.get(id);
+            if (bundle) bundleCache.set(id, { ...bundle, signKey: null });
+        }
+    } catch (e) {
+        console.warn('[group-e2ee] could not drop a superseded signing key; it stays until the next rotation', e?.name || e);
+    }
 }
 
 async function persistWrapped(identity, meta, rawBytes, { ifAbsent = false } = {}) {
@@ -145,6 +231,15 @@ async function persistWrapped(identity, meta, rawBytes, { ifAbsent = false } = {
     return true;
 }
 
+/** Thrown when a KDM re-uses a stored senderKeyId with a different owner / group / epoch / signing key. */
+export class SenderKeyConflictError extends Error {
+    constructor(senderKeyId) {
+        super('A KDM conflicts with the stored owner or signing key of a Sender Key id');
+        this.name = 'SenderKeyConflictError';
+        this.senderKeyId = senderKeyId;
+    }
+}
+
 /**
  * Stores a Sender Key received via KDM (from another member, or our
  * own self-KDM landing on a second device/tab).
@@ -161,14 +256,33 @@ async function persistWrapped(identity, meta, rawBytes, { ifAbsent = false } = {
  * relay); replacing the key would make every message encrypted under the
  * first one unreadable. The existing key wins.
  *
+ * Phase C: the owner, the epoch and the signing public key (`signPub`, 65 raw bytes) of
+ * a stored id are IMMUTABLE. A later KDM that carries an existing senderKeyId with a
+ * different owner, group, epoch or signPub is rejected (SenderKeyConflictError) and
+ * never overwrites the stored row. A received key never gets a signing private key.
+ *
  * @param {object} identity
- * @param {object} params {senderKeyId, groupId, ownerUserId, epoch}
+ * @param {object} params {senderKeyId, groupId, ownerUserId, epoch, signPub}
  * @param {Uint8Array} rawBytes
  */
 export async function storeReceivedSenderKey(identity, params, rawBytes) {
+    // Fail closed on a malformed signing public key BEFORE touching storage.
+    const signPub = params.signPub;
+    const verifyKey = await importVerifyKey(signPub);
+    const signPubB64 = bytesToBase64(signPub);
+
     const existing = await getSenderKeyRecord(params.senderKeyId);
 
     if (existing) {
+        if (
+            Number(existing.groupId) !== Number(params.groupId) ||
+            Number(existing.ownerUserId) !== Number(params.ownerUserId) ||
+            Number(existing.epoch) !== Number(params.epoch) ||
+            existing.signPub !== signPubB64
+        ) {
+            throw new SenderKeyConflictError(params.senderKeyId);
+        }
+
         const wrapKey = await deriveLocalWrapKey(identity);
         let existingBytes = null;
         try {
@@ -206,24 +320,44 @@ export async function storeReceivedSenderKey(identity, params, rawBytes) {
         ownerUserId: params.ownerUserId,
         epoch: params.epoch,
         isMine: 0,
+        signPub: signPubB64,
     }, rawBytes, { ifAbsent: !existing });
 
     if (!written) {
         return loadSenderKey(identity, params.senderKeyId);
     }
 
-    cryptoKeyCache.set(params.senderKeyId, cryptoKey);
+    bundleCache.set(params.senderKeyId, {
+        cryptoKey,
+        verifyKey,
+        signKey: null,
+        signPub: signPub.slice(),
+        ownerUserId: Number(params.ownerUserId),
+        groupId: Number(params.groupId),
+        epoch: params.epoch,
+    });
 
     return cryptoKey;
 }
 
 /**
- * Unwraps and imports a Sender Key already on disk, caching the
- * result. Used when a tab starts up with no in-memory cache yet but
- * IndexedDB already has the key from an earlier session/tab.
+ * Unwraps and imports a Sender Key already on disk, caching the result: the AES
+ * key, the signing PUBLIC key as a verify-only CryptoKey, and, only for a row
+ * generated on THIS device, the signing private key (non-extractable).
+ *
+ * Fails closed (returns null, one console line) when the row cannot be trusted:
+ *  - it has no signing public key (a pre-signing row),
+ *  - its signing public key is not a valid P-256 point,
+ *  - the id no longer re-derives from (root, group, owner, epoch, signPub), i.e.
+ *    the stored metadata or public key was altered.
+ * A row whose signing PRIVATE key is missing or does not match its public key still
+ * loads (it can decrypt and verify) but has `signKey: null`, so it is never used
+ * for sending.
+ *
+ * @returns {Promise<object|null>} the bundle, see bundleCache
  */
-export async function loadSenderKey(identity, senderKeyId) {
-    const cached = cryptoKeyCache.get(senderKeyId);
+export async function loadSenderKeyBundle(identity, senderKeyId) {
+    const cached = bundleCache.get(senderKeyId);
     if (cached) return cached;
 
     const record = await getSenderKeyRecord(senderKeyId);
@@ -243,37 +377,119 @@ export async function loadSenderKey(identity, senderKeyId) {
     }
 
     try {
-        const cryptoKey = await importSenderKeyBytes(rawBytes);
-        cryptoKeyCache.set(senderKeyId, cryptoKey);
-        return cryptoKey;
+        if (typeof record.signPub !== 'string' || !record.signPub) {
+            console.warn('[group-e2ee] stored Sender Key has no signing public key (pre-signing row); ignoring it', senderKeyId);
+            return null;
+        }
+
+        let signPub;
+        let verifyKey;
+        try {
+            signPub = base64ToBytes(record.signPub);
+            verifyKey = await importVerifyKey(signPub);
+        } catch {
+            console.warn('[group-e2ee] stored Sender Key has an invalid signing public key; ignoring it', senderKeyId);
+            return null;
+        }
+
+        const derived = await deriveSenderKeyId(record.groupId, record.ownerUserId, record.epoch, rawBytes, signPub);
+        if (derived !== senderKeyId) {
+            console.warn('[group-e2ee] stored Sender Key does not match its id (altered row?); ignoring it', senderKeyId);
+            return null;
+        }
+
+        let signKey = null;
+
+        if (record.isMine === 1 && record.signKeyWrapped) {
+            let pkcs8 = null;
+            try {
+                pkcs8 = await decryptBytes(wrapKey, record.signKeyWrapped, signKeyAad(senderKeyId, record.ownerUserId));
+                const candidate = await importSigningPrivateKey(pkcs8);
+                if (await signingKeyMatchesPublic(candidate, verifyKey)) {
+                    signKey = candidate;
+                } else {
+                    console.warn('[group-e2ee] stored signing key does not match its public key; not using it for sending', senderKeyId);
+                }
+            } catch {
+                console.warn('[group-e2ee] stored signing key could not be restored; not using it for sending', senderKeyId);
+            } finally {
+                if (pkcs8) zero(pkcs8);
+            }
+        }
+
+        const bundle = {
+            cryptoKey: await importSenderKeyBytes(rawBytes),
+            verifyKey,
+            signKey,
+            signPub,
+            ownerUserId: Number(record.ownerUserId),
+            groupId: Number(record.groupId),
+            epoch: record.epoch,
+        };
+        bundleCache.set(senderKeyId, bundle);
+        return bundle;
     } finally {
         zero(rawBytes);
     }
 }
 
+export async function loadSenderKey(identity, senderKeyId) {
+    const bundle = await loadSenderKeyBundle(identity, senderKeyId);
+    return bundle ? bundle.cryptoKey : null;
+}
+
 /**
  * The Sender Key this device currently sends with in a group, if any
- * (metadata + usable CryptoKey). Null means the caller needs to
+ * (metadata + usable CryptoKeys). Null means the caller needs to
  * generate+distribute one before it can send — see rotation.js.
+ *
+ * Sending requires an OWN row (isMine) that has a signing private key restored
+ * and matching its public key. A row without one is unusable here: null, and the
+ * caller re-keys.
  */
 export async function getMySenderKey(identity, groupId) {
-    const record = await getMySenderKeyForGroup(groupId, identity.userId);
-    if (!record) return null;
+    let previousId = null;
 
-    const cryptoKey = await loadSenderKey(identity, record.senderKeyId);
-    if (!cryptoKey) return null;
+    // A rotation that commits between "pick the row" and "load its signing key"
+    // drops the signing key of the row just picked. That only ever happens AFTER the
+    // new key is durably stored, so re-selecting finds it: retry while the selection
+    // moves on, never fall back to a key without a signing key.
+    for (let attempt = 0; attempt < 3; attempt++) {
+        const record = await getMySenderKeyForGroup(groupId, identity.userId);
+        if (!record || record.senderKeyId === previousId) return null;
 
-    return { senderKeyId: record.senderKeyId, epoch: record.epoch, cryptoKey };
+        const bundle = await loadSenderKeyBundle(identity, record.senderKeyId);
+
+        if (bundle?.signKey) {
+            return {
+                senderKeyId: record.senderKeyId,
+                epoch: record.epoch,
+                cryptoKey: bundle.cryptoKey,
+                signKey: bundle.signKey,
+                signPub: bundle.signPub,
+            };
+        }
+
+        previousId = record.senderKeyId;
+    }
+
+    return null;
 }
 
 export async function forgetSenderKey(senderKeyId) {
-    cryptoKeyCache.delete(senderKeyId);
+    bundleCache.delete(senderKeyId);
     await deleteSenderKeyRecord(senderKeyId);
 }
 
 export function clearSenderKeyCache() {
-    cryptoKeyCache.clear();
+    // Drops every unwrapped key, the signing private keys included.
+    bundleCache.clear();
     // Called on every identity lock: the next unlock draws a fresh random nonce
     // prefix (nonce-lock.js, F10).
     resetNoncePrefix();
+}
+
+/** Test-only: every CryptoKey (AES, verify, signing private) currently held in the in-memory cache. */
+export function __cachedKeysForTests() {
+    return [...bundleCache.values()].flatMap((b) => [b.cryptoKey, b.verifyKey, b.signKey]).filter(Boolean);
 }

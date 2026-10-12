@@ -145,7 +145,9 @@ export async function encryptGroupMessage(identity, groupId, plaintext, { replyT
  * verify, a verified owner that is not the server's sender, a reply target that the
  * server contradicts, an unexpected attachment field, or a key that cannot verify.
  * PERMANENT: callers never retry it (only "key not arrived" is retried).
- * `reason` is a fixed enum, never message content.
+ * `reason` is a fixed enum, never message content. A structurally MALFORMED envelope
+ * (not JSON, wrong version/alg, bad senderKeyId, counter or nonce) keeps throwing a plain
+ * Error and is dropped per message (group-keys-contract K-2): nothing of it is rendered.
  */
 export class UnverifiedMessageError extends Error {
     constructor(reason, message) {

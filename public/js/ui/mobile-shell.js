@@ -38,7 +38,7 @@ function closeMoreMenu() {
 
 /**
  * Admin destinations, tucked behind a ⋮ button in the top bar so they
- * never take a slot in the four primary tabs. `adminItems` is the
+ * never take a slot in the primary tabs. `adminItems` is the
  * already-permission-filtered list from buildNav() (core/app.js) — the
  * same `user.is_admin` check that populates the desktop sidebar. For a
  * non-admin the list is empty, so no button and no menu are created at
@@ -126,14 +126,17 @@ function renderMoreMenu(adminItems, navigate) {
 /**
  * Build the bottom tab bar (+ admin menu). `tabs` is the same list
  * that builds the sidebar, so the two can never drift apart.
+ * `groupsTab` is the Groups nav item (the very object the desktop
+ * sidebar uses) or null; core/app.js passes it only when the server
+ * reports groups_enabled, and it is appended after the primary tabs.
  */
-export function renderMobileNav({ tabs, adminItems, navigate }) {
+export function renderMobileNav({ tabs, groupsTab = null, adminItems, navigate }) {
   const bar = document.getElementById('bottom-nav');
 
   if (bar) {
     bar.innerHTML = '';
 
-    tabs.forEach((item) => {
+    (groupsTab ? [...tabs, groupsTab] : tabs).forEach((item) => {
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'bottom-nav-item';

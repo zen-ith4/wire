@@ -85,6 +85,85 @@ Only the group half of that file (`encryptAttachmentForGroup`,
   the repo root. The real-Chromium test needs `@sparticuz/chromium` and
   `puppeteer-core` in `/tmp/browser-check` (`CHROMIUM_DIR`), outside the repo.
 
+## Task C, phase 1: escapeHtml -> escapeHtmlAttr (20 sites)
+- X's `escapeHtml()` does not escape quotes; the 20 uses inside quoted attributes now call
+  `escapeHtmlAttr()`: `chat/dm.js` (1), `chat/composer.js` (1), `settings/settings-render.js` (11),
+  `settings/settings-shortcuts.js` (4), `settings/settings-appearance-custom.js` (2),
+  `settings/settings-bubble-gradient.js` (1). Text-node uses are untouched. `core/auth.js` has
+  its own local `escapeHtml()` that escapes both quote kinds and stays as is.
+- Modified test: `tests/csp-static.test.mjs`, only the `escapeHtmlInAttr` caps (all 0 now).
+- New test: `tests/csp-attr-escape.test.mjs` (real render functions + jsdom DOM parser; each
+  site type fails on the pre-change code and passes after).
+- Merge note: `dm.js`/`composer.js` got one added import line (`escapeHtmlAttr,`) plus one
+  edited site each, in their own commit.
+
+## Task C, phase 2: automated acceptance checks (new tests only, no app changes)
+The original acceptance checklist file is not in the repo; this maps the items named in Task C.
+Run with `npm test` (real Chromium needed; without it these tests SKIP, which is not a pass).
+
+Automated now
+- Server never stores plaintext, group text and DM text: `tests/acceptance-no-plaintext.test.mjs`
+  runs the REAL `node server.js` and real Chromium, then scans `.db`, `-wal`, `-shm`, every
+  upload dir and multer's temp dir (all redirected into one work dir; a control fails if the
+  server writes anywhere else) and the captured stdout/stderr, once live and once after stop.
+- DM attachments (bytes + caption) must leave no marker: same file, **depends on agent B's patch**.
+  On a tree without it the test is `todo` and fails with the exact hit (file bytes in
+  `dm-uploads/`, caption in `wire.db-wal`). It becomes a hard test automatically when
+  `controllers/dm.controller.js` mentions `attachment_iv`, or with `DM_ATTACH_E2EE=1`.
+- `escapeAttr()` JS-string contract: `tests/escape-attr-js-string.test.mjs` (jsdom, no browser needed).
+- Group attachments: uploads without a valid `attachment_iv` (missing, non-base64, oversized,
+  no session, non-member) are rejected and leave no file behind.
+- Log leak: no JWT / Bearer / base64-or-hex 32-byte key / wrapped-key field / password patterns,
+  and none of the exact secret values the server holds (tokens, the password, every value of
+  key-ish DB columns) appear in the server logs.
+- XSS sweep, real Chromium, Report-Only CSP so handlers WOULD run: `tests/acceptance-xss-sweep-browser.test.mjs`.
+  Paths: group name (create + rename), username, profile bio, DM text, group text, link text,
+  reply quote (DM + group), reaction emoji (DM + group), attachment filename, member role.
+  Seen by sender and receiver; `window.__pwned` must stay false. This app has no display-name
+  field, so the profile `bio` stands in for it.
+
+Findings from phase 2
+1. FIXED: stored XSS via attachment filename (executed on click for sender and receiver).
+   `escapeAttr()` in `public/js/core/utils.js` did not escape `&`, and its result is placed inside a
+   single-quoted JS string in inline `onclick="window.downloadAttachment(id, '<name>', ...)"`
+   (`media/attachments.js` 886-888 and 995-997, `media/audio-player.js` 249). A file named
+   `x&#39;);__pwned=1;(&#39;.txt` closed the string after HTML decoding. `escapeAttr()` now escapes `&`
+   first (and lone CR / U+2028 / U+2029). Tests: `tests/escape-attr-js-string.test.mjs` (real
+   renderers, HTML parser then JS evaluation) and the real-Chromium click in the XSS sweep.
+   Call sites that embed escapeAttr output in a JS string inside an inline handler: only those
+   three files/lines above; every other caller puts it in a plain attribute (title, data-*, alt,
+   aria-label, src, accept), where the fix also makes names containing `&` display exactly.
+   The inline handlers themselves are still blocked by an enforced CSP (docs/CSP_TODO.md).
+2. `services/auth.service.js registerUser()` only checks that the username is non-empty;
+   `isValidUsername()` runs only in `createUser()`. `/api/auth/register` therefore accepts
+   usernames like `"><img src=x onerror=...>`. The sweep shows they currently render inert.
+   Agent A's area.
+
+Still manual
+- Real push notifications, APK build, Capacitor shell, real multi-device group use, TLS/network
+  deployment, visual/UX review, a real phone (notch / home indicator).
+- Enforced CSP (`CSP_ENFORCE=true`) is not safe yet: see docs/CSP_TODO.md.
+- Group attachments through the UI (disabled by design; only the server-side rejection is automated).
+
+Depends on other agents
+- Agent B: DM attachment E2EE (above); `dm.js:1503` (Send) and `dm.js:2095` (delete) inline onclick.
+- Agent A: the 6 known baseline failures (stale selectors), register username validation.
+
+## Task C, phase 3: mobile Groups tab
+- The phone bottom bar had 3 tabs (My Files, Messages, Settings; the old "four primary tabs" comment
+  was stale). With `groups_enabled` it now has 4: `core/app.js buildNav()` passes the same
+  `GROUPS_NAV_ITEM` the desktop sidebar uses as `groupsTab` to `renderMobileNav()` (`ui/mobile-shell.js`),
+  which appends it. Same `navigate('groups')` route, no new routing; `router.js`, `navBadgeHtml` and the
+  admin "More" menu are untouched. With groups off `groupsItems[0]` is `undefined`, `groupsTab` is null
+  and nothing is rendered differently (mobile DOM is byte-identical to the previous commit).
+- Layout: tabs are `flex:1 1 0; min-width:0`; the icon pill is 58px (63.4px at density 1.15). 4 tabs
+  fit at 320/375/414 even with the largest font (1.25) and density settings; 5 tabs would only start
+  truncating "Messages" at 320px with the largest font. Landscape-short (max-height 480px) shows all 4.
+- Test: `tests/mobile-groups-tab-browser.test.mjs` (real server, real Chromium, mobile viewport, touch
+  tap; `SHOTS_DIR=<dir>` also writes screenshots).
+- Not tested: real phone, notch / home-indicator insets (Chromium reports 0; safe-area was evaluated
+  from the CSS only), native WebView, Capacitor, APK.
+
 ## Files changed vs the X base (verified)
 `git diff --name-status 7655a7e..HEAD -- ':!tests' ':!docs'` was compared against an independently written list; they match exactly. Nothing else outside `tests/` and `docs/` differs from X.
 

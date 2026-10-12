@@ -24,6 +24,7 @@ import { ICONS } from '../icons.js';
 
 import {
   escapeHtml,
+  escapeHtmlAttr,
   formatBytes,
   showToast
 } from '../core/utils.js';
@@ -215,6 +216,14 @@ function iconForFile(
  * @param {string} config.uploadUrl
  * @param {(content:string, replyToId:number|null) => object|Promise<object>} config.buildTextBody
  * @param {(form: FormData) => void} [config.buildFormExtra]
+ * @param {(ctx: {file: File, caption: string, isVoice: boolean}) =>
+ *   Promise<{file: File, fields: Record<string,string>}>} [config.prepareUpload]
+ *   Optional. Called with the plaintext file and caption right before a
+ *   file/voice upload; whatever it returns REPLACES them: `file` is
+ *   uploaded instead of the original and `fields` are appended as extra
+ *   multipart fields (the plaintext caption and voice flag are then NOT
+ *   sent). Used by DM to end-to-end encrypt attachments. Omit to keep a
+ *   composer (e.g. group chat's) exactly as it was.
  * @param {(message: object) => void} config.onMessage
  * @param {{notifyTyping():void, stop():void}} config.typingEmitter
  * @param {() => boolean} [config.canSend]
@@ -254,6 +263,7 @@ export function createComposer(
     uploadUrl,
     buildTextBody,
     buildFormExtra,
+    prepareUpload,
     onMessage,
     typingEmitter,
     canSend = () => true,
@@ -591,7 +601,7 @@ export function createComposer(
         <div class="attach-chip-info">
           <span
             class="attach-chip-name"
-            title="${escapeHtml(item.file.name)}"
+            title="${escapeHtmlAttr(item.file.name)}"
           >
             ${escapeHtml(item.file.name)}
           </span>
@@ -2488,13 +2498,36 @@ export function createComposer(
       const form =
         new FormData();
 
+      const prepared =
+        prepareUpload
+          ? await prepareUpload({
+              file:
+                item.file,
+              caption:
+                caption || '',
+              isVoice:
+                false
+            })
+          : null;
+
       form.append(
         'file',
-        item.file,
-        item.file.name
+        prepared
+          ? prepared.file
+          : item.file,
+        prepared
+          ? prepared.file.name
+          : item.file.name
       );
 
-      if (caption) {
+      if (prepared) {
+        for (const [name, value] of Object.entries(prepared.fields)) {
+          form.append(
+            name,
+            value
+          );
+        }
+      } else if (caption) {
         form.append(
           'content',
           caption
@@ -3256,16 +3289,40 @@ export function createComposer(
       const form =
         new FormData();
 
-      form.append(
-        'file',
-        file,
-        file.name
-      );
+      const prepared =
+        prepareUpload
+          ? await prepareUpload({
+              file,
+              caption:
+                '',
+              isVoice:
+                true
+            })
+          : null;
 
       form.append(
-        'is_voice_message',
-        '1'
+        'file',
+        prepared
+          ? prepared.file
+          : file,
+        prepared
+          ? prepared.file.name
+          : file.name
       );
+
+      if (prepared) {
+        for (const [name, value] of Object.entries(prepared.fields)) {
+          form.append(
+            name,
+            value
+          );
+        }
+      } else {
+        form.append(
+          'is_voice_message',
+          '1'
+        );
+      }
 
       if (replyToId) {
         form.append(

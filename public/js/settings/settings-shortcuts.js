@@ -11,7 +11,7 @@
 // ============================================================
 
 import { ICONS } from '../icons.js';
-import { escapeHtml, showToast, emptyState } from '../core/utils.js';
+import { escapeHtml, escapeHtmlAttr, showToast, emptyState } from '../core/utils.js';
 import { showConfirm } from '../ui/confirm.js';
 import {
   getAllShortcuts,
@@ -68,8 +68,8 @@ function shortcutRowHtml(s, recordingId) {
           type="button"
           class="shortcut-edit-btn${recording ? ' recording' : ''}"
           data-action="edit"
-          data-id="${escapeHtml(s.id)}"
-          aria-label="Change shortcut for ${escapeHtml(s.label)}">
+          data-id="${escapeHtmlAttr(s.id)}"
+          aria-label="Change shortcut for ${escapeHtmlAttr(s.label)}">
 
           ${editContent}
 
@@ -80,9 +80,9 @@ function shortcutRowHtml(s, recordingId) {
           type="button"
           class="icon-btn shortcut-reset-btn"
           data-action="reset"
-          data-id="${escapeHtml(s.id)}"
+          data-id="${escapeHtmlAttr(s.id)}"
           title="Reset to default"
-          aria-label="Reset ${escapeHtml(s.label)} to default">
+          aria-label="Reset ${escapeHtmlAttr(s.label)} to default">
           ${ICONS.reset || ''}
         </button>` : ''}
 

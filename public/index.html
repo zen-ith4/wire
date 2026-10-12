@@ -358,12 +358,10 @@
   <div
     class="modal"
     id="confirm-modal"
-    onclick="window.__confirmModalCancel()"
   >
 
     <div
       class="modal-content confirm-modal-content"
-      onclick="event.stopPropagation()"
     >
 
       <h3 id="confirm-modal-title">
@@ -377,7 +375,7 @@
         <button
           id="confirm-modal-cancel"
           class="btn btn-ghost btn-sm"
-          onclick="window.__confirmModalCancel()"
+          data-action="confirm-cancel"
         >
           Cancel
         </button>
@@ -385,7 +383,7 @@
         <button
           id="confirm-modal-ok"
           class="btn btn-danger btn-sm"
-          onclick="window.__confirmModalOk()"
+          data-action="confirm-ok"
         >
           Delete
         </button>

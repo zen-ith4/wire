@@ -6,6 +6,7 @@ import {
   emptyState,
   loadingState,
   escapeHtml,
+  escapeHtmlAttr,
   linkifyHtml,
   escapeAttr,
   formatDate,
@@ -18,8 +19,15 @@ import {
   mountAttachmentMedia,
   cleanupImageUrls,
   revokeAttachmentImage,
+  revokeMediaPlayerBlobUrls,
   imageDownloadButtonHtml
 } from '../media/attachments.js';
+import {
+  applyAttachmentMeta,
+  applyReplyAttachmentMeta,
+  forgetAttachmentSecret,
+  prepareDmAttachmentUpload
+} from '../media/attachment-e2ee.js';
 import { avatarHtml } from '../ui/avatar.js';
 import { getCurrentUser } from '../core/auth.js';
 import { claimRender } from '../core/view-session.js';
@@ -442,11 +450,26 @@ async function decryptDmMessage(msg) {
     }
   }
 
-  return {
-    ...msg,
-    content: decryptedContent,
-    reply_to: decryptedReplyTo,
-  };
+  // E2EE attachment: decrypt the opaque envelope into the real
+  // name/mime/size/dimensions/voice flag and register the per-file key
+  // in memory. Never throws: an unreadable envelope becomes a safe
+  // placeholder attachment instead of failing the whole message.
+  if (decryptedReplyTo && decryptedReplyTo.attachment_meta) {
+    decryptedReplyTo = await applyReplyAttachmentMeta(
+      decryptedReplyTo,
+      peerId
+    );
+  }
+
+  return applyAttachmentMeta(
+    {
+      ...msg,
+      content: decryptedContent,
+      reply_to: decryptedReplyTo,
+    },
+    peerId,
+    'dm'
+  );
 }
 
 async function decryptDmMessages(messages) {
@@ -643,6 +666,9 @@ export function destroyDmComposer() {
     dmComposer.destroy();
     dmComposer = null;
   }
+
+  // Navigating away: audio/video/voice players own decrypted blob URLs.
+  revokeMediaPlayerBlobUrls(document.getElementById('dm-messages'));
 }
 
 // ---------- Render ----------
@@ -666,6 +692,7 @@ export async function renderDm(openPeerId, opts) {
   dmEntry = null;
 
   cleanupImageUrls(document.getElementById('dm-messages'), 'dm');
+  revokeMediaPlayerBlobUrls(document.getElementById('dm-messages'));
 
   main.innerHTML = `
     <div class="dm-layout">
@@ -1442,6 +1469,7 @@ window.openDmConversation = async function (peerId, username, opts = {}) {
 
   document.querySelector('.dm-layout')?.classList.add('showing-thread');
   cleanupImageUrls(document.getElementById('dm-messages'), 'dm');
+  revokeMediaPlayerBlobUrls(document.getElementById('dm-messages'));
 
   const list = document.getElementById('dm-conv-list');
   if (list) {
@@ -1497,9 +1525,9 @@ thread.innerHTML = `
         <input type="file" id="dm-file-input" class="hidden" multiple>
         <button class="btn btn-ghost btn-icon" title="Attach" onclick="document.getElementById('dm-file-input').click()">${ICONS.paperclip}</button>
         <button class="btn btn-ghost btn-icon emoji-trigger" title="Emoji" onclick="window.openDmEmojiPicker(this)">${ICONS.emoji}</button>
-        <textarea id="dm-input" rows="1" placeholder="Message ${escapeHtml(username)}…"></textarea>
+        <textarea id="dm-input" rows="1" placeholder="Message ${escapeHtmlAttr(username)}…"></textarea>
         <button class="composer-mic-btn" id="dm-mic-btn" aria-label="Record a voice message">${ICONS.mic}</button>
-        <button onclick="window.sendDm()" class="btn-send" title="Send message (Enter) — Shift+Enter for a new line">${ICONS.send}</button>
+        <button data-action="dm-send" class="btn-send" title="Send message (Enter) — Shift+Enter for a new line">${ICONS.send}</button>
       </div>
     </div>
   `;
@@ -1527,6 +1555,16 @@ thread.innerHTML = `
       };
     },
     buildFormExtra: (form) => form.append('recipient_id', dmActivePeer.id),
+    // Encrypts the file (and caption) before upload. Needs the
+    // composer's prepareUpload hook (composer.js hunk, pending approval).
+    prepareUpload: ({ file, caption, isVoice }) =>
+      prepareDmAttachmentUpload({
+        file,
+        caption,
+        isVoice,
+        senderId: Number(getCurrentUser().id),
+        recipientId: Number(dmActivePeer.id),
+      }),
     onMessage: (message) => {
       addDmMessage(message);
       // The composer only calls onMessage after the send succeeded
@@ -1581,6 +1619,12 @@ thread.innerHTML = `
   // the phone layout a rightward swipe that starts in the left edge
   // strip belongs to swipe-back, so it is not started here.
   bindDmMessageActions(container);
+
+  // Send button: delegated, no inline onclick (CSP). The input area is
+  // rebuilt for every conversation, so listeners never accumulate.
+  document.getElementById('dm-input-area')?.addEventListener('click', (e) => {
+    if (e.target.closest('[data-action="dm-send"]')) window.sendDm();
+  });
 
   bindSwipeToReply(container, {
     onReply: (id) => window.replyToDmMessage(id),
@@ -1837,6 +1881,7 @@ async function loadRecentDm() {
     if (dmEntry !== entry || !container.isConnected) return;
 
     cleanupImageUrls(container, 'dm');
+    revokeMediaPlayerBlobUrls(container);
     container.innerHTML = '';
     entry.initialized = true;
 
@@ -2091,7 +2136,7 @@ function buildDmMessageEl(msg, currentUser) {
         ${imageDownloadButtonHtml(msg, 'dm')}
         ${
           canDelete
-            ? `<button type="button" class="chat-msg-delete" title="Delete message" aria-label="Delete message" onclick="window.deleteDmMessage(${msg.id})">${ICONS.trash}</button>`
+            ? `<button type="button" class="chat-msg-delete" title="Delete message" aria-label="Delete message" data-action="dm-delete" data-msg-id="${msg.id}">${ICONS.trash}</button>`
             : ''
         }
         </div>
@@ -2217,6 +2262,13 @@ function bindDmMessageActions(container) {
       e.preventDefault();
       void copyDmMessageText(copyBtn);
       return;
+    }
+
+    const delBtn = e.target.closest('[data-action="dm-delete"]');
+    if (delBtn && container.contains(delBtn)) {
+      void window.deleteDmMessage(Number(delBtn.dataset.msgId));
+      // deliberately no `return`: the old inline handler also let the click
+      // reach the tap logic below (it resets lastTap for button clicks)
     }
 
     if (!isTouchClick(e)) return;
@@ -2585,6 +2637,7 @@ export function removeDmMessage(id) {
   }
 
   revokeAttachmentImage(id, 'dm');
+  forgetAttachmentSecret('dm', id);
 
   const container = document.getElementById('dm-messages');
   if (!container) return;
@@ -2593,6 +2646,7 @@ export function removeDmMessage(id) {
   if (!el) return;
 
   cleanupImageUrls(el, 'dm');
+  revokeMediaPlayerBlobUrls(el);
 
   // Rows around the one being removed, found before it leaves the DOM.
   const siblingRow = (start, dir) => {

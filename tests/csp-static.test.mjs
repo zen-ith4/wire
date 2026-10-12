@@ -33,7 +33,7 @@ const require = createRequire(import.meta.url);
 // regexes below; derived from docs/CSP_TODO.md). Missing file => cap 0.
 const LEGACY_CAPS = {
   handlers: {
-    'js/chat/dm.js': 12,
+    'js/chat/dm.js': 9,
     'js/settings/settings-render.js': 8,
     'js/settings/admin.js': 7,
     'js/chat/composer.js': 4,
@@ -65,15 +65,19 @@ const LEGACY_CAPS = {
     'js/media/attachments.js': 4,
     'js/chat/dm.js': 1,
   },
+  // All 20 legacy sites now use escapeHtmlAttr(); cap is 0 everywhere.
+  // (Explicit zeros kept so the diff shows what was removed. auth.js is
+  // excluded from this check by the test below: its local escapeHtml()
+  // escapes both quote kinds.)
   escapeHtmlInAttr: {
-    'js/settings/settings-render.js': 11,
-    'js/settings/settings-shortcuts.js': 4,
-    'js/settings/settings-appearance-custom.js': 2,
-    'js/chat/composer.js': 1,
-    'js/chat/dm.js': 1,
-    'js/settings/settings-bubble-gradient.js': 1,
+    'js/settings/settings-render.js': 0,
+    'js/settings/settings-shortcuts.js': 0,
+    'js/settings/settings-appearance-custom.js': 0,
+    'js/chat/composer.js': 0,
+    'js/chat/dm.js': 0,
+    'js/settings/settings-bubble-gradient.js': 0,
   },
-  indexHtml: {"inlineScripts": 1, "styleBlocks": 0, "handlerAttrs": 14, "styleAttrs": 1},
+  indexHtml: {"inlineScripts": 1, "styleBlocks": 0, "handlerAttrs": 10, "styleAttrs": 1},
 };
 
 // Files whose count exceeds their cap. Same shape as the old allowlist

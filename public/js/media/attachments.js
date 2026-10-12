@@ -9,6 +9,11 @@ import {
 
 import { ICONS } from '../icons.js';
 import {
+  getAttachmentSecret,
+  isAttachmentUnreadable,
+  fetchDecryptedAttachment
+} from './attachment-e2ee.js';
+import {
   showToast,
   escapeAttr,
   escapeHtml,
@@ -1087,14 +1092,29 @@ export async function loadChatImage(
             ? `/api/dm/attachments/${id}`
             : `/api/chat/attachments/${id}`;
 
+        // End-to-end encrypted attachments: authenticated ciphertext
+        // download + decrypt. A tampered file rejects here and falls
+        // through to the normal "Failed to load image" placeholder.
         const blob =
-          await fetchBlob(
-            url,
-            {
-              signal:
-                controller.signal
-            }
-          );
+          getAttachmentSecret(
+            scope,
+            id
+          )
+            ? await fetchDecryptedAttachment(
+                scope,
+                id,
+                {
+                  signal:
+                    controller.signal
+                }
+              )
+            : await fetchBlob(
+                url,
+                {
+                  signal:
+                    controller.signal
+                }
+              );
 
         const objectURL =
           URL.createObjectURL(
@@ -1278,6 +1298,44 @@ export function cleanupImageUrls(
             key
           );
         }
+      }
+    );
+}
+
+/**
+ * Revokes the decrypted blob: URLs that audio/video/voice players own
+ * (stamped as data-blob-url) anywhere under `root`. Called on every
+ * lifecycle exit: message removal, view teardown, and thread/composer
+ * destroy. Images are NOT handled here: their blob URLs live in
+ * imageBlobCache and are revoked by revokeAttachmentImage().
+ */
+export function revokeMediaPlayerBlobUrls(
+  root
+) {
+  if (
+    !root ||
+    typeof root.querySelectorAll !==
+      'function'
+  ) {
+    return;
+  }
+
+  root
+    .querySelectorAll(
+      'audio[data-blob-url], video[data-blob-url]'
+    )
+    .forEach(
+      el => {
+        const url =
+          el.dataset.blobUrl;
+
+        if (url) {
+          URL.revokeObjectURL(
+            url
+          );
+        }
+
+        delete el.dataset.blobUrl;
       }
     );
 }
@@ -1932,6 +1990,85 @@ async function downloadAttachmentWeb(
  * PUBLIC DOWNLOAD API
  * ========================================================= */
 
+async function downloadEncryptedAttachment(
+  id,
+  filename,
+  scope,
+  downloadId
+) {
+  if (
+    isAttachmentUnreadable(
+      scope,
+      id
+    )
+  ) {
+    throw new Error(
+      'This attachment cannot be decrypted'
+    );
+  }
+
+  const blob =
+    await fetchDecryptedAttachment(
+      scope,
+      id
+    );
+
+  updateDownloadProgress(
+    downloadId,
+    {
+      bytes:
+        blob.size,
+      contentLength:
+        blob.size
+    }
+  );
+
+  const objectURL =
+    URL.createObjectURL(
+      blob
+    );
+
+  try {
+    const anchor =
+      document.createElement(
+        'a'
+      );
+
+    anchor.href =
+      objectURL;
+    anchor.download =
+      filename;
+    anchor.rel =
+      'noopener';
+    anchor.style.display =
+      'none';
+
+    document.body.appendChild(
+      anchor
+    );
+    anchor.click();
+    anchor.remove();
+  } finally {
+    // The browser has the blob by the time click() returns control;
+    // revoke on the next tick plus a grace period for slow starts.
+    const timer =
+      setTimeout(
+        () => URL.revokeObjectURL(
+          objectURL
+        ),
+        30000
+      );
+
+    if (
+      timer &&
+      typeof timer.unref ===
+        'function'
+    ) {
+      timer.unref();
+    }
+  }
+}
+
 export async function downloadAttachment(
   id,
   name,
@@ -1967,6 +2104,36 @@ export async function downloadAttachment(
         downloadId
       }
     );
+
+    // End-to-end encrypted DM attachment: the server only has
+    // ciphertext, so (also on native) it is fetched, decrypted in the
+    // client and saved from a blob. Not exercised on a real device.
+    if (
+      scope === 'dm' &&
+      (
+        getAttachmentSecret(
+          scope,
+          id
+        ) ||
+        isAttachmentUnreadable(
+          scope,
+          id
+        )
+      )
+    ) {
+      await downloadEncryptedAttachment(
+        id,
+        filename,
+        scope,
+        downloadId
+      );
+
+      finishDownloadProgress(
+        downloadId
+      );
+
+      return;
+    }
 
     if (
       isNativeCapacitor()

@@ -13,7 +13,7 @@
 // ============================================================
 
 import { ICONS } from '../icons.js';
-import { escapeHtml, showToast } from '../core/utils.js';
+import { escapeHtml, escapeHtmlAttr, showToast } from '../core/utils.js';
 import { showConfirm } from '../ui/confirm.js';
 
 import {
@@ -138,7 +138,7 @@ export function sliderRow({
           value="${value}"
           data-unit="${unit}"
           style="--sound-volume:${fillPercent(value, min, max)}%"
-          aria-label="${escapeHtml(label)}"
+          aria-label="${escapeHtmlAttr(label)}"
           ${attrs}
           ${disabled || hidden ? 'disabled' : ''}>
 
@@ -159,7 +159,7 @@ export function switchButton({ id, on, label, attrs = '', disabled = false }) {
       id="${id}"
       role="switch"
       aria-checked="${on}"
-      aria-label="${escapeHtml(label)}"
+      aria-label="${escapeHtmlAttr(label)}"
       ${attrs}
       ${disabled ? 'disabled' : ''}>
       <span class="switch-thumb"></span>

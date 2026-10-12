@@ -97,6 +97,12 @@ export async function encryptGroupMessage(identity, groupId, plaintext, { replyT
     const mine = await getMySenderKey(identity, groupId);
 
     if (!mine) {
+        // The message text is a CONTRACT, not decoration: the signing suites
+        // (tests/groups/group-signing-ensure.test.mjs, group-signing-keys
+        // .test.mjs) assert /No Sender Key/ to prove a send was refused
+        // because there is no usable signing row -- which is exactly what
+        // this throw means. Rewording it to something friendlier broke those
+        // tests, so leave it alone.
         throw new Error(
             'No Sender Key to send with yet — rotate/distribute one first'
         );

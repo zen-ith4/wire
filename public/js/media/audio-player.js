@@ -1,6 +1,7 @@
 import { ICONS } from '../icons.js';
 import { escapeAttr, escapeHtml } from '../core/utils.js';
-import { getMediaSrcUrl, refreshMediaSrcUrl } from './mediaToken.js';
+import { getMediaSrcUrl, refreshMediaSrcUrl, resolveMediaSrc } from './mediaToken.js';
+import { isLazyE2eeMedia, installLazySource, waitUntilAttached } from './lazy-e2ee-media.js';
 import { resolveServerUrl } from '../core/server.js';
 
 // ======================================================
@@ -113,6 +114,23 @@ async function resolveAudioUrl(scope, messageId) {
   return resolvedUrl;
 }
 
+// E2EE attachments resolve to a decrypted blob: URL (isBlob: true) that
+// the element owns and must revoke; legacy attachments keep the
+// token URL path above, unchanged.
+async function resolveAudioSource(msg, scope) {
+  const resolved = await resolveMediaSrc(msg, scope);
+
+  if (!resolved || !resolved.src) {
+    throw new Error(
+      `Failed to resolve media path for audio attachment ${msg.id}`
+    );
+  }
+
+  return resolved.isBlob
+    ? { url: resolved.src, isBlob: true }
+    : { url: resolveServerUrl(resolved.src), isBlob: false };
+}
+
 // ======================================================
 // AUDIO PLAYER
 // ======================================================
@@ -151,13 +169,22 @@ export async function renderAudio(msg, scope, containerEl) {
     return;
   }
 
-  let attachmentUrl;
+  let attachmentUrl = '';
+  let attachmentIsBlob = false;
+
+  // Encrypted audio: render the player now, but download + decrypt only
+  // when the user presses play (see lazy-e2ee-media.js).
+  const lazyE2ee = isLazyE2eeMedia(msg, scope);
 
   try {
-    attachmentUrl = await resolveAudioUrl(
-      scope,
-      msg.id
-    );
+    if (lazyE2ee) {
+      // no source yet; just let the caller attach the container
+      await waitUntilAttached(container);
+    } else {
+      const source = await resolveAudioSource(msg, scope);
+      attachmentUrl = source.url;
+      attachmentIsBlob = source.isBlob;
+    }
   } catch (error) {
     console.error(
       '[Audio] Failed to resolve media URL:',
@@ -176,6 +203,8 @@ export async function renderAudio(msg, scope, containerEl) {
       `#${CSS.escape(playerId)}`
     )
   ) {
+    // A decrypted blob that never got an element would leak.
+    if (attachmentIsBlob) URL.revokeObjectURL(attachmentUrl);
     return;
   }
 
@@ -256,8 +285,9 @@ export async function renderAudio(msg, scope, containerEl) {
 
       <audio
         id="audio-${messageId}"
-        preload="metadata"
-        src="${escapeAttr(attachmentUrl)}"
+        preload="${lazyE2ee ? 'none' : 'metadata'}"
+        ${lazyE2ee ? '' : `src="${escapeAttr(attachmentUrl)}"`}
+        ${attachmentIsBlob ? `data-blob-url="${escapeAttr(attachmentUrl)}"` : ''}
       ></audio>
     </div>
   `;
@@ -431,6 +461,25 @@ export async function renderAudio(msg, scope, containerEl) {
       isLoading
     );
   };
+
+  // Encrypted audio has no src yet: the first play() downloads and
+  // decrypts it (see lazy-e2ee-media.js).
+  if (lazyE2ee) {
+    installLazySource(
+      audio,
+      {
+        msg,
+        scope,
+        isAlive: () =>
+          document.body.contains(playerEl),
+        onLoading: setLoading,
+        onError: () => {
+          errorEl.style.display =
+            'flex';
+        }
+      }
+    );
+  }
 
   // ====================================================
   // SMOOTH PROGRESS (requestAnimationFrame)
@@ -886,6 +935,9 @@ export async function renderAudio(msg, scope, containerEl) {
     false;
 
   async function attemptTokenRefreshAndRetry() {
+    // A decrypted blob: URL carries no token that could expire.
+    if (attachmentIsBlob) return false;
+
     let resp;
 
     try {

@@ -19,6 +19,14 @@ CREATE TABLE IF NOT EXISTS direct_messages (
   attachment_width INTEGER,
   attachment_height INTEGER,
 
+  -- End-to-end encrypted attachments (see dm.controller.js):
+  -- attachment_meta is an opaque client-encrypted envelope (file key,
+  -- name, mime, size, dimensions, voice flag); attachment_iv is the
+  -- public STREAM base nonce, kept only so the server can check the
+  -- upload's shape. Both are NULL for legacy plaintext attachments.
+  attachment_meta TEXT,
+  attachment_iv TEXT,
+
   -- Same reasoning as messages.is_voice_message (see that table).
   is_voice_message INTEGER NOT NULL DEFAULT 0,
 

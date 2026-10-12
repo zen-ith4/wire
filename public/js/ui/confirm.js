@@ -10,6 +10,22 @@
 
 let resolvePending = null;
 
+let bound = false;
+
+// Delegated click handling for the static #confirm-modal markup. No inline onclick="" so it
+// also works under an ENFORCED CSP (script-src 'self' blocks inline handlers).
+function bindOnce(modal) {
+  if (bound) return;
+  bound = true;
+  modal.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-action]');
+    const action = btn && modal.contains(btn) ? btn.dataset.action : null;
+    if (action === 'confirm-ok') settle(true);
+    else if (action === 'confirm-cancel') settle(false);
+    else if (e.target === modal) settle(false); // backdrop click
+  });
+}
+
 export function showConfirm(message, opts = {}) {
   const {
     title = 'Are you sure?',
@@ -25,6 +41,8 @@ export function showConfirm(message, opts = {}) {
   if (!modal) {
     return Promise.resolve(window.confirm(message));
   }
+
+  bindOnce(modal);
 
   document.getElementById('confirm-modal-title').textContent = title;
   document.getElementById('confirm-modal-message').textContent = message;
@@ -57,7 +75,7 @@ function settle(result) {
   }
 }
 
-// Referenced from the static onclick="" handlers in index.html,
-// same pattern as window.closeShareModal / window.closePreview.
+// Legacy hooks from when index.html used inline onclick="" handlers. Nothing in the
+// markup calls them any more (dead code, kept so other lanes' code cannot break).
 window.__confirmModalOk = () => settle(true);
 window.__confirmModalCancel = () => settle(false);

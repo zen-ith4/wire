@@ -129,11 +129,16 @@ export function linkifyHtml(text) {
 }
 
 export function escapeAttr(s) {
+  // For a value placed inside a double-quoted HTML attribute that the browser then parses as a
+  // single-quoted JS string (onclick="fn('<value>')"). Two parsers run in order: HTML first (it
+  // decodes entities), JS second. So '&' MUST be escaped first: otherwise a name like
+  // x&#39;);evil();(&#39; is turned into x');evil();(' by the HTML parser and closes the JS string.
   return String(s)
+    .replace(/&/g, '&amp;')
     .replace(/\\/g, '\\\\')
     .replace(/'/g, "\\'")
     .replace(/"/g, '&quot;')
-    .replace(/\r?\n/g, ' ');
+    .replace(/\r\n|[\r\n\u2028\u2029]/g, ' ');
 }
 
 export function formatBytes(bytes) {

@@ -2,6 +2,7 @@ const path = require('path');
 const fs = require('fs');
 const constants = require('../config/constants');
 const { CHAT_MIME_MAP } = require('../config/multer');
+const dmStream = require('../config/dm-stream');
 const { readImageDimensions } = require('../utils/imageDimensions');
 const { detectMimeFromBytes } = require('../utils/detectFileType');
 const { normalizeSniffedMime, resolveVoiceMime } = require('../utils/voiceMime');
@@ -16,6 +17,7 @@ const {
   getDmMessagesSince,
   insertDmMessage,
   insertDmMessageWithAttachment,
+  insertDmMessageWithEncryptedAttachment,
   findDmMessageById,
   findDmMessageWithUser,
   deleteDmMessage,
@@ -79,6 +81,155 @@ function isVoiceMessageFlag(rawValue, mime) {
     rawValue === true;
 
   return truthy && typeof mime === 'string' && mime.startsWith('audio/');
+}
+
+// ---------------------------------------------------------------------
+// End-to-end encrypted DM attachments
+// ---------------------------------------------------------------------
+//
+// The client encrypts the file (STREAM AES-256-GCM, see
+// public/js/crypto/messages/attachment-stream.js) BEFORE upload. The
+// per-file key, name, real mime, size, dimensions and voice flag travel
+// only inside `attachment_meta`, an opaque envelope encrypted under the
+// DM session key. The server therefore never inspects, sniffs, labels
+// or renders the file: it stores bytes and serves bytes.
+//
+// What the server DOES check is the *shape* of the upload, so an honest
+// client bug or a downgrade attempt (plaintext upload) is rejected
+// instead of silently stored. It cannot prove the bytes are ciphertext.
+//
+// DM_E2EE_ATTACHMENTS_ENFORCED (default ON; set to "false" to roll
+// back): when ON, every DM upload must be an encrypted-shape upload.
+// When OFF, an upload WITHOUT attachment_meta takes the legacy
+// plaintext path unchanged. An upload that carries attachment_meta is
+// always handled as encrypted, whatever the flag says.
+const DM_STREAM_CHUNK_SIZE = dmStream.CHUNK_SIZE;
+const DM_STREAM_HEADER_BYTES = dmStream.HEADER_BYTES;
+const DM_STREAM_TAG_BYTES = dmStream.TAG_BYTES;
+const DM_ATTACHMENT_META_MAX = 8 * 1024;
+const BASE64_RE = /^[A-Za-z0-9+/]+={0,2}$/;
+
+function e2eeAttachmentsEnforced() {
+  return String(process.env.DM_E2EE_ATTACHMENTS_ENFORCED ?? 'true')
+    .trim()
+    .toLowerCase() !== 'false';
+}
+
+function base64ByteLength(value) {
+  if (typeof value !== 'string' || !value || value.length % 4 !== 0 || !BASE64_RE.test(value)) {
+    return -1;
+  }
+  return Buffer.from(value, 'base64').length;
+}
+
+// Shape-only check of the client's encrypted-envelope JSON (the same
+// {encryption:{version,algorithm,iv,ciphertext}} object text DMs use).
+function isEncryptedEnvelopeShape(text) {
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return false;
+  }
+  const enc = parsed && typeof parsed === 'object' ? parsed.encryption : null;
+  return !!enc &&
+    typeof enc === 'object' &&
+    enc.version === 1 &&
+    enc.algorithm === 'AES-GCM' &&
+    base64ByteLength(enc.iv) === 12 &&
+    base64ByteLength(enc.ciphertext) > 0;
+}
+
+// Ciphertext layout: 8-byte header, then chunks of (64 KiB + 16-byte
+// tag), the last one shorter but never shorter than a bare tag.
+function isValidStreamLength(size) {
+  const minimum = DM_STREAM_HEADER_BYTES + DM_STREAM_TAG_BYTES;
+  if (!Number.isInteger(size) || size < minimum) return false;
+  const full = DM_STREAM_CHUNK_SIZE + DM_STREAM_TAG_BYTES;
+  const body = size - DM_STREAM_HEADER_BYTES;
+  const rem = body % full;
+  return rem === 0 || rem >= DM_STREAM_TAG_BYTES;
+}
+
+async function hasStreamHeader(filePath) {
+  let handle;
+  try {
+    handle = await fs.promises.open(filePath, 'r');
+    const buf = Buffer.alloc(DM_STREAM_HEADER_BYTES);
+    const { bytesRead } = await handle.read(buf, 0, DM_STREAM_HEADER_BYTES, 0);
+    return bytesRead === DM_STREAM_HEADER_BYTES && buf.equals(dmStream.HEADER);
+  } catch {
+    return false;
+  } finally {
+    if (handle) await handle.close().catch(() => {});
+  }
+}
+
+// Returns an error string, or null when the upload has a valid
+// encrypted shape. Never reads the file beyond its 8-byte container
+// header, and never infers a mime type.
+async function validateEncryptedUpload(req) {
+  const body = req.body || {};
+  const meta = body.attachment_meta;
+  const iv = body.attachment_iv;
+
+  if (typeof meta !== 'string' || !meta) {
+    return 'Attachments must be end-to-end encrypted (attachment_meta required)';
+  }
+  if (meta.length > DM_ATTACHMENT_META_MAX || !isEncryptedEnvelopeShape(meta)) {
+    return 'Invalid attachment_meta';
+  }
+  if (base64ByteLength(iv) !== 12) {
+    return 'Invalid attachment_iv';
+  }
+  const caption = typeof body.content === 'string' ? body.content.trim() : '';
+  if (caption && (caption.length > 2000 || !isEncryptedEnvelopeShape(caption))) {
+    return 'Caption must be end-to-end encrypted';
+  }
+  if (!isValidStreamLength(req.file.size)) {
+    return 'Invalid encrypted attachment size';
+  }
+  if (!(await hasStreamHeader(req.file.path))) {
+    return 'Attachment is not an encrypted stream';
+  }
+  return null;
+}
+
+async function sendEncryptedAttachment(req, res, recipientId, cleanup) {
+  const problem = await validateEncryptedUpload(req);
+  if (problem) {
+    cleanup();
+    return res.status(400).json({ error: problem });
+  }
+
+  const caption = (req.body.content || '').trim();
+  const replyToId = normalizeDmReplyToId(req.body?.reply_to_id, req.user.id, Number(recipientId));
+  const timestamp = new Date().toISOString();
+
+  const info = insertDmMessageWithEncryptedAttachment(
+    req.user.id,
+    recipientId,
+    caption,
+    timestamp,
+    req.file.filename,
+    req.file.size,
+    replyToId,
+    req.body.attachment_meta,
+    req.body.attachment_iv
+  );
+
+  const fullMsg = findDmMessageWithUser(info.lastInsertRowid);
+  fullMsg.has_attachment = !!fullMsg.attachment_name;
+  fullMsg.is_voice_message = Boolean(fullMsg.is_voice_message);
+
+  emitNewDirectMessage(fullMsg);
+  return res.json(fullMsg);
+}
+
+// Lets the client refuse an oversized file BEFORE reading/encrypting it
+// (it otherwise has no way to know the configured limit).
+function getUploadLimitsHandler(req, res) {
+  res.json({ upload_max_mb: constants.DM_UPLOAD_MAX_MB });
 }
 
 function getConversationsHandler(req, res) {
@@ -209,6 +360,15 @@ async function sendMessageWithAttachment(req, res) {
     return res.status(400).json({ error: 'No file uploaded' });
   }
 
+  const wantsEncrypted =
+    typeof req.body?.attachment_meta === 'string' &&
+    req.body.attachment_meta.length > 0;
+
+  if (wantsEncrypted || e2eeAttachmentsEnforced()) {
+    return sendEncryptedAttachment(req, res, recipient_id, cleanup);
+  }
+
+  // Legacy plaintext path (DM_E2EE_ATTACHMENTS_ENFORCED=false only).
   const originalName = path.basename(req.file.originalname);
   const ext = path.extname(originalName).toLowerCase();
   const clientMime = req.file.mimetype || '';
@@ -370,7 +530,13 @@ function getAttachment(req, res) {
     msg.attachment_mime ||
     'application/octet-stream';
 
-  const safeToRenderInline = isInlineSafeMime(storedMime);
+  // Encrypted rows (attachment_meta set) are opaque ciphertext: never
+  // inline, never labelled with a mime, whatever the stored columns say.
+  // The branch is chosen from the DB row, never from client input.
+  const isEncryptedRow = !!msg.attachment_meta;
+
+  const safeToRenderInline =
+    !isEncryptedRow && isInlineSafeMime(storedMime);
 
   const disposition =
     (safeToRenderInline && !req.query.download)
@@ -392,7 +558,7 @@ function getAttachment(req, res) {
   res.setHeader(
     'Content-Disposition',
     `${disposition}; filename*=UTF-8''${encodeURIComponent(
-      msg.attachment_name
+      isEncryptedRow ? 'attachment.bin' : msg.attachment_name
     )}`
   );
 
@@ -714,6 +880,7 @@ function toggleReactionHandler(req, res) {
 }
 
 module.exports = {
+  getUploadLimits: getUploadLimitsHandler,
   getConversations: getConversationsHandler,
   getUnreadCount: getUnreadCountHandler,
   getRecentMessages: getRecentMessagesHandler,

@@ -11,7 +11,7 @@
 // ============================================================
 
 import { ICONS } from '../icons.js';
-import { getMediaSrcUrl, refreshMediaSrcUrl } from './mediaToken.js';
+import { getMediaSrcUrl, refreshMediaSrcUrl, resolveMediaSrc } from './mediaToken.js';
 import { resolveServerUrl } from '../core/server.js';
 
 // ======================================================
@@ -2427,17 +2427,32 @@ export async function renderVoiceMessage(
    * getMediaSrcUrl() can therefore run without blocking the
    * initial waveform render.
    */
+  let resolvedIsBlob = false;
+  let resolvedBlobUrl = null;
+
   try {
-    const mediaUrl =
-      await getMediaSrcUrl(
-        scope,
-        msg.id
+    // E2EE voice notes resolve to a decrypted blob: URL this player
+    // owns and must revoke; legacy ones keep the token-URL path.
+    const resolved =
+      await resolveMediaSrc(
+        msg,
+        scope
       );
 
+    resolvedIsBlob =
+      !!(resolved && resolved.isBlob);
+
+    if (resolvedIsBlob) {
+      resolvedBlobUrl =
+        resolved.src;
+    }
+
     const resolvedUrl =
-      resolveServerUrl(
-        mediaUrl
-      );
+      resolvedIsBlob
+        ? resolved.src
+        : resolveServerUrl(
+            resolved && resolved.src
+          );
 
     if (
       !resolvedUrl ||
@@ -2454,12 +2469,24 @@ export async function renderVoiceMessage(
         playerEl
       )
     ) {
+      // A decrypted blob that never got an element would leak.
+      if (resolvedBlobUrl) {
+        URL.revokeObjectURL(
+          resolvedBlobUrl
+        );
+      }
+
       waveform.destroy();
       return;
     }
 
     attachmentUrl =
       resolvedUrl;
+
+    if (resolvedIsBlob) {
+      audio.dataset.blobUrl =
+        resolvedUrl;
+    }
 
     /*
      * IMPORTANT:

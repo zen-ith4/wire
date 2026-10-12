@@ -1,6 +1,7 @@
 import { ICONS } from '../icons.js';
 import { downloadAttachment } from './attachments.js';
-import { getMediaSrcUrl } from './mediaToken.js';
+import { resolveMediaSrc } from './mediaToken.js';
+import { isLazyE2eeMedia, installLazySource, waitUntilAttached } from './lazy-e2ee-media.js';
 import { resolveServerUrl } from '../core/server.js';
 
 // ======================================================
@@ -53,13 +54,34 @@ export async function renderVideo(
   // MEDIA URL
   // ====================================================
 
-  let relativeAttachmentUrl;
+  // E2EE attachments resolve to a decrypted blob: URL the player owns
+  // (and must revoke); legacy ones keep the token-URL path.
+  let attachmentUrl = '';
+  let attachmentIsBlob = false;
+
+  // Encrypted video: render the player now, but download + decrypt only
+  // when the user presses play (see lazy-e2ee-media.js).
+  const lazyE2ee = isLazyE2eeMedia(msg, scope);
 
   try {
-    relativeAttachmentUrl = await getMediaSrcUrl(
-      scope,
-      msg.id
+    if (lazyE2ee) {
+      // no source yet; just let the caller attach the container
+      await waitUntilAttached(container);
+    } else {
+    const resolved = await resolveMediaSrc(
+      msg,
+      scope
     );
+
+    if (!resolved || !resolved.src) {
+      throw new Error('No media source');
+    }
+
+    attachmentIsBlob = !!resolved.isBlob;
+    attachmentUrl = attachmentIsBlob
+      ? resolved.src
+      : resolveServerUrl(resolved.src);
+    }
   } catch (error) {
     console.error(
       '[Video] Failed to get media URL:',
@@ -68,24 +90,15 @@ export async function renderVideo(
     return;
   }
 
-  const attachmentUrl =
-    resolveServerUrl(relativeAttachmentUrl);
-
-  console.log(
-    '[Video] Media URL:',
-    relativeAttachmentUrl,
-    '→',
-    attachmentUrl
-  );
-
   // The message may have disappeared while
-  // getMediaSrcUrl() was running.
+  // resolveMediaSrc() was running.
   if (
     !document.body.contains(container) ||
     container.querySelector(
       `#vplayer-${escapedMessageId}`
     )
   ) {
+    if (attachmentIsBlob) URL.revokeObjectURL(attachmentUrl);
     return;
   }
 
@@ -100,8 +113,9 @@ export async function renderVideo(
     >
       <video
         id="video-${escapedMessageId}"
-        src="${attachmentUrl}"
-        preload="auto"
+        ${lazyE2ee ? '' : `src="${attachmentUrl}"`}
+        ${attachmentIsBlob ? `data-blob-url="${attachmentUrl}"` : ''}
+        preload="${lazyE2ee ? 'none' : 'auto'}"
         playsinline
         webkit-playsinline
         tabindex="0"
@@ -257,6 +271,47 @@ export async function renderVideo(
 
   const volumeWrap =
     playerEl.querySelector('.video-volume-wrap');
+
+  // ====================================================
+  // LAZY ENCRYPTED SOURCE
+  // ====================================================
+  if (lazyE2ee) {
+    video.setAttribute(
+      'aria-label',
+      'Encrypted video - press play to load'
+    );
+
+    installLazySource(
+      video,
+      {
+        msg,
+        scope,
+        isAlive: () =>
+          document.body.contains(playerEl),
+        onLoading: (loading) => {
+          playerEl.classList.toggle(
+            'is-loading',
+            loading
+          );
+          playBtn.disabled = loading;
+        },
+        onError: () => {
+          playerEl.dataset.state = 'error';
+
+          if (!playerEl.querySelector('.video-error-note')) {
+            const note =
+              document.createElement('div');
+
+            note.className =
+              'video-error-note';
+            note.textContent =
+              'Video could not be decrypted';
+            playerEl.appendChild(note);
+          }
+        }
+      }
+    );
+  }
 
   // ====================================================
   // HELPERS

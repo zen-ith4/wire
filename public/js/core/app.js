@@ -103,8 +103,9 @@ const NAV_ITEMS = [
 // only appears once the server's GROUPS_ENABLED flag comes back true on
 // /api/me (controllers/me.controller.js). Merged in by buildNav() below,
 // the same way ADMIN_NAV_ITEMS is conditionally merged by user.is_admin.
-// Desktop sidebar only for now: the phone tab bar / "More" menu
-// (ui/mobile-shell.js) are left untouched.
+// It also becomes the 4th phone tab: buildNav() hands the same item to
+// renderMobileNav() (ui/mobile-shell.js), which navigates with the same
+// navigate(). The admin "More" menu is unchanged.
 const GROUPS_NAV_ITEM = {
   view: 'groups',
   label: 'Groups',
@@ -220,6 +221,7 @@ function buildNav(user) {
    */
   renderMobileNav({
     tabs: NAV_ITEMS,
+    groupsTab: groupsItems[0] || null,
     adminItems,
     navigate
   });

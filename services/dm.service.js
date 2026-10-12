@@ -9,6 +9,7 @@ const DM_SELECT = `
          dm.content, dm.created_at AS timestamp, dm.read_at, dm.seen_at, dm.edited_at,
          dm.attachment_name, dm.attachment_size, dm.attachment_mime,
          dm.attachment_width, dm.attachment_height,
+         dm.attachment_meta,
          dm.is_voice_message,
          dm.reply_to_id,
          rdm.id AS reply_id, rdm.sender_id AS reply_user_id,
@@ -16,6 +17,7 @@ const DM_SELECT = `
          rdm.created_at AS reply_timestamp,
          rdm.attachment_name AS reply_attachment_name,
          rdm.attachment_mime AS reply_attachment_mime,
+         rdm.attachment_meta AS reply_attachment_meta,
          rdm.is_voice_message AS reply_is_voice_message
   FROM direct_messages dm
   JOIN users su ON su.id = dm.sender_id
@@ -36,6 +38,7 @@ function shapeReplyTo(row) {
     reply_timestamp,
     reply_attachment_name,
     reply_attachment_mime,
+    reply_attachment_meta,
     ...rest
   } = row;
 
@@ -49,6 +52,9 @@ function shapeReplyTo(row) {
         has_attachment: Boolean(reply_attachment_name),
         attachment_name: reply_attachment_name,
         attachment_mime: reply_attachment_mime,
+        // Opaque encrypted envelope (null for legacy/plaintext rows);
+        // the client decrypts the real name/mime/voice flag from it.
+        attachment_meta: reply_attachment_meta ?? null,
       }
     : null;
 
@@ -254,6 +260,23 @@ function insertDmMessageWithAttachment(senderId, recipientId, content, timestamp
   `).run(senderId, recipientId, content, timestamp, filename, originalName, size, mime, width, height, replyToId, isVoiceMessage ? 1 : 0);
 }
 
+// End-to-end encrypted attachment: the server only ever sees opaque
+// ciphertext on disk plus an opaque encrypted `meta` envelope. Every
+// descriptive column is a neutral constant — attachment_name is a
+// fixed sentinel (not NULL) purely so the existing `has_attachment =
+// Boolean(attachment_name)` derivations keep working unchanged.
+const E2EE_ATTACHMENT_NAME = 'encrypted-attachment';
+
+function insertDmMessageWithEncryptedAttachment(senderId, recipientId, content, timestamp, filename, size, replyToId, meta, iv) {
+  return getDb().prepare(`
+    INSERT INTO direct_messages (sender_id, recipient_id, content, created_at,
+                                 attachment_path, attachment_name, attachment_size, attachment_mime,
+                                 attachment_width, attachment_height, reply_to_id, is_voice_message,
+                                 attachment_meta, attachment_iv)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'application/octet-stream', NULL, NULL, ?, 0, ?, ?)
+  `).run(senderId, recipientId, content, timestamp, filename, E2EE_ATTACHMENT_NAME, size, replyToId, meta, iv);
+}
+
 function findDmMessageById(id) {
   return getDb().prepare('SELECT * FROM direct_messages WHERE id = ?').get(id);
 }
@@ -294,6 +317,7 @@ module.exports = {
   getDmMessagesSince,
   insertDmMessage,
   insertDmMessageWithAttachment,
+  insertDmMessageWithEncryptedAttachment,
   findDmMessageById,
   findDmMessageWithUser,
   deleteDmMessage,

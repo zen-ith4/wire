@@ -125,4 +125,8 @@ try {
   try { await browser?.close(); } catch { /* ignore */ }
   try { await server?.stop(); } catch { /* ignore */ }
   try { fs.rmSync(server?.work, { recursive: true, force: true }); } catch { /* ignore */ }
+  // The server child and any Chromium handles can keep the event loop alive, so
+  // Node would not exit on its own after printing the result. The measurement is
+  // already on stdout; exit explicitly with the status we decided above.
+  process.exit(process.exitCode || 0);
 }

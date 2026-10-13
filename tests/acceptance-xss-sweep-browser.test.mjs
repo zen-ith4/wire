@@ -50,6 +50,7 @@ import {
     openDmUi,
     sendDmTextUi,
     sessionFromPage,
+    openUserPage,
 } from './_acceptance-harness.mjs';
 
 let server = null; let browser = null; let fixtureDir = null;
@@ -123,8 +124,7 @@ async function run() {
     }
 
     const mkPage = async () => {
-        const p = await browser.newPage(); p.setDefaultTimeout(30000);
-        await p.setViewport({ width: 1280, height: 900 });
+        const p = await openUserPage(browser, { defaultTimeout: 30000, viewport: { width: 1280, height: 900 } });
         await p.evaluateOnNewDocument(() => { window.__pwned = false; });
         return p;
     };

@@ -126,6 +126,33 @@ export async function launchBrowser() {
     }
 }
 
+/**
+ * A page for ONE simulated user, in its own browser context.
+ *
+ * browser.newPage() puts the page in the browser's DEFAULT context, and every
+ * page in that context shares localStorage and cookies. So when two simulated
+ * users each sign in through the real form, the second login clears and
+ * overwrites the first user's storage, and a later read from the first page
+ * hands back the second user's session. Give each user its own context and the
+ * storage is genuinely separate, which is also what a real user's two devices
+ * look like.
+ *
+ * createBrowserContext() is the current name; createIncognitoBrowserContext()
+ * is the older one, and puppeteer-core is installed outside the repo
+ * (CHROMIUM_DIR), so the version is not pinned here - detect instead.
+ *
+ * Closing the browser closes every context created from it.
+ */
+export async function openUserPage(browser, { viewport, defaultTimeout = 30000 } = {}) {
+    const context = typeof browser.createBrowserContext === 'function'
+        ? await browser.createBrowserContext()
+        : await browser.createIncognitoBrowserContext();
+    const page = await context.newPage();
+    page.setDefaultTimeout(defaultTimeout);
+    if (viewport) await page.setViewport(viewport);
+    return page;
+}
+
 export async function registerUser(origin, username) {
     const r = await jsonClient(origin)('/api/auth/register', { method: 'POST', body: JSON.stringify({ username, email: `${username}@example.com`, password: PASSWORD }) });
     if (r.status !== 201) throw new Error(`register ${username}: ${r.status} ${JSON.stringify(r.body)}`);

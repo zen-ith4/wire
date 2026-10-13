@@ -12,7 +12,7 @@
 import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
 
-const jsPath = (rel) => new URL(`../../public/js/${rel}`, import.meta.url).pathname;
+const jsPath = (rel) => new URL(`../../public/js/${rel}`, import.meta.url).href;
 
 const calls = { wrap: 0, sender: 0 };
 

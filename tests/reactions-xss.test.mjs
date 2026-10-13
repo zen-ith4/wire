@@ -20,11 +20,14 @@
 
 import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const js = (rel) => path.join(ROOT, 'public/js', rel);
+// mock.module() and import() both need a URL on Windows; a raw absolute path
+// is rejected with ERR_UNSUPPORTED_ESM_URL_SCHEME (protocol 'c:'), and a URL
+// *pathname* ("/C:/...") silently fails to match the mock.
+const js = (rel) => pathToFileURL(path.join(ROOT, 'public/js', rel)).href;
 
 // ---- Browser-faithful minimal DOM stub ----
 // escapeHtml() in core/utils.js is textContent -> innerHTML. Real

@@ -12,8 +12,9 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 
-export const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '..');
+export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 export const FIXTURE_DIR = path.join(ROOT, 'tests', 'fixtures');
 export const FIXTURE_DB = path.join(FIXTURE_DIR, 'legacy-x.db');
 export const META = JSON.parse(fs.readFileSync(path.join(FIXTURE_DIR, 'legacy-x.meta.json'), 'utf8'));

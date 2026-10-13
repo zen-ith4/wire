@@ -52,6 +52,12 @@ export async function startDmServer() {
         db: getDb(),
         async stop() {
             await new Promise((resolve) => io.close(() => resolve()));
+            // Close the SQLite handle before the test's after() hook calls
+            // fs.rmSync. On Windows an open database file cannot be unlinked
+            // (EBUSY); on Linux it would silently leak a descriptor instead.
+            try {
+                getDb().close();
+            } catch { /* already closed, or never opened */ }
         },
     };
 }

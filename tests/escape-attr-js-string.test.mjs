@@ -21,7 +21,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 
-const jsPath = (rel) => new URL(`../public/js/${rel}`, import.meta.url).pathname;
+const jsPath = (rel) => new URL(`../public/js/${rel}`, import.meta.url).href;
 const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'https://wireapp.test/' });
 globalThis.window = dom.window;
 globalThis.document = dom.window.document;

@@ -30,10 +30,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const baseTree = path.resolve(process.argv[2] || '');
-const outDir = path.resolve(process.argv[3] || path.dirname(new URL(import.meta.url).pathname));
+const outDir = path.resolve(process.argv[3] || path.dirname(fileURLToPath(import.meta.url)));
 if (!process.argv[2] || !fs.existsSync(path.join(baseTree, 'config', 'database.js'))) {
     console.error('usage: make-legacy-db.mjs <baseTreeDir> [outDir]');
     process.exit(2);

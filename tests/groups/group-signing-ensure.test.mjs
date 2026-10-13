@@ -20,7 +20,7 @@ import {
 installWebLocksPolyfill();
 const polyfillLocks = globalThis.navigator.locks;
 
-const jsPath = (rel) => new URL(`../../public/js/${rel}`, import.meta.url).pathname;
+const jsPath = (rel) => new URL(`../../public/js/${rel}`, import.meta.url).href;
 const GROUP = 88;
 
 const identities = new Map();

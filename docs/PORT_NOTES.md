@@ -272,3 +272,37 @@ Not touched (protected): `dm.js`, `composer.js`, `chat.js`, `media/attachments.j
 ## Task B: DM attachments E2EE
 
 See docs/DM_ATTACHMENTS_E2EE.md. Files touched: config/multer.js, controllers/dm.controller.js, services/dm.service.js, database/migrations.js, database/tables/directMessages.tabels.js, public/js/chat/dm.js and composer.js (attachment hunks only), public/js/media/{attachments,mediaToken,audio-player,video-player,voice-message}.js. New: public/js/crypto/messages/attachment-stream.js, public/js/media/attachment-e2ee.js, tests/dm-attachments/*.
+
+## Phase B (F12): the two login schemes and the one-time migration
+
+The server stores a per-account `auth_scheme`. **Scheme 1** is the legacy raw
+password; **scheme 2** never sends the password. In the browser the password is
+run through PBKDF2-SHA-256 (600,000 iterations, per-account salt) into a master
+key, and HKDF splits that into an **auth key** (sent to the server, which stores
+only a bcrypt hash of it) and a **wrap key** that never leaves the browser and
+wraps the account identity key. So the server can neither read the identity key
+nor impersonate the account without the auth key.
+
+Migration is one-time and opportunistic: a legacy account signs in with its
+password once, the server issues a single-use migration ticket, and the browser
+migrates it in the background. The raw password is used **only** for that first
+sign-in and is never stored again; after it, sign-in is auth-key only. The
+server refuses a downgrade back to password login.
+
+What a user sees: nothing changes in the UI. New passwords must be **12
+characters or more**, and that minimum is enforced **in the browser only, not at
+login**, so existing accounts with shorter passwords can still sign in.
+Changing the password re-derives a fresh salt and re-wraps the identity atomically.
+
+What an admin sees: an admin-created account gets a **temporary password the
+server never sees** - the browser derives it - and the account is flagged to force
+a change at first login through a restricted `pcr` token that the socket
+handshake rejects. The setup wizard and the `DEFAULT_ADMIN_PASS` seed both create
+ordinary scheme-2 admins, not scheme-1 exceptions.
+
+Design: `docs/GROUP_E2EE_MULTIDEVICE_DESIGN.md` section 5 (the F12 bullet). The
+schema is in `database/credentialSchema.js` (applied by `database/schema.js`), the
+server side in `services/credentialMigration.service.js` and
+`services/credentialAdmin.service.js`, the browser side in
+`public/js/crypto/credentials.js` and `public/js/crypto/credential-migration.js`.
+Plan and rationale: `docs/PHASE_B_PLAN.md`. Tests: `tests/credentials/` (13 files).

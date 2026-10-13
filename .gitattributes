@@ -1,0 +1,23 @@
+# Line-ending policy.
+#
+# public/sw-manifest.js records a SHA-256 of the RAW BYTES of every shipped
+# file (scripts/build-sw-manifest.mjs), and public/sw.js re-hashes the bytes
+# the server sends and rejects the WHOLE service-worker install on any
+# mismatch. Anything that rewrites line endings between the machine that
+# builds the manifest and the machine that serves it breaks the install.
+# Force LF in every working tree on every platform, whatever core.autocrlf
+# says.
+* text=auto eol=lf
+
+# Binary assets: never convert (also listed explicitly so detection is not
+# left to Git's heuristics).
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.ico   binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.wav   binary

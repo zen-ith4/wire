@@ -164,6 +164,15 @@ Depends on other agents
 - Not tested: real phone, notch / home-indicator insets (Chromium reports 0; safe-area was evaluated
   from the CSS only), native WebView, Capacitor, APK.
 
+**Test-harness path rules (Windows vs Linux).** Node's dynamic `import()` and
+`mock.module()` need a **`file://` URL**, not an OS path: build one with
+`new URL(rel, import.meta.url).href`. A raw absolute path from `fileURLToPath()`
+is rejected with `ERR_UNSUPPORTED_ESM_URL_SCHEME` (protocol `c:` on Windows), and
+the older `new URL(..., import.meta.url).pathname` form produced `/C:/...` — a
+URL *pathname* with no scheme, which Node tolerated by accident and which also
+silently failed to match a mock (the real module loaded instead). `fileURLToPath`
+is only for paths handed to `fs` and to `path.*`.
+
 ## Phase C: per-message sender authentication (ECDSA P-256)
 Group messages are signed per Sender Key; design, wire format, threat model and **known limitations** are in
 `docs/GROUP_E2EE_MULTIDEVICE_DESIGN.md` sections 6 and 7. v2 was **changed in place** (unreleased; no v3):

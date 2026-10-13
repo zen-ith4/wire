@@ -23,18 +23,47 @@ const NEW_USER_COLS = ['auth_scheme', 'kdf_salt', 'kdf_iterations', 'scheme_migr
 const TRIGGERS = ['trg_users_auth_scheme_monotonic', 'trg_users_scheme2_params_insert', 'trg_users_scheme2_params_update',
     'trg_identity_keys_version_monotonic'];
 
-function snapshotLegacy(db) {
-    return {
-        users: db.prepare('SELECT id, username, email, password_hash, is_admin, is_active, email_2fa_enabled, created_at FROM users ORDER BY id').all(),
-        identities: db.prepare('SELECT * FROM identity_keys ORDER BY id').all(),
-        dms: db.prepare('SELECT * FROM direct_messages ORDER BY id').all(),
-    };
+const LEGACY_TABLES = ['users', 'identity_keys', 'direct_messages'];
+
+/**
+ * The column list of each legacy table, read from PRAGMA table_info on the
+ * still-legacy database. Captured BEFORE the upgrade and reused afterwards, so
+ * the snapshot covers exactly the columns the legacy schema had: nullable
+ * columns that other work adds later (direct_messages.attachment_meta /
+ * attachment_iv, which `ensureSchema` creates as part of the F12 upgrade
+ * because it is the whole-tree schema ensurer) are outside the comparison,
+ * while a changed value in an existing column, or a dropped/renamed column,
+ * still fails it.
+ */
+function legacyColumnSpec(db) {
+    const spec = {};
+    for (const t of LEGACY_TABLES) {
+        const cols = columns(db, t);
+        assert.ok(cols.length > 0, `legacy table ${t} has no columns`);
+        spec[t] = cols;
+    }
+    return spec;
+}
+
+function snapshotLegacy(db, spec) {
+    const snap = {};
+    for (const t of LEGACY_TABLES) {
+        const cols = spec[t];
+        assert.deepEqual(
+            columns(db, t).filter((c) => cols.includes(c)),
+            cols,
+            `legacy table ${t} lost or renamed a column during the upgrade`
+        );
+        snap[t] = db.prepare(`SELECT ${cols.join(', ')} FROM ${t} ORDER BY id`).all();
+    }
+    return snap;
 }
 
 test('T0: legacy copy gets a VACUUM INTO backup BEFORE any change, then the new schema', () => {
     const { dir, dbPath } = copyLegacyFixture();
     const db = openRaw(dbPath);
-    const before = snapshotLegacy(db);
+    const legacySpec = legacyColumnSpec(db);
+    const before = snapshotLegacy(db, legacySpec);
     assert.ok(!columns(db, 'users').includes('auth_scheme'));
 
     const backup = upgrade(db, dbPath, new Date('2026-10-07T12:00:00Z'));
@@ -46,13 +75,13 @@ test('T0: legacy copy gets a VACUUM INTO backup BEFORE any change, then the new 
     // the backup is the PRE-migration snapshot: legacy schema, identical rows
     const b = new Database(backup, { readonly: true });
     assert.ok(!columns(b, 'users').includes('auth_scheme'), 'backup must be taken before the ALTERs');
-    assert.deepEqual(snapshotLegacy(b), before);
+    assert.deepEqual(snapshotLegacy(b, legacySpec), before);
     b.close();
 
     // the live DB now has the new schema and all legacy data intact
     for (const c of NEW_USER_COLS) assert.ok(columns(db, 'users').includes(c), `missing column ${c}`);
     for (const t of TRIGGERS) assert.ok(triggers(db).includes(t), `missing trigger ${t}`);
-    assert.deepEqual(snapshotLegacy(db), before, 'legacy rows changed by the schema upgrade');
+    assert.deepEqual(snapshotLegacy(db, legacySpec), before, 'legacy rows changed by the schema upgrade');
 
     const rows = db.prepare('SELECT auth_scheme, kdf_salt, kdf_iterations, must_change_password, legacy_login_closed FROM users').all();
     assert.equal(rows.length, Object.keys(META.passwords).length);
@@ -64,13 +93,14 @@ test('T0: legacy copy gets a VACUUM INTO backup BEFORE any change, then the new 
 test('T0: running the upgrade again is a no-op (no second backup, rows unchanged)', () => {
     const { dir, dbPath } = copyLegacyFixture();
     const db = openRaw(dbPath);
+    const legacySpec = legacyColumnSpec(db);
     upgrade(db, dbPath, new Date('2026-10-07T12:00:00Z'));
-    const after1 = snapshotLegacy(db);
+    const after1 = snapshotLegacy(db, legacySpec);
     const files1 = fs.readdirSync(dir).sort();
 
     assert.equal(upgrade(db, dbPath, new Date('2026-10-07T12:00:05Z')), null);
     assert.deepEqual(fs.readdirSync(dir).sort(), files1);
-    assert.deepEqual(snapshotLegacy(db), after1);
+    assert.deepEqual(snapshotLegacy(db, legacySpec), after1);
     db.close();
 
     // a "restart": new connection, still nothing to do

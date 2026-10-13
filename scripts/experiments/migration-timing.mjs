@@ -61,7 +61,13 @@ try {
   const before = readScheme(server.dbPath, username);
   console.error(`registered ${username}; auth_scheme before login = ${before}`);
 
-  browser = await harness.launchBrowser();
+  // launchBrowser() returns { browser, reason }; reason is set when Chromium
+  // is unavailable. Using the object directly gives `browser.newPage is not a
+  // function` and then hangs until the tool timeout, so fail fast instead.
+  const launched = await harness.launchBrowser();
+  browser = launched.browser;
+  if (!browser) throw new Error(`Chromium unavailable: ${launched.reason}`);
+
   const page = await browser.newPage();
   page.setDefaultTimeout(30000);
 

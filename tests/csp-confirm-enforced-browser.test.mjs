@@ -148,6 +148,30 @@ async function runFlows(origin, enforce) {
         assert.equal(r.status, 201, `register ${u}: ${JSON.stringify(r.body)}`);
     }
 
+    /**
+     * The REST session this page already holds after a real form login.
+     *
+     * Reads the token from the page's LIVE module graph, not from
+     * localStorage: both pages here share one origin, so the next login()'s
+     * localStorage.clear() plus its own setToken() would otherwise replace it
+     * and hand back the wrong user. getToken() is a module-level variable in
+     * public/js/core/auth.js and is therefore per page.
+     *
+     * A second raw-password login is not an option at all: the form login
+     * already migrated the account to login scheme 2, and
+     * services/auth.service.js refuses a raw password for such an account.
+     */
+    const sessionFromPage = async (page, user) => {
+        const token = await page.evaluate(async () => (await import('/js/core/auth.js')).getToken());
+        if (!token) throw new Error(`no session token in this page after UI login for ${user}`);
+        const api = json(origin, token);
+        const me = await api('/api/me/');
+        if (me.status !== 200) throw new Error(`/api/me/ for ${user}: ${me.status} ${JSON.stringify(me.body)}`);
+        const u = me.body.user || me.body;
+        if (u.username && u.username !== user) throw new Error(`page session is ${u.username}, expected ${user}`);
+        return { token, id: u.id, api };
+    };
+
     const login = async (page, user) => {
         await page.goto(`${origin}/`, { waitUntil: 'domcontentloaded' });
         await page.evaluate(() => { localStorage.clear(); sessionStorage.clear(); });
@@ -156,7 +180,10 @@ async function runFlows(origin, enforce) {
         await page.type('#auth-username', user);
         await page.type('#auth-password', PASSWORD);
         await Promise.all([page.click('#auth-form button'), page.waitForSelector('.nav-link', { timeout: 30000 })]);
-        await sleep(800);
+        // .nav-link can only appear after initializeIdentity() has settled, and
+        // initializeIdentity() awaits the credential migration before it renders,
+        // so observing the nav plus the token is enough. No fixed sleep.
+        await page.waitForFunction(() => !!localStorage.getItem('token'), { timeout: 15000 });
     };
     // bob signs in once so his identity key exists (needed to add him to a group)
     const bobPage = await browser.newPage(); bobPage.setDefaultTimeout(25000);
@@ -166,13 +193,14 @@ async function runFlows(origin, enforce) {
     await login(page, names.alice);
 
     // --- real REST sessions ---
+    // Both accounts signed in through the real form above, so each is already
+    // on login scheme 2 and a second raw-password login is refused by the
+    // anti-downgrade rule. Reuse each page's own session instead.
     const sess = {};
+    sess.bob = await sessionFromPage(bobPage, origin, names.bob);
+    sess.alice = await sessionFromPage(page, origin, names.alice);
     for (const [k, u] of Object.entries(names)) {
-        const r = await json(origin)('/api/auth/login', { method: 'POST', body: JSON.stringify({ username: u, password: PASSWORD }) });
-        assert.equal(r.status, 200, `login ${u}: ${JSON.stringify(r.body)}`);
-        const token = r.body.token || r.body.accessToken || r.body.access_token;
-        assert.ok(token, `${u} has a token`);
-        sess[k] = { token, id: (r.body.user || r.body).id, api: json(origin, token) };
+        if (!sess[k]) throw new Error(`no session captured for ${u}`);
     }
     assert.ok(sess.alice.id && sess.bob.id, 'user ids known');
 

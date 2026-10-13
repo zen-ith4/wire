@@ -161,13 +161,23 @@ export async function restLogin(origin, username) {
  * and no other credential can be obtained from outside the page.
  */
 export async function sessionFromPage(page, origin, username) {
-    const token = await page.evaluate(() => localStorage.getItem('token'));
-    if (!token) throw new Error(`no token in localStorage after UI login for ${username}`);
+    // Read the token from this page's LIVE module graph, not from localStorage.
+    // Several pages share one origin in these tests, so localStorage is shared:
+    // loginUi() for the next user clears it and overwrites it, and reading it
+    // later would hand back the WRONG user's token and id. getToken() is the
+    // module-level variable in public/js/core/auth.js, so it is per page. This
+    // is the same technique socketConnected() uses for the socket.
+    const token = await page.evaluate(async () => (await import('/js/core/auth.js')).getToken());
+    if (!token) throw new Error(`no session token in this page after UI login for ${username}`);
     const api = jsonClient(origin, token);
     const me = await api('/api/me/');
     if (me.status !== 200) throw new Error(`/api/me/ for ${username}: ${me.status} ${JSON.stringify(me.body)}`);
     const id = (me.body.user || me.body).id;
     if (!id) throw new Error(`/api/me/ returned no id for ${username}: ${JSON.stringify(me.body)}`);
+    const meUser = me.body.user || me.body;
+    if (meUser.username && meUser.username !== username) {
+        throw new Error(`page session is ${meUser.username}, expected ${username}`);
+    }
     return { token, id, api, raw: me.body };
 }
 

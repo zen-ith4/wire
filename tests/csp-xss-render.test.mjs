@@ -87,7 +87,7 @@ mock.module(jsPath('core/api.js'), {
     },
 });
 mock.module(jsPath('core/auth.js'), {
-    namedExports: { getCurrentUser: () => ({ id: 1, username: 'alice', is_admin: false }), getToken: () => 't', logout() {} },
+    namedExports: { getCurrentUser: () => ({ id: 1, username: 'alice', is_admin: false, groups_enabled: true }), getToken: () => 't', logout() {} },
 });
 mock.module(jsPath('core/socket.js'), { namedExports: { getSocket: () => null } });
 
@@ -317,14 +317,17 @@ test('group UI: renders hostile data inertly, with no inline handlers or style a
 
     const row = content.querySelector('.group-row');
     assert.ok(row, 'group row rendered');
-    assert.equal(row.querySelector('.conv-name').textContent, HOSTILE_GROUP_NAME);
+    assert.equal(row.querySelector('.dm-conv-name').textContent, HOSTILE_GROUP_NAME);
     assert.equal(row.querySelector('.group-avatar-badge').getAttribute('title'), HOSTILE_GROUP_NAME);
 
     row.click();
     await settle(30);
 
     assertNoActiveAttrs(content, 'group panel');
-    assert.equal(content.querySelectorAll(FORBIDDEN_TAGS.replace('textarea,', '')).length, 0, 'forbidden element in group UI');
+    // The only <input> the list may contain is the group-search box (#group-conv-search,
+    // plain type=text, no handler attributes -- checked by assertNoActiveAttrs above).
+    // Every other forbidden element stays forbidden.
+    assert.equal([...content.querySelectorAll(FORBIDDEN_TAGS.replace('textarea,', ''))].filter((e) => e.id !== 'group-conv-search').length, 0, 'forbidden element in group UI');
     assert.equal(content.querySelector('.chat-top-name').textContent, HOSTILE_GROUP_NAME);
     assert.equal(document.getElementById('group-input').getAttribute('placeholder'), `Message ${HOSTILE_GROUP_NAME}…`,
         'placeholder must round-trip the name exactly (no backslash-mangling)');
@@ -347,8 +350,10 @@ test('group UI: renders hostile data inertly, with no inline handlers or style a
 test('group UI: Send / Emoji / Manage / + New work via delegated listeners', async () => {
     const content = document.getElementById('content-area');
 
-    // "+ New" lives on the list header, which showGroups() re-rendered above.
-    content.querySelector('[data-action="group-new"]').click();
+    // "New group" is reached through the floating "+" button (FAB) and its
+    // menu, which showGroups() re-rendered above (listeners, no inline handlers).
+    content.querySelector('#new-chat-fab').click();
+    content.querySelector('[data-fab-action="group"]').click();
     await settle();
     assert.equal(lastDialog?.label, 'Create group', '"+ New" must open the create-group dialog');
     assertNoActiveAttrs(lastDialog.panel, 'create-group dialog');

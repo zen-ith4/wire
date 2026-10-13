@@ -96,7 +96,8 @@ async function recordGroupMarkup() {
     const d = w.document;
     d.querySelector('[data-action="group-settings"]').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
     await sleep(600);
-    d.querySelector('[data-action="group-new"]').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+    d.querySelector('#new-chat-fab').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+    d.querySelector('[data-fab-action="group"]').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
     await sleep(300);
     return markup;
 }

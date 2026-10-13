@@ -228,7 +228,10 @@ test('X-3: Group UI emits no inline style attributes, inline handlers or javascr
     // Open the real settings dialog (delegated click), then the create dialog.
     d.querySelector('[data-action="group-settings"]').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
     await sleep(600);
-    const createBtn = d.querySelector('[data-action="group-new"]');
+    const fab = d.querySelector('#new-chat-fab');
+    assert.ok(fab, 'new-chat FAB found');
+    fab.dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+    const createBtn = d.querySelector('[data-fab-action="group"]');
     assert.ok(createBtn, 'create-group control found');
     createBtn.dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
     await sleep(300);

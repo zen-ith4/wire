@@ -117,7 +117,8 @@ test('group settings: the Remove-member confirmation is visible, topmost and wor
 
     await page.click('.nav-link[data-view="groups"]');
     await page.waitForSelector('#group-list');
-    await page.click('[data-action="group-new"]');
+    await page.click('#new-chat-fab');
+    await page.click('[data-fab-action="group"]');
     await page.waitForSelector('#new-group-name');
     await page.type('#new-group-name', 'confirm regression');
     await page.click('#new-group-create');

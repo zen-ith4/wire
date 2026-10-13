@@ -30,8 +30,26 @@ import { createRequire } from 'node:module';
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-    ROOT, PASSWORD, rand, sleep, waitFor, startRealServer, jsonClient, filesContaining, textContains, walkFiles,
-    launchBrowser, registerUser, restLogin, loginUi, socketConnected, openGroupUi, sendGroupTextUi, openDmUi, sendDmTextUi,
+    ROOT,
+    PASSWORD,
+    rand,
+    sleep,
+    waitFor,
+    startRealServer,
+    jsonClient,
+    filesContaining,
+    textContains,
+    walkFiles,
+    launchBrowser,
+    registerUser,
+    restLogin,
+    loginUi,
+    socketConnected,
+    openGroupUi,
+    sendGroupTextUi,
+    openDmUi,
+    sendDmTextUi,
+    sessionFromPage,
 } from './_acceptance-harness.mjs';
 
 const require = createRequire(import.meta.url);
@@ -87,7 +105,14 @@ async function runScenario() {
     await sleep(800);
 
     const sess = {};
-    for (const [k, u] of Object.entries(names)) sess[k] = await restLogin(origin, u);
+    // alice and bob went through the UI login, so their accounts are on
+    // login scheme 2 and no raw password is accepted for them any more:
+    // reuse the session the browser already holds. carol never logged in
+    // through the UI, so she is still scheme 1 and a plain REST login is
+    // correct for her.
+    sess.alice = await sessionFromPage(page, origin, names.alice);
+    sess.bob = await sessionFromPage(bobPage, origin, names.bob);
+    sess.carol = await restLogin(origin, names.carol);
 
     // group + member through the official routes
     const g = await sess.alice.api('/api/groups', { method: 'POST', body: JSON.stringify({ name: `plain ${n}` }) });

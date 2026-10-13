@@ -288,16 +288,28 @@ async function scenario(t, cspEnforce) {
     await confirmVisible(page, 'confirm-modal-ok'); // the delegated Delete handler ran and opened the dialog
     assert.equal((await attrViolations()).length, attrBeforeDelete, 'the Delete click itself raised no script-src-attr violation');
     if (cspEnforce) {
-      // second negative control: the dialog's OK is still an inline handler
-      // (index.html), so a real click is blocked and the dialog stays open
-      const n = (await violations()).filter((v) => v.directive.startsWith('script-src-attr') && v.disposition === 'enforce').length;
-      await page.click('#confirm-modal-ok');
-      await sleep(400);
-      assert.ok((await violations()).filter((v) => v.directive.startsWith('script-src-attr') && v.disposition === 'enforce').length > n, 'confirm OK (inline in index.html) is blocked under enforcement');
-      assert.equal(dmRows(bId).length, 2, 'a blocked OK deletes nothing');
-      await page.evaluate(() => window.__confirmModalOk());
+        // The confirm modal is NOT an inline-handler control any more: it was
+        // converted to data-action + one delegated listener in
+        // public/js/ui/confirm.js, so its OK button carries no on*= attribute.
+        // Under enforcement a real click must therefore WORK, not be blocked.
+        //
+        // This block is the regression guard in both directions: the DOM
+        // assertion fails if an inline on* attribute is put back on the modal;
+        // and if one were re-added, enforcement would block the click, raising
+        // a script-src-attr violation (failing the next assert) and leaving the
+        // row undeleted (failing the one after that).
+        assert.equal(
+            await page.evaluate(() => [...document.getElementById('confirm-modal-ok').attributes].some((a) => /^on/i.test(a.name))),
+            false,
+            'confirm OK must not carry an inline on*= handler attribute'
+        );
+        const n = (await violations()).filter((v) => v.directive.startsWith('script-src-attr') && v.disposition === 'enforce').length;
+        await page.click('#confirm-modal-ok');
+        await sleep(400);
+        assert.equal((await violations()).filter((v) => v.directive.startsWith('script-src-attr') && v.disposition === 'enforce').length, n, 'confirm OK (a delegated data-action button) raises no script-src-attr violation');
+        assert.equal(dmRows(bId).length, 1, 'confirm OK deletes the row even under enforcement');
     } else {
-      await page.click('#confirm-modal-ok'); // Report-Only: a real click works
+        await page.click('#confirm-modal-ok'); // Report-Only: a real click works
     }
     await waitFor(() => dmRows(bId).length === 1, 'the row to be deleted on the server');
     assert.ok(!dmRows(bId).some((r) => r.id === victim.id), 'the right message was deleted');

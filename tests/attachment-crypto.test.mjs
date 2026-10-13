@@ -8,8 +8,17 @@
 // one function; everything else here is pure WebCrypto logic, which
 // Node's real crypto.subtle runs identically to a browser's.
 
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import path from 'node:path';
 import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
+// The repo root is derived from this file, so the test runs from any
+// checkout instead of only at a hardcoded absolute path. fileURLToPath
+// is for fs paths; mock.module() and import() need a real file:// URL.
+const js = (rel) => pathToFileURL(
+  path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "public", "js", rel)
+).href;
+
 
 import {
     installWebLocksPolyfill,
@@ -23,7 +32,7 @@ installWebLocksPolyfill();
 const identitiesByUserId = new Map();
 let currentActorId = null;
 
-mock.module('/home/claude/wire/public/js/crypto/identity-service.js', {
+mock.module(js('crypto/identity-service.js'), {
     namedExports: {
         getCurrentIdentity: () => {
             const id = identitiesByUserId.get(currentActorId);
@@ -32,7 +41,7 @@ mock.module('/home/claude/wire/public/js/crypto/identity-service.js', {
     },
 });
 
-mock.module('/home/claude/wire/public/js/core/auth.js', {
+mock.module(js('core/auth.js'), {
     namedExports: {
         getCurrentUser: () => (currentActorId ? { id: currentActorId } : null),
         getToken: () => 'fake-token',
@@ -40,7 +49,7 @@ mock.module('/home/claude/wire/public/js/core/auth.js', {
     },
 });
 
-mock.module('/home/claude/wire/public/js/core/api.js', {
+mock.module(js('core/api.js'), {
     namedExports: {
         api: async () => {
             throw new Error('api() should not be called in this test — only rotation.js/sender-key.js are exercised directly');
@@ -48,11 +57,11 @@ mock.module('/home/claude/wire/public/js/core/api.js', {
     },
 });
 
-mock.module('/home/claude/wire/public/js/crypto/keys/session.js', {
+mock.module(js('crypto/keys/session.js'), {
     namedExports: {
         getOrCreateGroupKdmKey: async (peerUserId) => {
             const { deriveSessionKeyFromPeer, GROUP_KDM_INFO } = await import(
-                '/home/claude/wire/public/js/crypto/keys/key-derivation.js'
+                js('crypto/keys/key-derivation.js')
             );
             const me = identitiesByUserId.get(currentActorId);
             const peer = identitiesByUserId.get(Number(peerUserId));
@@ -60,7 +69,7 @@ mock.module('/home/claude/wire/public/js/crypto/keys/session.js', {
         },
         getOrCreateSessionKey: async (peerUserId) => {
             const { deriveSessionKeyFromPeer } = await import(
-                '/home/claude/wire/public/js/crypto/keys/key-derivation.js'
+                js('crypto/keys/key-derivation.js')
             );
             const me = identitiesByUserId.get(currentActorId);
             const peer = identitiesByUserId.get(Number(peerUserId));
@@ -74,10 +83,10 @@ const {
     decryptAttachmentForDm,
     encryptAttachmentForGroup,
     decryptAttachmentForGroup,
-} = await import('/home/claude/wire/public/js/crypto/messages/attachment-crypto.js');
+} = await import(js('crypto/messages/attachment-crypto.js'));
 
 const { rotateSenderKey } = await import(
-    '/home/claude/wire/public/js/crypto/groups/rotation.js'
+    js('crypto/groups/rotation.js')
 );
 
 async function ensureUsers(...ids) {
@@ -138,7 +147,7 @@ test('group attachment: encrypt/decrypt round trip using the message-associated 
     await rotateSenderKey(identity, groupId, 0, [21]);
 
     const { getMySenderKey } = await import(
-        '/home/claude/wire/public/js/crypto/groups/sender-key.js'
+        js('crypto/groups/sender-key.js')
     );
     const mine = await getMySenderKey(identity, groupId);
 
@@ -190,7 +199,7 @@ test('group attachment: unknown senderKeyId raises MissingSenderKeyError (self-h
     setActor(41);
 
     const { MissingSenderKeyError } = await import(
-        '/home/claude/wire/public/js/crypto/messages/attachment-crypto.js'
+        js('crypto/messages/attachment-crypto.js')
     );
 
     await assert.rejects(

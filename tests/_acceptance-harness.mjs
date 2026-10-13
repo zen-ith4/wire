@@ -131,6 +131,18 @@ export async function registerUser(origin, username) {
     if (r.status !== 201) throw new Error(`register ${username}: ${r.status} ${JSON.stringify(r.body)}`);
 }
 
+/**
+ * A REST session for an account that has NOT been through the browser, so it is
+ * still on login scheme 1 and a raw password is accepted.
+ *
+ * After a browser login this is no longer usable: the UI login migrates the
+ * account to scheme 2 (services/credentialMigration.service.js), and the only
+ * credential that can ever be produced for it is an authKey that exists solely
+ * inside that browser page and never leaves it. A second raw-password login is
+ * refused by the anti-downgrade rule in services/auth.service.js. Use
+ * sessionFromPage() after loginUi(); use this for a browser-less client, which
+ * must therefore be a different, never-UI-logged-in account.
+ */
 export async function restLogin(origin, username) {
     const r = await jsonClient(origin)('/api/auth/login', { method: 'POST', body: JSON.stringify({ username, password: PASSWORD }) });
     if (r.status !== 200) throw new Error(`login ${username}: ${r.status} ${JSON.stringify(r.body)}`);
@@ -138,7 +150,38 @@ export async function restLogin(origin, username) {
     return { token, id: (r.body.user || r.body).id, api: jsonClient(origin, token), raw: r.body };
 }
 
-/** Real login form. The first browser login also creates the user's identity keys. */
+/**
+ * The REST session the browser already holds after loginUi(), read out of the
+ * page. Same shape as restLogin(), same Bearer token the REST routes accept
+ * (setToken() writes exactly this JWT into localStorage.token, and
+ * middleware/authenticate.js reads it back as `Authorization: Bearer`).
+ *
+ * This is the only way to get a REST client for an account that has been
+ * through the UI login, because after that login no raw password is accepted
+ * and no other credential can be obtained from outside the page.
+ */
+export async function sessionFromPage(page, origin, username) {
+    const token = await page.evaluate(() => localStorage.getItem('token'));
+    if (!token) throw new Error(`no token in localStorage after UI login for ${username}`);
+    const api = jsonClient(origin, token);
+    const me = await api('/api/me/');
+    if (me.status !== 200) throw new Error(`/api/me/ for ${username}: ${me.status} ${JSON.stringify(me.body)}`);
+    const id = (me.body.user || me.body).id;
+    if (!id) throw new Error(`/api/me/ returned no id for ${username}: ${JSON.stringify(me.body)}`);
+    return { token, id, api, raw: me.body };
+}
+
+/**
+ * Real login form. The first browser login also creates the user's identity keys
+ * and performs the one-time credential migration.
+ *
+ * Completion is an OBSERVED condition, not a sleep. Order in the client is:
+ *   renderAuthCard -> await initializeIdentity(password, onSuccess)
+ *     -> await migrateLegacyAccount(...)      (auth.js:418)
+ *     -> await onSuccess()                    (auth.js:505, renders the app)
+ * so `.nav-link` cannot appear before the migration has settled. The token is
+ * checked too, because everything below depends on it.
+ */
 export async function loginUi(page, origin, username) {
     await page.goto(`${origin}/`, { waitUntil: 'domcontentloaded' });
     await page.evaluate(() => { localStorage.clear(); sessionStorage.clear(); });
@@ -146,8 +189,9 @@ export async function loginUi(page, origin, username) {
     await page.waitForSelector('#auth-username');
     await page.type('#auth-username', username);
     await page.type('#auth-password', PASSWORD);
-    await Promise.all([page.click('#auth-form button'), page.waitForSelector('.nav-link', { timeout: 30000 })]);
-    await sleep(800);
+    await page.click('#auth-form button');
+    await page.waitForSelector('.nav-link', { timeout: 30000 });
+    await waitFor(() => page.evaluate(() => !!localStorage.getItem('token')), 15000, 50);
 }
 
 export async function socketConnected(page) {

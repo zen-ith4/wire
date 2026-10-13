@@ -1,5 +1,14 @@
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import path from 'node:path';
 import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
+// The repo root is derived from this file, so the test runs from any
+// checkout instead of only at a hardcoded absolute path. fileURLToPath
+// is for fs paths; mock.module() and import() need a real file:// URL.
+const js = (rel) => pathToFileURL(
+  path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "public", "js", rel)
+).href;
+
 
 // auth.js reads localStorage at module top-level (for the persisted
 // token) — minimal in-memory stand-in.
@@ -23,7 +32,7 @@ if (typeof globalThis.window === 'undefined') {
 let apiCallLog = [];
 let apiResponses = [];
 
-mock.module('/home/claude/wire/public/js/core/api.js', {
+mock.module(js('core/api.js'), {
     namedExports: {
         api: async (url) => {
             apiCallLog.push(url);
@@ -34,14 +43,14 @@ mock.module('/home/claude/wire/public/js/core/api.js', {
         fetchBlob: async () => new Blob(),
     },
 });
-mock.module('/home/claude/wire/public/js/core/server.js', {
+mock.module(js('core/server.js'), {
     namedExports: {
         getServerEndpoint: () => 'http://localhost',
         setServerEndpoint: () => {},
         isNativeApp: () => false,
     },
 });
-mock.module('/home/claude/wire/public/js/crypto/identity-service.js', {
+mock.module(js('crypto/identity-service.js'), {
     namedExports: {
         createIdentity: async () => ({}),
         restoreIdentity: async () => ({}),
@@ -50,7 +59,7 @@ mock.module('/home/claude/wire/public/js/crypto/identity-service.js', {
         prepareCredentialChange: async () => ({}),
     },
 });
-mock.module('/home/claude/wire/public/js/crypto/keys/unlock-key-store.js', {
+mock.module(js('crypto/keys/unlock-key-store.js'), {
     namedExports: {
         idbStoreUnlockKey: async () => {},
         idbGetUnlockKey: async () => null,
@@ -59,7 +68,7 @@ mock.module('/home/claude/wire/public/js/crypto/keys/unlock-key-store.js', {
 });
 
 const { setCurrentUser, getCurrentUser } = await import(
-    '/home/claude/wire/public/js/core/auth.js'
+    js('core/auth.js')
 );
 
 function resetApiMock(responses) {

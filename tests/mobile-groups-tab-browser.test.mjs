@@ -20,7 +20,15 @@ import path from 'node:path';
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-    rand, sleep, waitFor, startRealServer, launchBrowser, registerUser, restLogin, loginUi,
+    rand,
+    sleep,
+    waitFor,
+    startRealServer,
+    launchBrowser,
+    registerUser,
+    restLogin,
+    loginUi,
+    sessionFromPage,
 } from './_acceptance-harness.mjs';
 
 const WIDTHS = [320, 375, 414];
@@ -73,7 +81,7 @@ async function runMode(groupsEnabled) {
         await page.waitForSelector('#bottom-nav .bottom-nav-item', { timeout: 30000 });
         await sleep(800);
         if (groupsEnabled && !gid) {
-            sess = await restLogin(server.origin, user);
+            sess = await sessionFromPage(page, server.origin, user);
             const g = await sess.api('/api/groups', { method: 'POST', body: JSON.stringify({ name: `mobile ${n}` }) });
             assert.equal(g.status, 201, JSON.stringify(g.body));
             gid = g.body.id;

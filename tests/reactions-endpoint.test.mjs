@@ -1,5 +1,14 @@
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import path from 'node:path';
 import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
+// The repo root is derived from this file, so the test runs from any
+// checkout instead of only at a hardcoded absolute path. fileURLToPath
+// is for fs paths; mock.module() and import() need a real file:// URL.
+const js = (rel) => pathToFileURL(
+  path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "public", "js", rel)
+).href;
+
 
 // reactions.js assigns window.toggleMessageReaction/openReactionPicker
 // at module top-level — give it something to assign to.
@@ -12,18 +21,18 @@ if (typeof globalThis.window === 'undefined') {
 // but ES modules evaluate every import at load time, so these need
 // stubs to load the file at all in Node. icons.js is pure data (no
 // DOM), so it's left real.
-mock.module('/home/claude/wire/public/js/core/api.js', {
+mock.module(js('core/api.js'), {
     namedExports: { api: async () => ({}) },
 });
-mock.module('/home/claude/wire/public/js/core/auth.js', {
+mock.module(js('core/auth.js'), {
     namedExports: { getCurrentUser: () => null },
 });
-mock.module('/home/claude/wire/public/js/ui/emoji-picker.js', {
+mock.module(js('ui/emoji-picker.js'), {
     namedExports: { openEmojiPicker: () => {} },
 });
 
 const { reactionEndpoint, setActiveGroupIdGetter } = await import(
-    '/home/claude/wire/public/js/chat/reactions.js'
+    js('chat/reactions.js')
 );
 
 // Independent reference: the exact pre-change line, reconstructed

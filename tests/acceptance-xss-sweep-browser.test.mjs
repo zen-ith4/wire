@@ -35,8 +35,21 @@ import path from 'node:path';
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-    rand, sleep, waitFor, startRealServer, jsonClient, launchBrowser, registerUser, restLogin, loginUi,
-    socketConnected, openGroupUi, sendGroupTextUi, openDmUi, sendDmTextUi,
+    rand,
+    sleep,
+    waitFor,
+    startRealServer,
+    jsonClient,
+    launchBrowser,
+    registerUser,
+    restLogin,
+    loginUi,
+    socketConnected,
+    openGroupUi,
+    sendGroupTextUi,
+    openDmUi,
+    sendDmTextUi,
+    sessionFromPage,
 } from './_acceptance-harness.mjs';
 
 let server = null; let browser = null; let fixtureDir = null;
@@ -123,8 +136,14 @@ async function run() {
     await loginUi(page, origin, names.alice);
     assert.ok(await socketConnected(page), 'alice socket connected');
     await sleep(800);
-    const sess = { alice: await restLogin(origin, names.alice), bob: await restLogin(origin, names.bob) };
-    if (hostileUserExists) sess.h = await restLogin(origin, HUSER);
+    // All three of these accounts have been through the UI login, so they
+    // are on login scheme 2 and a second raw-password login is refused by
+    // the anti-downgrade rule. Reuse each browser session instead.
+    const sess = {
+        alice: await sessionFromPage(page, origin, names.alice),
+        bob: await sessionFromPage(bobPage, origin, names.bob),
+    };
+    if (hostileUserExists) sess.h = await sessionFromPage(hPage, origin, HUSER);
     out.hostileUserExists = hostileUserExists;
     const A = sess.alice.api;
 

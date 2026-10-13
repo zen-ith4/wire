@@ -49,27 +49,6 @@
 
 import './groups/_env.mjs';
 
-/**
- * A page in its OWN browser context. browser.newPage() uses the browser
- * default context, where every page shares localStorage - so when two users
- * each sign in through the real form, the second login clears and overwrites
- * the first user's storage and any later read from the first page returns the
- * wrong session. An isolated context per user is also what two real devices
- * look like. createBrowserContext() is the current name;
- * createIncognitoBrowserContext() is the older one and puppeteer-core is
- * installed outside the repo, so detect instead of assuming a version.
- */
-const openUserPage = async (browser, opts = {}) => {
-    const context = typeof browser.createBrowserContext === 'function'
-        ? await browser.createBrowserContext()
-        : await browser.createIncognitoBrowserContext();
-    const page = await context.newPage();
-    page.setDefaultTimeout(opts.defaultTimeout ?? 30000);
-    if (opts.viewport) await page.setViewport(opts.viewport);
-    return page;
-};
-
-
 import path from 'node:path';
 import http from 'node:http';
 import { createRequire } from 'node:module';
@@ -207,9 +186,9 @@ async function runFlows(origin, enforce) {
         await page.waitForFunction(() => !!localStorage.getItem('token'), { timeout: 15000 });
     };
     // bob signs in once so his identity key exists (needed to add him to a group)
-    const bobPage = await openUserPage(browser, { defaultTimeout: 25000 });
+    const bobPage = await browser.newPage(); bobPage.setDefaultTimeout(25000);
     await login(bobPage, names.bob);
-    const page = await openUserPage(browser, { defaultTimeout: 25000 });
+    const page = await browser.newPage(); page.setDefaultTimeout(25000);
     await page.setViewport({ width: 1280, height: 900 });
     await login(page, names.alice);
 

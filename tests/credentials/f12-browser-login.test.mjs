@@ -12,27 +12,6 @@
 // Skips (like the other Chromium tests) when no Chromium is available.
 
 import path from 'node:path';
-
-/**
- * A page in its OWN browser context. browser.newPage() uses the browser
- * default context, where every page shares localStorage - so when two users
- * each sign in through the real form, the second login clears and overwrites
- * the first user's storage and any later read from the first page returns the
- * wrong session. An isolated context per user is also what two real devices
- * look like. createBrowserContext() is the current name;
- * createIncognitoBrowserContext() is the older one and puppeteer-core is
- * installed outside the repo, so detect instead of assuming a version.
- */
-const openUserPage = async (browser, opts = {}) => {
-    const context = typeof browser.createBrowserContext === 'function'
-        ? await browser.createBrowserContext()
-        : await browser.createIncognitoBrowserContext();
-    const page = await context.newPage();
-    page.setDefaultTimeout(opts.defaultTimeout ?? 30000);
-    if (opts.viewport) await page.setViewport(opts.viewport);
-    return page;
-};
-
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { test, before, after } from 'node:test';
@@ -66,7 +45,9 @@ after(async () => { await browser?.close().catch(() => {}); await srv?.stop(); c
 const row = (sql, ...a) => { const d = new Database(dbPath, { readonly: true }); try { return d.prepare(sql).get(...a); } finally { d.close(); } };
 
 async function newPage() {
-    const page = await openUserPage(browser, { defaultTimeout: 30000, viewport: { width: 1100, height: 800 } });
+    const page = await browser.newPage();
+    page.setDefaultTimeout(30000);
+    await page.setViewport({ width: 1100, height: 800 });
     const log = [];
     page.on('request', (r) => log.push({ method: r.method(), url: r.url().replace(srv.base, ''), body: r.postData() || '' }));
     return { page, log };

@@ -9,6 +9,7 @@
 // scanning everything the server could have persisted.
 
 import fs from 'node:fs';
+import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -32,6 +33,45 @@ export async function waitFor(fn, ms, step = 250) {
 }
 
 // ---------------------------------------------------------------- server
+/**
+ * Ports that fetch (undici) and Chromium REFUSE to connect to, whatever is
+ * listening. Measured on Linux and confirmed on Windows; the blocklist also
+ * includes 4045, 4190, 6000, 6566, 6665-6669, 6697 and 10080.
+ */
+const BLOCKED_PORTS = new Set([
+    4045, 4190, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669, 6697, 10080,
+]);
+
+/**
+ * A port for the real server child process.
+ *
+ * The server reads PORT from the environment and calls server.listen(PORT), so
+ * it cannot be given 0 to let the OS choose; the port has to be picked here.
+ * A blind `4600 + random(900)` was wrong twice over: it could land on a
+ * refused port (5060/5061 are inside that range, and then the readiness fetch
+ * below throws "bad port" and the harness reports "server did not start" even
+ * though the server printed "started successfully"), and it could collide with
+ * a port another run already holds.
+ *
+ * So: skip the refused ports, then actually confirm the candidate is bindable
+ * before handing it over, and retry rather than fail. There is an unavoidable
+ * gap between closing the probe and the child binding, which is why the caller
+ * also retries on EADDRINUSE.
+ */
+async function pickFreePort() {
+    for (let attempt = 0; attempt < 60; attempt++) {
+        const candidate = 4600 + Math.floor(Math.random() * 900);
+        if (BLOCKED_PORTS.has(candidate)) continue;
+        const bindable = await new Promise((resolve) => {
+            const probe = net.createServer();
+            probe.once('error', () => resolve(false));
+            probe.listen(candidate, '127.0.0.1', () => probe.close(() => resolve(true)));
+        });
+        if (bindable) return candidate;
+    }
+    throw new Error('could not find a bindable, non-refused port for the test server');
+}
+
 export async function startRealServer({ csp = 'false', extraEnv = {} } = {}) {
     const work = fs.mkdtempSync(path.join(os.tmpdir(), 'wire-accept-'));
     // The app's DEFAULT upload dirs live in the repo root (dm-uploads/, group-uploads/, ...). A scan of
@@ -43,7 +83,7 @@ export async function startRealServer({ csp = 'false', extraEnv = {} } = {}) {
     };
     for (const d of Object.values(dirs)) fs.mkdirSync(d, { recursive: true });
     const rootBefore = new Set(fs.readdirSync(ROOT));
-    const port = 4600 + Math.floor(Math.random() * 900);
+    const port = await pickFreePort();
     const env = {
         ...process.env, // includes tests/test.env; overridden below where it matters
         NODE_ENV: 'development', PORT: String(port), HOST: '127.0.0.1',
@@ -124,33 +164,6 @@ export async function launchBrowser() {
     } catch (e) {
         return { browser: null, reason: e.message };
     }
-}
-
-/**
- * A page for ONE simulated user, in its own browser context.
- *
- * browser.newPage() puts the page in the browser's DEFAULT context, and every
- * page in that context shares localStorage and cookies. So when two simulated
- * users each sign in through the real form, the second login clears and
- * overwrites the first user's storage, and a later read from the first page
- * hands back the second user's session. Give each user its own context and the
- * storage is genuinely separate, which is also what a real user's two devices
- * look like.
- *
- * createBrowserContext() is the current name; createIncognitoBrowserContext()
- * is the older one, and puppeteer-core is installed outside the repo
- * (CHROMIUM_DIR), so the version is not pinned here - detect instead.
- *
- * Closing the browser closes every context created from it.
- */
-export async function openUserPage(browser, { viewport, defaultTimeout = 30000 } = {}) {
-    const context = typeof browser.createBrowserContext === 'function'
-        ? await browser.createBrowserContext()
-        : await browser.createIncognitoBrowserContext();
-    const page = await context.newPage();
-    page.setDefaultTimeout(defaultTimeout);
-    if (viewport) await page.setViewport(viewport);
-    return page;
 }
 
 export async function registerUser(origin, username) {

@@ -50,7 +50,6 @@ import {
     openDmUi,
     sendDmTextUi,
     sessionFromPage,
-    openUserPage,
 } from './_acceptance-harness.mjs';
 
 const require = createRequire(import.meta.url);
@@ -98,9 +97,9 @@ async function runScenario() {
     const M = { group: `ZXQ-GRP-${rand()}`, dmText: `ZXQ-DMT-${rand()}`, dmFile: `ZXQ-DMA-${rand()}`, dmCaption: `ZXQ-DMC-${rand()}` };
 
     for (const u of Object.values(names)) await registerUser(origin, u);
-    const bobPage = await openUserPage(browser, { defaultTimeout: 30000, viewport: { width: 1280, height: 900 } });
+    const bobPage = await browser.newPage(); bobPage.setDefaultTimeout(30000); await bobPage.setViewport({ width: 1280, height: 900 });
     await loginUi(bobPage, origin, names.bob); // creates bob's identity key
-    const page = await openUserPage(browser, { defaultTimeout: 30000, viewport: { width: 1280, height: 900 } });
+    const page = await browser.newPage(); page.setDefaultTimeout(30000); await page.setViewport({ width: 1280, height: 900 });
     await loginUi(page, origin, names.alice);
     assert.ok(await socketConnected(page), 'alice socket connected');
     await sleep(800);

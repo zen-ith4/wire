@@ -48,6 +48,7 @@
 // would have called) and asserts the button path as a `todo` test.
 
 import './groups/_env.mjs';
+import { sessionFromPage, groupProtocolHeaders } from './_acceptance-harness.mjs';
 
 import path from 'node:path';
 import http from 'node:http';
@@ -111,7 +112,11 @@ async function startApp() {
 const json = (origin, token) => async (p, opts = {}) => {
     const res = await fetch(`${origin}${p}`, {
         ...opts,
-        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(opts.headers || {}) },
+        headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            ...groupProtocolHeaders(p, opts.headers || {}),
+        },
     });
     const text = await res.text();
     let body = null; try { body = text ? JSON.parse(text) : null; } catch { body = text; }
@@ -147,31 +152,6 @@ async function runFlows(origin, enforce) {
         const r = await json(origin)('/api/auth/register', { method: 'POST', body: JSON.stringify({ username: u, email: `${u}@example.com`, password: PASSWORD }) });
         assert.equal(r.status, 201, `register ${u}: ${JSON.stringify(r.body)}`);
     }
-
-    /**
-     * The REST session this page already holds after a real form login.
-     *
-     * Reads the token from the page's LIVE module graph, not from
-     * localStorage: both pages here share one origin, so the next login()'s
-     * localStorage.clear() plus its own setToken() would otherwise replace it
-     * and hand back the wrong user. getToken() is a module-level variable in
-     * public/js/core/auth.js and is therefore per page.
-     *
-     * A second raw-password login is not an option at all: the form login
-     * already migrated the account to login scheme 2, and
-     * services/auth.service.js refuses a raw password for such an account.
-     */
-    const sessionFromPage = async (page, user) => {
-        const token = await page.evaluate(async () => (await import('/js/core/auth.js')).getToken());
-        if (!token) throw new Error(`no session token in this page after UI login for ${user}`);
-        const api = json(origin, token);
-        const me = await api('/api/me/');
-        if (me.status !== 200) throw new Error(`/api/me/ for ${user}: ${me.status} ${JSON.stringify(me.body)}`);
-        const u = me.body.user || me.body;
-        if (u.username && u.username !== user) throw new Error(`page session is ${u.username}, expected ${user}`);
-        return { token, id: u.id, api };
-    };
-
     const login = async (page, user) => {
         await page.goto(`${origin}/`, { waitUntil: 'domcontentloaded' });
         await page.evaluate(() => { localStorage.clear(); sessionStorage.clear(); });

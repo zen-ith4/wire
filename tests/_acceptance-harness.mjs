@@ -17,6 +17,8 @@ import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 
+const require = createRequire(import.meta.url);
+
 export const ROOT = path.resolve(import.meta.dirname, '..');
 export const PASSWORD = 'Passw0rd!x';
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -117,10 +119,32 @@ export async function startRealServer({ csp = 'false', extraEnv = {} } = {}) {
     };
 }
 
+/**
+ * F7: the group endpoints are gated by requireGroupProtocol and answer 426
+ * unless the request declares X-Wire-Group-Proto. The real client sends this
+ * (public/js/core/api.js); this helper did not, so every group call a test made
+ * directly came back 426 and the test then failed on an empty result.
+ *
+ * The value is read from the middleware rather than hardcoded, so bumping
+ * GROUP_PROTOCOL_MIN cannot silently break the tests again. Only /api/groups
+ * is gated. An explicit header in opts still wins, so a test that deliberately
+ * sends a stale value (group-hardening-f7-version-gate) keeps working.
+ */
+export function groupProtocolHeaders(pathname, explicit = {}) {
+    const { GROUP_PROTOCOL_MIN } = require(path.join(ROOT, 'middleware', 'groupProtocol.js'));
+    if (typeof pathname !== 'string' || !pathname.startsWith('/api/groups')) return explicit;
+    if (explicit['X-Wire-Group-Proto'] != null || explicit['x-wire-group-proto'] != null) return explicit;
+    return { ...explicit, 'X-Wire-Group-Proto': String(GROUP_PROTOCOL_MIN) };
+}
+
 export const jsonClient = (origin, token) => async (p, opts = {}) => {
     const res = await fetch(`${origin}${p}`, {
         ...opts,
-        headers: { ...(opts.body && !(opts.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(opts.headers || {}) },
+        headers: {
+            ...(opts.body && !(opts.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            ...groupProtocolHeaders(p, opts.headers || {}),
+        },
     });
     const text = await res.text();
     let body = null; try { body = text ? JSON.parse(text) : null; } catch { body = text; }

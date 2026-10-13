@@ -54,6 +54,9 @@ mock.module(jsPath('core/auth.js'), {
         getToken: () => 'test-token',
         logout: () => {},
         getCurrentUser: () => ({ id: 1, username: 'alice' }),
+        // Phase B (B4) made settings-security.js import this from core/auth.js.
+        // Without it here the module link fails before any assertion runs.
+        clearPersistedUnlockKey: async () => {},
     },
 });
 mock.module(jsPath('core/api.js'), {

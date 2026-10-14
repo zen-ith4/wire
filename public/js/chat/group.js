@@ -464,8 +464,32 @@ function ensureSenderKeyReady(groupId, members = activeGroupMembers, { quiet = f
     if (existing) return existing;
 
     const run = (async () => {
-        const membership = myMembership(groupId);
-        if (!membership) return;
+        // The epoch lives on MY membership row, so without it there is
+        // nothing to compare `mine.epoch` against and nothing to rotate
+        // to. Returning silently here used to be the worst possible
+        // outcome: the caller believed the group was ready, the ensure
+        // never ran, and the FIRST SEND failed with
+        // "No Sender Key to send with yet" — which reads like a bug to
+        // the user and only went away after a page reload (a reload runs
+        // loadMembers, which repopulates this map). Fetch the member list
+        // instead; loadMembers() also fills membershipByGroupId, so the
+        // retry below sees the row we just created.
+        let membership = myMembership(groupId);
+
+        if (!membership) {
+            try {
+                members = await loadMembers(groupId);
+                membership = myMembership(groupId);
+            } catch (e) {
+                console.error('[group] could not resolve my membership while ensuring the Sender Key:', e);
+                return;
+            }
+        }
+
+        if (!membership) {
+            console.error(`[group] no membership row for group ${groupId}; not a member, cannot set up encryption`);
+            return;
+        }
 
         const memberUserIds = members.map((m) => m.user_id);
 
@@ -602,6 +626,19 @@ function renderActiveGroupShell(group) {
         // in the request body); it is normalised here so the signed and the sent value agree.
         buildTextBody: async (content, replyToId) => {
             const replyTo = replyToId == null ? null : Number(replyToId);
+
+            // Self-heal before encrypting. The send path used to assume
+            // openGroup() had already minted a Sender Key, but the composer
+            // is rendered and enabled BEFORE that await chain runs, and the
+            // ensure can legitimately be skipped (see ensureSenderKeyReady).
+            // Either way the result was the same: the first send threw
+            // "No Sender Key to send with yet" and only a page reload fixed
+            // it. keyEnsureInflight + the Web Lock inside
+            // ensureSenderKeyForGroup() collapse concurrent callers into a
+            // single rotation, so calling this on every send costs nothing
+            // once a usable key exists.
+            await ensureSenderKeyReady(group.id);
+
             return {
                 content: await encryptOutgoingGroupMessage(group.id, content, { replyToId: replyTo }),
             };

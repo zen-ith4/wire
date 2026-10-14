@@ -1,6 +1,7 @@
 # Browser test isolation in Chromium — what went wrong and why it is fixed this way
 
-Status: the design flaw described in §1 is fixed in `wire-final-8`. Everything else in §4–§6 is
+Status: the design flaw described in §1 is fixed since `wire-final-8`; the current archive is
+`wire-final-9`, which also carries the ported group Sender-Key fix. Everything else in §4-§6 is
 still open and is documented here rather than worked around.
 
 All numbers in this document come from Windows + real local Chrome 155.0.8059.40 driven through
@@ -289,7 +290,8 @@ one Node process, so the profile has to differ per launch.
 
 ## 9. Archive
 
-`wire-final-8.zip` — 10,722,484 bytes,
-`sha256 c9f993647309efa5e3352ed254390675d93c0cd81f4d2bb90295dfda4579fc18`, built with
-`git add -A` → `git write-tree` → `git archive --format=zip --prefix=wire-final-8/` → `git restore --staged .`.
-No commit was created. 473 entries, no `.git`, no `node_modules`, 0 of 375 text files contain CR.
+`wire-final-9.zip` — 10,729,643 bytes,
+`sha256 e73c7ad6bc35d9fe1c881dbfad3624a80da7c863f1c2cd1cb9169a1cfaa54887`, built with
+`git add -A` → `git write-tree` → `git archive --format=zip --prefix=wire-final-9/` → `git restore --staged .`.
+No commit was created. 474 entries, no `.git`, no `node_modules`, 0 of 376 text files contain CR.
+Verified counts for this tree are in `docs/test-baseline.md`.

@@ -442,6 +442,19 @@ async function loadMembers(groupId) {
     const members = await api(`/api/groups/${groupId}/members`);
     // Only the OPEN group's list feeds the member bar / key fan-out. A
     // membership event for some other group must not overwrite it.
+    //
+    // This guard is load-bearing, not defensive tidiness. buildTextBody()
+    // awaits ensureSenderKeyReady(group.id), which defaults `members` to this
+    // global, so the roster here IS the KDM fan-out list. handleGroupSocket
+    // Connected() calls loadMembers() for every group the user has a thread for,
+    // active or not, so without the guard a reconnect that ends on a
+    // non-active group leaves this pointing at that group's roster and the next
+    // send wraps the key for people who are not in the group. The server rejects
+    // that ("Recipient N is not a current member"), no Sender Key is kept, and
+    // the send dies with "No Sender Key to send with yet" - a reconnect would
+    // silently break the next message.
+    // tests/groups/group-kdm-recipient-scope.test.mjs drives that exact path and
+    // fails if this guard is removed.
     if (groupId === activeGroupId) activeGroupMembers = members;
 
     const currentUser = getCurrentUser();

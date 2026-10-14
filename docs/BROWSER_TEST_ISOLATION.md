@@ -1,7 +1,7 @@
 # Browser test isolation in Chromium — what went wrong and why it is fixed this way
 
-Status: the design flaw described in §1 is fixed since `wire-final-8`; the current archive is
-`wire-final-9`, which also carries the ported group Sender-Key fix. Everything else in §4-§6 is
+Status: the design flaw described in §1 is fixed. The current release archive is
+recorded in `docs/test-baseline.md`. Everything else in §4-§6 is
 still open and is documented here rather than worked around.
 
 All numbers in this document come from Windows + real local Chrome 155.0.8059.40 driven through
@@ -290,8 +290,12 @@ one Node process, so the profile has to differ per launch.
 
 ## 9. Archive
 
-`wire-final-9.zip` — 10,729,643 bytes,
-`sha256 e73c7ad6bc35d9fe1c881dbfad3624a80da7c863f1c2cd1cb9169a1cfaa54887`, built with
-`git add -A` → `git write-tree` → `git archive --format=zip --prefix=wire-final-9/` → `git restore --staged .`.
-No commit was created. 474 entries, no `.git`, no `node_modules`, 0 of 376 text files contain CR.
-Verified counts for this tree are in `docs/test-baseline.md`.
+The release archive is built with `git add -A` → `git write-tree` →
+`git archive --format=zip --prefix=<name>/` → `git restore --staged .`, so no
+commit is created and the working tree is left exactly as it was. It contains
+no `.git` and no `node_modules`, and every text file is LF.
+
+The name, size and sha256 of the archive for the current tree — and the test
+counts verified against it — are recorded in `docs/test-baseline.md`. They are
+not repeated here on purpose: they change with every release, and a second copy
+in this file only ever goes stale.

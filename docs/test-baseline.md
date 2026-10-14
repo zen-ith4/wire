@@ -53,8 +53,8 @@ still rehashes the manifest. Re-run to confirm the counts; nothing else moved.
 
 ## Archive
 
-`wire-final-9.zip` — 10,729,643 bytes,
-`sha256 e73c7ad6bc35d9fe1c881dbfad3624a80da7c863f1c2cd1cb9169a1cfaa54887`.
+`wire-final-10.zip` — 10,735,903 bytes,
+`sha256 b3636b85455f25b9c7e7abb12b842ca5698c0a2ee0e250e2e7a32f010b5a61c3`.
 
 ## Not covered by this baseline
 

@@ -53,8 +53,22 @@ still rehashes the manifest. Re-run to confirm the counts; nothing else moved.
 
 ## Archive
 
-`wire-final-10.zip` — 10,735,903 bytes,
-`sha256 b3636b85455f25b9c7e7abb12b842ca5698c0a2ee0e250e2e7a32f010b5a61c3`.
+The archive is built from this committed tree with `git add -A` →
+`git write-tree` → `git archive --format=zip --prefix=<name>/` →
+`git restore --staged .`, so no commit is created and the working tree is left
+untouched. `wire-final-10.zip` has 476 entries.
+
+The size and sha256 are deliberately NOT recorded here: they live in the
+committed tree, so writing them into this file would change them. Read them off
+the published archive, and check them against the release notes.
+
+Content invariants that must hold for any archive of this tree:
+
+- no `.git` entries, no `node_modules`
+- 0 of 378 text files contain CR
+- `public/sw-manifest.js` references `e7aa8fa0e153`
+- `tests/groups/group-kdm-recipient-scope.test.mjs` and both files in `docs/`
+  are present
 
 ## Not covered by this baseline
 

@@ -50,11 +50,13 @@ import {
     openDmUi,
     sendDmTextUi,
     sessionFromPage,
+    newUserPage,
+    closeUserBrowsers,
 } from './_acceptance-harness.mjs';
 
-let server = null; let browser = null; let fixtureDir = null;
+let server = null; let fixtureDir = null;
 after(async () => {
-    await browser?.close().catch(() => {});
+    await closeUserBrowsers();
     await server?.stop().catch(() => {});
     for (const d of [server?.work, fixtureDir]) if (d) fs.rmSync(d, { recursive: true, force: true });
 });
@@ -101,9 +103,18 @@ let scenarioPromise = null;
 const scenario = () => (scenarioPromise ??= run());
 
 async function run() {
+    // The hostile fixture file name further down (test "I filename") contains
+    // `"`, `<` and `>`, none of which NTFS accepts in a file name, so
+    // fs.writeFileSync would fail with ENOENT before the app is ever involved.
+    // The hostile string itself is deliberately left untouched; on Linux and CI
+    // the sweep runs in full. One guard, so every test in this file reports
+    // `skipped` with the reason instead of six ENOENT failures.
+    if (process.platform === 'win32') return { blocked: 'NTFS cannot hold the hostile fixture filename; this sweep is covered on Linux/CI' };
     const launched = await launchBrowser();
     if (!launched.browser) return { blocked: `no Chromium available (${launched.reason})` };
-    browser = launched.browser;
+    // Only a probe: every account gets its own process via newUserPage(), which
+    // registers it with closeUserBrowsers() for the after() hook.
+    await launched.browser.close().catch(() => {});
     server = await startRealServer({ csp: 'false' });
     const { origin } = server;
     const n = rand();
@@ -122,12 +133,9 @@ async function run() {
         out.rest.usernames.push({ bad, status: r.status });
     }
 
-    const mkPage = async () => {
-        const p = await browser.newPage(); p.setDefaultTimeout(30000);
-        await p.setViewport({ width: 1280, height: 900 });
-        await p.evaluateOnNewDocument(() => { window.__pwned = false; });
-        return p;
-    };
+    const mkPage = async () => (await newUserPage({
+        onNewDocument: () => { window.__pwned = false; },
+    })).page;
     const bobPage = await mkPage();
     await loginUi(bobPage, origin, names.bob); // creates bob's identity key
     const hPage = await mkPage();

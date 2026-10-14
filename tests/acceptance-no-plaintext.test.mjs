@@ -50,6 +50,8 @@ import {
     openDmUi,
     sendDmTextUi,
     sessionFromPage,
+    newUserPage,
+    closeUserBrowsers,
 } from './_acceptance-harness.mjs';
 
 const require = createRequire(import.meta.url);
@@ -73,12 +75,12 @@ function scanLogText(text) {
 }
 
 // ------------------------------------------------------------------ scenario
-let server = null; let browser = null; let fixtureDir = null;
+let server = null; let fixtureDir = null;
 const DM_ATTACH_E2EE_LANDED = process.env.DM_ATTACH_E2EE === '1' ||
     fs.readFileSync(path.join(ROOT, 'controllers/dm.controller.js'), 'utf8').includes('attachment_iv');
 
 after(async () => {
-    await browser?.close().catch(() => {});
+    await closeUserBrowsers();
     await server?.stop().catch(() => {});
     for (const d of [server?.work, fixtureDir]) if (d) fs.rmSync(d, { recursive: true, force: true });
 });
@@ -89,7 +91,9 @@ function scenario() { return (scenarioPromise ??= runScenario()); }
 async function runScenario() {
     const launched = await launchBrowser();
     if (!launched.browser) return { blocked: `no Chromium available (${launched.reason})` };
-    browser = launched.browser;
+    // Only a probe: every account gets its own process via newUserPage(), which
+    // registers it with closeUserBrowsers() for the after() hook.
+    await launched.browser.close().catch(() => {});
     server = await startRealServer();
     const { origin } = server;
     const n = rand();
@@ -97,9 +101,9 @@ async function runScenario() {
     const M = { group: `ZXQ-GRP-${rand()}`, dmText: `ZXQ-DMT-${rand()}`, dmFile: `ZXQ-DMA-${rand()}`, dmCaption: `ZXQ-DMC-${rand()}` };
 
     for (const u of Object.values(names)) await registerUser(origin, u);
-    const bobPage = await browser.newPage(); bobPage.setDefaultTimeout(30000); await bobPage.setViewport({ width: 1280, height: 900 });
+    const { page: bobPage } = await newUserPage();
     await loginUi(bobPage, origin, names.bob); // creates bob's identity key
-    const page = await browser.newPage(); page.setDefaultTimeout(30000); await page.setViewport({ width: 1280, height: 900 });
+    const { page } = await newUserPage();
     await loginUi(page, origin, names.alice);
     assert.ok(await socketConnected(page), 'alice socket connected');
     await sleep(800);
@@ -167,7 +171,9 @@ async function runScenario() {
 
     // ---- scan 1: server still running (live -wal / -shm) ----
     const scan = (label) => {
-        const out = { label, files: walkFiles(server.work).map((f) => path.relative(server.work, f)), hits: {} };
+        // POSIX separators, so the paths below can be matched with '/' on every platform
+        // (path.relative would emit backslashes on Windows and no match would ever be found).
+        const out = { label, files: walkFiles(server.work).map((f) => path.relative(server.work, f).split(path.sep).join('/')), hits: {} };
         for (const [k, m] of Object.entries(M)) out.hits[k] = { disk: filesContaining(server.work, m), logs: textContains(server.logs(), m) };
         return out;
     };

@@ -131,6 +131,10 @@ async function waitFor(fn, label, ms = 15000) {
 }
 
 async function signUp(browser, origin, username, { recordCsp = false } = {}) {
+  // browser.newPage() is correct here: the caller already gives every account
+  // its OWN browser process via open(), and a page in a dedicated process is
+  // the isolation this file needs. Creating a second context in that process
+  // would not survive @sparticuz/chromium's --single-process --no-zygote.
   const page = await browser.newPage();
   // the driven user gets touch support so a real touch tap can open the
   // message action bar (the same path a phone user takes)

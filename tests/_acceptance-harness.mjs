@@ -190,6 +190,58 @@ export async function launchBrowser() {
     }
 }
 
+/**
+ * A page for ONE account, in a browser PROCESS (and therefore a profile) of its
+ * own. Returns `{ page, browser }`; close the browser through
+ * closeUserBrowsers(), which the test file's `after` hook must call.
+ *
+ * Why a whole process and not browser.createBrowserContext():
+ *
+ *  - Storage. browser.newPage() opens a page in the DEFAULT context, and every
+ *    page there shares one profile's localStorage AND IndexedDB. The group
+ *    crypto store ("wire-group-crypto", object store "sender-keys") is keyed per
+ *    profile, not per account, so two accounts opened that way see each other's
+ *    rows. When the second account's page drains a KDM carrying the first
+ *    account's senderKeyId, storeReceivedSenderKey() cannot unwrap that row with
+ *    its own local wrap key, treats it as "another account's row" and REPLACES
+ *    it (ifAbsent: false). The first account's row becomes isMine:0 with no
+ *    signing key, getMySenderKey() returns null, and the composer reports
+ *    "No Sender Key to send with yet" for the rest of the run.
+ *  - Chromium in single-process mode. @sparticuz/chromium - what launchBrowser()
+ *    loads by default - runs Chromium with --single-process --no-zygote. In
+ *    that mode creating a second browser context kills the browser outright
+ *    ("Protocol error (Target.createTarget): Target closed"). A second PROCESS
+ *    is the only isolation that works there.
+ *
+ * Real users are separate browser profiles, so one process per account is also
+ * the faithful model. tests/groups/group-e2e-browser.test.mjs uses the same
+ * approach and keeps its browsers in an array for its `after` hook.
+ *
+ * Keep using browser.newPage() where a test deliberately needs two pages of the
+ * SAME account sharing storage - a cross-tab Web Lock, a second tab that must
+ * see the first tab's sender keys, or a second tab that receives the account's
+ * own KDM.
+ */
+const userBrowsers = new Set();
+
+/** Closes every browser newUserPage() launched. Safe to call twice. */
+export async function closeUserBrowsers() {
+    const open = [...userBrowsers];
+    userBrowsers.clear();
+    await Promise.all(open.map((b) => b.close().catch(() => {})));
+}
+
+export async function newUserPage({ viewport = { width: 1280, height: 900 }, timeout = 30000, onNewDocument } = {}) {
+    const launched = await launchBrowser();
+    if (!launched.browser) throw new Error(`newUserPage: no Chromium (${launched.reason})`);
+    userBrowsers.add(launched.browser);
+    const page = await launched.browser.newPage();
+    page.setDefaultTimeout(timeout);
+    if (viewport) await page.setViewport(viewport);
+    if (onNewDocument) await page.evaluateOnNewDocument(onNewDocument);
+    return { page, browser: launched.browser };
+}
+
 export async function registerUser(origin, username) {
     const r = await jsonClient(origin)('/api/auth/register', { method: 'POST', body: JSON.stringify({ username, email: `${username}@example.com`, password: PASSWORD }) });
     if (r.status !== 201) throw new Error(`register ${username}: ${r.status} ${JSON.stringify(r.body)}`);

@@ -22,16 +22,16 @@ import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { newUserPage, closeUserBrowsers } from '../_acceptance-harness.mjs';
 
 const require = createRequire(import.meta.url);
 const CHROMIUM_DIR = process.env.CHROMIUM_DIR || '/tmp/browser-check';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-let browser = null;
 let server = null;
 let io = null;
 after(async () => {
-    await browser?.close().catch(() => {});
+    await closeUserBrowsers();
     if (io) await new Promise((r) => io.close(() => r()));
     if (server?.listening) await new Promise((r) => server.close(r));
 });
@@ -81,7 +81,9 @@ test('group settings: the Remove-member confirmation is visible, topmost and wor
         t.skip(`BLOCKED: no Chromium available (${launched.reason})`);
         return;
     }
-    browser = launched.browser;
+    // Only a probe: bob and alice each get their own process via newUserPage(),
+    // which registers it with closeUserBrowsers() for the after() hook.
+    await launched.browser.close().catch(() => {});
     const origin = await startRealApp();
 
     for (const u of ['alice', 'bob']) {
@@ -96,8 +98,9 @@ test('group settings: the Remove-member confirmation is visible, topmost and wor
     // bob signs in once so his identity key exists (needed to add him to a group)
     const login = async (page, user) => {
         await page.goto(`${origin}/`, { waitUntil: 'domcontentloaded' });
-        // Pages share one browser context (and so one localStorage): without this,
-        // the second user would get the first user's "Welcome back / unlock" screen.
+        // Defensive: each page has its own browser process (and profile) now, so
+        // this cannot leak, but if anyone ever shares one again the second user
+        // would get the first user's "Welcome back / unlock" screen.
         await page.evaluate(() => { localStorage.clear(); sessionStorage.clear(); });
         await page.goto(`${origin}/`, { waitUntil: 'domcontentloaded' });
         await page.waitForSelector('#auth-username');
@@ -106,13 +109,12 @@ test('group settings: the Remove-member confirmation is visible, topmost and wor
         await Promise.all([page.click('#auth-form button'), page.waitForSelector('.nav-link', { timeout: 30000 })]);
         await sleep(800);
     };
-    const bobPage = await browser.newPage();
-    bobPage.setDefaultTimeout(25000);
+    // newUserPage(), not browser.newPage(): bob and alice are different accounts,
+    // and pages of one browser context share one IndexedDB ("wire-group-crypto").
+    const { page: bobPage } = await newUserPage({ timeout: 25000 });
     await login(bobPage, 'bob');
 
-    const page = await browser.newPage();
-    page.setDefaultTimeout(25000);
-    await page.setViewport({ width: 1280, height: 900 });
+    const { page } = await newUserPage({ timeout: 25000 });
     await login(page, 'alice');
 
     await page.click('.nav-link[data-view="groups"]');

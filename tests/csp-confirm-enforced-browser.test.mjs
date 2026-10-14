@@ -48,7 +48,7 @@
 // would have called) and asserts the button path as a `todo` test.
 
 import './groups/_env.mjs';
-import { sessionFromPage, groupProtocolHeaders } from './_acceptance-harness.mjs';
+import { sessionFromPage, groupProtocolHeaders, newUserPage, closeUserBrowsers } from './_acceptance-harness.mjs';
 
 import path from 'node:path';
 import http from 'node:http';
@@ -63,11 +63,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const trace = (m) => { if (process.env.TRACE) console.log('TRACE', m); };
 const PASSWORD = 'Passw0rd!x';
 
-let browser = null;
 let server = null;
 let io = null;
 after(async () => {
-    await browser?.close().catch(() => {});
+    await closeUserBrowsers();
     if (io) await new Promise((r) => io.close(() => r()));
     if (server?.listening) await new Promise((r) => server.close(r));
 });
@@ -166,10 +165,9 @@ async function runFlows(origin, enforce) {
         await page.waitForFunction(() => !!localStorage.getItem('token'), { timeout: 15000 });
     };
     // bob signs in once so his identity key exists (needed to add him to a group)
-    const bobPage = await browser.newPage(); bobPage.setDefaultTimeout(25000);
+    const { page: bobPage } = await newUserPage({ timeout: 25000 });
     await login(bobPage, names.bob);
-    const page = await browser.newPage(); page.setDefaultTimeout(25000);
-    await page.setViewport({ width: 1280, height: 900 });
+    const { page } = await newUserPage({ timeout: 25000 });
     await login(page, names.alice);
 
     // --- real REST sessions ---
@@ -235,6 +233,18 @@ async function runFlows(origin, enforce) {
     await sleep(300);
     await page.click('#dm-thread .chat-msg-delete').catch(() => page.$eval('#dm-thread .chat-msg-delete', (b) => b.click()));
     out.dmButtonOpensConfirm = !!(await page.waitForSelector('#confirm-modal.active', { timeout: 2500 }).catch(() => null));
+    if (!out.dmButtonOpensConfirm) {
+        // The catch() above only fires when puppeteer REFUSES the coordinate click.
+        // It does not refuse here: .chat-msg-actions-bar is pointer-events:none
+        // (messages.css) and the row is only armed by a touch tap
+        // (.chat-msg.is-actions-armed), so on a desktop-mouse headless run the bar
+        // is laid out, the click "succeeds" and lands on the element underneath,
+        // and the confirm never opens. That is the very case the fallback is for,
+        // so dispatch it on the element too. The value stays false unless this
+        // button really does open the confirm.
+        await page.$eval('#dm-thread .chat-msg-delete', (b) => b.click());
+        out.dmButtonOpensConfirm = !!(await page.waitForSelector('#confirm-modal.active', { timeout: 2500 }).catch(() => null));
+    }
     if (out.dmButtonOpensConfirm) {
         await clickConfirmOk('dm delete (button)');
     } else {
@@ -300,10 +310,12 @@ let origin = null;
 const results = {};
 
 async function ensureEnv(t) {
-    if (browser) return true;
+    if (origin) return true;
     const launched = await launchBrowser();
     if (!launched.browser) { t.skip(`BLOCKED: no Chromium available (${launched.reason})`); return false; }
-    browser = launched.browser;
+    // Only a probe: each account gets its own process via newUserPage(), which
+    // registers it with closeUserBrowsers() for the after() hook.
+    await launched.browser.close().catch(() => {});
     origin = await startApp();
     return true;
 }

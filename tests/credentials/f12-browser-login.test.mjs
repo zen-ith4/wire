@@ -45,6 +45,11 @@ after(async () => { await browser?.close().catch(() => {}); await srv?.stop(); c
 const row = (sql, ...a) => { const d = new Database(dbPath, { readonly: true }); try { return d.prepare(sql).get(...a); } finally { d.close(); } };
 
 async function newPage() {
+    // Plain browser.newPage() is correct here: nothing in this file needs storage
+    // isolated per account. The scheme-2 pin is copied across pages by hand
+    // (localStorage.setItem) and localStorage/sessionStorage are cleared on
+    // every login, so a second browser process per account would only cost time
+    // and process handles.
     const page = await browser.newPage();
     page.setDefaultTimeout(30000);
     await page.setViewport({ width: 1100, height: 800 });

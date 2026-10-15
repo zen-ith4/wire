@@ -441,6 +441,38 @@ Prerequisite: **archive identity keys** (§4.4). Without it, change detection
 converts key rotation from "old messages become unreadable" into "old messages
 become unreadable *and* the user is warned", which is strictly worse.
 
+### 8.0 Status: what has shipped (wire-final-16)
+
+**Shipped, and deliberately before Phase 1, because it changes no wire format —
+no HKDF info, no AAD, no envelope field:**
+
+- **TOFU pin** per peer, in IndexedDB, keyed `(origin, ownUserId, peerId)` and
+  never sent to the server. Every key the user has ever accepted for that peer
+  is kept, not just the current one.
+- **Safety number**: `SHA-256('wire-safety-number-v1' || u32be(len) || keyA ||
+  u32be(len) || keyB)` over the two raw keys sorted bytewise, shown as 60
+  decimal digits in 12 groups of 5. Order-independent, so both users see the
+  same number.
+- **Key-change alarm, per peer** (the approved decision): an unrecognised key
+  blocks sending and *holds* messages instead of decrypting them under the new
+  key. The thread shows a banner with an explicit "I verified the new key"
+  action; accepting releases every held row through the normal decrypt path, so
+  accepting cannot lose a message.
+- **Interaction with the STEP A archive**: a retired key may be tried only if
+  its fingerprint is one this device already accepted, or if no pin exists yet
+  (first contact, which preserves the STEP A behaviour exactly). The branch that
+  matters is the refusal: after an alarm the substituted key is current, and an
+  unknown retired key must not become a second way in. **First contact seeds the
+  pin with the retired keys the server disclosed in that same response** — see
+  §8.1; that is TOFU, and without it a user meeting a peer for the first time
+  after a rotation would lose the very history STEP A was built to preserve.
+
+**Not shipped, deliberately:** signed pre-keys / XEdDSA / pre-key batches. Those
+all need new server storage and their own design review. Until they exist the
+limit stands exactly as §7.1 says: a malicious server on **first contact** is
+still trusted, and the safety number only helps once two users actually compare
+it over a channel the server does not control.
+
 Proposed, all borrowed from the Signal protocol — not invented here:
 
 1. **Signed pre-keys (XEdDSA).** Each account publishes a batch of one-time
@@ -457,6 +489,29 @@ Proposed, all borrowed from the Signal protocol — not invented here:
 3. **Key-change alarm.** On a fingerprint mismatch for an established peer, block
    sending by default and require an explicit "I verified the new key" action —
    the same shape as Signal's "your safety number with X has changed".
+
+### 8.1 Two ways the retired-key rule is subtler than it looks
+
+Both found by running the suite against the STEP A history test, not by
+reasoning ahead, and both recorded because the rule looks obvious and is not.
+
+**(a) The pinned CURRENT key must stay usable.** A user who pinned Bob's key and
+only later saw him rotate has a pin whose `current` is exactly the key their
+history was sealed to. A rule consulting only the `accepted` list refuses the one
+key that can decrypt, and silently reintroduces the loss STEP A exists to
+prevent. The v15 test turned red with `acceptedCount: 0`,
+`verdict: not-previously-accepted`.
+
+**(b) First contact seeds the pin with the DISCLOSED retired keys.** Without it,
+a user whose *first* contact happens after their peer has rotated pins only the
+new key and can never read the earlier history.
+
+Neither weakens the property the rule exists for, which is about **substitution
+after trust is established**. Keys that arrive later, out of band of the pin —
+including a retired key appearing after an alarm — are still refused. What is
+allowed is the pin's own content: the keys disclosed in the pinning response, and
+the pinned current key. What is refused is anything the server introduces after
+the fact.
 
 Open questions that must be answered before code: pre-key batch size and refill
 protocol; whether rotation keeps the old key archived and for how long; whether

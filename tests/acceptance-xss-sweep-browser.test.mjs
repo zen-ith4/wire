@@ -258,6 +258,11 @@ async function run() {
 
     out.roleAfter = (await A(`/api/groups/${gid}/members`)).body.map((m) => m.role);
     out.logs = server.logs();
+    // Exposed for the per-case DOM probes (e.g. the DM key-trust banner case),
+    // which need a LIVE page rather than the pre-captured view snapshots.
+    out.page = page;
+    out.bobPage = bobPage;
+    out.sess = sess;
     return out;
 }
 
@@ -325,6 +330,64 @@ test('J role: a hostile `role` in add-member is ignored; members list only ever 
         assert.deepEqual(roles.filter((r) => !['owner', 'admin', 'member'].includes(r)), [], `unknown role in ${JSON.stringify(roles)}`);
         assert.equal(roles.filter((r) => r === 'owner').length, 1, 'exactly one owner');
     }
+});
+
+test('K DM key-trust banner + safety number: a hostile username stays inert text', async (t) => {
+    const s = await scenario(); if (blocked(t, s)) return;
+
+    // The key-change banner and the safety-number view are the only DM surfaces
+    // added since the sweep was written, and both render a peer-controlled
+    // username. They must be textContent, not markup.
+    //
+    // Asserted against the DOM rather than against innerHTML: escaped text
+    // inside a text node still CONTAINS the characters "<img" and "onerror=",
+    // so a string test would either fail wrongly or pass meaninglessly.
+    const { pwned, elements, handlers, bannerText, numberText } = await s.page.evaluate(async (peerId) => {
+        const mod = await import('/js/chat/dm-key-trust.js');
+
+        const HOSTILE = '<img src=x onerror="window.__pwned=1">';
+
+        document.body.insertAdjacentHTML('beforeend', `
+            <div class="dm-key-trust-host"><div class="dm-key-trust" id="${mod.KEY_TRUST_IDS.banner}"></div></div>
+            <section class="dm-key-verify" id="${mod.KEY_TRUST_IDS.verify}">
+              <span id="${mod.KEY_TRUST_IDS.verifyWho}"></span>
+              <div id="${mod.KEY_TRUST_IDS.verifyNumber}"></div>
+            </section>`);
+
+        // Force the alarm so the banner actually renders, then hand it the
+        // hostile string exactly as the thread does.
+        mod.renderKeyTrustBanner(peerId, HOSTILE);
+
+        const banner = document.getElementById(mod.KEY_TRUST_IDS.banner);
+        const scope = document.querySelector('.dm-key-trust-host');
+        const elements = scope.querySelectorAll('img, script, iframe, object, embed, svg').length;
+        const handlers = [...scope.querySelectorAll('*')]
+            .filter((el) => [...el.attributes].some((a) => /^on/i.test(a.name))).length;
+
+        const who = document.getElementById(mod.KEY_TRUST_IDS.verifyWho);
+        if (who) who.textContent = HOSTILE;
+        const number = document.getElementById(mod.KEY_TRUST_IDS.verifyNumber);
+
+        return {
+            pwned: window.__pwned === true,
+            elements,
+            handlers,
+            bannerText: banner ? banner.textContent : '',
+            numberText: number ? number.textContent : '',
+        };
+    }, s.sess.bob.id);
+
+    assert.equal(pwned, false, 'the key-trust banner must not execute the payload');
+    assert.equal(elements, 0, `the hostile username became an element: ${elements}`);
+    assert.equal(handlers, 0, `an event handler attribute leaked into the DOM: ${handlers}`);
+    assert.ok(
+        bannerText.includes('<img src=x onerror="window.__pwned=1">'),
+        `the hostile username must still be shown, as inert text: ${bannerText}`
+    );
+    // The safety number is digits we generate, never peer input: assert it is
+    // only digits and spaces so a future change cannot smuggle markup into it.
+    assert.match(numberText, /^(\d{5} ){11}\d{5}$|^$/,
+        `the safety number must be 12 digit groups and nothing else: ${numberText}`);
 });
 
 test('H reaction emoji: the official routes either reject the payload or it renders as inert text', async (t) => {

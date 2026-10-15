@@ -196,6 +196,32 @@ async function aliceDecrypts(page, bobId, messageId) {
                     historyLen: kc.history.length,
                 };
 
+                // What does the retired-key rule actually decide, and why?
+                const { mayTryRetiredKey, getPeerPin } = await import('/js/crypto/keys/peer-trust.js');
+                const { getServerEndpoint } = await import('/js/core/server.js');
+                const { getCurrentUser } = await import('/js/core/auth.js');
+                const context = { origin: String(getServerEndpoint()), ownUserId: Number(getCurrentUser()?.id) };
+                probe.context = { originOk: !!context.origin, ownUserId: context.ownUserId };
+
+                let pin = null;
+                try {
+                    pin = await getPeerPin(peerId, context);
+                } catch (e) {
+                    probe.pinError = String(e && e.message ? e.message : e);
+                }
+                probe.pin = pin
+                    ? { current: pin.current?.fingerprint?.length, acceptedCount: (pin.accepted || []).length }
+                    : null;
+
+                if (kc.history.length) {
+                    try {
+                        const v = await mayTryRetiredKey(peerId, kc.history[0], context);
+                        probe.verdict = { allowed: v.allowed, reason: v.reason };
+                    } catch (e) {
+                        probe.verdictError = String(e && e.message ? e.message : e);
+                    }
+                }
+
                 probe.sessionCandidates =
                     (await getSessionKeyCandidates(peerId)).length;
             } catch (pe) {

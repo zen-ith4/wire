@@ -1,5 +1,15 @@
 import { newChatFabHtml, bindNewChatFab } from '../ui/new-chat-fab.js';
 import { api } from '../core/api.js';
+import {
+  assertCanSendTo,
+  resolveTrust,
+  shouldHoldMessage,
+  holdMessage,
+  bindKeyTrustRelease,
+  renderKeyTrustBanner,
+  renderVerifyView,
+  KEY_TRUST_IDS
+} from './dm-key-trust.js';
 import { ICONS } from '../icons.js';
 import {
   showToast,
@@ -356,6 +366,20 @@ async function decryptDmMessage(msg) {
   }
 
   // ----------------------------------------------------------
+  // Peer key trust (Phase 2)
+  // ----------------------------------------------------------
+  //
+  // Resolve the trust state BEFORE the row reaches the crypto layer. While the
+  // peer's key is unrecognised the raw row is held, not decrypted: a substituted
+  // key must not be used to decrypt anything, not even quietly.
+  await resolveTrust(peerId);
+
+  if (shouldHoldMessage(peerId)) {
+    holdMessage(peerId, msg);
+    return null;
+  }
+
+  // ----------------------------------------------------------
   // Decrypt main message content
   // ----------------------------------------------------------
 
@@ -486,6 +510,10 @@ async function decryptDmMessages(messages) {
 // encrypted-payload shape for the `content` field, so there's one
 // encryption path for outgoing DM text instead of two.
 async function encryptForActivePeer(content) {
+  // Peer key trust (Phase 2): refuse to encrypt to a peer whose key this device
+  // does not recognise. Throws SendBlockedError; nothing leaves the browser.
+  await assertCanSendTo(dmActivePeer.id);
+
   const currentUser = getCurrentUser();
   if (
     !currentUser ||
@@ -1500,7 +1528,21 @@ thread.innerHTML = `
           }</div>
         </div>
       </div>
+      <button type="button" class="dm-verify-btn" id="dm-key-verify-open" title="Verify encryption keys">Verify</button>
     </div>
+    <div class="dm-key-trust-host" id="dm-key-trust-banner-host">
+      <div class="dm-key-trust" id="dm-key-trust-banner" role="alert"></div>
+    </div>
+    <section class="dm-key-verify" id="dm-key-verify" hidden>
+      <div class="dm-key-verify-head">Safety number</div>
+      <p class="dm-key-verify-help">
+        Compare these digits with <span id="dm-key-verify-who"></span> over a channel the server
+        does not control. If they differ, someone is intercepting this conversation.
+      </p>
+      <div class="dm-key-verify-number" id="dm-key-verify-number"></div>
+      <div class="dm-key-verify-state" id="dm-key-verify-marked"></div>
+      <button type="button" class="btn btn-ghost" data-action="mark-verified">Mark as verified</button>
+    </section>
     <div class="chat-messages-wrap">
       <div class="chat-messages" id="dm-messages">${loadingState()}</div>
       <button type="button" class="jump-to-latest-btn" id="dm-jump-latest" title="Jump to latest" aria-label="Jump to latest messages" onclick="window.dmJumpToLatest()">
@@ -1611,6 +1653,37 @@ thread.innerHTML = `
 
   wirePasteImage('dm-input', (file) => dmComposer.addFiles([file]));
   wireTypingInput('dm-input', dmTypingEmitter);
+
+  // ---------- Peer key trust (Phase 2) ----------
+  //
+  // Resolve the peer's key trust once the thread exists, then paint the banner
+  // if the key is unrecognised. The Verify button toggles the safety-number
+  // panel. Every listener is attached to an element this very function just
+  // built, so none of them can accumulate across conversations.
+  (async () => {
+    try {
+      await resolveTrust(peerId);
+      renderKeyTrustBanner(peerId, username);
+
+      document.getElementById(KEY_TRUST_IDS.verify)?.setAttribute('hidden', '');
+      document.getElementById('dm-key-verify-open')?.addEventListener('click', async () => {
+        const panel = document.getElementById(KEY_TRUST_IDS.verify);
+        if (!panel) return;
+        const opening = panel.hasAttribute('hidden');
+        if (opening) {
+          await renderVerifyView(peerId, username);
+        }
+        panel.toggleAttribute('hidden', !opening);
+      });
+    } catch (e) {
+      console.error('DM key trust init failed:', e);
+    }
+  })();
+
+  // Releasing held messages once the user accepts the new key. Re-runs the
+  // normal decrypt+render path over rows that were deliberately kept RAW, so
+  // accepting a key can never lose a message.
+  bindKeyTrustRelease(peerId, (msg) => addDmMessage(msg));
 
   const container = document.getElementById('dm-messages');
 
@@ -2392,6 +2465,12 @@ export async function addDmMessage(msg) {
     return;
   }
 
+  // Held by the key-change guard: the raw row is kept in dm-key-trust.js and
+  // released once the user accepts the new key, so nothing is lost.
+  if (decrypted === null) {
+    return;
+  }
+
   entry.ids.add(msg.id);
   entry.byId.set(msg.id, decrypted);
   entry.messages.push(decrypted);
@@ -2557,6 +2636,11 @@ export async function updateDmMessage(msg) {
     decrypted = await decryptDmMessage(msg);
   } catch (e) {
     console.error(`Failed to process edited DM ${msg.id}:`, e);
+    return;
+  }
+
+  // Held by the key-change guard; see addDmMessage().
+  if (decrypted === null) {
     return;
   }
 

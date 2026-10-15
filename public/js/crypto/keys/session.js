@@ -12,6 +12,10 @@ import {
     getCurrentIdentity
 } from '../identity-service.js';
 
+import {
+    mayTryRetiredKey
+} from './peer-trust.js';
+
 
 const sessionKeys = new Map();
 
@@ -278,6 +282,21 @@ async function buildArchivedSessionKeys(id) {
 
     for (const publicKey of candidates.history) {
         try {
+            // Peer trust (Phase 2): a RETIRED key is only tried if this device
+            // has previously accepted that exact key, or has no pin at all
+            // (first contact). After a key-change alarm the attacker's
+            // substituted key is current, and an unknown retired key arriving
+            // with it must not become a second way in. See mayTryRetiredKey().
+            const trust = await trustCtx();
+
+            if (trust) {
+                const verdict = await mayTryRetiredKey(id, publicKey, trust);
+
+                if (!verdict.allowed) {
+                    continue;
+                }
+            }
+
             const imported = await importX25519(publicKey);
             keys.push(
                 await deriveSessionKeyFromPeer(identity.privateKey, imported)
@@ -291,6 +310,29 @@ async function buildArchivedSessionKeys(id) {
     archivedSessionKeys.set(id, keys);
 
     return keys;
+}
+
+/**
+ * The (origin, ownUserId) the pin store is keyed by, or null when there is no
+ * logged-in user / no server configured — in which case the retired-key rule is
+ * skipped and v15 behaviour applies unchanged.
+ */
+async function trustCtx() {
+    try {
+        const { getServerEndpoint } = await import('../../core/server.js');
+        const { getCurrentUser } = await import('../../core/auth.js');
+        const origin = getServerEndpoint();
+        const user = getCurrentUser();
+        const ownUserId = Number(user?.id);
+
+        if (!origin || !Number.isInteger(ownUserId) || ownUserId <= 0) {
+            return null;
+        }
+
+        return { origin: String(origin), ownUserId };
+    } catch {
+        return null;
+    }
 }
 
 /**

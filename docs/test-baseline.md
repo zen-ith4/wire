@@ -51,9 +51,47 @@ test count is now higher and the Linux numbers above do not yet include it.
 | `tests/safe-path-vectors.test.mjs` | 24 |
 | `tests/identity-key-history.test.mjs` | 5 |
 | `tests/identity-key-history-browser.test.mjs` | 1 |
+| `tests/peer-trust.test.mjs` | 21 |
+| `tests/peer-trust-browser.test.mjs` | 2 |
+| `tests/acceptance-xss-sweep-browser.test.mjs` | +1 (case K) |
 
-The suite is now **515 tests**. A Linux run is required before that is a
+The suite is now **539 tests**. A Linux run is required before that is a
 baseline.
+
+### Peer key trust (Phase 2)
+
+`public/js/crypto/keys/peer-trust.js` and `public/js/chat/dm-key-trust.js`:
+TOFU pin, order-independent safety number, per-peer key-change alarm. Changes no
+wire format — no HKDF info, no AAD, no envelope field. Signed pre-keys / XEdDSA
+are explicitly NOT in this step; they need server storage and their own design
+review, and §8.0 of `docs/e2ee-dm-hardening.md` records that.
+
+The alarm blocks sending and **holds** messages rather than decrypting them
+under the unrecognised key; accepting releases every held row through the normal
+decrypt path, so accepting cannot lose a message. A retired key from the STEP A
+archive is only tried if its fingerprint was already accepted on this device, or
+if no pin exists yet (first contact).
+
+**Two refinements the suite forced, both about the retired-key rule.** Neither
+was reasoned out in advance; the v15 history test went red and said why
+(`acceptedCount: 0`, `verdict: not-previously-accepted`):
+
+1. **The pinned `current` key must stay usable.** A user who pinned Bob's key
+   and only later saw him rotate has a pin whose `current` is exactly the key
+   their history was sealed to. A rule consulting only `accepted` refuses the one
+   key that can decrypt.
+2. **First contact seeds the pin with the peer's DISCLOSED retired keys**,
+   otherwise a user meeting a peer for the first time *after* a rotation is
+   locked out of the history the archive exists to preserve.
+
+Neither weakens the property the rule exists for: keys that appear **later**, out
+of band of the pin — including a retired key arriving after an alarm — are still
+refused.
+
+Case K in the XSS sweep is **Linux-only**: the whole sweep file is blocked on
+win32 (the hostile fixture filename cannot exist on NTFS), so that case has not
+been executed here. The same hostile-username check IS executed, in
+`tests/peer-trust-browser.test.mjs`.
 
 ### Identity-key archive (STEP A)
 
@@ -92,7 +130,7 @@ shim (no `--single-process`, so a full Chromium binary):
 
 | | tests | pass | fail | skipped | todo |
 |---|---|---|---|---|---|
-| full suite, via `npm test` | 515 | 506 | 1 | 7 | 1 |
+| full suite, via `npm test` | 539 | 529 | 1 | 8 | 1 |
 | every file on its own, run 1 of 2 | 509 | 500 | 1 | 7 | 1 |
 | every file on its own, run 2 of 2 | 509 | 500 | 1 | 7 | 1 |
 | `tests/groups` | 175 | 174 | 1 | 0 | 0 |
@@ -105,9 +143,14 @@ shim (no `--single-process`, so a full Chromium binary):
 | `tests/identity-key-history` | 5 | 5 | 0 | 0 | 0 |
 | `tests/identity-key-history-browser` | 1 | 1 | 0 | 0 | 0 |
 
-The two `npm test` rows above describe the same tree: the per-file numbers were
-measured before STEP A and the full-suite number after it. The per-file split
-was not re-run for STEP A; the two STEP A files were run on their own, twice.
+The two `npm test` rows above describe different trees: the per-file numbers
+were measured before STEP A, the full-suite number after STEP A and Phase 2. The
+per-file split was not re-run for STEP A or Phase 2; the files added by those two
+steps were each run on their own instead.
+
+The skip count moved from 7 to 8 because Phase 2 added a case to the XSS sweep,
+which is blocked wholesale on win32 — so a test that passes on Linux and is
+skipped here added a skip. That is the correct direction, not a regression.
 
 All 74 files were run individually as well as through the runner, twice each:
 **every one of the 74 produced byte-identical counts on both runs.** Summing the

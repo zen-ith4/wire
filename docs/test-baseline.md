@@ -49,9 +49,41 @@ test count is now higher and the Linux numbers above do not yet include it.
 | `tests/port-hygiene.test.mjs` | 8 |
 | `tests/files-path-traversal.test.mjs` | 50 |
 | `tests/safe-path-vectors.test.mjs` | 24 |
+| `tests/identity-key-history.test.mjs` | 5 |
+| `tests/identity-key-history-browser.test.mjs` | 1 |
 
-The suite is now **509 tests**. A Linux run is required before that is a
+The suite is now **515 tests**. A Linux run is required before that is a
 baseline.
+
+### Identity-key archive (STEP A)
+
+Rotation was never destroying the outgoing public key:
+`identity_key_rotations` (`database/credentialSchema.js`) is written by
+`me.controller.js` in the same transaction as the UPDATE that replaces
+`identity_keys.public_key`, and it is append-only. What was missing is a read
+path — the table had exactly two references in the repo, the `CREATE TABLE` and
+the `INSERT`.
+
+`services/identityKeyHistory.service.js` +
+`GET /api/me/identity-key-history/:userId` are that read path. There is
+deliberately **no** `identity_key_history` table: `fingerprint` is
+`SHA-256(public_key)`, `created_at` is the `at` of the rotation that produced the
+key and `retired_at` is the `at` of the one that retired it, so a second table
+would be a second source of truth that can disagree with the first. The current
+key stays where it is; history rows are never deleted while the account exists
+(account deletion cascades — a privacy decision, not a storage one).
+
+On the client, `messages/decrypt.js` retries a failed decrypt against the peer's
+retired keys. It does not change what is encrypted or decrypted: the same AES-GCM
+call, the same iv and ciphertext, the same `deriveSessionKeyFromPeer`, the same
+`Wire-E2EE-v1` HKDF info. Only the choice of key widens, and only after the
+current key has already failed, so the ordinary read path makes no extra request.
+
+**What it cannot do, stated plainly:** it recovers history when the *peer*
+rotated and you did not. It cannot recover history when *you* rotated —
+`keys/key-storage.js` keeps exactly one keypair under `wire_identity_key` and
+`saveIdentityKey()` overwrites it, so your pre-rotation private key is gone.
+Keeping it would be key escrow, which is explicitly out of scope.
 
 ### What this tree measures on Windows, and what that does NOT prove
 
@@ -60,20 +92,26 @@ shim (no `--single-process`, so a full Chromium binary):
 
 | | tests | pass | fail | skipped | todo |
 |---|---|---|---|---|---|
-| full suite, via `npm test` | 509 | 500 | 1 | 7 | 1 |
+| full suite, via `npm test` | 515 | 506 | 1 | 7 | 1 |
 | every file on its own, run 1 of 2 | 509 | 500 | 1 | 7 | 1 |
 | every file on its own, run 2 of 2 | 509 | 500 | 1 | 7 | 1 |
 | `tests/groups` | 175 | 174 | 1 | 0 | 0 |
 | `tests/credentials` | 87 | 87 | 0 | 0 | 0 |
 | `tests/dm-attachments` | 60 | 60 | 0 | 0 | 0 |
 | `tests/files-path-traversal` | 50 | 50 | 0 | 0 | 0 |
+| `tests/safe-path-vectors` | 24 | 24 | 0 | 0 | 0 |
 | `tests/crypto` | 9 | 9 | 0 | 0 | 0 |
 | `tests/port-hygiene` | 8 | 8 | 0 | 0 | 0 |
-| `tests/safe-path-vectors` | 24 | 24 | 0 | 0 | 0 |
+| `tests/identity-key-history` | 5 | 5 | 0 | 0 | 0 |
+| `tests/identity-key-history-browser` | 1 | 1 | 0 | 0 | 0 |
+
+The two `npm test` rows above describe the same tree: the per-file numbers were
+measured before STEP A and the full-suite number after it. The per-file split
+was not re-run for STEP A; the two STEP A files were run on their own, twice.
 
 All 74 files were run individually as well as through the runner, twice each:
 **every one of the 74 produced byte-identical counts on both runs.** Summing the
-per-file runs gives the same 509/500/1/7/1 as `npm test`, which is expected —
+per-file runs gives the same total as `npm test`, which is expected —
 `node --test` already isolates each file in its own process — and is the
 cross-check that the split-out numbers are the suite's numbers.
 

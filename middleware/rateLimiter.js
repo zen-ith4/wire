@@ -621,8 +621,25 @@ const identityRotateRateLimiter =
     message: 'Too many requests, please try again later'
   });
 
+// Reading a peer's identity-key history (GET /me/identity-key-history/:userId).
+//
+// A client legitimately calls this once per conversation whose messages fail to
+// decrypt, and then caches the answer, so a generous limit costs nothing in the
+// normal case. What it bounds is a stranger walking the user-id space: each call
+// is already answered with an indistinguishable 404 for anyone the caller does
+// not share a DM or a group with, so this is about not letting the endpoint be
+// hammered, not about hiding what it returns.
+const identityHistoryRateLimiter =
+  createRateLimiter({
+    windowMs: 60 * 60 * 1000,
+    max: Number(process.env.IDENTITY_HISTORY_MAX_PER_HOUR) || 120,
+    keyFn: userOrIpKey,
+    message: 'Too many requests, please try again later'
+  });
+
 module.exports = {
   identityRotateRateLimiter,
+  identityHistoryRateLimiter,
   kdfParamsRateLimiter,
   migrateCredentialsRateLimiter,
   loginRateLimiter,

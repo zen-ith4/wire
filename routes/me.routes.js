@@ -4,12 +4,13 @@ const router = express.Router();
 const { authenticate, authenticatePasswordChange } = require('../middleware/authenticate');
 const { avatarMediaAuth } = require('../middleware/mediaAuth');
 const { asyncHandler } = require('../middleware/asyncHandler');
-const { pushTokenLimiter, identityRotateRateLimiter } = require('../middleware/rateLimiter');
+const { pushTokenLimiter, identityRotateRateLimiter, identityHistoryRateLimiter } = require('../middleware/rateLimiter');
 
 const {
     getIdentityKey,
     saveIdentityKey,
-    rotateIdentityKey
+    rotateIdentityKey,
+    getIdentityKeyHistory
 } = require('../controllers/me.controller');
 
 const {
@@ -121,6 +122,19 @@ router.get(
     '/identity-key/:userId',
     authenticate,
     getUserIdentityPublicKey
+);
+
+// The peer's RETIRED identity keys, so a client can still decrypt history that
+// predates their last rotation. Deliberately its own literal segment rather than
+// a sub-path of identity-key/:userId, so Express cannot fold the two together.
+//
+// Returns the same 404 for "not your contact", "no such user" and "that user has
+// no identity key" - see getIdentityKeyHistory in me.controller.js.
+router.get(
+    '/identity-key-history/:userId',
+    authenticate,
+    identityHistoryRateLimiter,
+    getIdentityKeyHistory
 );
 
 router.post(

@@ -3,6 +3,10 @@ const path = require('path');
 
 const constants = require('../config/constants');
 const { getDb } = require('../config/database');
+const {
+  getIdentityKeyHistory: readIdentityKeyHistory,
+  canViewIdentityKeyHistory
+} = require('../services/identityKeyHistory.service');
 
 const {
   findUserById,
@@ -1011,6 +1015,58 @@ function getUserIdentityPublicKey(req, res) {
     });
 }
 
+// GET /me/identity-key-history/:userId
+//
+// The read side of the identity-key archive (identityKeyHistory.service.js).
+// Rotation has always preserved the outgoing public key — identity_key_rotations
+// is written in the same transaction as the UPDATE that replaces it — but
+// nothing ever read it, so a client whose peer had rotated had no way to reach
+// the key its old messages were actually encrypted to. This endpoint is that way
+// in.
+//
+// AUTHORIZATION, AND WHAT IT DOES NOT LEAK
+// Only for a user who shares a direct message or a group with the peer: those are
+// the relationships over which the caller already receives ciphertext, so the
+// keys behind that ciphertext are not a new disclosure. See
+// canViewIdentityKeyHistory().
+//
+// Every failure below returns the SAME 404 body. "Not your contact", "no such
+// user" and "that user has no identity key" are deliberately indistinguishable,
+// because a caller able to tell them apart learns whether an account exists and
+// whether it has set up E2EE — neither of which this endpoint has any business
+// revealing to a stranger. A 403 would leak exactly the same thing, more
+// politely.
+//
+// Fingerprints are SHA-256 over the raw public key bytes. The server can compute
+// them because it holds the keys; that is a hash of a value the caller is
+// already entitled to, not extra information about anyone.
+function getIdentityKeyHistory(req, res) {
+    const peerId = Number(req.params.userId);
+
+    if (!Number.isInteger(peerId) || peerId <= 0) {
+        return res.status(400).json({
+            error: 'Invalid user ID'
+        });
+    }
+
+    if (!canViewIdentityKeyHistory(req.user.id, peerId)) {
+        return res.status(404).json({
+            error: 'Not found'
+        });
+    }
+
+    const history = readIdentityKeyHistory(peerId);
+
+    if (!history) {
+        return res.status(404).json({
+            error: 'Not found'
+        });
+    }
+
+    res.set('Cache-Control', 'private, no-store');
+    res.json(history);
+}
+
 // POST /me/push-token
 function registerPushToken(req, res) {
   const { token } = req.body || {};
@@ -1092,6 +1148,7 @@ module.exports = {
   saveIdentityKey,
   rotateIdentityKey,
   getUserIdentityPublicKey,
+  getIdentityKeyHistory,
   registerPushToken,
   deregisterPushToken
 };

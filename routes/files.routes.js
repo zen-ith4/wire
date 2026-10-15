@@ -39,7 +39,7 @@ router.get(
 router.get(
   '/download/:folderId',
   authenticate,
-  downloadFile
+  asyncHandler(downloadFile)
 );
 
 
@@ -74,7 +74,7 @@ router.post(
   authenticate,
   uploadLimiter,
   fileUpload.single('file'),
-  uploadFile
+  asyncHandler(uploadFile)
 );
 
 

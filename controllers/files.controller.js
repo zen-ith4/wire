@@ -6,8 +6,8 @@ const { findFolderById, listAllFolders } = require('../services/file.service');
 const { deleteLinksForPath } = require('../services/shareLink.service');
 const { getUserFolders, getFolderAccess } = require('../services/share.service');
 const {
-  safeSubPath,
   resolveRegularFile,
+  resolveRegularDirectory,
   resolveDeletableEntry,
 } = require('../utils/safePath');
 const { moveFileSafe } = require('../utils/file');
@@ -109,29 +109,35 @@ async function listFiles(req, res) {
   if (result.error) return res.status(403).json({ error: result.error });
 
   const subpath = req.query.subpath || '';
-  const target = safeSubPath(result.folder.path, subpath);
+  // resolveRegularDirectory, not safeSubPath: `subpath` is entirely caller
+  // supplied and can contain several segments, so it needs the realpath check
+  // (a symlink inside the folder must not lead the listing outside it), the NUL
+  // rejection and the "no dot segment" rule. Every failure is one generic 404
+  // - never a 500, never a hint about which check failed.
+  const dir = await resolveRegularDirectory(result.folder.path, subpath);
 
   try {
-    if (!target) {
+    if (!dir.ok) {
       return res.status(404).json({ error: 'Path not found' });
     }
 
-    const targetStat = await fsp.stat(target).catch((err) => {
-      if (err.code === 'ENOENT') return null;
-      throw err;
-    });
-
-    if (!targetStat) {
-      return res.status(404).json({ error: 'Path not found' });
-    }
-    if (!targetStat.isDirectory()) {
-      return res.status(400).json({ error: 'Not a directory' });
-    }
-
+    const target = dir.fullPath;
     const dirents = (await fsp.readdir(target, { withFileTypes: true }))
       .filter(x => !x.name.startsWith('.'));
 
-    const entries = await statEntriesLimited(dirents, target);
+    // A symlink whose target sits outside the real root is not listed at all.
+    // Listing it and then 404-ing on fetch would still tell the caller the name
+    // exists; omitting it keeps the listing honest about what is reachable.
+    const visible = [];
+    for (const d of dirents) {
+      if (!d.isSymbolicLink()) { visible.push(d); continue; }
+      try {
+        const real = await fsp.realpath(path.join(target, d.name));
+        if (real === target || real.startsWith(target + path.sep)) visible.push(d);
+      } catch { /* dangling link: nothing to list */ }
+    }
+
+    const entries = await statEntriesLimited(visible, target);
 
     res.json({ subpath, entries, can_write: !!result.access.can_write });
 
@@ -141,7 +147,7 @@ async function listFiles(req, res) {
   }
 }
 
-function uploadFile(req, res) {
+async function uploadFile(req, res) {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
   const cleanupTemp = () => fs.unlink(req.file.path, () => {});
@@ -159,20 +165,31 @@ function uploadFile(req, res) {
   }
 
   const subpath = req.body.subpath || '';
-  const dir = safeSubPath(result.folder.path, subpath);
-  if (!dir || !fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
+  // Same strict resolver as the read paths: the destination directory must not
+  // be reachable through a symlink that leaves the folder root, and a NUL in
+  // `subpath` must not reach fs.statSync (which threw, turning a bad request
+  // into a 500).
+  const dir = await resolveRegularDirectory(result.folder.path, subpath);
+  if (!dir.ok) {
     cleanupTemp();
     return res.status(404).json({ error: 'Destination folder not found' });
   }
 
+  // basename() already strips any directory part the client may have sent, but
+  // the resulting name still has to be a plain, visible file name.
   let name = path.basename(req.file.originalname);
-  let finalPath = path.join(dir, name);
+  if (!name || name.includes('\0') || name.startsWith('.')) {
+    cleanupTemp();
+    return res.status(400).json({ error: 'Invalid file name' });
+  }
+
+  let finalPath = path.join(dir.fullPath, name);
   let count = 1;
   while (fs.existsSync(finalPath)) {
     const ext = path.extname(name);
     const base = path.basename(name, ext);
     name = `${base} (${count})${ext}`;
-    finalPath = path.join(dir, name);
+    finalPath = path.join(dir.fullPath, name);
     count++;
   }
 
@@ -188,7 +205,7 @@ function uploadFile(req, res) {
 }
 
 // ============ اضافه شده: downloadFile ============
-function downloadFile(req, res) {
+async function downloadFile(req, res) {
   const folderId = validateFolderId(req.params.folderId);
   if (!folderId) return res.status(400).json({ error: 'Invalid folder id' });
 
@@ -199,20 +216,18 @@ function downloadFile(req, res) {
   const file = req.query.file; // نام فایل
   if (!file) return res.status(400).json({ error: 'File parameter missing' });
 
-  const target = safeSubPath(result.folder.path, subpath);
-  if (!target || !fs.existsSync(target)) {
-    return res.status(404).json({ error: 'Path not found' });
-  }
-  if (!fs.statSync(target).isDirectory()) {
-    return res.status(400).json({ error: 'Not a directory' });
-  }
-
-  const resolved = safeSubPath(target, file);
-  if (!resolved || !fs.existsSync(resolved)) {
+  // resolveRegularFile, not safeSubPath: it rejects a NUL byte, a "."
+  // subpath, a hidden segment and a "file" containing a separator, and it
+  // compares the REAL path against the REAL root, so a symlink inside the
+  // folder cannot be used to read a file outside it. One generic 404 for all of
+  // those, which is also why there is no statSync() here any more: a NUL made
+  // it throw and turn a bad request into a 500.
+  const resolved = await resolveRegularFile(result.folder.path, subpath, file);
+  if (!resolved.ok) {
     return res.status(404).json({ error: 'File not found' });
   }
 
-  res.download(resolved, file);
+  res.download(resolved.fullPath, file);
 }
 
 // ============ اضافه شده: previewFile ============
@@ -244,20 +259,15 @@ async function previewFile(req, res) {
   const file = req.query.file;
   if (!file) return res.status(400).json({ error: 'File parameter missing' });
 
-  const target = safeSubPath(result.folder.path, subpath);
-  if (!target || !fs.existsSync(target)) {
-    return res.status(404).json({ error: 'Path not found' });
-  }
-  if (!fs.statSync(target).isDirectory()) {
-    return res.status(400).json({ error: 'Not a directory' });
-  }
-
-  const resolved = safeSubPath(target, file);
-  if (!resolved || !fs.existsSync(resolved)) {
+  // Same strict resolver as downloadFile - see the note there. The success path
+  // below is untouched: the bytes are still sniffed with magic bytes and still
+  // only rendered inline when that sniffed type is on the allowlist.
+  const resolved = await resolveRegularFile(result.folder.path, subpath, file);
+  if (!resolved.ok) {
     return res.status(404).json({ error: 'File not found' });
   }
 
-  const sniffedMime = await detectMimeFromBytes(resolved);
+  const sniffedMime = await detectMimeFromBytes(resolved.fullPath);
   const safeToRenderInline = isInlineSafeMime(sniffedMime);
 
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -268,7 +278,7 @@ async function previewFile(req, res) {
       'Content-Disposition',
       `inline; filename*=UTF-8''${encodeURIComponent(path.basename(file))}`
     );
-    return res.sendFile(resolved);
+    return res.sendFile(resolved.fullPath);
   }
 
   // Not a type we've verified is safe to render inline — fall back
@@ -280,7 +290,7 @@ async function previewFile(req, res) {
     'Content-Disposition',
     `attachment; filename*=UTF-8''${encodeURIComponent(path.basename(file))}`
   );
-  return res.sendFile(resolved);
+  return res.sendFile(resolved.fullPath);
 }
 
 // ============ Delete a file / folder ============

@@ -190,6 +190,73 @@ async function resolveDeletableEntry(basePath, subpath, name) {
   }
 }
 
+// ---------------------------------------------------------------
+// resolveRegularDirectory
+//
+// The directory counterpart of resolveRegularFile(), for the endpoints
+// that take a user-supplied `subpath` and then list or write inside it.
+// Same contract, same generic answer on failure:
+//
+//   - no NUL anywhere, and no segment that is "." or ".."
+//   - no hidden ("."-prefixed) segment: the UI never shows those, so a
+//     crafted request must not be able to reach what the UI hides
+//   - the lexical result stays inside the folder root
+//   - the REAL path (symlinks resolved) stays inside the REAL root - this
+//     is the part a lexical check cannot do, and the reason this function
+//     exists at all: a symlink planted inside a folder would otherwise let
+//     a listing enumerate, or an upload write to, a directory outside it
+//   - the target really is a directory
+//
+// Never throws for bad input. On success `relPath` is POSIX-style and
+// relative to the folder root.
+// ---------------------------------------------------------------
+
+function hasDotSegment(value) {
+  return String(value)
+    .split(/[\\/]+/)
+    .some((segment) => segment === '.' || segment === '..');
+}
+
+async function resolveRegularDirectory(basePath, subpath) {
+  try {
+    if (typeof basePath !== 'string' || !basePath) return NOT_FOUND;
+
+    const sub = typeof subpath === 'string' ? subpath : '';
+
+    if (sub.includes('\0') || hasHiddenSegment(sub) || hasDotSegment(sub)) {
+      return NOT_FOUND;
+    }
+
+    const base = path.resolve(basePath);
+    const lexical = safeSubPath(base, sub);
+    if (!lexical) return NOT_FOUND;
+
+    const [realBase, realTarget] = await Promise.all([
+      fsp.realpath(base),
+      fsp.realpath(lexical),
+    ]);
+
+    if (
+      realTarget !== realBase &&
+      !realTarget.startsWith(realBase + path.sep)
+    ) {
+      return NOT_FOUND;
+    }
+
+    const stat = await fsp.stat(realTarget);
+    if (!stat.isDirectory()) return NOT_FOUND;
+
+    return {
+      ok: true,
+      fullPath: realTarget,
+      relPath: path.relative(base, lexical).split(path.sep).join('/'),
+    };
+  } catch {
+    // ENOENT, EACCES, ELOOP, ENOTDIR: all the same answer to the caller.
+    return NOT_FOUND;
+  }
+}
+
 // Splits a persisted POSIX relPath back into the (subpath, file) pair
 // resolveRegularFile() expects.
 function splitRelPath(relPath) {
@@ -202,7 +269,9 @@ function splitRelPath(relPath) {
 module.exports = {
   safeSubPath,
   resolveRegularFile,
+  resolveRegularDirectory,
   resolveDeletableEntry,
   splitRelPath,
   hasHiddenSegment,
+  hasDotSegment,
 };

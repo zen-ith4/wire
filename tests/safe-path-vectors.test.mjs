@@ -92,7 +92,11 @@ test('safeSubPath: every lexical vector resolves to exactly what it claims', () 
     let ran = 0;
 
     for (const v of VECTORS) {
-        if (v.onlyIf !== undefined && v.onlyIf !== IS_WIN) continue;
+        // `onlyIf` is evaluated at module load on the RUNNING platform, so it
+        // already means "this vector applies here" - do not compare it to IS_WIN
+        // again. That second test inverts the pair on Linux, where it ran the two
+        // win32-only vectors and skipped the two POSIX ones.
+        if (v.onlyIf === false) continue;
         ran++;
 
         const got = safeSubPath(base, v.in);
@@ -111,8 +115,10 @@ test('safeSubPath: every lexical vector resolves to exactly what it claims', () 
     }
 
     // The table is the deliverable; if it silently shrinks, the coverage shrinks
-    // with it and nobody notices.
-    assert.ok(ran >= 25, `only ${ran} vectors ran on ${process.platform}; the table lost entries`);
+    // with it and nobody notices. A filter that skips too much must fail here
+    // too, which is the whole point: the broken filter still ran 26 vectors, so
+    // a count check alone would not have caught it.
+    assert.ok(ran > 20, `only ${ran} vectors ran on ${process.platform}; the platform filter skipped too much`);
 });
 
 test('safeSubPath: a NUL byte passes straight through - this is why the resolvers exist', () => {

@@ -142,7 +142,9 @@ before(async () => {
 
 after(async () => {
     if (server) await server.stop();
-    if (outsideDir) fs.rmSync(outsideDir, { recursive: true, force: true });
+    for (const d of [outsideDir, server?.work]) {
+        if (d) fs.rmSync(d, { recursive: true, force: true });
+    }
 });
 
 // ---------------------------------------------------------------- normal use
@@ -175,8 +177,23 @@ test('listing the folder root still shows every ordinary entry', async () => {
     assert.deepEqual(names, ['hello.txt', 'sub']);
     const sub = res.body.entries.find((e) => e.name === 'sub');
     assert.equal(sub.type, 'dir');
-    assert.equal(sub.size, 0, 'directories must keep reporting size 0, as before');
     assert.ok(sub.modified, 'entries must keep carrying modified');
+
+    // A listed size is whatever stat() says about the entry: 0 on win32, a few
+    // KB on Linux, and it has always been one fs.stat() call per entry. So the
+    // invariant is "it is the real stat", not a fixed number - pinning 0 here
+    // would have passed on Windows and failed on Linux for no reason.
+    const subOnDisk = fs.statSync(path.join(folderPath, 'sub'));
+    assert.equal(sub.size, subOnDisk.size, 'a directory entry reports its real stat size');
+
+    const file = res.body.entries.find((e) => e.name === 'hello.txt');
+    assert.equal(file.type, 'file');
+    assert.equal(file.size, INSIDE_BYTES.length);
+    assert.equal(
+        file.modified,
+        fs.statSync(path.join(folderPath, 'hello.txt')).mtime.toISOString(),
+        'modified is the entry mtime, unchanged'
+    );
 });
 
 // -------------------------------------------------------------- access rules

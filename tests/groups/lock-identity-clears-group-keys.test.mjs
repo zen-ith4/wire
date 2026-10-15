@@ -49,13 +49,38 @@ mock.module(jsPath('crypto/groups/sender-key.js'), {
 
 const { lockIdentity, isIdentityUnlocked } = await import(jsPath('crypto/identity-service.js'));
 
-// lockIdentity() clears via dynamic import().then(), so let those settle.
-const settle = () => new Promise((r) => setTimeout(r, 25));
+// lockIdentity() clears the caches through dynamic import().then(), so the
+// calls land on a later microtask - at least one, and on a loaded machine
+// several task-queue turns later.
+//
+// This used to be a fixed `setTimeout(25)`. That is a guess about how long the
+// machine takes, not about what the code does, and it is the one thing in this
+// file that could be wrong: observed on Windows were calls.wrap of 0 or 1
+// against an expected 2. A longer sleep would only move the guess.
+//
+// So: poll for the postcondition, bounded. The bound is what keeps this an
+// assertion rather than a wait - if lockIdentity() never cleared the caches the
+// poll exhausts and the test fails, exactly as it did before.
+async function waitForClears(expected, what) {
+    const deadline = Date.now() + 5000;
+
+    for (;;) {
+        if (calls.wrap >= expected && calls.sender >= expected) break;
+
+        assert.ok(
+            Date.now() < deadline,
+            `${what}: after 5000 ms the caches were cleared ${calls.wrap}/${calls.sender} times, ` +
+            `expected ${expected}/${expected} - lockIdentity() did not reach the dynamic import()`
+        );
+
+        await new Promise((r) => setTimeout(r, 5));
+    }
+}
 
 test('lockIdentity() clears BOTH group key caches (wrap key and Sender Keys)', async () => {
     calls.wrap = 0; calls.sender = 0;
     lockIdentity();
-    await settle();
+    await waitForClears(1, 'one lockIdentity() call');
     assert.equal(calls.wrap, 1, 'local wrap key cache must be cleared');
     assert.equal(calls.sender, 1, 'Sender Key cache must be cleared');
     assert.equal(isIdentityUnlocked(), false);
@@ -65,7 +90,7 @@ test('lockIdentity() clears the group caches every time it is called, even when 
     calls.wrap = 0; calls.sender = 0;
     lockIdentity();
     lockIdentity();
-    await settle();
+    await waitForClears(2, 'two lockIdentity() calls');
     assert.equal(calls.wrap, 2);
     assert.equal(calls.sender, 2);
 });

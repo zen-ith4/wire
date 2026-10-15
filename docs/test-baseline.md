@@ -1,85 +1,116 @@
-# Test baseline — wire-final-9
+# Test baseline — `wire-final-12.zip`
 
-The numbers any change should be measured against. If a run does not reproduce
-them, the difference is the finding, not the noise.
+Two numbers matter here, and they are from different trees. Keep them apart.
 
-## Verified environment
+## 1. Linux-verified baseline (the real @sparticuz/chromium)
 
-Linux sandbox, 2 cores, **the real `@sparticuz/chromium`** — the default that
-`tests/_acceptance-harness.mjs` `launchBrowser()` loads from
-`CHROMIUM_DIR=/tmp/browser-check`. That package runs Chromium with
-`--single-process --no-zygote`, which is the configuration the harness is built
-for; see `BROWSER_TEST_ISOLATION.md` §1.
+Measured on the Linux sandbox with the **real `@sparticuz/chromium`**, the
+default `launchBrowser()` loads from `CHROMIUM_DIR=/tmp/browser-check`. That
+package runs Chromium with `--single-process --no-zygote`; see
+`BROWSER_TEST_ISOLATION.md` §1 for why that dictates how accounts are opened.
 
-## Full suite
+| tree | tests | pass | fail | skipped | todo |
+|---|---|---|---|---|---|
+| `wire-final-8` run 1 | 426 | 422 | **0** | 2 | 2 |
+| `wire-final-8` run 2 | 426 | 422 | **0** | 2 | 2 |
+
+Identical across both runs. This is the baseline any change is measured
+against.
+
+### The two skips
+
+- **test 12** — "register rejected the hostile username". `/api/auth/register`
+  now rejects the payload, so the rendering half of that check has nothing to
+  render.
+- **test 204** — "upgrade: DB created by the base code". `BASE_TAG` is not
+  present in that checkout.
+
+### The two todos
+
+- **"B username (FINDING)"** — `registerUser()` still only checks non-empty;
+  `isValidUsername()` runs in `createUser()` only. Deliberate, documented.
+- **DM delete button under enforced CSP** — `dm.js` still uses an inline
+  `onclick` there. Deliberate.
+
+### Static checks at that tree
+
+- `node scripts/build-sw-manifest.mjs --check` → `is current`
+- `tests/sw-manifest.test.mjs` → 10/10
+- `public/` text files containing CR → 0 of 158
+
+## 2. Tests added since that baseline (not yet Linux-verified)
+
+Everything below landed on `wire-final-8` after the 426/422/0 run above, so the
+test count is now higher and the Linux numbers above do not yet include it.
+
+| addition | tests |
+|---|---|
+| `tests/groups/group-kdm-recipient-scope.test.mjs` | 1 |
+| `tests/port-hygiene.test.mjs` | 6 |
+
+The suite is now **433 tests**. A Linux run is required before that is a
+baseline.
+
+### What this tree measures on Windows, and what that does NOT prove
+
+`npm test`, Windows + real local Chrome 155, `CHROMIUM_DIR` pointing at a local
+shim (no `--single-process`, so a full Chromium binary):
 
 | | tests | pass | fail | skipped | todo |
 |---|---|---|---|---|---|
-| run 1 | 426 | 422 | **0** | 2 | 2 |
-| run 2 | 426 | 422 | **0** | 2 | 2 |
+| full suite | 433 | 424 | 1 | 7 | 1 |
+| `tests/groups` | 175 | 174 | 1 | 0 | 0 |
+| `tests/dm-attachments` | 60 | 60 | 0 | 0 | 0 |
+| `tests/crypto` | 9 | 9 | 0 | 0 | 0 |
+| `tests/credentials` | 87 | 87 | 0 | 0 | 0 |
+| `tests/port-hygiene` | 6 | 6 | 0 | 0 | 0 |
 
-Identical across both runs.
+The single failure is `group-e2e-browser` - see "Windows-only behaviour" below.
 
-## The two skips and the two todos
+**The skip and todo counts differ from the Linux run for a reason:** on Windows
+the `xss-sweep` guard skips its 7 tests wholesale, so one of the two todos
+(the "B username (FINDING)" inside that file) never runs. That is 7 skipped /
+1 todo here against 2 skipped / 2 todo on Linux, for the same tree.
 
-- **skip** — "register rejected the hostile username": `/api/auth/register` now
-  rejects it, so the rendering half of that check has nothing to render.
-- **skip** — `upgrade: DB created by the base code`: `BASE_TAG` is not present
-  in that checkout.
-- **todo** — `B username (FINDING)`: `registerUser()` still only checks
-  non-empty; `isValidUsername()` runs in `createUser()` only. Deliberate.
-- **todo** — the DM delete button under enforced CSP: `dm.js` still uses an
-  inline `onclick` there.
+## Windows-only behaviour — do not read these as product defects
 
-## Files run alone, 0 failures each
-
-`acceptance-no-plaintext` 8/8 · `acceptance-xss-sweep-browser` 5 pass, 1 skip,
-1 todo · `csp-confirm-enforced-browser` 6 pass, 1 todo ·
-`dm-csp-handlers-enforced-browser` · `credentials/f12-browser-login` ·
-`groups/group-confirm-in-dialog-browser` · `groups/group-e2e-browser` 1/1 ·
-`groups/group-signing-ensure` 6/6 · `groups/group-signing-keys` 24/24 ·
-`groups/group-hardening-f7-version-gate` 3/3.
-
-## Static checks
-
-- `node scripts/build-sw-manifest.mjs --check` → `sw-manifest.js is current
-  (version e7aa8fa0e153, 171 files)`
-- `tests/sw-manifest.test.mjs` → 10/10
-- `public/` text files with CR → 0 of 158
-
-The counts above were measured on a tree whose manifest was `e49d5776c950`. The
-only source change since then is a comment in `public/js/chat/group.js`, which
-still rehashes the manifest. Re-run to confirm the counts; nothing else moved.
+- **`acceptance-xss-sweep-browser` is skipped wholesale on win32.** The hostile
+  fixture file name contains `"`, `<` and `>`, which NTFS rejects, so
+  `writeFileSync` fails with ENOENT before the application is involved. The
+  hostile string is deliberately untouched. **Its coverage exists only on Linux
+  and CI.**
+- **`tests/groups/group-e2e-browser.test.mjs` passes on Linux and fails on
+  Windows.** It hangs on a full Chrome 155 binary — the renderer of alice's
+  first tab stops responding right after alice's second tab, from the same
+  profile, sends a message. Last known step: `alice.click('#group-input')`.
+  Root cause unknown.
+- **`lockIdentity()` is a 25 ms timing flake on Windows.**
+  `tests/groups/lock-identity-clears-group-keys.test.mjs:64` calls
+  `lockIdentity()` twice and waits `settle()` = `setTimeout(25)` before
+  asserting both caches were cleared twice. On Windows under load that is
+  sometimes not enough; observed `actual: 0` and `actual: 1` against
+  `expected: 2`. Passes alone.
+- **`fetch` blocked ports.** `tests/_port.mjs` holds undici's `badPorts`, copied
+  verbatim from `node_modules/undici/lib/web/fetch/constants.js` lines 14-21
+  (undici 8.10.2) and cited there. `tests/port-hygiene.test.mjs` (8 tests) proves
+  the copy is exact, that every entry an unprivileged process can bind really is
+  refused by `fetch()`, that `pickFreePort()`'s own window contains only 5060 and
+  5061, and that the retry actually skips a refused port. A server on one of
+  those ports starts fine and then every `fetch()` fails with `bad port`.
 
 ## Archive
 
-The archive is built from this committed tree with `git add -A` →
-`git write-tree` → `git archive --format=zip --prefix=<name>/` →
-`git restore --staged .`, so no commit is created and the working tree is left
-untouched. `wire-final-10.zip` has 476 entries.
+Built with `git add -A` → `git write-tree` → `git archive --format=zip
+--prefix=<name>/` → `git restore --staged .`: no commit is created and the
+working tree is left untouched. No `.git`, no `node_modules`, every text file
+LF.
 
-The size and sha256 are deliberately NOT recorded here: they live in the
+The size and sha256 are deliberately **not** recorded here — they live in the
 committed tree, so writing them into this file would change them. Read them off
-the published archive, and check them against the release notes.
+the published archive and check them against the release notes.
 
 Content invariants that must hold for any archive of this tree:
 
 - no `.git` entries, no `node_modules`
-- 0 of 378 text files contain CR
-- `public/sw-manifest.js` references `e7aa8fa0e153`
-- `tests/groups/group-kdm-recipient-scope.test.mjs` and both files in `docs/`
-  are present
-
-## Not covered by this baseline
-
-**`tests/groups/group-e2e-browser.test.mjs` passes here and fails on Windows.**
-It hangs on a full Chrome 155 binary — the renderer of alice's first tab stops
-responding right after alice's second tab, from the same profile, sends a
-message. Last known step: `alice.click('#group-input')`. Root cause unknown.
-Do not read that Windows failure as a product defect until it reproduces
-somewhere other than a full-Chromium build.
-
-The `acceptance-xss-sweep-browser` file is skipped wholesale on Windows by an
-explicit `process.platform === 'win32'` guard: the hostile fixture file name
-contains `"`, `<` and `>`, which NTFS rejects. Its coverage exists only on Linux
-and CI.
+- no text file contains CR
+- `node scripts/build-sw-manifest.mjs --check` reports `is current`

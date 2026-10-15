@@ -16,6 +16,7 @@
 // it.
 
 import { createRequire } from 'node:module';
+import { listenEphemeral } from '../_port.mjs';
 const require = createRequire(import.meta.url);
 
 const express = require('express');
@@ -41,9 +42,7 @@ export async function startTestServer() {
     const server = http.createServer(app);
     const io = setupSocketIO(server);
 
-    await new Promise((resolve, reject) => {
-        server.listen(0, '127.0.0.1', (err) => (err ? reject(err) : resolve()));
-    });
+    await listenEphemeral(server);
 
     const address = server.address();
     const origin = `http://127.0.0.1:${address.port}`;

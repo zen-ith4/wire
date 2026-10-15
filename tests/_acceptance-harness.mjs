@@ -16,6 +16,7 @@ import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
+import { FETCH_BLOCKED_PORTS } from './_port.mjs';
 
 const require = createRequire(import.meta.url);
 
@@ -35,14 +36,10 @@ export async function waitFor(fn, ms, step = 250) {
 }
 
 // ---------------------------------------------------------------- server
-/**
- * Ports that fetch (undici) and Chromium REFUSE to connect to, whatever is
- * listening. Measured on Linux and confirmed on Windows; the blocklist also
- * includes 4045, 4190, 6000, 6566, 6665-6669, 6697 and 10080.
- */
-const BLOCKED_PORTS = new Set([
-    4045, 4190, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669, 6697, 10080,
-]);
+// The refused-port list lives in tests/_port.mjs, shared with every other test
+// helper that binds a port, and is re-derived behaviourally by
+// tests/port-hygiene.test.mjs.
+const BLOCKED_PORTS = FETCH_BLOCKED_PORTS;
 
 /**
  * A port for the real server child process.

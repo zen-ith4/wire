@@ -32,6 +32,7 @@ import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { pathToFileURL, fileURLToPath } from 'node:url';
+import { listenAvoidingBlockedPorts } from './_port.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(import.meta.url);
@@ -60,12 +61,17 @@ async function launchBrowser() {
   }
 }
 
-function freePort() {
-  return new Promise((resolve, reject) => {
-    const s = net.createServer();
-    s.listen(0, '127.0.0.1', () => { const { port } = s.address(); s.close(() => resolve(port)); });
-    s.on('error', reject);
-  });
+// Not a bare listen(0) on the real server: this file spawns a child that reads
+// PORT from the environment, so the port is probed here first. The shared
+// helper guarantees the probe can never return a port fetch() refuses.
+async function freePort() {
+  return listenAvoidingBlockedPorts(
+    () => new Promise((resolve, reject) => {
+      const s = net.createServer();
+      s.once('error', reject);
+      s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => resolve(p)); });
+    })
+  );
 }
 
 async function startRealServer(cspEnforce) {

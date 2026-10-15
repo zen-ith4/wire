@@ -5,6 +5,7 @@
 // jsdom client actors that run the unmodified public/js code (the same
 // actor harness the group tests use). Import ./_env.mjs FIRST.
 import { createRequire } from 'node:module';
+import { listenEphemeral } from '../_port.mjs';
 import { createBrowserActor } from '../groups/_browser-actor.mjs';
 import { signUpAndUnlock } from '../groups/_roundtrip-helpers.mjs';
 
@@ -44,7 +45,7 @@ export async function startDmServer() {
 
     const server = http.createServer(app);
     const io = setupSocketIO(server);
-    await new Promise((resolve, reject) => server.listen(0, '127.0.0.1', (e) => (e ? reject(e) : resolve())));
+    await listenEphemeral(server);
 
     const origin = `http://127.0.0.1:${server.address().port}`;
     return {

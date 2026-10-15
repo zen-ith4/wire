@@ -24,6 +24,7 @@ import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import http from 'node:http';
 import { test, after } from 'node:test';
+import { listenEphemeral } from '../_port.mjs';
 import { createScenario, assert, sleep } from './_scenario.mjs';
 
 const require = createRequire(import.meta.url);
@@ -41,7 +42,7 @@ async function startStaticApp() {
     app.use(csp);
     app.use(express.static(path.resolve(import.meta.dirname, '../../public')));
     const server = http.createServer(app);
-    await new Promise((r) => server.listen(0, '127.0.0.1', r));
+    await listenEphemeral(server);
     return { origin: `http://127.0.0.1:${server.address().port}`, close: () => new Promise((r) => server.close(r)) };
 }
 

@@ -17,6 +17,7 @@ import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { listenEphemeral } from '../_port.mjs';
 
 const require = createRequire(import.meta.url);
 const CHROMIUM_DIR = process.env.CHROMIUM_DIR || '/tmp/browser-check';
@@ -66,7 +67,7 @@ async function startRealApp() {
     app.use(errorHandler);
     server = http.createServer(app);
     io = setupSocketIO(server);
-    await new Promise((r) => server.listen(0, '127.0.0.1', r));
+    await listenEphemeral(server);
     return `http://127.0.0.1:${server.address().port}`;
 }
 

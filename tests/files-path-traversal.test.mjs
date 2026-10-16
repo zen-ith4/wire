@@ -313,75 +313,278 @@ test('percent-encoded traversal is rejected too, not just the literal spelling',
 
 // ----------------------------------------------------------------- symlinks
 
-test('a symlink to a file outside the root serves neither download nor preview', { skip: SYMLINK.available ? false : SYMLINK.reason }, async () => {
-    fs.symlinkSync(path.join(outsideDir, 'secret.txt'), path.join(folderPath, 'leak.txt'), 'file');
-
-    for (const verb of ['download', 'preview']) {
-        const res = await rawGet(owner.token, `/api/files/${verb}/${folderId}${q('', 'leak.txt')}`);
-        const text = await bodyText(res);
-        await assertGeneric404(res, `${verb} through a symlink out of the root`);
-        assert.ok(!text.includes('SECRET-OUTSIDE'), `${verb} leaked the symlinked file`);
-        assert.ok(
-            !res.headers.get('content-length') || res.headers.get('content-length') !== String(SECRET_BYTES.length),
-            `${verb} leaked the symlinked file length`
-        );
+/**
+ * Create a symlink, run `fn`, and ALWAYS remove it.
+ *
+ * Every one of these tests used to unlink at the end of the body, which meant a
+ * failing assertion left the link behind for the rest of the run - and the
+ * listing tests that follow would then see a stray entry and fail for the wrong
+ * reason. A cleanup that only runs on success is not cleanup.
+ */
+async function withSymlinks(links, fn) {
+    try {
+        for (const { link, target, type } of links) {
+            fs.symlinkSync(target, link, type);
+        }
+        return await fn();
+    } finally {
+        for (const { link } of links) {
+            try { fs.rmSync(link, { recursive: true, force: true }); } catch { /* already gone */ }
+        }
     }
+}
 
-    fs.unlinkSync(path.join(folderPath, 'leak.txt'));
+test('a symlink to a file outside the root serves neither download nor preview', { skip: SYMLINK.available ? false : SYMLINK.reason }, async () => {
+    await withSymlinks([
+        { link: path.join(folderPath, 'leak.txt'), target: path.join(outsideDir, 'secret.txt'), type: 'file' },
+    ], async () => {
+        for (const verb of ['download', 'preview']) {
+            const res = await rawGet(owner.token, `/api/files/${verb}/${folderId}${q('', 'leak.txt')}`);
+            const text = await bodyText(res);
+            await assertGeneric404(res, `${verb} through a symlink out of the root`);
+            assert.ok(!text.includes('SECRET-OUTSIDE'), `${verb} leaked the symlinked file`);
+            assert.ok(
+                !res.headers.get('content-length') || res.headers.get('content-length') !== String(SECRET_BYTES.length),
+                `${verb} leaked the symlinked file length`
+            );
+        }
+    });
 });
 
 test('a symlinked sub-folder out of the root cannot be listed or entered', { skip: SYMLINK.available ? false : SYMLINK.reason }, async () => {
-    fs.symlinkSync(outsideDir, path.join(folderPath, 'out'), 'dir');
+    await withSymlinks([
+        { link: path.join(folderPath, 'out'), target: outsideDir, type: 'dir' },
+    ], async () => {
+        const listed = await rawGet(owner.token, `/api/files/list/${folderId}?subpath=${encodeURIComponent('out')}`);
+        const listText = await assertGeneric404(listed, 'listing a symlinked folder pointing out of the root');
+        assert.ok(!listText.includes('secret.txt'), 'the listing enumerated a directory outside the root');
 
-    const listed = await rawGet(owner.token, `/api/files/list/${folderId}?subpath=${encodeURIComponent('out')}`);
-    const listText = await assertGeneric404(listed, 'listing a symlinked folder pointing out of the root');
-    assert.ok(!listText.includes('secret.txt'), 'the listing enumerated a directory outside the root');
-
-    const res = await rawGet(owner.token, `/api/files/download/${folderId}${q('out', 'secret.txt')}`);
-    const text = await assertGeneric404(res, 'download through a symlinked folder');
-    assert.ok(!text.includes('SECRET-OUTSIDE'), 'download through a symlinked folder leaked bytes');
-
-    fs.unlinkSync(path.join(folderPath, 'out'));
+        const res = await rawGet(owner.token, `/api/files/download/${folderId}${q('out', 'secret.txt')}`);
+        const text = await assertGeneric404(res, 'download through a symlinked folder');
+        assert.ok(!text.includes('SECRET-OUTSIDE'), 'download through a symlinked folder leaked bytes');
+    });
 });
 
 test('a symlink pointing INSIDE the root keeps working', { skip: SYMLINK.available ? false : SYMLINK.reason }, async () => {
     // The fix is containment, not a blanket ban on links: an internal symlink
     // resolves to a path still inside the real root and must keep serving, or
     // this change would have broken real folders.
-    fs.symlinkSync(path.join(folderPath, 'hello.txt'), path.join(folderPath, 'alias.txt'), 'file');
-
-    const res = await rawGet(owner.token, `/api/files/download/${folderId}${q('', 'alias.txt')}`);
-    assert.equal(res.status, 200, 'an internal symlink must still download');
-    assert.deepEqual(Buffer.from(await res.arrayBuffer()), INSIDE_BYTES);
-
-    fs.unlinkSync(path.join(folderPath, 'alias.txt'));
+    await withSymlinks([
+        { link: path.join(folderPath, 'alias.txt'), target: path.join(folderPath, 'hello.txt'), type: 'file' },
+    ], async () => {
+        const res = await rawGet(owner.token, `/api/files/download/${folderId}${q('', 'alias.txt')}`);
+        assert.equal(res.status, 200, 'an internal symlink must still download');
+        assert.deepEqual(Buffer.from(await res.arrayBuffer()), INSIDE_BYTES);
+    });
 });
 
 test('a symlink pointing out of the root is not listed at all', { skip: SYMLINK.available ? false : SYMLINK.reason }, async () => {
-    fs.symlinkSync(path.join(outsideDir, 'secret.txt'), path.join(folderPath, 'ghost.txt'), 'file');
-    fs.symlinkSync(path.join(folderPath, 'hello.txt'), path.join(folderPath, 'real-link.txt'), 'file');
+    await withSymlinks([
+        { link: path.join(folderPath, 'ghost.txt'), target: path.join(outsideDir, 'secret.txt'), type: 'file' },
+        { link: path.join(folderPath, 'real-link.txt'), target: path.join(folderPath, 'hello.txt'), type: 'file' },
+    ], async () => {
+        const res = await owner.api(`/api/files/list/${folderId}`);
+        assert.equal(res.status, 200);
+        const names = res.body.entries.map((e) => e.name);
 
-    const res = await owner.api(`/api/files/list/${folderId}`);
-    assert.equal(res.status, 200);
-    const names = res.body.entries.map((e) => e.name);
-
-    // Omitted, not "listed but un-downloadable": listing a name the caller can
-    // never fetch is a free oracle for what exists on disk outside the root.
-    assert.ok(!names.includes('ghost.txt'), `an escaping symlink must not be listed: ${JSON.stringify(names)}`);
-    assert.ok(names.includes('real-link.txt'), `an internal symlink must stay listed: ${JSON.stringify(names)}`);
-
-    fs.unlinkSync(path.join(folderPath, 'ghost.txt'));
-    fs.unlinkSync(path.join(folderPath, 'real-link.txt'));
+        // Omitted, not "listed but un-downloadable": listing a name the caller
+        // can never fetch is a free oracle for what exists on disk outside it.
+        assert.ok(!names.includes('ghost.txt'), `an escaping symlink must not be listed: ${JSON.stringify(names)}`);
+        assert.ok(names.includes('real-link.txt'), `an internal symlink must stay listed: ${JSON.stringify(names)}`);
+    });
 });
 
 test('a dangling symlink does not break the listing', { skip: SYMLINK.available ? false : SYMLINK.reason }, async () => {
-    fs.symlinkSync(path.join(outsideDir, 'does-not-exist.txt'), path.join(folderPath, 'dangling.txt'), 'file');
+    await withSymlinks([
+        { link: path.join(folderPath, 'dangling.txt'), target: path.join(outsideDir, 'does-not-exist.txt'), type: 'file' },
+    ], async () => {
+        const res = await owner.api(`/api/files/list/${folderId}`);
+        assert.equal(res.status, 200, 'a dangling link must not 500 the listing');
+        const names = res.body.entries.map((e) => e.name);
+        assert.ok(!names.includes('dangling.txt'));
+        assert.ok(names.includes('hello.txt'), 'the rest of the listing is unaffected');
+    });
+});
 
-    const res = await owner.api(`/api/files/list/${folderId}`);
-    assert.equal(res.status, 200, 'a dangling link must not 500 the listing');
-    const names = res.body.entries.map((e) => e.name);
-    assert.ok(!names.includes('dangling.txt'));
-    assert.ok(names.includes('hello.txt'), 'the rest of the listing is unaffected');
 
-    fs.unlinkSync(path.join(folderPath, 'dangling.txt'));
+// ------------------------------------------------------------------- uploads
+//
+// The read paths were covered above; the WRITE path had no coverage at all.
+// resolveRegularDirectory() guards both listFile() and uploadFile(), so a
+// symlink planted inside the folder would let an upload write outside the user's
+// storage - and unlike a read, that is a write whose contents the attacker chose.
+//
+// The rate limiter allows 20 uploads a minute and these tests are not exempt, so
+// the whole section is held to 10 requests. Adding more will start returning 429
+// and the failures will look like security assertions.
+
+const UPLOAD_BYTES = Buffer.from('UPLOAD-BODY-MARKER\n', 'utf8');
+
+/**
+ * POST /api/files/upload/:folderId as multipart/form-data.
+ *
+ * Hand-rolled rather than reusing owner.api(), which speaks JSON: the point is
+ * to send exactly what a browser sends, including a file name with a directory
+ * part in it.
+ */
+function upload(folderId, {
+    token = owner.token,
+    filename = 'upload.txt',
+    subpath = '',
+    bytes = UPLOAD_BYTES,
+} = {}) {
+    const form = new FormData();
+    if (subpath !== null) form.set('subpath', subpath);
+    form.set('file', new Blob([bytes]), filename);
+
+    return fetch(`${server.origin}/api/files/upload/${folderId}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+    });
+}
+
+/** Every path under `dir`, recursively. Symlinked directories are not followed. */
+function walk(dir, acc = []) {
+    let entries;
+    try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+        return acc;
+    }
+    for (const entry of entries) {
+        const full = path.join(dir, entry.name);
+        acc.push(full);
+        if (entry.isDirectory()) walk(full, acc);
+    }
+    return acc;
+}
+
+/**
+ * The upload endpoint's own rejection, asserted exactly.
+ *
+ * A bare `status !== 200` would be satisfied by a 403 (no write access) or a
+ * 429 (the limiter) or a 401, none of which test anything about path handling.
+ * Pinning the status AND the body proves the request got past auth, past the
+ * folder lookup and past the limiter, and was actually turned away by
+ * resolveRegularDirectory() - which is the thing under test.
+ */
+async function assertBadDestination(res, what) {
+    const body = await bodyText(res);
+    assert.equal(res.status, 404, `${what}: expected 404, got ${res.status} - ${body.slice(0, 200)}`);
+    assert.equal(body, JSON.stringify({ error: 'Destination folder not found' }),
+        `${what}: unexpected body - the request may not have reached the resolver`);
+    assert.ok(!/ at .+:\d+:\d+|TypeError|Error:|statSync|node_modules/.test(body),
+        `${what}: body leaked an implementation detail: ${body.slice(0, 200)}`);
+    return body;
+}
+
+test('an upload into a symlinked directory that leaves the root is refused, and nothing lands outside', { skip: SYMLINK.available ? false : SYMLINK.reason }, async () => {
+    const marker = 'escaped-upload.txt';
+    const before = walk(outsideDir).sort();
+
+    await withSymlinks([
+        { link: path.join(folderPath, 'escape'), target: outsideDir, type: 'dir' },
+    ], async () => {
+        const res = await upload(folderId, { subpath: 'escape', filename: marker });
+        await assertBadDestination(res, 'upload through a symlinked folder pointing out of the root');
+    });
+
+    assert.deepEqual(walk(outsideDir).sort(), before,
+        `the refused upload still wrote outside the folder root (${marker})`);
+    assert.ok(!fs.existsSync(path.join(outsideDir, marker)),
+        `${marker} was created outside the folder root`);
+});
+
+test('"..", a hidden segment and a NUL byte in the upload subpath are all refused, and nothing is written', async () => {
+    const vectors = [
+        ['..', 'a bare parent reference'],
+        ['sub/../../..', 'a traversal that goes through a real sub-folder first'],
+        ['sub/..', 'a single level back out of a real sub-folder'],
+        ['.secret', 'a hidden segment'],
+        ['sub/.hidden', 'a hidden segment after a real one'],
+        ['sub\0.txt', 'a NUL byte'],
+    ];
+
+    // What each of these pins, and what it does NOT pin - established by
+    // mutation, not assumed:
+    //
+    //   '..' / 'sub/../../..'  would also be refused by the lexical safeSubPath()
+    //                          check alone.
+    //   'sub/..'               is ALSO caught by hasHiddenSegment(), because a
+    //                          '..' segment starts with '.'. hasDotSegment() is
+    //                          therefore redundant here - removing it does not
+    //                          turn this test red. That is what redundant
+    //                          defence in depth looks like; it is reported, not
+    //                          quietly relied on.
+    //   'sub\0.txt'           would ALSO be refused, by the realpath() throwing
+    //                          on a NUL and the catch-all answering NOT_FOUND.
+    //                          So this asserts no 500 and a uniform 404, which is
+    //                          what the resolver's comment actually promises.
+    //   '.secret' / 'sub/.hidden' are caught by hasHiddenSegment() alone, and
+    //                          removing it DOES turn this test red.
+    //
+    // The symlink case in the test above is the one that isolates a single guard
+    // (the realpath containment check) and goes red without it.
+    const outsideBefore = walk(outsideDir).sort();
+    const rootBefore = walk(folderPath).sort();
+
+    for (const [i, [subpath, what]] of vectors.entries()) {
+        const res = await upload(folderId, { subpath, filename: `vector-${i}.txt` });
+        await assertBadDestination(res, `upload with ${what} in subpath`);
+    }
+
+    assert.deepEqual(walk(folderPath).sort(), rootBefore,
+        'a refused upload still created a file inside the folder root');
+    assert.deepEqual(walk(outsideDir).sort(), outsideBefore,
+        'a refused upload still wrote outside the folder root');
+    assert.ok(!/\0/.test([...walk(folderPath)].join('\n')),
+        'a NUL byte reached a path on disk');
+});
+
+test('a normal upload still works, into the root and into a real sub-folder', async () => {
+    const rootRes = await upload(folderId, { filename: 'plain.txt', subpath: '', bytes: INSIDE_BYTES });
+    const rootBody = await bodyText(rootRes);
+    assert.equal(rootRes.status, 200, `plain upload: ${rootRes.status} - ${rootBody.slice(0, 200)}`);
+    assert.deepEqual(JSON.parse(rootBody), { success: true, name: 'plain.txt' });
+    assert.deepEqual(fs.readFileSync(path.join(folderPath, 'plain.txt')), INSIDE_BYTES,
+        'the bytes on disk are not what was sent');
+
+    const subRes = await upload(folderId, { filename: 'nested-upload.txt', subpath: 'sub', bytes: INSIDE_BYTES });
+    const subBody = await bodyText(subRes);
+    assert.equal(subRes.status, 200, `sub-folder upload: ${subRes.status} - ${subBody.slice(0, 200)}`);
+    assert.deepEqual(JSON.parse(subBody), { success: true, name: 'nested-upload.txt' });
+    assert.deepEqual(fs.readFileSync(path.join(folderPath, 'sub', 'nested-upload.txt')), INSIDE_BYTES);
+
+    // And the write is durable: the read path must serve it back.
+    const dl = await rawGet(owner.token, `/api/files/download/${folderId}${q('sub', 'nested-upload.txt')}`);
+    assert.equal(dl.status, 200, `download of the freshly uploaded file: ${dl.status}`);
+    assert.deepEqual(Buffer.from(await dl.arrayBuffer()), INSIDE_BYTES);
+
+    fs.rmSync(path.join(folderPath, 'plain.txt'), { force: true });
+    fs.rmSync(path.join(folderPath, 'sub', 'nested-upload.txt'), { force: true });
+});
+
+test('a directory part in the upload file name is stripped, and a hidden file name is refused', async () => {
+    const res = await upload(folderId, { filename: '../../escaped.txt', subpath: '' });
+    const body = await bodyText(res);
+    assert.equal(res.status, 200, `upload with a directory part: ${res.status} - ${body.slice(0, 200)}`);
+
+    // basename() must reduce it to a single segment, whatever the transport did
+    // to the name on the way in. Either way the assertion is the same fact:
+    // it landed directly in the folder root.
+    assert.deepEqual(JSON.parse(body), { success: true, name: 'escaped.txt' });
+    assert.ok(fs.existsSync(path.join(folderPath, 'escaped.txt')),
+        'the upload did not land in the folder root');
+    assert.ok(!fs.existsSync(path.join(path.dirname(folderPath), 'escaped.txt')),
+        'the directory part of the file name was honoured instead of stripped');
+
+    fs.rmSync(path.join(folderPath, 'escaped.txt'), { force: true });
+
+    const hidden = await upload(folderId, { filename: '.hidden.txt', subpath: '' });
+    const hiddenBody = await bodyText(hidden);
+    assert.equal(hidden.status, 400, `a dot-prefixed file name must be 400, got ${hidden.status}`);
+    assert.equal(hiddenBody, JSON.stringify({ error: 'Invalid file name' }));
+    assert.ok(!fs.existsSync(path.join(folderPath, '.hidden.txt')),
+        'a dot-prefixed upload was written to disk anyway');
 });

@@ -77,14 +77,12 @@ test('our list is undici\'s list, copied from its source verbatim', async () => 
   const fs = await import('node:fs');
   const file = path.join(process.cwd(), 'node_modules', 'undici', 'lib', 'web', 'fetch', 'constants.js');
 
-  let src;
-  try {
-    src = fs.readFileSync(file, 'utf8');
-  } catch {
-    // undici is a dependency, not a dev-only one; if it is genuinely absent the
-    // behavioural tests above still stand on their own.
-    return;
-  }
+  // undici is a real dependency of this repo. If the file is missing, that is a
+  // BROKEN TREE, not a reason to pass: this test exists to prove the copy in
+  // tests/_port.mjs cannot drift from its source, and a missing source proves
+  // nothing at all. It used to `return` here, which silently turned "undici
+  // vanished" into a green run.
+  const src = fs.readFileSync(file, 'utf8');
 
   const at = src.indexOf('const badPorts');
   assert.ok(at !== -1, `no badPorts constant in ${file}`);
@@ -103,6 +101,144 @@ test('our list is undici\'s list, copied from its source verbatim', async () => 
     [...new Set(entries)].sort((a, b) => a - b),
     'tests/_port.mjs must equal undici\'s badPorts exactly - no additions, no omissions'
   );
+});
+
+// --------------------------------------------------------------------------
+// pickFreePort() itself
+//
+// The mutation this must catch: deleting `if (BLOCKED_PORTS.has(candidate))
+// continue;` from pickFreePort(). Driven with an INJECTED random source that
+// walks the whole 4600..5499 window deterministically, because with a real
+// random source only 2 of 900 candidates are blocked - a deleted check would
+// pass about 99.8% of the time and this test would be theatre.
+// --------------------------------------------------------------------------
+
+test('pickFreePort() skips the refused ports in its own window, deterministically', async () => {
+  const { pickFreePort } = await import('./_acceptance-harness.mjs');
+
+  // 4600 + floor(random()*900) => 4600..5499. Hand it each candidate in turn.
+  const seen = [];
+  let cursor = 0;
+  const walker = () => {
+    const value = (cursor % 900) / 900;
+    cursor++;
+    return value;
+  };
+
+  for (let i = 0; i < 900; i++) {
+    const port = await pickFreePort({ random: walker });
+    seen.push(port);
+    assert.ok(!isFetchBlockedPort(port),
+      `pickFreePort() returned the fetch-blocked port ${port}`);
+  }
+
+  // The walk must have stepped over 5060 and 5061 rather than landing on them:
+  // at cursor 460 the candidate is 5060 and at 461 it is 5061.
+  assert.ok(seen.length >= 900, `expected 900 picks, got ${seen.length}`);
+  assert.ok(!seen.includes(5060), '5060 must never be handed out');
+  assert.ok(!seen.includes(5061), '5061 must never be handed out');
+});
+
+test('pickFreePort() still refuses a port the OS will not bind', async () => {
+  const { pickFreePort } = await import('./_acceptance-harness.mjs');
+
+  // Hold a port INSIDE pickFreePort()'s window (listen(0) would give an
+  // ephemeral port in the 32768+ range and this would not test anything), then
+  // force every candidate onto it with a constant random source. The blocked
+  // check passes it, because it is not a blocked port - so what has to reject it
+  // is the bindability probe, the second half of the same function.
+  let held = null;
+  let heldPort = 0;
+
+  for (let candidate = 4600; candidate <= 5499 && heldPort === 0; candidate++) {
+    if (isFetchBlockedPort(candidate)) continue;
+    const s = net.createServer();
+    try {
+      await new Promise((resolve, reject) => {
+        s.once('error', reject);
+        s.listen(candidate, '127.0.0.1', resolve);
+      });
+      held = s;
+      heldPort = candidate;
+    } catch {
+      /* busy, try the next one */
+    }
+  }
+
+  assert.ok(held, 'could not hold any port in pickFreePort()\'s window on this machine');
+
+  try {
+    // Ask for the held port three times, then walk onward. Returning it
+    // FOREVER would be a different test: pickFreePort() would exhaust its 60
+    // attempts and throw, which is correct but proves only the retry limit.
+    let calls = 0;
+    const heldAttempts = 3;
+    const source = () => {
+        const offset = calls < heldAttempts ? 0 : calls - heldAttempts + 1;
+        calls++;
+        return (heldPort - 4600 + offset) / 900;
+    };
+
+    const port = await pickFreePort({ random: source });
+
+    assert.ok(calls > heldAttempts,
+      `pickFreePort() must have retried past the held port; it stopped after ${calls} call(s)`);
+    assert.notEqual(port, heldPort,
+      'pickFreePort() handed out a port it had just proved it could not bind');
+    assert.ok(port >= 4600 && port <= 5499, `and it should stay in its window, got ${port}`);
+  } finally {
+    await new Promise((r) => held.close(r));
+  }
+});
+
+// --------------------------------------------------------------------------
+// Node's BUNDLED undici, not the on-disk copy
+//
+// The source comparison proves tests/_port.mjs matches the undici *package*
+// on disk. This proves the list also matches what the global `fetch` in THIS
+// Node process actually refuses - because that, not the package, is what a test
+// hits. "fetch failed" alone is not enough: a TCP refusal throws the same
+// TypeError. The discriminator is undici's own cause, message 'bad port'.
+// --------------------------------------------------------------------------
+
+test('every bindable entry is refused by THIS Node\'s bundled undici, with a bad-port cause', async () => {
+  assert.ok(BINDABLE.length >= 10, `expected a non-trivial list, got ${BINDABLE.length}`);
+
+  const wrongCause = [];
+  const reached = [];
+
+  for (const port of BINDABLE) {
+    const srv = net.createServer((c) => c.end());
+    let listening = false;
+    try {
+      await new Promise((resolve, reject) => {
+        srv.once('error', reject);
+        srv.listen(port, '127.0.0.1', () => { listening = true; resolve(); });
+      });
+    } catch {
+      continue; // some ports are busy on this machine; not what we are testing
+    }
+
+    try {
+      await fetch(`http://127.0.0.1:${port}/`, { signal: AbortSignal.timeout(3000) });
+      reached.push(port);
+    } catch (e) {
+      const cause = String(e?.cause?.message || '');
+      const code = String(e?.cause?.code || '');
+      // undici's refusal: message 'bad port', no code.
+      // A TCP refusal would be code ECONNREFUSED and message 'connect ECONNREFUSED ...'.
+      if (cause !== 'bad port' || code !== '') {
+        wrongCause.push(`${port}: cause=${JSON.stringify(cause)} code=${JSON.stringify(code)}`);
+      }
+    } finally {
+      if (listening) await new Promise((r) => srv.close(r));
+    }
+  }
+
+  assert.deepEqual(reached, [],
+    `listed as fetch-blocked, but fetch() actually connected: ${reached.join(', ')}`);
+  assert.deepEqual(wrongCause, [],
+    `these failed for a reason other than undici's bad-port refusal: ${wrongCause.join(', ')}`);
 });
 
 test('the acceptance harness uses the shared list, not a copy of its own', async () => {

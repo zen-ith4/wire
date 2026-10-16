@@ -251,8 +251,15 @@ export function renderKeyTrustBanner(peerId, username) {
     btn.addEventListener('click', async () => {
         btn.disabled = true;
         await acceptNewKey(peerId);
-        clearHeldMessages(peerId);
         bar.remove();
+        // Deliberately NO clearHeldMessages() here.
+        //
+        // The release listener (bindKeyTrustRelease) drains the queue with
+        // takeHeldMessages(); clearing it first emptied `held` before the event
+        // was dispatched, so clicking this button - the only way a user can reach
+        // this code - discarded every held message. The backlog was only ever
+        // released because the previous version of the test dispatched the event
+        // itself instead of pressing the button, and so never took this path.
         document.dispatchEvent(new CustomEvent('dm-key-trust-accepted', {
             detail: { peerId: Number(peerId) },
         }));
@@ -331,18 +338,47 @@ export async function renderVerifyView(peerId, username) {
     if (whoEl) whoEl.textContent = username;
 
     const pin = await evaluatePeerKey(peerId, publicKey, context);
+
+    // `verifiedAt` belongs to the key this device PINNED - `pin.current`. While the
+    // evaluation is 'changed' the key on screen is `pin.pending`, not
+    // `pin.current`, so the flag describes a different key from the number the
+    // user is being asked to compare. Showing it would claim the user verified
+    // something they never saw.
+    //
+    // This was a real bug: until they act, this view reported the PREVIOUS key's
+    // verification against the NEW key's safety number, and offered a Mark button
+    // that would have stamped the old key.
+    //
+    // Note this is NOT about when verifiedAt is cleared. It is cleared only when
+    // a key becomes pinned: pinOnFirstUse() writes null (trust on first sight is
+    // not verification), and acceptPeerKey() writes Date.now() - correctly, since
+    // the button that calls it is labelled "I verified the new key" and is the
+    // user asserting exactly that. So a pin that is verified and then changed
+    // keeps a stale verifiedAt on purpose; it is this view's job not to read it
+    // as if it described the pending key.
+    const verifiedHere = pin.state !== 'changed' && Boolean(pin.pin?.verifiedAt);
+
     if (markedEl) {
-        markedEl.textContent = pin.pin?.verifiedAt
+        markedEl.textContent = verifiedHere
             ? 'Marked as verified on this device.'
             : 'Not yet marked as verified on this device.';
     }
 
     const markBtn = panel.querySelector('[data-action="mark-verified"]');
     if (markBtn) {
-        markBtn.addEventListener('click', async () => {
-            await markPeerVerified(peerId, context);
-            if (markedEl) markedEl.textContent = 'Marked as verified on this device.';
-        }, { once: true });
+        if (pin.state === 'changed') {
+            // Same reason: pressing this would stamp the old pinned key, not the
+            // one whose digits are on screen. Offer nothing rather than something
+            // that means the wrong thing.
+            markBtn.disabled = true;
+            markBtn.title = 'Accept the new key for this conversation first.';
+        } else {
+            markBtn.disabled = false;
+            markBtn.addEventListener('click', async () => {
+                const marked = await markPeerVerified(peerId, context);
+                if (markedEl && marked) markedEl.textContent = 'Marked as verified on this device.';
+            }, { once: true });
+        }
     }
 
     return { fingerprint, number };

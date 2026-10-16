@@ -57,9 +57,13 @@ const BLOCKED_PORTS = FETCH_BLOCKED_PORTS;
  * gap between closing the probe and the child binding, which is why the caller
  * also retries on EADDRINUSE.
  */
-async function pickFreePort() {
+export async function pickFreePort({ random = Math.random } = {}) {
     for (let attempt = 0; attempt < 60; attempt++) {
-        const candidate = 4600 + Math.floor(Math.random() * 900);
+        const candidate = 4600 + Math.floor(random() * 900);
+        // The check the whole module exists for. Exported and injected-random so
+        // tests/port-hygiene.test.mjs can drive this deterministically: with a
+        // random source, a mutation that deletes this line would pass ~99.8% of
+        // the time, because only 5060 and 5061 of the 900 candidates are blocked.
         if (BLOCKED_PORTS.has(candidate)) continue;
         const bindable = await new Promise((resolve) => {
             const probe = net.createServer();

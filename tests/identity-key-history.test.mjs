@@ -141,16 +141,49 @@ test('the committed fixture is byte-identical after all of that', () => {
 
 // ---------------------------------------------------------------- rotation
 
-test('rotating twice keeps BOTH old keys, oldest first, with the current one separate', async (t) => {
-    if (!srv) {
-        const { dbPath } = copyLegacyFixture();
-        // GROUPS_ENABLED: the group routes answer 404 without it, and one of the
-        // authorization branches below is reached only by sharing a group.
-        srv = await bootServer(dbPath, path.dirname(dbPath), { GROUPS_ENABLED: 'true' });
-    }
-    if (!srv) return t.skip('no server');
+/**
+ * Boot the shared server once. A boot failure throws.
+ *
+ * These tests used to `t.skip('no server')` when the server was missing, which
+ * turned "the fixture is broken / the server will not start" into a green run.
+ * A missing server here is a broken environment, not a reason to skip.
+ */
+async function ensureServer() {
+    if (srv) return srv;
 
-    const bob = await migrateLegacyUser(srv, META, 'bob');
+    const { dbPath } = copyLegacyFixture();
+    // GROUPS_ENABLED: the group routes answer 404 without it, and one of the
+    // authorization branches below is reached only by sharing a group.
+    srv = await bootServer(dbPath, path.dirname(dbPath), { GROUPS_ENABLED: 'true' });
+    return srv;
+}
+
+/**
+ * A migrated, signed-in session, cached per (user, withIdentity).
+ *
+ * Caching is REQUIRED, not an optimisation: migrating an account moves it to
+ * auth_scheme 2, after which the anti-downgrade rule refuses its raw-password
+ * login - correctly. Calling migrateLegacyUser twice for one account is
+ * therefore a 401, and that 401 is the rule working, not something to route
+ * around.
+ */
+const sessions = new Map();
+
+async function session(user, { withIdentity = true } = {}) {
+    const key = `${user}:${withIdentity}`;
+
+    if (sessions.has(key)) return sessions.get(key);
+
+    await ensureServer();
+    const created = await migrateLegacyUser(srv, META, user, { withIdentity });
+    sessions.set(key, created);
+    return created;
+}
+
+test('rotating twice keeps BOTH old keys, oldest first, with the current one separate', async () => {
+    await ensureServer();
+
+    const bob = await session('bob');
     const original = (await srv.call('GET', '/api/me/identity-key', { token: bob.token })).body.publicKey;
 
     const first = await rotate(srv, bob);
@@ -189,12 +222,49 @@ test('rotating twice keeps BOTH old keys, oldest first, with the current one sep
 
 // ---------------------------------------------------------- authorization
 
-test('a DM contact may read it; a stranger may not, and cannot tell "no" from "does not exist"', async (t) => {
-    if (!srv) return t.skip('server not booted');
+test('a user who exists but has NO identity key answers the same 404 as a user who does not exist', async () => {
+    await ensureServer();
+
+    // carol exists in the fixture, is ACTIVE, and has no row in identity_keys, so
+    // migrating her without an identity leaves her signed in with no key at all -
+    // the "exists but has no key" case. (erin would NOT do: the fixture has her
+    // deactivated, and a deactivated account cannot log in.)
+    const carol = await session('carol', { withIdentity: false });
+
+    const herKey = await srv.call('GET', '/api/me/identity-key', { token: carol.token });
+    assert.equal(herKey.status, 200, `carol must have a session: ${herKey.status}`);
+    assert.equal(herKey.body.exists, false, 'carol must genuinely have no identity key');
+
+    // Carol asks for her OWN history. She IS a contact of herself, so the
+    // authorization check passes and the failure is the missing key - which must
+    // still be the generic 404, not a 200 with an empty list and not a 500.
+    const own = await srv.call('GET', `/api/me/identity-key-history/${META.ids.carol}`, { token: carol.token });
+    assert.equal(own.status, 404, `a user with no identity key must be 404, got ${own.status}`);
+    assert.equal(own.body.error, 'Not found', 'and it must be the generic body');
+
+    // And a contact of hers asking about her gets the identical body, so the
+    // caller cannot tell "no key" from "no such user" from "not your contact".
+    const bob = await session('bob');
+    const dmed = await srv.call('POST', '/api/dm/messages', {
+        token: bob.token,
+        body: { recipient_id: META.ids.carol, content: 'hi' },
+    });
+    assert.ok(dmed.status === 200 || dmed.status === 201, `dm to carol: ${dmed.status}`);
+
+    const asContact = await srv.call('GET', `/api/me/identity-key-history/${META.ids.carol}`, { token: bob.token });
+    const nobody = await srv.call('GET', '/api/me/identity-key-history/999999', { token: bob.token });
+
+    assert.equal(asContact.status, 404, `a keyless user must be 404, got ${asContact.status}`);
+    assert.deepEqual(asContact.body, nobody.body,
+        '"that user has no identity key" must be indistinguishable from "no such user"');
+});
+
+test('a DM contact may read it; a stranger may not, and cannot tell "no" from "does not exist"', async () => {
+    await ensureServer();
 
     const bobId = META.ids.bob;
-    const alice = await migrateLegacyUser(srv, META, 'alice');   // DM contact
-    const dave = await migrateLegacyUser(srv, META, 'dave');     // no contact with bob
+    const alice = await session('alice');   // DM contact
+    const dave = await session('dave');     // no contact with bob
 
     const dm = await srv.call('POST', '/api/dm/messages', {
         token: alice.token,
@@ -228,11 +298,11 @@ test('a DM contact may read it; a stranger may not, and cannot tell "no" from "d
     }
 });
 
-test('a shared-group member with no DM still gets the history', async (t) => {
-    if (!srv) return t.skip('server not booted');
+test('a shared-group member with no DM still gets the history', async () => {
+    await ensureServer();
 
     const bobId = META.ids.bob;
-    const frank = await migrateLegacyUser(srv, META, 'frank');
+    const frank = await session('frank');
 
     // No DM between frank and bob at this point.
     const before = await srv.call('GET', `/api/me/identity-key-history/${bobId}`, { token: frank.token });

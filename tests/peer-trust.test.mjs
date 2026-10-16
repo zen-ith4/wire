@@ -261,19 +261,64 @@ test('accepting the new key clears the alarm AND remembers the old one', async (
     assert.equal(new Set(fps).size, fps.length, 'no duplicate entries');
 });
 
-test('a normal PASSWORD change does not alarm: the identity key is unchanged', async () => {
-    // This is the real credential flow's invariant. A password change re-wraps
-    // the SAME PKCS#8 with a new salt/iterations; it does not generate a new key.
+test('markPeerVerified records a real timestamp and returns the updated pin', async () => {
     await resetPin();
     await trust.pinOnFirstUse(PEER, THEIRS, CTX);
 
-    // Exactly what a password change produces: the same public key bytes.
-    const sameKeyAfterPasswordChange = THEIRS;
-    assert.equal((await trust.evaluatePeerKey(PEER, sameKeyAfterPasswordChange, CTX)).state, 'ok');
+    const before = await trust.getPeerPin(PEER, CTX);
+    assert.equal(before.verifiedAt, null, 'nothing is verified before the user says so');
 
-    // And with the pin written later in the "new password" session.
+    const marked = await trust.markPeerVerified(PEER, CTX);
+
+    assert.ok(marked, 'markPeerVerified must return the updated pin, not null');
+    assert.equal(typeof marked.verifiedAt, 'number', 'verifiedAt must be a timestamp');
+    assert.ok(marked.verifiedAt >= before.current.at,
+        'verifiedAt must not predate the pin it belongs to');
+    assert.equal(marked.current.fingerprint, before.current.fingerprint,
+        'marking must not change WHICH key is current');
+
+    // And it must be persisted, not just returned.
+    const reread = await trust.getPeerPin(PEER, CTX);
+    assert.equal(reread.verifiedAt, marked.verifiedAt);
+});
+
+test('marking a peer verified does NOT suppress the key-change alarm', async () => {
+    // "Verified" is a label the user attaches, not a bypass. If it silenced the
+    // alarm, one click would disarm the whole check for that conversation.
+    await resetPin();
+    await trust.pinOnFirstUse(PEER, THEIRS, CTX);
     await trust.markPeerVerified(PEER, CTX);
-    assert.equal((await trust.evaluatePeerKey(PEER, THEIRS, CTX)).state, 'ok');
+
+    const changed = await trust.evaluatePeerKey(PEER, THEIRS_2, CTX);
+    assert.equal(changed.state, 'changed',
+        'an unrecognised key must still alarm on a verified conversation');
+    assert.ok(changed.pending, 'and the pending key must still be reported for confirmation');
+});
+
+test('markPeerVerified on a peer with no pin returns null rather than inventing one', async () => {
+    await resetPin();
+    assert.equal(await trust.getPeerPin(PEER, CTX), null);
+    assert.equal(await trust.markPeerVerified(PEER, CTX), null,
+        'verifying a peer we have never met must not create a trust record');
+});
+
+test('a password change does not alarm, because it re-wraps the SAME key', async () => {
+    // The real credential flow's invariant: prepareCredentialChange()
+    // re-encrypts the existing PKCS#8 under a new salt and never generates a new
+    // key pair, so the public key - and therefore the fingerprint - is unchanged.
+    // Asserted here as the property the browser test proves end to end.
+    await resetPin();
+    await trust.pinOnFirstUse(PEER, THEIRS, CTX);
+
+    // Same bytes => same state, and specifically NOT 'changed'.
+    const after = await trust.evaluatePeerKey(PEER, THEIRS, CTX);
+    assert.equal(after.state, 'ok');
+    assert.equal(after.pending, null);
+
+    // The fingerprint is a pure function of the key, so a re-wrap cannot move it.
+    const again = await trust.computeSafetyNumber(MINE, THEIRS);
+    const onceMore = await trust.computeSafetyNumber(MINE, THEIRS);
+    assert.equal(again.fingerprint, onceMore.fingerprint);
 });
 
 test('pins are namespaced by origin and by own account id', async () => {
@@ -334,7 +379,73 @@ test('dm.js wires the trust gate into send, decrypt and the thread', async () =>
     }
 });
 
-test('neither new module builds DOM from strings', async () => {
+/**
+ * Strip JS comments properly - including TRAILING ones, which the previous
+ * version missed entirely.
+ *
+ * That version filtered lines starting with `*`, `//` or `/*`, which handles
+ * whole-line comments and nothing else. `text.textContent = x; // not innerHTML`
+ * would have matched and failed the build, and a block comment's closing lines
+ * would have been treated as code. Both directions of that are bad: a false
+ * failure, and a real violation hidden inside a comment-looking line.
+ *
+ * Not a full parser - string literals are not tracked - but it handles the three
+ * comment forms correctly, which is what this check needs.
+ */
+function stripComments(src) {
+    let out = '';
+    let i = 0;
+
+    while (i < src.length) {
+        const two = src.slice(i, i + 2);
+
+        if (two === '//') {
+            while (i < src.length && src[i] !== '\n') i++;
+            continue;
+        }
+
+        if (two === '/*') {
+            i += 2;
+            while (i < src.length && src.slice(i, i + 2) !== '*/') i++;
+            i += 2;
+            continue;
+        }
+
+        out += src[i];
+        i++;
+    }
+
+    return out;
+}
+
+/**
+ * A `//` that sits INSIDE a string or a regex would be eaten as a comment by the
+ * stripper above, which is fine for the answer but a trap for the check: a
+ * violation later on that same line would vanish with it.
+ *
+ * Neither module does this today. Asserting it means that if a future edit adds
+ * a URL or a regex, this test fails loudly and says why, instead of quietly
+ * becoming weaker.
+ */
+function assertNoSlashSlashInStrings(rel, src) {
+    const suspects = [];
+
+    src.split('\n').forEach((line, n) => {
+        const at = line.indexOf('//');
+        if (at === -1) return;
+        const before = line.slice(0, at);
+        const odd = (q) => before.split(q).length % 2 === 0;   // unbalanced quote
+        if (odd("'") || odd('"') || odd('`')) {
+            suspects.push(`L${n + 1}: ${line.trim().slice(0, 90)}`);
+        }
+    });
+
+    assert.deepEqual(suspects, [],
+        `${rel} contains a "//" inside a string, which the comment stripper would ` +
+        `swallow - make stripComments() string-aware before adding one:\n  ${suspects.join('\n  ')}`);
+}
+
+test('neither new module builds DOM from a string, by source or by API', async () => {
     const fs = await import('node:fs');
 
     for (const rel of [
@@ -342,19 +453,56 @@ test('neither new module builds DOM from strings', async () => {
         '../public/js/crypto/keys/peer-trust.js',
     ]) {
         const src = fs.readFileSync(new URL(rel, import.meta.url), 'utf8');
+        assertNoSlashSlashInStrings(rel, src);
 
-        // Strip comments first: both files TALK ABOUT innerHTML, and a naive
-        // grep matches its own documentation.
-        const code = src
-            .split('\n')
-            .filter((line) => !/^\s*(\*|\/\/|\/\*)/.test(line))
-            .join('\n');
+        const code = stripComments(src);
 
-        for (const api of ['innerHTML', 'outerHTML', 'insertAdjacentHTML', 'document.write']) {
+        // Direct HTML sinks.
+        for (const api of [
+            'innerHTML',
+            'outerHTML',
+            'insertAdjacentHTML',
+            'document.write',
+            'createContextualFragment',
+        ]) {
             assert.ok(
                 !new RegExp(`\\b${api}\\b`).test(code),
-                `${rel} must not use ${api}`
+                `${rel} must not use ${api} (comments are stripped, so this is a real use)`
             );
+        }
+
+        // An event handler built as an attribute rather than parsed from markup:
+        // setAttribute('onerror', ...) / element.onclick = ... would execute just
+        // as surely as innerHTML, and no amount of escaping inside markup stops
+        // them.
+        //
+        // Only checked for modules that actually touch `document`, because a bare
+        // `.onerror =` is indistinguishable from the IndexedDB request callback
+        // of the same name - peer-trust has nine `tx.onerror` / `request.onerror`
+        // lines and none of them is a DOM handler. Asserting the DOM rule there
+        // would be a false alarm that teaches people to ignore the rule.
+        //
+        // There is deliberately NO `.onxxx =` regex here. It cannot tell
+        // `el.onclick =` from `request.onerror =`, so it is either a false alarm
+        // or, once loosened enough to be useful, a rule that matches almost
+        // anything. The real check for handler properties is the DOM-level one in
+        // tests/peer-trust-browser.test.mjs, which CAN tell them apart.
+        const touchesDom = /\bdocument\b/.test(code);
+
+        if (touchesDom) {
+            assert.ok(!/\.setAttribute\s*\(\s*['"`]on/i.test(code),
+                `${rel} must not setAttribute('on*', ...)`);
+            // Parsing is only dangerous when the result reaches the document.
+            assert.ok(!/\bDOMParser\b/.test(code) || !/\bappendChild\b|\breplaceChildren\b|\binnerHTML\b/.test(code),
+                `${rel} must not build DOM nodes from a parsed string`);
+
+            // And the positive side: a module that renders must be USING the safe
+            // path, or this passes on a module that renders nothing at all.
+            assert.ok(/\btextContent\b|\bcreateTextNode\b/.test(code),
+                `${rel} renders, so it must render through textContent/createTextNode`);
+        } else {
+            assert.ok(!/\bdocument\b/.test(code),
+                `${rel} touches no DOM and must not reach for one`);
         }
     }
 });

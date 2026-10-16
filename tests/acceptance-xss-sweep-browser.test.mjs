@@ -342,8 +342,11 @@ test('K DM key-trust banner + safety number: a hostile username stays inert text
     // Asserted against the DOM rather than against innerHTML: escaped text
     // inside a text node still CONTAINS the characters "<img" and "onerror=",
     // so a string test would either fail wrongly or pass meaninglessly.
-    const { pwned, elements, handlers, bannerText, numberText } = await s.page.evaluate(async (peerId) => {
+    const result = await s.page.evaluate(async (peerId) => {
         const mod = await import('/js/chat/dm-key-trust.js');
+        const trust = await import('/js/crypto/keys/peer-trust.js');
+        const { getServerEndpoint } = await import('/js/core/server.js');
+        const { getCurrentUser } = await import('/js/core/auth.js');
 
         const HOSTILE = '<img src=x onerror="window.__pwned=1">';
 
@@ -354,40 +357,104 @@ test('K DM key-trust banner + safety number: a hostile username stays inert text
               <div id="${mod.KEY_TRUST_IDS.verifyNumber}"></div>
             </section>`);
 
-        // Force the alarm so the banner actually renders, then hand it the
-        // hostile string exactly as the thread does.
+        // DRIVE THE REAL STATE. An earlier version of this case claimed to
+        // "force the alarm" and did nothing of the sort: renderKeyTrustBanner()
+        // renders only when trustState() === 'changed' and otherwise REMOVES the
+        // banner. With nothing forcing that state the banner was removed,
+        // bannerText came back '', and every "no elements / no handlers" check
+        // passed VACUOUSLY - which is why the case passed on Linux while proving
+        // nothing.
+        //
+        // So: pin a key that is NOT the peer's real current key, using the real
+        // pin API, then let resolveTrust() discover the mismatch for itself.
+        const ctx = {
+            origin: String(getServerEndpoint()),
+            ownUserId: Number(getCurrentUser()?.id),
+        };
+
+        await trust.clearPeerPin(peerId, ctx);
+
+        // A deterministic 32-byte key that cannot be the peer's real one.
+        const decoy = btoa(String.fromCharCode(...new Uint8Array(32).fill(0x5a)));
+        await trust.pinOnFirstUse(peerId, decoy, ctx);
+
+        const state = await mod.resolveTrust(peerId);
+        const trustState = mod.trustState(peerId);
+
         mod.renderKeyTrustBanner(peerId, HOSTILE);
 
         const banner = document.getElementById(mod.KEY_TRUST_IDS.banner);
         const scope = document.querySelector('.dm-key-trust-host');
+
         const elements = scope.querySelectorAll('img, script, iframe, object, embed, svg').length;
         const handlers = [...scope.querySelectorAll('*')]
             .filter((el) => [...el.attributes].some((a) => /^on/i.test(a.name))).length;
 
-        const who = document.getElementById(mod.KEY_TRUST_IDS.verifyWho);
-        if (who) who.textContent = HOSTILE;
-        const number = document.getElementById(mod.KEY_TRUST_IDS.verifyNumber);
+        // The safety-number view, with the same hostile username in its header.
+        const verify = await mod.renderVerifyView(peerId, HOSTILE);
+        const verifyScope = document.getElementById(mod.KEY_TRUST_IDS.verify);
+        const verifyElements = verifyScope
+            ? verifyScope.querySelectorAll('img, script, iframe, object, embed, svg').length
+            : -1;
+        const verifyHandlers = verifyScope
+            ? [...verifyScope.querySelectorAll('*')]
+                .filter((el) => [...el.attributes].some((a) => /^on/i.test(a.name))).length
+            : -1;
+        const whoEl = document.getElementById(mod.KEY_TRUST_IDS.verifyWho);
+        const numberEl = document.getElementById(mod.KEY_TRUST_IDS.verifyNumber);
 
         return {
             pwned: window.__pwned === true,
+            ctxOk: !!ctx.origin && ctx.ownUserId > 0,
+            resolvedState: state?.state ?? null,
+            trustState,
+            // bannerPresent is asserted BEFORE any inert-text check, so a banner
+            // that failed to render can never make those checks pass vacuously.
+            bannerPresent: !!banner && banner.textContent.trim().length > 0,
             elements,
             handlers,
             bannerText: banner ? banner.textContent : '',
-            numberText: number ? number.textContent : '',
+            verifyOk: !!verify && typeof verify.number === 'string',
+            verifyElements,
+            verifyHandlers,
+            whoText: whoEl ? whoEl.textContent : '',
+            numberText: numberEl ? numberEl.textContent : '',
         };
     }, s.sess.bob.id);
 
-    assert.equal(pwned, false, 'the key-trust banner must not execute the payload');
-    assert.equal(elements, 0, `the hostile username became an element: ${elements}`);
-    assert.equal(handlers, 0, `an event handler attribute leaked into the DOM: ${handlers}`);
+    assert.equal(result.pwned, false, 'the key-trust banner must not execute the payload');
+    assert.equal(result.ctxOk, true, 'the pin store needs a real origin and user id');
+
+    // ---- the guard that stops this case passing vacuously again ----
+    assert.equal(result.resolvedState, 'changed',
+        `the alarm must be REAL before the banner is tested; got "${result.resolvedState}"`);
+    assert.equal(result.trustState, 'changed');
+    assert.equal(result.bannerPresent, true,
+        'the banner must exist and have text, otherwise every check below is vacuous');
+
+    // ---- now the inert-text assertions ----
+    assert.equal(result.elements, 0,
+        `the hostile username became an element in the banner: ${result.elements}`);
+    assert.equal(result.handlers, 0,
+        `an event handler attribute leaked into the banner DOM: ${result.handlers}`);
     assert.ok(
-        bannerText.includes('<img src=x onerror="window.__pwned=1">'),
-        `the hostile username must still be shown, as inert text: ${bannerText}`
+        result.bannerText.includes('<img src=x onerror="window.__pwned=1">'),
+        `the hostile username must still be shown, as inert text: ${result.bannerText}`
     );
+
+    // ---- the safety-number view, same hostile username ----
+    assert.equal(result.verifyOk, true, 'the safety-number view must render');
+    assert.equal(result.verifyElements, 0,
+        `the hostile username became an element in the verify view: ${result.verifyElements}`);
+    assert.equal(result.verifyHandlers, 0,
+        `an event handler attribute leaked into the verify view DOM: ${result.verifyHandlers}`);
+    assert.equal(result.whoText, '<img src=x onerror="window.__pwned=1">',
+        `the verify header must show the username as inert text: ${result.whoText}`);
+
     // The safety number is digits we generate, never peer input: assert it is
-    // only digits and spaces so a future change cannot smuggle markup into it.
-    assert.match(numberText, /^(\d{5} ){11}\d{5}$|^$/,
-        `the safety number must be 12 digit groups and nothing else: ${numberText}`);
+    // only digit groups so a future change cannot smuggle markup into it.
+    assert.match(result.numberText, /^(\d{5} ){11}\d{5}$/,
+        `the safety number must be 12 digit groups and nothing else: ${result.numberText}`);
 });
 
 test('H reaction emoji: the official routes either reject the payload or it renders as inert text', async (t) => {

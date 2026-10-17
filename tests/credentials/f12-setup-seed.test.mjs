@@ -9,6 +9,7 @@ import path from 'node:path';
 import { spawn, execFileSync } from 'node:child_process';
 import { META, Database, ROOT, assertFixtureUntouched, cleanupTmp, copyLegacyFixture, tmpDir } from './_fixture.mjs';
 import { bootServer, cred } from './_server.mjs';
+import { makeServerDirs, serverEnv } from '../_acceptance-harness.mjs';
 
 after(() => { cleanupTmp(); assertFixtureUntouched(); });
 
@@ -61,7 +62,21 @@ test('setup wizard (real prompts, copied tree): creates a scheme-2 admin; refuse
     fs.symlinkSync(path.join(ROOT, 'node_modules'), path.join(tree, 'node_modules'));
     const dbPath = path.join(dir, 'wizard.db');
 
-    const env = { ...process.env, DB_PATH: dbPath, USER_DATA_ROOT: path.join(dir, 'ud'), JWT_SECRET: 'x'.repeat(48), NODE_ENV: 'test', EMAIL_ENABLED: 'false', BCRYPT_ROUNDS: '4', ALLOWED_SUBNET: '127.0.0.0/8', HOST: '127.0.0.1', PORT: String(39000 + Math.floor(Math.random() * 900)) };
+    // All eight dir vars point inside `dir`. Without them this spawn created empty
+    // upload dirs in its own tree, and a sibling spawn in the same file created
+    // them in the REPO ROOT.
+    const dirs = makeServerDirs(dir);
+    const env = serverEnv({
+        dirs,
+        port: 39000 + Math.floor(Math.random() * 900),
+        nodeEnv: 'test',
+        jwtSecret: 'x'.repeat(48),
+        extraEnv: {
+            DB_PATH: dbPath,
+            BCRYPT_ROUNDS: '4',
+            ALLOWED_SUBNET: '127.0.0.0/8',
+        },
+    });
     delete env.SETUP_COMPLETED;
     delete env.DEFAULT_ADMIN_USER; delete env.DEFAULT_ADMIN_PASS;
 

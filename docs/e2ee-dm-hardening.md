@@ -158,7 +158,33 @@ dmMessageAad({ version, fromUserId, toUserId, senderKeyFp, direction, iv, replyT
     )
 ```
 
-Worst case (10-digit ids, 32-byte fingerprint, 12-byte nonce): **109 bytes.**
+### Size
+
+Every field costs **5 bytes of framing** (1 type byte + 4-byte big-endian length)
+plus its own data. Eight fields, so 40 bytes of framing:
+
+| field | type | data bytes | with 10-digit ids |
+|---|---|---|---|
+| `dm-msg-v2` | 0 | 9 | 14 |
+| `version` | 0 | 1 | 6 |
+| `fromUserId` | 0 | 10 | 15 |
+| `toUserId` | 0 | 10 | 15 |
+| `senderKeyFp` | 1 | 32 | 37 |
+| `direction` | 0 | 3 | 8 |
+| `iv` | 1 | 12 | 17 |
+| `replyToId` | 0 | 10 | 15 |
+| | | **data 87** | **127** |
+
+**Worst case (10-digit ids, 32-byte fingerprint, 12-byte nonce): 127 bytes.**
+With `replyToId = 0` (one digit): **118 bytes**. The worked example in
+`tests/dm-v2.test.mjs` — ids 12 and 34, `replyToId = 0` — is **102 bytes**.
+
+> This section previously said 109 bytes. That figure was wrong: it did not
+> account for `replyToId` (15 bytes) and under-counted elsewhere. The *layout*
+> above was always the normative definition and is unchanged; only the derived
+> size figure was corrected. `tests/dm-v2.test.mjs` asserts 102 for the worked
+> example so the number is pinned rather than recomputed by hand, and asserts the
+> AAD field by field so a reordering cannot hide inside a length check.
 
 Per-field rationale:
 

@@ -25,6 +25,8 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const require = createRequire(import.meta.url);
 const Database = require(path.join(ROOT, 'node_modules', 'better-sqlite3'));
 
+import { makeServerDirs, serverEnv } from '../_acceptance-harness.mjs';
+
 const STALE_DEVICE = 'a'.repeat(32);
 const FRESH_DEVICE = 'b'.repeat(32);
 const ORPHAN_DEVICE = 'c'.repeat(32);
@@ -60,16 +62,17 @@ function bootServer(env) {
 test('server.js starts the device pruner: stale devices and orphan receipts are removed at boot', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wire-pruner-'));
     const dbPath = path.join(dir, 'data.db');
-    const env = {
-        DB_PATH: dbPath,
-        USER_DATA_ROOT: path.join(dir, 'user-data'),
-        SETUP_COMPLETED: 'true',
-        JWT_SECRET: 'x'.repeat(48),
-        HOST: '127.0.0.1',
-        PORT: String(39000 + Math.floor(Math.random() * 900)),
-        NODE_ENV: 'test',
-        EMAIL_ENABLED: 'false',
-    };
+    // All eight dir vars point inside `dir`. Without them this spawn created
+    // empty avatars/, banners/, chat-uploads/, dm-uploads/, group-uploads/ in
+    // the REPO ROOT on every full run.
+    const dirs = makeServerDirs(dir);
+    const env = serverEnv({
+        dirs,
+        port: 39000 + Math.floor(Math.random() * 900),
+        nodeEnv: 'test',
+        jwtSecret: 'x'.repeat(48),
+        extraEnv: { DB_PATH: dbPath },
+    });
 
     try {
         // boot 1: schema only

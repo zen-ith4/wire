@@ -75,29 +75,106 @@ export async function pickFreePort({ random = Math.random } = {}) {
     throw new Error('could not find a bindable, non-refused port for the test server');
 }
 
-export async function startRealServer({ csp = 'false', extraEnv = {} } = {}) {
-    const work = fs.mkdtempSync(path.join(os.tmpdir(), 'wire-accept-'));
-    // The app's DEFAULT upload dirs live in the repo root (dm-uploads/, group-uploads/, ...). A scan of
-    // `work` would silently miss them, so every one of them is redirected into `work`.
+/**
+ * Every environment variable that must point INSIDE the work dir.
+ *
+ * The app's DEFAULT upload dirs live in the repo root (avatars/, banners/,
+ * chat-uploads/, dm-uploads/, group-uploads/) and its default user data root is
+ * ./user-data. A server booted without these redirected creates empty
+ * directories in the repo root, which then breaks
+ * tests/acceptance-no-plaintext.test.mjs - it scans the work dir to prove the
+ * server persisted nothing readable, and a run that leaves dirs in the repo root
+ * is exactly the condition that control exists to catch.
+ *
+ * Six files used to spawn server.js and each remembered a different subset of
+ * these. The list is exported so tests/server-spawn-isolation.test.mjs can
+ * assert nothing spawns without all of them.
+ */
+export const SERVER_DIR_VARS = Object.freeze([
+    'DB_PATH',
+    'USER_DATA_ROOT',
+    'TMPDIR',
+    'CHAT_UPLOAD_DIR',
+    'DM_UPLOAD_DIR',
+    'GROUP_UPLOAD_DIR',
+    'AVATAR_DIR',
+    'BANNER_DIR',
+]);
+
+/**
+ * Create and return the per-run directory map. `work` is normally a fresh
+ * mkdtemp dir, but any directory works - a test that already has one passes it.
+ */
+export function makeServerDirs(work) {
     const dirs = {
-        db: path.join(work, 'db'), ud: path.join(work, 'userdata'), tmp: path.join(work, 'tmp'),
-        chat: path.join(work, 'chat-uploads'), dm: path.join(work, 'dm-uploads'), group: path.join(work, 'group-uploads'),
-        avatars: path.join(work, 'avatars'), banners: path.join(work, 'banners'),
+        root: work,
+        db: path.join(work, 'db'),
+        ud: path.join(work, 'user-data'),
+        tmp: path.join(work, 'tmp'),
+        chat: path.join(work, 'chat-uploads'),
+        dm: path.join(work, 'dm-uploads'),
+        group: path.join(work, 'group-uploads'),
+        avatars: path.join(work, 'avatars'),
+        banners: path.join(work, 'banners'),
     };
     for (const d of Object.values(dirs)) fs.mkdirSync(d, { recursive: true });
-    const rootBefore = new Set(fs.readdirSync(ROOT));
-    const port = await pickFreePort();
-    const env = {
-        ...process.env, // includes tests/test.env; overridden below where it matters
-        NODE_ENV: 'development', PORT: String(port), HOST: '127.0.0.1',
-        SETUP_COMPLETED: 'true', GROUPS_ENABLED: 'true', EMAIL_ENABLED: 'false',
-        CSP_ENFORCE: csp, ALLOWED_SUBNET: '0.0.0.0/0',
-        DB_PATH: path.join(dirs.db, 'wire.db'), USER_DATA_ROOT: dirs.ud, TMPDIR: dirs.tmp,
-        CHAT_UPLOAD_DIR: dirs.chat, DM_UPLOAD_DIR: dirs.dm, GROUP_UPLOAD_DIR: dirs.group, AVATAR_DIR: dirs.avatars, BANNER_DIR: dirs.banners,
-        JWT_SECRET: crypto.randomBytes(32).toString('hex'),
-        EMAIL_VERIFICATION_SECRET: crypto.randomBytes(32).toString('hex'),
+    return dirs;
+}
+
+/**
+ * Build a server environment that cannot write into the repo root.
+ *
+ * The eight SERVER_DIR_VARS are computed HERE from `dirs`, not accepted from the
+ * caller, so a spawn site cannot forget one. `extraEnv` is spread last and can
+ * still override them - which is deliberate, and is what tests/server-spawn-
+ * isolation.test.mjs exists to police.
+ */
+export function serverEnv({
+    dirs,
+    port,
+    csp = 'false',
+    nodeEnv = 'development',
+    host = '127.0.0.1',
+    jwtSecret,
+    emailSecret,
+    extraEnv = {},
+    base = process.env,
+} = {}) {
+    if (!dirs) throw new Error('serverEnv: dirs is required');
+    if (port === undefined || port === null) throw new Error('serverEnv: port is required');
+
+    return {
+        ...base, // includes tests/test.env; overridden below where it matters
+        NODE_ENV: nodeEnv,
+        PORT: String(port),
+        HOST: host,
+        SETUP_COMPLETED: 'true',
+        GROUPS_ENABLED: 'true',
+        EMAIL_ENABLED: 'false',
+        CSP_ENFORCE: csp,
+        ALLOWED_SUBNET: '0.0.0.0/0',
+        // --- the eight, always, from `dirs`
+        DB_PATH: path.join(dirs.db, 'wire.db'),
+        USER_DATA_ROOT: dirs.ud,
+        TMPDIR: dirs.tmp,
+        CHAT_UPLOAD_DIR: dirs.chat,
+        DM_UPLOAD_DIR: dirs.dm,
+        GROUP_UPLOAD_DIR: dirs.group,
+        AVATAR_DIR: dirs.avatars,
+        BANNER_DIR: dirs.banners,
+        // ---
+        JWT_SECRET: jwtSecret ?? crypto.randomBytes(32).toString('hex'),
+        EMAIL_VERIFICATION_SECRET: emailSecret ?? crypto.randomBytes(32).toString('hex'),
         ...extraEnv,
     };
+}
+
+export async function startRealServer({ csp = 'false', extraEnv = {}, work = null } = {}) {
+    const runWork = work ?? fs.mkdtempSync(path.join(os.tmpdir(), 'wire-accept-'));
+    const dirs = makeServerDirs(runWork);
+    const rootBefore = new Set(fs.readdirSync(ROOT));
+    const port = await pickFreePort();
+    const env = serverEnv({ dirs, port, csp, extraEnv });
     const child = spawn(process.execPath, ['server.js'], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
     let log = '';
     child.stdout.on('data', (d) => { log += d; });
@@ -106,7 +183,7 @@ export async function startRealServer({ csp = 'false', extraEnv = {} } = {}) {
     const up = await waitFor(async () => { try { return (await fetch(`${origin}/api/version`)).ok; } catch { return false; } }, 30000, 300);
     if (!up) { child.kill(); throw new Error(`server did not start:\n${log.slice(-800)}`); }
     return {
-        origin, work, dirs, dbPath: env.DB_PATH, child,
+        origin, work: runWork, dirs, dbPath: env.DB_PATH, child,
         logs: () => log,
         /** New entries in the repo root since start = an upload dir the harness did not redirect. */
         strayRootEntries: () => fs.readdirSync(ROOT).filter((e) => !rootBefore.has(e)),

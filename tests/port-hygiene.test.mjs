@@ -31,6 +31,36 @@ const BINDABLE = BINDABLE_BLOCKED_PORTS;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * Why a listed port could not be proved by behaviour, or null if it could.
+ *
+ * EACCES is the same class of fact as EADDRINUSE: the OS will not let this
+ * process bind the port, so there is nothing to observe. Port 6697 sits in a
+ * Windows reserved range (Hyper-V / WSL claim blocks of ports) and failed here
+ * with `listen EACCES: permission denied 127.0.0.1:6697`, which turned a blocked-
+ * list check into an unrelated failure.
+ *
+ * Returned rather than thrown so the caller can PRINT why a port was skipped -
+ * a silent skip is how a genuinely unreachable check hides.
+ *
+ * Any other error is a real failure and is thrown.
+ */
+async function unbindableReason(port, host = '127.0.0.1') {
+  const srv = net.createServer((s) => s.end());
+  try {
+    await bindWithRetry(srv, port, host);
+    return null;
+  } catch (e) {
+    if (e?.code === 'EACCES') {
+      return `EACCES: the OS refuses to bind 127.0.0.1:${port} (reserved port range?) - ` +
+        `cannot be proved by behaviour here`;
+    }
+    throw e;
+  } finally {
+    await new Promise((r) => srv.close(r)).catch(() => {});
+  }
+}
+
 // Binding and immediately releasing these ports in a tight loop can hand back
 // EADDRINUSE while the previous socket is still winding down (notably on
 // Windows). That is a fact about the machine, not about the blocked list, so
@@ -206,8 +236,18 @@ test('every bindable entry is refused by THIS Node\'s bundled undici, with a bad
 
   const wrongCause = [];
   const reached = [];
+  const skipped = [];
 
   for (const port of BINDABLE) {
+    // A port the OS will not let us bind cannot be proved either way. Skipped
+    // WITH A PRINTED REASON rather than silently; any other bind error still
+    // fails the test.
+    const reason = await unbindableReason(port);
+    if (reason) {
+      skipped.push(`${port}: ${reason}`);
+      continue;
+    }
+
     const srv = net.createServer((c) => c.end());
     let listening = false;
     try {
@@ -215,8 +255,12 @@ test('every bindable entry is refused by THIS Node\'s bundled undici, with a bad
         srv.once('error', reject);
         srv.listen(port, '127.0.0.1', () => { listening = true; resolve(); });
       });
-    } catch {
-      continue; // some ports are busy on this machine; not what we are testing
+    } catch (e) {
+      // EADDRINUSE only: a port held by another process this instant. EACCES is
+      // handled above; anything else is a real failure and is not swallowed.
+      if (e?.code !== 'EADDRINUSE') throw e;
+      skipped.push(`${port}: EADDRINUSE (held by another process at this instant)`);
+      continue;
     }
 
     try {
@@ -235,6 +279,13 @@ test('every bindable entry is refused by THIS Node\'s bundled undici, with a bad
     }
   }
 
+  if (skipped.length) {
+    console.log(`    [port-hygiene] skipped ${skipped.length} unbindable port(s):`);
+    for (const line of skipped) console.log(`      ${line}`);
+  }
+
+  assert.ok(BINDABLE.length - skipped.length >= 10,
+    `only ${BINDABLE.length - skipped.length} of ${BINDABLE.length} ports were actually proved`);
   assert.deepEqual(reached, [],
     `listed as fetch-blocked, but fetch() actually connected: ${reached.join(', ')}`);
   assert.deepEqual(wrongCause, [],
@@ -267,10 +318,32 @@ test('every bindable entry in FETCH_BLOCKED_PORTS is genuinely refused by fetch(
   assert.ok(BINDABLE.length >= 10, `expected a non-trivial list, got ${BINDABLE.length}`);
 
   const notBlocked = [];
+  const skipped = [];
+
   for (const port of BINDABLE) {
+    // A port the OS will not let us bind cannot be proved either way. It is
+    // skipped WITH A PRINTED REASON - never silently, because a silent skip is
+    // how a check quietly stops checking anything.
+    const reason = await unbindableReason(port);
+    if (reason) {
+      skipped.push(`${port}: ${reason}`);
+      continue;
+    }
+
     const verdict = await fetchAgainst(port);
     if (!verdict.startsWith('BLOCKED')) notBlocked.push(`${port}->${verdict}`);
   }
+
+  // Printed on success too, so a run that skipped a port says so instead of
+  // looking like it covered everything.
+  if (skipped.length) {
+    console.log(`    [port-hygiene] skipped ${skipped.length} unbindable port(s):`);
+    for (const line of skipped) console.log(`      ${line}`);
+  }
+
+  // Skipping must not become a way out: if nothing was actually proved, say so.
+  const proved = BINDABLE.length - skipped.length;
+  assert.ok(proved >= 10, `only ${proved} of ${BINDABLE.length} ports were actually proved`);
 
   assert.deepEqual(
     notBlocked,

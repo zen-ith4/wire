@@ -7,6 +7,7 @@ import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { ROOT } from './_fixture.mjs';
+import { makeServerDirs, serverEnv } from '../_acceptance-harness.mjs';
 
 // Same secret in this process and in the spawned server, so the fake-salt HMAC matches.
 const JWT_SECRET = 'x'.repeat(48);
@@ -17,11 +18,24 @@ export const cred = require(path.join(ROOT, 'utils', 'credentials.js'));
 export async function bootServer(dbPath, dir, extraEnv = {}) {
     for (let attempt = 0; attempt < 5; attempt++) {
         const port = 39000 + Math.floor(Math.random() * 900);
-        const env = {
-            ...process.env, DB_PATH: dbPath, USER_DATA_ROOT: path.join(dir, 'user-data'), SETUP_COMPLETED: 'true',
-            JWT_SECRET, HOST: '127.0.0.1', PORT: String(port), NODE_ENV: 'test',
-            EMAIL_ENABLED: 'false', BCRYPT_ROUNDS: '4', IDENTITY_ROTATE_MAX_PER_HOUR: '100', ALLOWED_SUBNET: '127.0.0.0/8', ...extraEnv,
-        };
+        // All eight dir vars point inside `dir`. Without them the server creates
+        // empty avatars/, banners/, chat-uploads/, dm-uploads/, group-uploads/ in
+        // the REPO ROOT, which is what broke acceptance-no-plaintext's control.
+        const dirs = makeServerDirs(dir);
+        const env = serverEnv({
+            dirs,
+            port,
+            nodeEnv: 'test',
+            jwtSecret: JWT_SECRET,
+            extraEnv: {
+                // `dir` is the caller's fixture dir and the db path is theirs.
+                DB_PATH: dbPath,
+                BCRYPT_ROUNDS: '4',
+                IDENTITY_ROTATE_MAX_PER_HOUR: '100',
+                ALLOWED_SUBNET: '127.0.0.0/8',
+                ...extraEnv,
+            },
+        });
         const child = spawn(process.execPath, ['server.js'], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
         let out = '';
         child.stdout.on('data', (d) => { out += d; });

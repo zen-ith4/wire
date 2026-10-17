@@ -33,6 +33,7 @@ import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { listenAvoidingBlockedPorts } from './_port.mjs';
+import { makeServerDirs, serverEnv } from './_acceptance-harness.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(import.meta.url);
@@ -77,23 +78,18 @@ async function freePort() {
 async function startRealServer(cspEnforce) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wire-dm-csp-'));
   const port = await freePort();
-  const env = {
-    PATH: process.env.PATH,
-    PORT: String(port),
-    HOST: '127.0.0.1',
-    NODE_ENV: 'development',
-    SETUP_COMPLETED: 'true',
-    ALLOWED_SUBNET: '0.0.0.0/0',
-    DB_PATH: path.join(dir, 'wire.db'),
-    USER_DATA_ROOT: path.join(dir, 'user-data'),
-    CHAT_UPLOAD_DIR: path.join(dir, 'chat-uploads'),
-    DM_UPLOAD_DIR: path.join(dir, 'dm-uploads'),
-    AVATAR_DIR: path.join(dir, 'avatars'),
-    EMAIL_ENABLED: 'false',
-    GROUPS_ENABLED: 'false',
-    CSP_ENFORCE: cspEnforce ? 'true' : 'false',
-    JWT_SECRET: crypto.randomBytes(32).toString('hex'),
-  };
+  // This file deliberately boots the server with a MINIMAL env (PATH only), so
+  // `base` stays that way; only the eight dir vars come from the shared helper.
+  // It previously set six of the eight, so GROUP_UPLOAD_DIR and BANNER_DIR fell
+  // back to the repo root and were created there on every full run.
+  const dirs = makeServerDirs(dir);
+  const env = serverEnv({
+    dirs,
+    port,
+    base: { PATH: process.env.PATH },
+    csp: cspEnforce ? 'true' : 'false',
+    extraEnv: { GROUPS_ENABLED: 'false' },
+  });
   const child = spawn(process.execPath, ['server.js'], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
   let log = '';
   child.stdout.on('data', (d) => { log += d; });

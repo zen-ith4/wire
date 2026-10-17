@@ -33,6 +33,7 @@ const {
   emitDmMessagesSeen,
 } = require('../services/socket.service');
 const { clampLimit, withDmFlags, withReactions } = require('../utils/helpers');
+const { getDb } = require('../config/database');
 
 // Accepts whatever the client sent for reply_to_id and normalizes it
 // to either a positive integer or null. For DMs we additionally
@@ -68,6 +69,66 @@ function normalizeDmReplyToId(value, userId, peerId) {
     (target.sender_id === peerId && target.recipient_id === userId);
 
   return belongsToConversation ? id : null;
+}
+
+// STEP 1B: server rule with teeth (docs/e2ee-dm-hardening.md 5.5).
+//
+// After trim(), try JSON.parse. If encryption.version === 2 AND the recipient's
+// dm_e2ee_min_version < 2, refuse to store (4xx, clear message). Unparseable
+// content, v1, or anything else: behaviour exactly as today. The server never
+// rewrites version/senderId/recipientId/reply_to_id/senderFp/msgId; it adds no
+// new field to the stored content.
+//
+// Returns an error string, or null. Does NOT apply to the attachment route.
+function dmV2RuleViolation(content, recipientId) {
+  let parsed;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== 'object') return null;
+  const enc = parsed.encryption;
+  if (!enc || typeof enc !== 'object' || enc.version !== 2) return null;
+
+  const row = getDb().prepare('SELECT dm_e2ee_min_version FROM users WHERE id = ?').get(recipientId);
+  const min = Number(row && row.dm_e2ee_min_version);
+  if (!Number.isInteger(min) || min < 2) {
+    return 'Recipient is not enabled for DM v2; the message was not sent.';
+  }
+  return null;
+}
+
+// STEP 1B: additive enrichment. The reply_to object carries the replied-to
+// message's own content etc., but not its reply_to_id. v2 binds replyToId into
+// the AAD (docs/e2ee-dm-hardening.md 3.3), so the receiver needs it to open a
+// v2 message that was itself a reply. services/ is frozen, so this is one extra
+// query here, per batch.
+function attachDmReplyToIds(rows) {
+  if (!Array.isArray(rows) || !rows.length) return rows;
+  const ids = new Set();
+  for (const r of rows) {
+    if (r && r.reply_to && Number.isInteger(Number(r.reply_to.id)) && Number(r.reply_to.id) > 0) {
+      ids.add(Number(r.reply_to.id));
+    }
+  }
+  if (!ids.size) return rows;
+  const placeholders = [...ids].map(() => '?').join(',');
+  let found = [];
+  try {
+    found = getDb().prepare(`SELECT id, reply_to_id FROM direct_messages WHERE id IN (${placeholders})`).all(...ids);
+  } catch {
+    return rows;
+  }
+  const map = new Map(found.map((r) => [Number(r.id), (r.reply_to_id == null ? null : Number(r.reply_to_id))]));
+  for (const r of rows) {
+    if (r && r.reply_to && r.reply_to.id != null) {
+      r.reply_to.reply_to_id = map.has(Number(r.reply_to.id))
+        ? map.get(Number(r.reply_to.id))
+        : null;
+    }
+  }
+  return rows;
 }
 
 // Same reasoning as chat.controller.js's isVoiceMessageFlag(): only
@@ -238,7 +299,38 @@ function getConversationsHandler(req, res) {
   // 3 fixed queries total — see the comment on it in dm.service.js.
   const conversations = getConversationsSummary(req.user.id);
 
+  // STEP 1B: additive per-conversation last-message id + reply_to_id, so a v2
+  // envelope in the conversation-list preview can be opened (the AAD binds
+  // replyToId) and replay accounting has a row id. services/ is frozen, so
+  // this is one extra query here. Verified against the summary's content so a
+  // query/service disagreement degrades to "no id" rather than a wrong one.
+  const lastRowByPeer = new Map();
+  try {
+    const rows = getDb().prepare(`
+      SELECT dm.id AS id, dm.reply_to_id AS reply_to_id, dm.content AS content,
+             CASE WHEN dm.sender_id = ? THEN dm.recipient_id ELSE dm.sender_id END AS peer_id
+      FROM direct_messages dm
+      JOIN (
+        SELECT MAX(id) AS last_id
+        FROM direct_messages
+        WHERE sender_id = ? OR recipient_id = ?
+        GROUP BY CASE WHEN sender_id = ? THEN recipient_id ELSE sender_id END
+      ) t ON t.last_id = dm.id
+    `).all(req.user.id, req.user.id, req.user.id, req.user.id);
+    for (const r of rows) {
+      lastRowByPeer.set(Number(r.peer_id), {
+        id: Number(r.id),
+        reply_to_id: r.reply_to_id == null ? null : Number(r.reply_to_id),
+        content: r.content,
+      });
+    }
+  } catch {
+    // leave empty; the preview just loses its row id and reply_to_id
+  }
+
   const result = conversations.map(({ peer_id, username, lastMessage, unreadCount }) => {
+    const row = lastRowByPeer.get(Number(peer_id));
+    const sameRow = !lastMessage || !row || row.content === lastMessage.content;
     return {
       peer_id,
       username: username || 'Deleted user',
@@ -247,6 +339,10 @@ function getConversationsHandler(req, res) {
         : '',
       last_timestamp: lastMessage ? lastMessage.timestamp : null,
       unread_count: unreadCount,
+      // STEP 1B additive fields. Null when the query disagreed with the
+      // summary, so the client never uses a wrong id for the AAD.
+      last_message_id: sameRow && row ? row.id : null,
+      last_message_reply_to_id: sameRow && row ? row.reply_to_id : null,
     };
   }).sort((a, b) => (b.last_timestamp || '').localeCompare(a.last_timestamp || ''));
 
@@ -279,7 +375,7 @@ function getRecentMessagesHandler(req, res) {
   const messages = getRecentDmMessages(req.user.id, peerId, limit);
   emitSeenReceiptIfAny(peerId, req.user.id, markRead(peerId, req.user.id));
   const reactions = getReactionsForMessages('dm', messages.map(m => m.id));
-  res.json(withReactions(withDmFlags(messages), reactions));
+  res.json(withReactions(withDmFlags(attachDmReplyToIds(messages)), reactions));
 }
 
 function getMessagesBeforeHandler(req, res) {
@@ -288,7 +384,7 @@ function getMessagesBeforeHandler(req, res) {
   const limit = clampLimit(req.query.limit);
   const messages = getDmMessagesBefore(req.user.id, peerId, before, limit);
   const reactions = getReactionsForMessages('dm', messages.map(m => m.id));
-  res.json(withReactions(withDmFlags(messages), reactions));
+  res.json(withReactions(withDmFlags(attachDmReplyToIds(messages)), reactions));
 }
 
 function getMessagesSinceHandler(req, res) {
@@ -298,7 +394,7 @@ function getMessagesSinceHandler(req, res) {
   const messages = getDmMessagesSince(req.user.id, peerId, since, limit);
   emitSeenReceiptIfAny(peerId, req.user.id, markRead(peerId, req.user.id));
   const reactions = getReactionsForMessages('dm', messages.map(m => m.id));
-  res.json(withReactions(withDmFlags(messages), reactions));
+  res.json(withReactions(withDmFlags(attachDmReplyToIds(messages)), reactions));
 }
 
 function sendMessage(req, res) {
@@ -322,6 +418,10 @@ function sendMessage(req, res) {
   }
 
   const trimmed = content.trim().slice(0, 2000);
+  const v2Violation = dmV2RuleViolation(trimmed, Number(recipient_id));
+  if (v2Violation) {
+    return res.status(400).json({ error: v2Violation });
+  }
   const replyToId = normalizeDmReplyToId(req.body?.reply_to_id, req.user.id, Number(recipient_id));
   const timestamp = new Date().toISOString();
   const info = insertDmMessage(req.user.id, recipient_id, trimmed, timestamp, replyToId);
@@ -792,6 +892,10 @@ function editMessage(req, res) {
   }
 
   const trimmed = content.trim().slice(0, 2000);
+  const v2Violation = dmV2RuleViolation(trimmed, Number(msg.recipient_id));
+  if (v2Violation) {
+    return res.status(400).json({ error: v2Violation });
+  }
   const editedAt = new Date().toISOString();
 
   updateDmMessageContent(id, trimmed, editedAt);

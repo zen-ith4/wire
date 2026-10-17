@@ -1,5 +1,9 @@
 // public/js/crypto/messages/payload.js
 
+import {
+    validateDmV2Envelope
+} from './dm-v2.js';
+
 const PROTOCOL_VERSION = 1;
 const ALGORITHM = 'AES-GCM';
 
@@ -176,6 +180,12 @@ export function validateEncryptedMessagePayload(
 
     const encryption =
         payload.encryption;
+
+    // STEP 1B: version switch. v1 path below is unchanged; v2 delegates to
+    // validateDmV2Envelope; anything else is rejected outright.
+    if (encryption.version === 2) {
+        return validateDmV2Envelope(payload);
+    }
 
     if (
         encryption.version !==

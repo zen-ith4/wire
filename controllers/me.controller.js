@@ -1010,8 +1010,16 @@ function getUserIdentityPublicKey(req, res) {
         });
     }
 
+    // STEP 1B: the peer's DM E2EE floor. Additive - the existing
+    // {publicKey} shape is unchanged. Missing/NULL/non-integer => 1, so a
+    // row that predates the column behaves exactly as an unupgraded peer.
+    const userRow = db.prepare('SELECT dm_e2ee_min_version FROM users WHERE id = ?').get(userId);
+    const raw = userRow ? userRow.dm_e2ee_min_version : null;
+    const dmE2eeMinVersion = Number.isInteger(raw) && raw >= 1 ? raw : 1;
+
     return res.json({
-        publicKey: identity.public_key
+        publicKey: identity.public_key,
+        dmE2eeMinVersion
     });
 }
 

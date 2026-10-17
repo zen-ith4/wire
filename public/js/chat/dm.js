@@ -85,8 +85,16 @@ import { createComposer } from './composer.js';
 import { setMessageAccent } from './message-accent.js';
 import {
   encryptOutgoingMessage,
-  decryptIncomingMessage
+  decryptIncomingMessage,
+  encryptDmTextV2,
+  decryptDmTextV2
 } from '../crypto/messages/message-crypto.js';
+
+import {
+  readDmV2Pin,
+  takeDmDowngradeNotice,
+  DmDowngradeRefusedError
+} from '../crypto/messages/dm-v2-wire.js';
 import { maybeNotifyDM } from '../notifications/notification-manager.js';
 import { messageSoundManager } from '../notifications/message-sounds.js';
 import {
@@ -100,6 +108,9 @@ import {
 const dmCache = new Map();
 let dmActivePeer = null;
 let dmEntry = null;
+// STEP 1B: reply_to_id of the row being edited, so the re-encrypted envelope
+// keeps the same AAD replyToId as the stored row.
+let dmEditingReplyToId = null;
 let dmComposer = null;
 const dmConvMap = new Map();
 
@@ -390,8 +401,9 @@ async function decryptDmMessage(msg) {
 
     // Legacy/plaintext message
     if (payload) {
+      const encVer = payload.encryption.version;
       if (
-        payload.encryption.version !== 1 ||
+        (encVer !== 1 && encVer !== 2) ||
         payload.encryption.algorithm !== 'AES-GCM'
       ) {
         throw new Error(
@@ -399,10 +411,34 @@ async function decryptDmMessage(msg) {
         );
       }
 
-      decryptedContent = await decryptIncomingMessage(
-        payload,
-        peerId
-      );
+      if (encVer === 2) {
+        decryptedContent = await decryptDmTextV2(
+          payload,
+          peerId,
+          { replyToId: msg.reply_to_id, rowId: msg.id }
+        );
+      } else {
+        decryptedContent = await decryptIncomingMessage(
+          payload,
+          peerId
+        );
+        // STEP 1B: a v1 envelope from a peer pinned at >= 2 is still decrypted
+        // (history is not the attack), but the user is told once per
+        // conversation per page load.
+        if (
+          readDmV2Pin(peerId) >= 2 &&
+          takeDmDowngradeNotice(peerId)
+        ) {
+          try {
+            showToast(
+              'This conversation was downgraded to legacy encryption.',
+              'warning'
+            );
+          } catch {
+            // no-op
+          }
+        }
+      }
 
       if (typeof decryptedContent !== 'string') {
         throw new Error(
@@ -441,8 +477,9 @@ async function decryptDmMessage(msg) {
       // Only decrypt content that is actually an encrypted
       // DM payload. Legacy/plaintext replies remain unchanged.
       if (replyPayload) {
+        const replyVer = replyPayload.encryption.version;
         if (
-          replyPayload.encryption.version !== 1 ||
+          (replyVer !== 1 && replyVer !== 2) ||
           replyPayload.encryption.algorithm !== 'AES-GCM'
         ) {
           throw new Error(
@@ -450,11 +487,22 @@ async function decryptDmMessage(msg) {
           );
         }
 
-        const replyPlaintext =
-          await decryptIncomingMessage(
+        let replyPlaintext;
+        if (replyVer === 2) {
+          replyPlaintext = await decryptDmTextV2(
+            replyPayload,
+            peerId,
+            {
+              replyToId: msg.reply_to ? (msg.reply_to.reply_to_id == null ? 0 : Number(msg.reply_to.reply_to_id)) : 0,
+              rowId: msg.reply_to ? msg.reply_to.id : null
+            }
+          );
+        } else {
+          replyPlaintext = await decryptIncomingMessage(
             replyPayload,
             peerId
           );
+        }
 
         if (typeof replyPlaintext !== 'string') {
           throw new Error(
@@ -509,7 +557,7 @@ async function decryptDmMessages(messages) {
 // current-user/active-peer validation and produce the exact same
 // encrypted-payload shape for the `content` field, so there's one
 // encryption path for outgoing DM text instead of two.
-async function encryptForActivePeer(content) {
+async function encryptForActivePeer(content, replyToId = 0) {
   // Peer key trust (Phase 2): refuse to encrypt to a peer whose key this device
   // does not recognise. Throws SendBlockedError; nothing leaves the browser.
   await assertCanSendTo(dmActivePeer.id);
@@ -532,14 +580,24 @@ async function encryptForActivePeer(content) {
 
   const senderId = Number(currentUser.id);
   const recipientId = Number(dmActivePeer.id);
-  const encrypted = await encryptOutgoingMessage(content, senderId, recipientId);
 
-  return JSON.stringify(encrypted);
+  // STEP 1B: version choice per peer (doc 5.4). encryptDmTextV2 runs the
+  // layer-2 pin check and throws DmDowngradeRefusedError rather than falling
+  // back silently.
+  const result = await encryptDmTextV2(content, senderId, recipientId, replyToId);
+  if (result.version === 1) {
+    // Keep using the unchanged v1 path's output shape. encryptDmTextV2 already
+    // produced a JSON string for v1; pass it through.
+    return result.content;
+  }
+  return result.content;
 }
 
 async function decryptConversationPreview(
   lastMessage,
-  peerUserId
+  peerUserId,
+  replyToId = 0,
+  rowId = null
 ) {
   if (!lastMessage) {
     return '';
@@ -553,8 +611,9 @@ async function decryptConversationPreview(
   }
 
   // Encrypted data must never fall through to the UI.
+  const previewVer = payload.encryption.version;
   if (
-    payload.encryption.version !== 1 ||
+    (previewVer !== 1 && previewVer !== 2) ||
     payload.encryption.algorithm !== 'AES-GCM'
   ) {
     console.error(
@@ -579,10 +638,22 @@ async function decryptConversationPreview(
   }
 
   try {
-    const plaintext = await decryptIncomingMessage(
-      payload,
-      peerId
-    );
+    let plaintext;
+    if (previewVer === 2) {
+      plaintext = await decryptDmTextV2(
+        payload,
+        peerId,
+        {
+          replyToId: replyToId == null ? 0 : Number(replyToId),
+          rowId: rowId == null ? null : Number(rowId)
+        }
+      );
+    } else {
+      plaintext = await decryptIncomingMessage(
+        payload,
+        peerId
+      );
+    }
 
     if (typeof plaintext !== 'string') {
       throw new Error(
@@ -801,7 +872,9 @@ async function renderConvListRows(convs, filter = '') {
       ...c,
       decrypted_last_message: await decryptConversationPreview(
         c.last_message,
-        c.peer_id
+        c.peer_id,
+        c.last_message_reply_to_id,
+        c.last_message_id
       ),
     }))
   );
@@ -1589,11 +1662,11 @@ thread.innerHTML = `
     replyPreviewId: 'dm-reply-preview',
     sendTextUrl: '/api/dm/messages',
     uploadUrl: '/api/dm/upload',
-    buildTextBody: async (content) => {
+    buildTextBody: async (content, replyToId) => {
       const recipientId = Number(dmActivePeer.id);
       return {
         recipient_id: recipientId,
-        content: await encryptForActivePeer(content),
+        content: await encryptForActivePeer(content, replyToId),
       };
     },
     buildFormExtra: (form) => form.append('recipient_id', dmActivePeer.id),
@@ -1625,10 +1698,11 @@ thread.innerHTML = `
     // ---------- Edit mode ----------
     editPreviewId: 'dm-edit-preview',
     buildEditBody: async (content) => ({
-      content: await encryptForActivePeer(content),
+      content: await encryptForActivePeer(content, dmEditingReplyToId),
     }),
     editUrlFor: (id) => `/api/dm/messages/${id}`,
     onEdit: (message) => {
+      dmEditingReplyToId = null;
       void updateDmMessage(message);
     },
     // ArrowUp in an empty input: edit my most recent editable message.
@@ -2799,6 +2873,9 @@ window.editDmMessage = function (id) {
   if (msg.has_attachment) return;
   if (!msg.content) return;
 
+  dmEditingReplyToId = (msg.reply_to_id == null || msg.reply_to_id === '')
+    ? 0
+    : Number(msg.reply_to_id);
   dmComposer.setEditMessage(msg);
 };
 

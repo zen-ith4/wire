@@ -34,7 +34,11 @@ const VALID_COLUMNS = {
     legacy_last_login_at: "legacy_last_login_at TEXT",
     must_change_password: "must_change_password INTEGER NOT NULL DEFAULT 0",
     legacy_login_closed: "legacy_login_closed INTEGER NOT NULL DEFAULT 0",
-    legacy_login_closed_at: "legacy_login_closed_at TEXT"
+    legacy_login_closed_at: "legacy_login_closed_at TEXT",
+    // DM E2EE v2 floor (docs/e2ee-dm-hardening.md 5.1). Default 1 so every
+    // existing row stays on v1 with no backfill. Raised only by
+    // scripts/dm-e2ee-optin.mjs. 1C makes this a hard ratchet.
+    dm_e2ee_min_version: "dm_e2ee_min_version INTEGER NOT NULL DEFAULT 1"
   },
 
   folders: {

@@ -214,3 +214,43 @@ function base64ToBytes(base64) {
     }
     return bytes;
 }
+
+/**
+ * STEP 1B: the peer's server-side DM E2EE floor (users.dm_e2ee_min_version).
+ *
+ * Reads the same /api/me/identity-key/:id response getPeerPublicKey() uses, and
+ * adds one additive field. A missing, invalid or absent field is treated as 1,
+ * so a peer that predates the column behaves exactly as an unupgraded peer.
+ *
+ * This is a separate fetch rather than a change to getPeerPublicKey() - that
+ * function must keep returning exactly what it returns now - and it is NOT
+ * cached, so a fresh value is read on every send. An opt-in performed on the
+ * server is therefore visible on the next send without a server-side change; a
+ * browser that needs an existing conversation to move over reloads instead.
+ *
+ * @param {number|string} userId
+ * @returns {Promise<number>} 1 or 2
+ */
+export async function getPeerDmMinVersion(userId) {
+    if (
+        !Number.isInteger(Number(userId)) ||
+        Number(userId) <= 0
+    ) {
+        throw new Error(
+            'Invalid user ID'
+        );
+    }
+
+    const data = await api(
+        `/api/me/identity-key/${Number(userId)}`,
+        {
+            method: 'GET'
+        }
+    );
+
+    const raw = data ? data.dmE2eeMinVersion : null;
+    if (!Number.isInteger(raw) || raw < 1) {
+        return 1;
+    }
+    return raw > 2 ? 2 : raw;
+}

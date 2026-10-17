@@ -1,0 +1,75 @@
+# Linux CI recipe for the Wire test suite
+#
+# Documentation only - this file is NOT under .github/ and is NOT activated.
+# Copy it to .github/workflows/linux-tests.yml to use it.
+#
+# WHY IT EXISTS
+# Every browser test in this repo has been Unverified-until-Linux: the Windows
+# Chromium build freezes the renderer in the long DM/group flows and there is no
+# Linux available on the machine that produced wire-final-24. This workflow is
+# the recipe to close that gap.
+#
+# WHAT COULD NOT BE TESTED HERE
+# - The workflow itself has never been executed (no GitHub runner, and this file
+#   is documentation, not a live workflow).
+# - `npm ci` was never run from a clean checkout here.
+# - Every step below that touches a real Chromium (the `*browser*` tests) has
+#   never run on Linux from this tree.
+# - `@sparticuz/chromium` was never installed here; the Windows runs used a
+#   local shim at CHROMIUM_DIR instead.
+
+name: linux-tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      # Chrome for Testing, so the puppeteer-core launches have something to find.
+      - name: Install Chrome
+        run: |
+          npx puppeteer browsers install chrome
+          echo "CHROMIUM_DIR=$PWD/.chromium" >> "$GITHUB_ENV"
+
+      # node-gyp needs a toolchain for better-sqlite3.
+      - run: sudo apt-get update && sudo apt-get install -y build-essential python3
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The service worker manifest is a build artefact: public/sw-manifest.js
+      # must match the bytes actually shipped in public/, or clients install a
+      # stale worker and keep serving an old client.
+      - name: sw-manifest must be current
+        run: node scripts/build-sw-manifest.mjs --check
+
+      - name: Full test suite
+        env:
+          CHROMIUM_DIR: ${{ env.CHROMIUM_DIR }}
+        run: >
+          node --experimental-test-module-mocks
+          --env-file=tests/test.env
+          --test
+          --test-timeout=60000
+          --test-concurrency=2
+          $(find tests -name '*.test.mjs' | sort)
+
+      - name: Failure diagnosis protocol
+        if: failure()
+        run: |
+          # A hang here has always been CPU 0 with no output. Re-run the
+          # failing file ALONE, three times, and report whether it reproduces
+          # every time / sometimes / never. Do not lower concurrency and retry.
+          echo "Re-run the failing file alone three times before concluding anything."

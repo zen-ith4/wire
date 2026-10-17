@@ -480,7 +480,7 @@ export async function buildDmV2Content({ plaintext, senderId, recipientId, reply
     // envelope is undecryptable by anyone, forever.
     assertDmV2ContentFits(content.length);
 
-    return { envelope, msgId, contentChars: content.length };
+    return { envelope, msgId, content, contentChars: content.length };
 }
 
 /* =========================================================

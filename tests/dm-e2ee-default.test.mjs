@@ -142,6 +142,23 @@ test('trigger: invalid values refused on INSERT', () => {
     db.close();
 });
 
+test('admin script: running on a v2 user leaves the row at 2', () => {
+    const dir = tmpDir();
+    const dbPath = path.join(dir, 'scriptlower.db');
+    copyFixture(dbPath);
+    const db0 = new Database(dbPath, { readonly: false });
+    runMigrations(db0);
+    db0.prepare('INSERT INTO users (username, password_hash, dm_e2ee_min_version) VALUES (?, ?, ?)').run('lowertest', 'h', 2);
+    db0.close();
+    const script = path.join(ROOT, 'scripts', 'dm-e2ee-optin.mjs');
+    const r = spawnSync(process.execPath, [script, 'lowertest'], { cwd: ROOT, env: { ...process.env, DB_PATH: dbPath }, encoding: 'utf8' });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /already at 2/);
+    const db = new Database(dbPath, { readonly: true });
+    assert.equal(db.prepare('SELECT dm_e2ee_min_version FROM users WHERE username = ?').get('lowertest').dm_e2ee_min_version, 2);
+    db.close();
+});
+
 test('trigger: affinity: storing "2" (text) behaviour', () => {
     const dest = path.join(tmpDir(), 'aff.db');
     copyFixture(dest);
@@ -180,7 +197,7 @@ test('new account (env default 2) gets dm_e2ee_min_version = 2', async () => {
     // boot server with default env (unset)
     const dirs = makeServerDirs(dir);
     const port = 39100 + Math.floor(Math.random() * 100);
-    const env = serverEnv({ dirs, port, nodeEnv: 'test', jwtSecret: 'x'.repeat(48), extraEnv: { DB_PATH: dbPath, BCRYPT_ROUNDS: '4', ALLOWED_SUBNET: '127.0.0.0/8' } });
+    const env = serverEnv({ dirs, port, nodeEnv: 'test', jwtSecret: 'x'.repeat(48), dmE2eeDefaultMinVersion: 2, extraEnv: { DB_PATH: dbPath, BCRYPT_ROUNDS: '4', ALLOWED_SUBNET: '127.0.0.0/8' } });
     const child = spawn(process.execPath, ['server.js'], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '';
     child.stdout.on('data', (d) => { out += d; });

@@ -107,3 +107,26 @@ The `trg_users_dm_e2ee_min_version_*` triggers protect against buggy application
 code. Anyone with write access to the DB file, or code that can run
 `DROP TRIGGER`, can remove them. They do not defend against an attacker holding
 the database file.
+
+## Decisions (recorded by the reviewer)
+
+1. `services/auth.service.js`: the extra
+   `const constants = require('../config/constants')` line is **ACCEPTED**
+   (option a). It is the smallest way to keep the default in one place.
+   Nothing else in that file is changed.
+2. `tests/dm-blob-url-cleanup.test.mjs`: the two-line mock completion
+   (`encryptDmTextV2`, `decryptDmTextV2`) is **ACCEPTED**. It fixes a 1B
+   regression; no assertion changed.
+3. A **fifth** `INSERT INTO users` site exists:
+   `utils/setupWizard.js:632` (first-admin wizard). The full list that stays at
+   `DEFAULT 1` is: `database/seed.js:55`, `utils/setupWizard.js:632`,
+   `services/user.service.js:91`, `services/user.service.js:290`.
+   **"Default 2 applies to self-registration only."**
+
+## Running the DM v2 tests (Linux)
+
+Browser tests for DM v2 are **Unverified-until-Linux**: no browser test of DM
+v2 has ever run on the machine that produced this tree (Windows renderer freeze,
+no WSL, no Docker, no distro). Run `docs/ci/linux-tests.yml` before relying on
+the UI path. It is documentation only - it is NOT under `.github/` and is not
+activated - and none of its steps have been executed here.

@@ -530,8 +530,15 @@ export async function openDmV2Envelope({ payload, peerId, ownUserId, replyToId =
         peerPublicKey
     );
 
+    // decryptDmV2() re-validates and expects the WIRE shape
+    // ({encryption:{...}, senderId, recipientId}). `validated` is the
+    // NORMALISED shape validateDmV2Envelope RETURNS, which is FLAT
+    // ({version, iv, ciphertext, senderFp, msgId, senderId, recipientId}) and has
+    // no `encryption` key - so passing it back in made the second validation
+    // throw "Missing encryption payload" and EVERY real v2 decrypt failed.
+    // Hand decryptDmV2 the ORIGINAL envelope and let it do its own check.
     const plaintext = await decryptDmV2({
-        envelope: validated,
+        envelope: payload,
         senderKeyFp: base64ToBytes(sender.fingerprint),
         key,
         replyToId

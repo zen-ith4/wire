@@ -65,10 +65,24 @@ after(async () => {
 
 /**
  * Bounded poll on a postcondition. `probe` returns a truthy value when the
- * condition holds. Throws on timeout with whatever the last value was, so a
- * failure says which postcondition did not happen rather than "timed out".
+ * condition holds.
+ *
+ * THE RULE: `probe` must encode the EXACT postcondition the caller is about to
+ * assert, never a weaker "is it happening yet". A wait for "> 0" followed by an
+ * assertion of "=== N" is a race, and it loses on a slower machine: the thread
+ * holds rows one at a time, so "> 0" returns at the FIRST row and the exact
+ * assertion then fails. That is not a hypothetical - it is exactly how this file
+ * failed on 2-core Linux: held=1 rows=2.
+ *
+ * `describe` is called on timeout to build the message, so a failure prints the
+ * actual numbers ("held=1 rows=2") instead of "timed out".
  */
-async function pollUntil(probe, { timeout = 10000, step = 50, what = 'a condition' } = {}) {
+async function pollUntil(probe, {
+    timeout = 10000,
+    step = 50,
+    what = 'a condition',
+    describe = null,
+} = {}) {
     const deadline = Date.now() + timeout;
     let last = null;
 
@@ -78,9 +92,11 @@ async function pollUntil(probe, { timeout = 10000, step = 50, what = 'a conditio
         await new Promise((r) => setTimeout(r, step));
     }
 
-    throw new Error(
-        `timed out after ${timeout}ms waiting for ${what}; last probe returned ${JSON.stringify(last)}`
-    );
+    const detail = describe
+        ? `; ${await describe(last)}`
+        : `; last probe returned ${JSON.stringify(last)}`;
+
+    throw new Error(`timed out after ${timeout}ms waiting for ${what}${detail}`);
 }
 
 /** Set the page-local helpers the rotation and credential flows read. */
@@ -304,12 +320,21 @@ async function openThread(page, peerId, displayName) {
     // is a real state meaning "not resolved yet", so waiting for it to change is
     // a postcondition the app actually produces - and if resolveTrust never runs,
     // this times out and says so.
-    await pollUntil(
+    //
+    // The resolved state is RETURNED rather than left for the caller to re-read.
+    // Re-reading after the poll is the same "wait, then look again" shape as the
+    // held-rows bug below, and it is free to avoid here: the value the wait
+    // satisfied is the value the caller wants.
+    return await pollUntil(
         async () => {
             const s = await trustStateOf(page, peerId);
             return s.state === 'unknown' ? null : s;
         },
-        { what: 'the peer key trust state to resolve', timeout: 15000 }
+        {
+            timeout: 15000,
+            what: 'the peer key trust state to resolve',
+            describe: async () => `state is still "${(await trustStateOf(page, peerId)).state}"`,
+        }
     );
 }
 
@@ -592,9 +617,8 @@ test('a peer key change stops the real send, holds every row through the real de
     // 2. Alice opens Bob's thread. This is the wiring under test: dm.js calls
     //    resolveTrust(), renderKeyTrustBanner() and bindKeyTrustRelease() here,
     //    and renders every row through addDmMessage -> decryptDmMessage.
-    await openThread(a.page, bobId, BOB);
+    const pinned = await openThread(a.page, bobId, BOB);
 
-    const pinned = await trustStateOf(a.page, bobId);
     assert.equal(pinned.state, 'ok', 'first contact pins and does not alarm');
     assert.equal(pinned.held, 0);
 
@@ -617,24 +641,41 @@ test('a peer key change stops the real send, holds every row through the real de
     await primePage(a.page);
 
     // The hostile name is only ever a DISPLAY string: never an account.
-    await openThread(a.page, bobId, HOSTILE);
+    const alarmed = await openThread(a.page, bobId, HOSTILE);
 
-    const alarmed = await trustStateOf(a.page, bobId);
     assert.equal(alarmed.state, 'changed',
         `alice must be in the changed state after bob rotated; got ${alarmed.state}`);
 
+    // How many rows the server holds, so the wait below can be for an EXACT count.
+    // Read BEFORE the wait: polling first and counting afterwards is how the
+    // expected number arrives too late to be used as the wait's condition.
+    const rowsAfterRotation = await recentRowIds(a.page, bobId);
+    assert.equal(rowsAfterRotation.length, 2, 'two rows after the rotation');
+
     // The rows must be held BY THE REAL decrypt path - the thread rendered them,
     // so the hold could only have come from decryptDmMessage().
+    //
+    // The wait is for held === rows.length, NOT held > 0. The thread holds rows
+    // one at a time, so a "> 0" wait returns at the FIRST row and the exact
+    // assertion that follows then fails on a slower machine. That is not a
+    // hypothetical: on 2-core Linux this reported held=1 rows=2 with the app
+    // behaving correctly, twice and in isolation. The wait has to be the same
+    // claim as the assertion.
     const held = await pollUntil(
         async () => {
             const s = await trustStateOf(a.page, bobId);
-            return s.held > 0 ? s : null;
+            return s.held === rowsAfterRotation.length ? s : null;
         },
-        { what: 'the thread to hold the undecryptable rows' }
+        {
+            timeout: 10000,
+            what: `the thread to hold all ${rowsAfterRotation.length} rows`,
+            describe: async () => {
+                const s = await trustStateOf(a.page, bobId);
+                return `held=${s.held} rows=${rowsAfterRotation.length} (state=${s.state})`;
+            },
+        }
     );
 
-    const rowsAfterRotation = await recentRowIds(a.page, bobId);
-    assert.equal(rowsAfterRotation.length, 2, 'two rows after the rotation');
     assert.equal(held.held, rowsAfterRotation.length,
         `EVERY row must be held while the key is unrecognised: held=${held.held} rows=${rowsAfterRotation.length}`);
 
@@ -700,19 +741,34 @@ test('a peer key change stops the real send, holds every row through the real de
     // Bounded poll on the postcondition the release actually produces: the queue
     // drained AND both messages rendered. The previous version waited 400ms and
     // then asserted on whatever had happened.
-    await pollUntil(
+    //
+    // The polled values come back out of the wait and are asserted on directly.
+    // Re-reading trust state afterwards is the same "wait, then look again" shape
+    // as the held-rows bug above.
+    const released = await pollUntil(
         async () => {
             const s = await trustStateOf(a.page, bobId);
             if (s.held !== 0) return null;
             const rendered = await renderedMessageCount(a.page);
-            return rendered >= 2 ? { state: s.state, rendered } : null;
+            // "at least both", not "any": the release re-runs the normal
+            // decrypt+render path over each held row, so rendering only one of two
+            // is a real failure and must not be waited past. The exact count is
+            // pinned by the two text assertions below.
+            return rendered >= 2 ? { state: s.state, held: s.held, rendered } : null;
         },
-        { timeout: 15000, what: 'the held rows to be released and rendered' }
+        {
+            timeout: 15000,
+            what: 'the held rows to be released and rendered',
+            describe: async () => {
+                const s = await trustStateOf(a.page, bobId);
+                return `held=${s.held} state=${s.state} rendered=${await renderedMessageCount(a.page)}`;
+            },
+        }
     );
 
-    const afterAccept = await trustStateOf(a.page, bobId);
-    assert.equal(afterAccept.state, 'ok', 'accepting must clear the alarm');
-    assert.equal(afterAccept.held, 0, 'the held queue must be drained');
+    assert.equal(released.state, 'ok', 'accepting must clear the alarm');
+    assert.equal(released.held, 0, 'the held queue must be drained');
+    assert.ok(released.rendered >= 2, `both messages must be rendered: ${released.rendered}`);
 
     // NO MESSAGE LOSS. Both texts, including the one encrypted to the RETIRED key,
     // must be readable in the thread. Read from the DOM, not from the module.
@@ -891,8 +947,7 @@ test('a normal password change does NOT raise the alarm (real credential flow)',
     const bobId = await b.page.evaluate(() => window.__ptMeId);
 
     // Alice pins Bob's current key by opening the thread.
-    await openThread(a.page, bobId, BOB);
-    assert.equal((await trustStateOf(a.page, bobId)).state, 'ok');
+    assert.equal((await openThread(a.page, bobId, BOB)).state, 'ok');
 
     // Bob changes his PASSWORD (not his key) through the real endpoint.
     const changed = await changePasswordInPage(b.page, 'An0therPassw0rd!');
@@ -903,9 +958,8 @@ test('a normal password change does NOT raise the alarm (real credential flow)',
     await a.page.reload({ waitUntil: 'domcontentloaded' });
     await loginUi(a.page, server.origin, ALICE);
     await primePage(a.page);
-    await openThread(a.page, bobId, BOB);
+    const after = await openThread(a.page, bobId, BOB);
 
-    const after = await trustStateOf(a.page, bobId);
     assert.equal(after.state, 'ok',
         `a password change must not alarm; state was ${after.state}`);
 

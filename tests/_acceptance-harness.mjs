@@ -137,6 +137,7 @@ export function serverEnv({
     host = '127.0.0.1',
     jwtSecret,
     emailSecret,
+    dmE2eeDefaultMinVersion,
     extraEnv = {},
     base = process.env,
 } = {}) {
@@ -165,6 +166,14 @@ export function serverEnv({
         // ---
         JWT_SECRET: jwtSecret ?? crypto.randomBytes(32).toString('hex'),
         EMAIL_VERIFICATION_SECRET: emailSecret ?? crypto.randomBytes(32).toString('hex'),
+        // Forward the DM E2EE default floor (STEP 1C). Explicit so a test can
+        // override via extraEnv or the param; falls back to the parent env.
+        ...(function () {
+            const v = dmE2eeDefaultMinVersion !== undefined
+                ? dmE2eeDefaultMinVersion
+                : base.DM_E2EE_DEFAULT_MIN_VERSION;
+            return v === undefined ? {} : { DM_E2EE_DEFAULT_MIN_VERSION: String(v) };
+        })(),
         ...extraEnv,
     };
 }

@@ -3,6 +3,26 @@ const crypto = require('crypto');
 
 const isProduction = process.env.NODE_ENV === 'production';
 
+// DM E2EE: default floor for NEWLY REGISTERED accounts (docs/e2ee-dm-hardening.md 5.1).
+// Read in ONE place. Unset -> 2. Exactly "1"/"2" accepted. Anything else is fatal.
+function getDmE2eeDefaultMinVersion() {
+  const raw = process.env.DM_E2EE_DEFAULT_MIN_VERSION;
+  if (raw === undefined) {
+    return 2;
+  }
+  if (raw === '1') {
+    return 1;
+  }
+  if (raw === '2') {
+    return 2;
+  }
+  console.error(
+    '❌ FATAL: DM_E2EE_DEFAULT_MIN_VERSION must be unset, "1", or "2" ' +
+      '(got ' + JSON.stringify(raw) + ').'
+  );
+  process.exit(1);
+}
+
 function getJwtSecret() {
   if (process.env.JWT_SECRET) {
     return process.env.JWT_SECRET;
@@ -47,6 +67,9 @@ const constants = {
     process.env.ALLOWED_SUBNET || '10.10.0.0/24',
 
   JWT_SECRET: getJwtSecret(),
+
+  // Default DM E2EE floor for new accounts (docs/e2ee-dm-hardening.md 5.1).
+  DM_E2EE_DEFAULT_MIN_VERSION: getDmE2eeDefaultMinVersion(),
 
   // ======================================================
   // WireGuard

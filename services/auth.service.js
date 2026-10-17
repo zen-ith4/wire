@@ -1,4 +1,5 @@
 const { getDb } = require('../config/database');
+const constants = require('../config/constants');
 
 const {
   hashPassword,
@@ -389,9 +390,10 @@ async function registerUser(username, email, password) {
         email_verified,
         auth_scheme,
         kdf_salt,
-        kdf_iterations
+        kdf_iterations,
+        dm_e2ee_min_version
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       username,
       email,
@@ -399,7 +401,8 @@ async function registerUser(username, email, password) {
       initialEmailVerified,
       v2 ? 2 : 1,
       v2 ? v2.kdfSalt : null,
-      v2 ? v2.kdfIterations : null
+      v2 ? v2.kdfIterations : null,
+      constants.DM_E2EE_DEFAULT_MIN_VERSION
     );
 
     userId =

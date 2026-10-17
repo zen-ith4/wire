@@ -143,6 +143,8 @@ mock.module(jsPath('crypto/messages/message-crypto.js'), {
     namedExports: {
         encryptOutgoingMessage: async () => ({}),
         decryptIncomingMessage: async () => ({}),
+        encryptDmTextV2: async () => ({ version: 1, content: '{}', msgId: null, peerMinVersion: 1 }),
+        decryptDmTextV2: async () => 'decrypted',
     },
 });
 mock.module(jsPath('core/view-session.js'), {

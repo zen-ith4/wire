@@ -86,3 +86,24 @@ by SQLite triggers; building anything that has to be removed later is worse.
 
 `public/` gained `dm-v2-wire.js`, so `public/sw-manifest.js` was regenerated
 with `node scripts/build-sw-manifest.mjs` and verified with `--check`.
+
+## Upgrade script for existing rows (STEP 1C)
+
+`scripts/dm-e2ee-upgrade-existing.mjs` raises every account still at 1 to 2.
+
+```
+node scripts/dm-e2ee-upgrade-existing.mjs [--dry-run] [--db path/to/wire.db]
+```
+
+- Admin-only: needs filesystem access to the SQLite file.
+- Explicit: NOT run at boot, NOT an automatic migration. An operator decides.
+- Idempotent: second run reports `changed 0 of M rows`.
+- `--dry-run`: performs no write; proves it by hashing rows before/after.
+- Only raises 1 -> 2 (the ratchet trigger refuses anything else).
+
+## Ratchet limit (honest)
+
+The `trg_users_dm_e2ee_min_version_*` triggers protect against buggy application
+code. Anyone with write access to the DB file, or code that can run
+`DROP TRIGGER`, can remove them. They do not defend against an attacker holding
+the database file.

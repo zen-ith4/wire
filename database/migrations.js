@@ -118,6 +118,27 @@ function runMigrations(db) {
   migrateMessageReactionsToAllowGroup(db);
 
   ensureCredentialSchema(db);
+
+  // DM E2EE v2 ratchet (docs/e2ee-dm-hardening.md 5.1-5.5, STEP 1C).
+  // Only raises, never lowers. Both triggers idempotent (IF NOT EXISTS).
+  // Explicit IS NULL + typeof checks: NULL NOT IN (1,2) is NULL in SQLite,
+  // and INTEGER affinity must not coerce '2' silently.
+  db.exec(`
+    CREATE TRIGGER IF NOT EXISTS trg_users_dm_e2ee_min_version_upd
+    BEFORE UPDATE OF dm_e2ee_min_version ON users
+    WHEN NEW.dm_e2ee_min_version IS NULL
+      OR typeof(NEW.dm_e2ee_min_version) <> 'integer'
+      OR NEW.dm_e2ee_min_version NOT IN (1,2)
+      OR NEW.dm_e2ee_min_version < OLD.dm_e2ee_min_version
+    BEGIN SELECT RAISE(ABORT, 'dm_e2ee_min_version: invalid or lowering'); END;
+
+    CREATE TRIGGER IF NOT EXISTS trg_users_dm_e2ee_min_version_ins
+    BEFORE INSERT ON users
+    WHEN NEW.dm_e2ee_min_version IS NULL
+      OR typeof(NEW.dm_e2ee_min_version) <> 'integer'
+      OR NEW.dm_e2ee_min_version NOT IN (1,2)
+    BEGIN SELECT RAISE(ABORT, 'dm_e2ee_min_version: invalid'); END;
+  `);
 }
 
 /*

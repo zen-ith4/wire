@@ -545,7 +545,41 @@ function apiPoll(probe, opts = {}) {
     return pollUntil(probe, { step: 500, timeout: 20000, ...opts });
 }
 
-async function assertTamperIsNotReadable(page, peerId, rowId, secret, label) {
+/**
+ * Gap A (STEP 1K.1): the placeholder must be provably non-interactive.
+ *
+ * Selected by its row id (data-msg-id) so the assertion cannot be satisfied by
+ * an empty thread or by a good row. The live path (addDmMessage) renders the
+ * same text, so both look alike.
+ */
+async function assertPlaceholderIsPlain(page, rowId, label) {
+    const info = await page.evaluate((id) => {
+        const el = document.querySelector('#dm-messages .chat-msg[data-msg-id="' + id + '"]');
+        if (!el) return { found: false };
+        const bubble = el.querySelector('.chat-bubble');
+        return {
+            found: true,
+            bubbleText: bubble ? bubble.textContent.trim() : null,
+            buttonCount: el.querySelectorAll('button').length,
+            interactiveCount: el.querySelectorAll('a[href], img, video, audio, input, textarea, select').length,
+            quoteCount: el.querySelectorAll('[class*="quote"], [class*="reply-preview"]').length,
+            reactionsCount: el.querySelectorAll('.chat-reactions, [class*="reaction"]').length,
+        };
+    }, rowId);
+    assert.equal(info.found, true, `${label}: the placeholder element (data-msg-id=${rowId}) must be in the DOM`);
+    assert.equal(info.bubbleText, 'Unable to decrypt',
+        `${label}: placeholder text must be exactly "Unable to decrypt", got ${JSON.stringify(info.bubbleText)}`);
+    assert.equal(info.buttonCount, 0,
+        `${label}: a placeholder must have NO buttons (reply/edit/copy/react/delete), got ${info.buttonCount}`);
+    assert.equal(info.interactiveCount, 0,
+        `${label}: a placeholder must have no links/media/inputs, got ${info.interactiveCount}`);
+    assert.equal(info.quoteCount, 0,
+        `${label}: a placeholder must carry no reply quote, got ${info.quoteCount}`);
+    assert.equal(info.reactionsCount, 0,
+        `${label}: a placeholder must carry no reactions row, got ${info.reactionsCount}`);
+}
+
+async function assertTamperIsNotReadable(page, peerId, rowId, secret, ciphertext, label, goodSecrets = []) {
     // FIRST: the row must still be served. If the API stopped returning it, an
     // empty thread would prove nothing about the tamper and the placeholder
     // assertion below would be asserting the wrong thing.
@@ -567,7 +601,15 @@ async function assertTamperIsNotReadable(page, peerId, rowId, secret, label) {
     });
     assert.equal(got.real, 0,
         `${label}: a broken row must not render as a real message (decrypted=${got.real})`);
+    await assertPlaceholderIsPlain(page, rowId, label);
+    const html = await page.evaluate(() => document.body.innerHTML);
+    assert.ok(!html.includes(ciphertext),
+        `${label}: the ciphertext leaked into the DOM: ${html.slice(0, 200)}`);
     const t = await threadText(page);
+    for (const g of goodSecrets) {
+        assert.ok(t.includes(g),
+            `${label}: the good row "${g}" vanished after the tamper: ${t.slice(0, 200)}`);
+    }
     assert.ok(!t.includes(secret),
         `${label}: the plaintext leaked into the thread after tampering: ${t.slice(0, 200)}`);
 }

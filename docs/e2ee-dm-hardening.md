@@ -227,21 +227,30 @@ secrecy) is not started, and DM attachments are still v1 with no AAD.
 **Shipped (v2 text envelope):**
 
 - **Authenticated envelope, directional keys.** v2 uses X25519 + HKDF-SHA-256
-  with per-direction info strings (`wire-dm-v2-a2b`, `wire-dm-v2-b2a`), so a
-  ciphertext cannot be reflected from alice to bob as bob to alice. AAD binds
-  `version || fromUserId || toUserId || senderKeyFp || direction || iv || replyToId`.
-- **`msgId`** - a client-generated 16-hex id, bound into the AAD, so a replay
-  of a stored row is detected.
+  (salt = 32 zero bytes) with per-direction info strings `Wire-E2EE-DM-v2-a2b` and
+  `Wire-E2EE-DM-v2-b2a`, so a ciphertext cannot be reflected from alice to bob as
+  bob to alice. AES-256-GCM, random 12-byte iv. The AAD is built with the same
+  type | 4-byte length | data discipline as `groups/codec.js`, in this fixed order:
+  `'dm-msg-v2'`, version, fromUserId, toUserId, senderKeyFp (32 raw bytes),
+  direction, iv, replyToId (0 when there is none). `msgId` is NOT in the AAD.
+- **`msgId`** - a client-generated 16-hex id carried in the envelope. It is NOT
+  bound into the AAD, so a server can swap it (section 4.3: a replay hint, not an
+  integrity claim). The client drops the same `msgId` seen on a DIFFERENT server
+  row id; re-reading the same row is not a replay.
 - **Server rule and ratchet.** `dm_e2ee_min_version` column on `users`; the
   default is 2 for self-registration only (the four sites that stay at 1:
   `database/seed.js:55`, `utils/setupWizard.js:632`, `services/user.service.js:91`,
   `services/user.service.js:290`). Triggers in `database/migrations.js` reject any
   `UPDATE`/`INSERT` that lowers it. `scripts/dm-e2ee-upgrade-existing.mjs` and
   `scripts/dm-e2ee-optin.mjs` for existing accounts.
-- **Layer-2 pin** per peer per device, in IndexedDB, keyed
-  `(origin, ownUserId, peerId)`. Every accepted key is kept, not just the
-  current one. Safety number `SHA-256('wire-safety-number-v1' || ...)` over the
-  two raw keys, order-independent.
+- **Layer-2 version pin** per peer per device, in `localStorage`, keyed
+  `${serverEndpoint}|${localUserId}|${peerUserId}`, holding the highest envelope
+  version sent or seen. Sending v1 to a peer pinned at 2 or higher throws
+  `DowngradeRefusedError`, never a silent fallback. If storage is unavailable the
+  pin is a no-op.
+- **Phase 2 (shipped earlier, unchanged):** the per-peer key archive in IndexedDB
+  (every accepted key is kept, not just the current one) and the safety number
+  `SHA-256('wire-safety-number-v1' || ...)` over the two raw keys, order-independent.
 - **Replay store**: 2000 msgIds per conversation, 50 conversations, per device.
 - **Undecryptable-row placeholder (v1 and v2, shared code).** `decryptDmMessages`
   decrypts each row independently (`Promise.allSettled`); a rejected row becomes
@@ -251,7 +260,7 @@ secrecy) is not started, and DM attachments are still v1 with no AAD.
 
 **NOT done:**
 
-- DM attachments are still v1 with no AAD (`docs/DM_V2_WIRE.md` section 10.1).
+- DM attachments are still v1 with no AAD (section 10.1 of this document).
 - Phase 3 forward secrecy: not started.
 - Own-key rotation makes older own v2 rows unreadable (no escrow).
 - Message cap ~1328 plaintext bytes because the server cuts `content` at 2000

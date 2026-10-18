@@ -218,12 +218,9 @@ against an empty decrypted set.
 ### Null filter in decryptDmMessages (defence in depth, no test)
 
 None of the three batch loaders (syncDmMessagesSince, loadRecentDm, loadOlderDm)
-calls 
-esolveTrust or shouldHoldMessage directly; they rely on
-decryptDmMessage, which does, so 
-ull (a held row) can in principle reach the
+calls resolveTrust or shouldHoldMessage directly; they rely on
+decryptDmMessage, which does, so null (a held row) can in principle reach the
 batch through decryptDmMessages. No test currently exercises that path: plant 3
 (stop filtering null) stayed green on the existing held-row test (k), because
-(k) does not produce a 
-ull in the batch during the initial history load.
+(k) does not produce a null in the batch during the initial history load.
 The filter is retained as defence in depth.

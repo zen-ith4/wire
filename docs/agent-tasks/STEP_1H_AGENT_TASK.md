@@ -1,14 +1,14 @@
 # STEP 1H - settle A2/A3 against independent evidence, fix the flaky test, ship wire-final-26
 
 Put this file at `docs/agent-tasks/STEP_1H_AGENT_TASK.md` and the reference file at
-`tests/_reference/probe-tamper-rows.test.mjs` (a plain copy; it is NOT part of the suite unless you rename it).
+`tests/_reference/probe-tamper-rows.mjs` (a plain copy; it is NOT part of the suite unless you rename it).
 Base: your working tree after 1G (no production change). Output zip: `wire-final-26`.
 Your budget is limited, so the order below is the priority order. Stop at the first item you cannot finish
 and report what is done; do not start the next one half-way. No production change in this step.
 
 ## 0. Independent evidence from the reviewer (Linux, wire-final-25 unmodified, real Chromium)
 
-The reviewer wrote a probe (`reference/probe-tamper-rows.test.mjs`: alice sends 3 v2 messages, the test
+The reviewer wrote a probe (`reference/probe-tamper-rows.mjs`: alice sends 3 v2 messages, the test
 mutates ONE stored row in the SQLite file with the test's own connection, bob re-logs in and opens the DM).
 Result for each of three mutations, UPDATE reported `changes=1`, read-back confirmed the change:
 

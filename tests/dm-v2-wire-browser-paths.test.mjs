@@ -323,6 +323,8 @@ test('b. bob replies through the real composer; both render it and the quote sho
 
     // Bob's thread must be OPEN before replyToDmMessage: the handler reads
     // dmEntry.byId and returns early when the conversation was never loaded.
+    await openDmUi(b.page, aid, an);
+    await waitDecrypted(b.page, 1, 'bob to render the parent before replying');
     await b.page.evaluate((id) => window.replyToDmMessage(id), first.id);
     await sendOnce(b.page, 'reply-child');
 

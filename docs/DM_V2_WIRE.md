@@ -191,3 +191,25 @@ npm ci @sparticuz/chromium puppeteer-core   # WRONG: npm ci takes no package nam
 
 It must be `npm install @sparticuz/chromium puppeteer-core`. Fixed in
 `wire-final-26`. The reviewer hit it, which is how it was found.
+
+## Part B (STEP 1J) - one undecryptable row shows a placeholder
+
+Before: a single row that failed to decrypt (tampered ciphertext, rewritten
+version, rewritten reply_to_id, or any corrupt envelope) made the WHOLE history
+fail to load: bubbles=0, the thread showed "Failed to load", and the good rows
+and the legacy rows disappeared too. Pre-existing (v1 took the same path), not a
+v2 regression.
+
+After: decryptDmMessages() decrypts each row independently (Promise.allSettled).
+A rejected row becomes ONE placeholder ("Unable to decrypt", undecryptable:true)
+in its own place; every other row still renders. A held row (null) is left out,
+Phase 2 behaviour unchanged. Applies to v1 and v2 (shared code).
+
+The placeholder carries only id, sender_id, recipient_id, sender_username,
+created_at, timestamp, reply_to_id, content="Unable to decrypt", undecryptable:true.
+It never carries the original content, the reply target content, attachment or
+media data, or the error text. buildDmMessageEl renders it as a plain,
+non-interactive bubble (no copy, reply, edit, react, link or media handling,
+no quote, no reactions). The three batch sites (syncDmMessagesSince,
+loadRecentDm, loadOlderDm) use ROW counts for hasMore and guard entry.oldest
+against an empty decrypted set.

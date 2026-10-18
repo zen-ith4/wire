@@ -219,6 +219,52 @@ dmAttachmentAad({ version, fromUserId, toUserId, senderKeyFp, direction, iv, att
 
 ---
 
+### 3.5 Status: what has shipped (wire-final-29)
+
+Facts only. No marketing. This is the Phase 1 + Part B status; Phase 3 (forward
+secrecy) is not started, and DM attachments are still v1 with no AAD.
+
+**Shipped (v2 text envelope):**
+
+- **Authenticated envelope, directional keys.** v2 uses X25519 + HKDF-SHA-256
+  with per-direction info strings (`wire-dm-v2-a2b`, `wire-dm-v2-b2a`), so a
+  ciphertext cannot be reflected from alice to bob as bob to alice. AAD binds
+  `version || fromUserId || toUserId || senderKeyFp || direction || iv || replyToId`.
+- **`msgId`** - a client-generated 16-hex id, bound into the AAD, so a replay
+  of a stored row is detected.
+- **Server rule and ratchet.** `dm_e2ee_min_version` column on `users`; the
+  default is 2 for self-registration only (the four sites that stay at 1:
+  `database/seed.js:55`, `utils/setupWizard.js:632`, `services/user.service.js:91`,
+  `services/user.service.js:290`). Triggers in `database/migrations.js` reject any
+  `UPDATE`/`INSERT` that lowers it. `scripts/dm-e2ee-upgrade-existing.mjs` and
+  `scripts/dm-e2ee-optin.mjs` for existing accounts.
+- **Layer-2 pin** per peer per device, in IndexedDB, keyed
+  `(origin, ownUserId, peerId)`. Every accepted key is kept, not just the
+  current one. Safety number `SHA-256('wire-safety-number-v1' || ...)` over the
+  two raw keys, order-independent.
+- **Replay store**: 2000 msgIds per conversation, 50 conversations, per device.
+- **Undecryptable-row placeholder (v1 and v2, shared code).** `decryptDmMessages`
+  decrypts each row independently (`Promise.allSettled`); a rejected row becomes
+  one placeholder (`content = 'Unable to decrypt'`, `undecryptable: true`) in its
+  own place, rendered as a plain non-interactive bubble. A held row (Phase 2) is
+  left out. Applies to v1 and v2 because they share the path.
+
+**NOT done:**
+
+- DM attachments are still v1 with no AAD (`docs/DM_V2_WIRE.md` section 10.1).
+- Phase 3 forward secrecy: not started.
+- Own-key rotation makes older own v2 rows unreadable (no escrow).
+- Message cap ~1328 plaintext bytes because the server cuts `content` at 2000
+  characters (pre-existing).
+- The ratchet triggers do not protect against anyone holding the DB file or with
+  `DROP TRIGGER`.
+- Browsers verified: Chromium only (Windows and Linux). No Firefox, Safari or
+  phone verification.
+
+See `docs/DM_V2_WIRE.md` for the operator guide, planted-violation evidence and
+the CI recipe.
+
+
 ## 4. Envelope wire format and version discrimination
 
 ### 4.1 v1 — unchanged, read forever

@@ -920,7 +920,8 @@ test('i. three rows (good, tampered, good): 2 good bubbles + 1 placeholder in or
     assert.ok(idxFirst >= 0 && idxPh > idxFirst && idxLast > idxPh,
         `order wrong: first=${idxFirst} placeholder=${idxPh} last=${idxLast}`);
 
-    await closeUserBrowsers();
+    // Do NOT closeUserBrowsers() here: this test uses the long-lived PAIR pages
+    // that (k) still needs. Closing them here detaches every later page handle.
     void an; void bn; void bid; void aid;
 });
 
@@ -937,13 +938,15 @@ test('j. v1 parity: a v1 conversation with one flipped ciphertext byte shows a p
     db0.close();
     const v1server = await startRealServer({ work: dir, extraEnv: { DB_PATH: p, DM_E2EE_DEFAULT_MIN_VERSION: '1' } });
 
+    let a = null;
+    let b = null;
     try {
         const an = 'v1par';
         const bn = 'v1par2';
         await registerUser(v1server.origin, an);
         await registerUser(v1server.origin, bn);
-        const a = await newUserPage();
-        const b = await newUserPage();
+        a = await newUserPage();
+        b = await newUserPage();
         await loginUi(a.page, v1server.origin, an);
         await loginUi(b.page, v1server.origin, bn);
         await openDmUi(a.page, (await b.page.evaluate(async () => (await import('/js/core/auth.js')).getCurrentUser().id)), bn);
@@ -993,10 +996,106 @@ test('j. v1 parity: a v1 conversation with one flipped ciphertext byte shows a p
         assert.ok(!html.includes(originalCiphertext),
             'the v1 ciphertext must not reach the DOM');
 
-        await closeUserBrowsers();
+        // Do NOT closeUserBrowsers() here: this test uses the long-lived PAIR
+        // pages that (k) still needs. Close only this test's own two processes
+        // (in the finally below).
     } finally {
-        await closeUserBrowsers();
+        // NOT closeUserBrowsers(): it also kills the long-lived PAIR pages that
+        // test (k) still needs. Close only this test's own two processes.
+        await Promise.all(
+            [a?.browser, b?.browser].filter(Boolean).map((x) => x.close().catch(() => {}))
+        );
         await v1server.stop();
         fs.rmSync(dir, { recursive: true, force: true });
     }
+});
+
+
+// ================================================== (k) held row: null in the batch is not a throw
+test('k. a held row in the history batch does not blank the good rows and is released on accept', { timeout: 300000 }, async () => {
+    const { a, b, aid, bid, an, bn } = await freshPair();
+
+    // alice sends one v2 row that bob will be able to read (pinned current).
+    await openDmUi(a.page, bid, bn);
+    await sendOnce(a.page, 'held-good');
+    await openDmUi(b.page, aid, an);
+    await waitDecrypted(b.page, 1, 'bob to read the first v2 row and pin alice');
+
+    // alice rotates her identity key.
+    const rotated = await a.page.evaluate(async (password) => {
+        const { api } = await import('/js/core/api.js');
+        const { deriveCredentials } = await import('/js/crypto/credentials.js');
+        const { generateIdentityKeyPair, exportPublicKey, exportPrivateKey, encryptIdentityPkcs8 } =
+            await import('/js/crypto/identity.js');
+        const kdf = await api('/api/me/kdf-params');
+        const { authKey } = await deriveCredentials(password, kdf.salt, kdf.iterations);
+        const before = await api('/api/me/identity-key');
+        const pair = await generateIdentityKeyPair();
+        const pk = await exportPublicKey(pair);
+        const wrapped = await encryptIdentityPkcs8(await exportPrivateKey(pair), password, {
+            salt: kdf.salt, iterations: kdf.iterations,
+        });
+        const out = await api('/api/me/identity-key/rotate', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                current_auth_key: authKey,
+                expected_public_key: before.publicKey,
+                expected_updated_at: before.updatedAt,
+                identity: { publicKey: pk, ...wrapped },
+            }),
+        });
+        return { error: out?.error ?? null };
+    }, PASSWORD);
+    assert.equal(rotated.error, null, `rotation failed: ${rotated.error}`);
+
+    // alice sends a SECOND row under the new key. bob has not seen it yet.
+    await openDmUi(a.page, bid, bn);
+    await sendOnce(a.page, 'held-new');
+
+    // bob reloads: a fresh client with a pin for the retired key. The first row
+    // is readable with the retired key (mayTryRetiredKey), the second is not
+    // (new key, unknown) -> held (null). The history batch must not throw and
+    // must still render the first row.
+    await reloadUser(b.page, PASSWORD);
+    await openDmUi(b.page, aid, an);
+    await new Promise((r) => setTimeout(r, 5000));
+
+    // With trust in the 'changed' state, shouldHoldMessage() holds EVERY row
+    // (it only checks the state, not per-row keys). So no bubble renders and no
+    // placeholder is produced; the raw rows are kept in dm-key-trust.js for
+    // release on accept. The point of this test is that the batch does NOT
+    // throw on the null entries, and the held rows are recovered on accept.
+    assert.equal(await decryptedCount(b.page), 0,
+        'while trust is changed, held rows must not render as real messages');
+    assert.equal(await placeholderCount(b.page), 0,
+        'held rows are not placeholders either; they are queued, not shown');
+    const text = await threadText(b.page);
+    assert.ok(!text.includes('held-good') && !text.includes('held-new'),
+        'no plaintext may leak while the key change is unaccepted');
+
+    const held = await b.page.evaluate(async (id) => {
+        const kt = await import('/js/chat/dm-key-trust.js');
+        return { state: kt.trustState(id), held: kt.heldCount(id) };
+    }, aid);
+    assert.equal(held.state, 'changed', 'trust must be in the changed state');
+    assert.ok(held.held >= 1, `the rows must be queued, held=${held.held}`);
+
+    // Accept the new key: the held rows are released and shown.
+    const banner = await pollUntil(
+        () => b.page.evaluate(() => (document.querySelector('#dm-key-trust-banner .dm-key-trust-accept') ? { found: true } : null)),
+        { timeout: 20000, what: 'the accept button to render' }
+    );
+    assert.equal(banner.found, true);
+    await b.page.evaluate(() => {
+        const btn = document.querySelector('#dm-key-trust-banner .dm-key-trust-accept');
+        btn.scrollIntoView({ block: 'center' });
+        btn.click();
+    });
+    await waitDecrypted(b.page, 2, 'the held rows to be released and rendered');
+    const finalText = await threadText(b.page);
+    assert.ok(finalText.includes('held-good') && finalText.includes('held-new'),
+        `both rows must be readable after accept: ${finalText.slice(0, 240)}`);
+
+    // Do NOT closeUserBrowsers(): this test uses the long-lived PAIR pages.
+    void an; void bn; void aid; void bid;
 });

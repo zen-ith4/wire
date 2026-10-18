@@ -138,14 +138,23 @@ const toastCount = (page) => page.evaluate(() => (window.__toasts || []).length)
  * function and runs it in the browser, where this module's constants do not
  * exist. Closing over it fails with "PLACEHOLDER is not defined".
  */
+// Measure the BUBBLE, not the whole .chat-msg: the whole element carries the
+// sender, the time, the actions and the text, so a strict compare on it was
+// never true and made every tamper test report placeholders=0.
 const decryptedCount = (page) => page.evaluate((ph) => {
-    const all = [...document.querySelectorAll('#dm-messages .chat-msg')];
-    return all.filter((el) => el.textContent.trim() !== ph).length;
+    return [...document.querySelectorAll('#dm-messages .chat-msg')]
+        .filter((el) => {
+            const b = el.querySelector('.chat-bubble');
+            return (b ? b.textContent.trim() : el.textContent.trim()) !== ph;
+        }).length;
 }, PLACEHOLDER);
 
 const placeholderCount = (page) => page.evaluate((ph) =>
     [...document.querySelectorAll('#dm-messages .chat-msg')]
-        .filter((el) => el.textContent.trim() === ph).length, PLACEHOLDER);
+        .filter((el) => {
+            const b = el.querySelector('.chat-bubble');
+            return (b ? b.textContent.trim() : el.textContent.trim()) === ph;
+        }).length, PLACEHOLDER);
 
 const threadText = (page) =>
     page.evaluate(() => (document.getElementById('dm-messages')?.textContent || ''));
@@ -517,7 +526,8 @@ async function tamperedExchange(secret) {
     await sendOnce(pair.a.page, secret);
     await waitDecrypted(pair.b.page, 1, 'the receiver to render the untouched v2 message');
     const [row] = await recentRows(pair.b.page, pair.aid);
-    return { pair, row, secret };
+    const ciphertext = JSON.parse(row.content).encryption.ciphertext;
+    return { pair, row, secret, ciphertext };
 }
 
 /** Reload the receiver after the DB was rewritten underneath it. */
@@ -562,8 +572,8 @@ async function assertTamperIsNotReadable(page, peerId, rowId, secret, label) {
         `${label}: the plaintext leaked into the thread after tampering: ${t.slice(0, 200)}`);
 }
 
-test('e1. a stored row with version stripped 2->1 is not readable', { timeout: 240000, todo: 'KNOWN GAP: one undecryptable row fails the whole history load, see STEP_1J Part B' }, async () => {
-    const { pair, row, secret } = await tamperedExchange('tamper-e1');
+test('e1. a stored row with version stripped 2->1 is not readable', { timeout: 240000 }, async () => {
+    const { pair, row, secret, ciphertext } = await tamperedExchange('tamper-e1');
     // POSITIVE CONTROL, in the same test: the untouched row DOES decrypt.
     assert.ok((await threadText(pair.b.page)).includes(secret),
         'positive control: the clean row must read before it is broken');
@@ -575,12 +585,12 @@ test('e1. a stored row with version stripped 2->1 is not readable', { timeout: 2
         db.prepare('UPDATE direct_messages SET content = ? WHERE id = ?').run(JSON.stringify(env), r.id);
     });
     await reloadUser(pair.b.page, PASSWORD);
-    await openDmUi(pair.b.page, pair.aid, pair.an);
-    await assertTamperIsNotReadable(pair.b.page, pair.aid, row.id, secret, 'e1 version strip');
+    await openDmUi(pair.b.page, pair.aid, PAIR.an);
+    await assertTamperIsNotReadable(pair.b.page, pair.aid, row.id, secret, ciphertext, 'e1 version strip');
 });
 
-test('e2. a stored row with senderId rewritten is not readable', { timeout: 240000, todo: 'KNOWN GAP: one undecryptable row fails the whole history load, see STEP_1J Part B' }, async () => {
-    const { pair, row, secret } = await tamperedExchange('tamper-e2');
+test('e2. a stored row with senderId rewritten is not readable', { timeout: 240000 }, async () => {
+    const { pair, row, secret, ciphertext } = await tamperedExchange('tamper-e2');
     assert.ok((await threadText(pair.b.page)).includes(secret),
         'positive control: the clean row must read before it is broken');
 
@@ -592,11 +602,11 @@ test('e2. a stored row with senderId rewritten is not readable', { timeout: 2400
     });
     await reloadUser(pair.b.page, PASSWORD);
     await openDmUi(pair.b.page, pair.aid, pair.an);
-    await assertTamperIsNotReadable(pair.b.page, pair.aid, row.id, secret, 'e2 senderId rewrite');
+    await assertTamperIsNotReadable(pair.b.page, pair.aid, row.id, secret, ciphertext, 'e2 senderId rewrite');
 });
 
-test('e3. a stored row with recipientId rewritten is not readable', { timeout: 240000, todo: 'KNOWN GAP: one undecryptable row fails the whole history load, see STEP_1J Part B' }, async () => {
-    const { pair, row, secret } = await tamperedExchange('tamper-e3');
+test('e3. a stored row with recipientId rewritten is not readable', { timeout: 240000 }, async () => {
+    const { pair, row, secret, ciphertext } = await tamperedExchange('tamper-e3');
     assert.ok((await threadText(pair.b.page)).includes(secret),
         'positive control: the clean row must read before it is broken');
 
@@ -608,11 +618,11 @@ test('e3. a stored row with recipientId rewritten is not readable', { timeout: 2
     });
     await reloadUser(pair.b.page, PASSWORD);
     await openDmUi(pair.b.page, pair.aid, pair.an);
-    await assertTamperIsNotReadable(pair.b.page, pair.aid, row.id, secret, 'e3 recipientId rewrite');
+    await assertTamperIsNotReadable(pair.b.page, pair.aid, row.id, secret, ciphertext, 'e3 recipientId rewrite');
 });
 
-test('e4. changing the row reply_to_id breaks the AAD binding, so the row is not readable', { timeout: 240000, todo: 'KNOWN GAP: one undecryptable row fails the whole history load, see STEP_1J Part B' }, async () => {
-    const { pair, row, secret } = await tamperedExchange('tamper-e4');
+test('e4. changing the row reply_to_id breaks the AAD binding, so the row is not readable', { timeout: 240000 }, async () => {
+    const { pair, row, secret, ciphertext } = await tamperedExchange('tamper-e4');
     assert.ok((await threadText(pair.b.page)).includes(secret),
         'positive control: the clean row must read before it is broken');
 
@@ -621,7 +631,7 @@ test('e4. changing the row reply_to_id breaks the AAD binding, so the row is not
     });
     await reloadUser(pair.b.page, PASSWORD);
     await openDmUi(pair.b.page, pair.aid, pair.an);
-    await assertTamperIsNotReadable(pair.b.page, pair.aid, row.id, secret, 'e4 reply_to_id rewrite');
+    await assertTamperIsNotReadable(pair.b.page, pair.aid, row.id, secret, ciphertext, 'e4 reply_to_id rewrite');
 });
 
 // ================================================================ (f) v1 peer

@@ -1,8 +1,14 @@
 # Running the Wire suite on Linux
 
-Copy-paste procedures. **Every step marked `[NOT RUN HERE]` could not be executed
-on the machine that produced `wire-final-25`** — there is no WSL, no Docker and no
-Linux distro on it. Treat the outputs as expected, not observed.
+Copy-paste procedures. Steps still marked `[NOT RUN HERE]` could not be executed
+on the machine that produced `wire-final-26` — there is no WSL, no Docker and no
+Linux distro on it. Treat those outputs as expected, not observed.
+
+**Everything else in this file has Linux evidence.** The reviewer ran the
+unmodified `wire-final-25` zip on Linux (node v22.22.2, `npm ci`, Chromium via
+`@sparticuz/chromium`, `CHROMIUM_DIR=/tmp/browser-check`); the numbers are in
+section 0 of `docs/DM_V2_WIRE.md`. Those are the reviewer's results, recorded
+here — not claims made by this tree.
 
 ## (a) WSL2 Ubuntu on Windows
 
@@ -24,17 +30,36 @@ Clone or copy the repository in, then:
 
 ```bash
 cd ~/wire
-npm ci                                   # [NOT RUN HERE]
+npm ci                                   # observed on Linux by the reviewer, see DM_V2_WIRE.md section 0
 
 # Chromium for @sparticuz/chromium / puppeteer-core.
 # docs/test-baseline.md documents CHROMIUM_DIR=/tmp/browser-check.
+#
+# NOTE: `npm install`, NOT `npm ci`. The command shipped here in wire-final-25 read
+# `npm ci @sparticuz/chromium puppeteer-core`, which is wrong: `npm ci` takes no
+# package names, so it fails. Fixed in wire-final-26.
 mkdir -p /tmp/browser-check && cd /tmp/browser-check
-npm init -y && npm ci @sparticuz/chromium puppeteer-core   # [NOT RUN HERE]
+npm init -y && npm install @sparticuz/chromium puppeteer-core   # observed on Linux by the reviewer
 cd ~/wire
 export CHROMIUM_DIR=/tmp/browser-check
 ```
 
-The four browser files that are currently **Unverified-until-Linux**:
+The browser files, and what the reviewer observed on Linux with the unmodified
+wire-final-25 zip (node v22.22.2): **all pass, 0 fail, 0 cancelled.**
+
+- `dm-v2-wire-browser`, `dm-e2ee-default-browser`, `peer-trust-browser` (3),
+  `mobile-groups-tab-browser` (4), `identity-key-history-browser`,
+  `csp-confirm-enforced-browser`, `dm-csp-handlers-enforced-browser`,
+  `credentials/f12-browser-login` (6), `groups/group-e2e-browser`,
+  `group-confirm-in-dialog-browser`, `group-csp-browser`,
+  `group-dialog-create-settled-browser`, `group-hostile-browser`,
+  `acceptance-xss-sweep-browser` (8, 1 skip), `acceptance-no-plaintext` (8).
+
+So the earlier "Windows-only renderer freeze" labels were **environmental** for
+group-e2e, peer-trust, mobile-groups-tab and xss-sweep. For `dm-v2-wire-browser`
+the cause was the two v2 bugs fixed in 1E, not the environment.
+
+Reproduce:
 
 ```bash
 for f in tests/dm-v2-wire-browser.test.mjs \
@@ -75,14 +100,23 @@ to `.github/workflows/linux-tests.yml` to use it. It runs:
 In Codespaces the same steps apply; the codespace already has Chrome, so skip
 step 2 and set `CHROMIUM_DIR` to wherever `@sparticuz/chromium` is installed.
 
-**Untestable from here:** the workflow itself has never executed (no runner), and
-no step that touches a real Chromium has ever run on Linux from this tree.
+**Untestable from here:** the workflow itself has never executed on a GitHub
+runner — it is still documentation, not a live workflow. The reviewer's run was
+**not** this workflow; it was the same commands by hand.
 
-## What is browser-only and still needs this
+## What is browser-only and no longer needs this
 
-- UI rendering of DM v2 threads end to end (now covered on Windows by
-  `tests/dm-v2-wire-browser.test.mjs`, but not on a real Linux Chromium).
-- Held messages under a key-change alarm, the key-trust banner, the
-  "conversation was downgraded" toast, and conversation-list / reply previews.
+Everything below was Unverified-until-Linux until the reviewer ran the unmodified
+wire-final-25 zip. It now has Linux evidence (section 0 of `docs/DM_V2_WIRE.md`):
+
+- DM v2 threads end to end (`dm-v2-wire-browser`).
+- Held messages under a key-change alarm, the key-trust banner
+  (`peer-trust-browser`).
+- Conversation-list and reply previews, the mobile groups tab
+  (`mobile-groups-tab-browser`).
 - `tests/groups/group-e2e-browser.test.mjs` and
   `tests/acceptance-xss-sweep-browser.test.mjs`.
+
+The downgrade toast ("This conversation was downgraded to legacy encryption") is
+the one item here the reviewer did **not** name; see `tests/dm-v2-wire-browser-paths.test.mjs`
+(g) for the test that covers it.

@@ -346,4 +346,13 @@ test('resetDmDowngradeNotices + takeDmDowngradeNotice: once per conversation', (
     assert.equal(takeDmDowngradeNotice(34), true);
     assert.equal(takeDmDowngradeNotice(34), false);
     assert.equal(takeDmDowngradeNotice(35), true);
+
+    // The page-load leg (STEP 1I.2). Without it this test only pins "once per
+    // conversation", not the rule that actually exists: "once per PAGE LOAD".
+    // That distinction is exactly what STEP 1G's browser plant could not reach -
+    // the browser test cannot call the notice a second time, so the one-shot flag
+    // was untestable there. Here a fresh module state stands in for a reload.
+    resetDmDowngradeNotices();
+    assert.equal(takeDmDowngradeNotice(34), true);
+    assert.equal(takeDmDowngradeNotice(34), false);
 });

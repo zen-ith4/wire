@@ -125,8 +125,69 @@ the database file.
 
 ## Running the DM v2 tests (Linux)
 
-Browser tests for DM v2 are **Unverified-until-Linux**: no browser test of DM
-v2 has ever run on the machine that produced this tree (Windows renderer freeze,
-no WSL, no Docker, no distro). Run `docs/ci/linux-tests.yml` before relying on
-the UI path. It is documentation only - it is NOT under `.github/` and is not
-activated - and none of its steps have been executed here.
+Procedure: `docs/ci/RUN_ON_LINUX.md`. CI recipe: `docs/ci/linux-tests.yml`
+(documentation only - it is NOT under `.github/` and is not activated).
+
+## 0. Facts established by the reviewer on a real Linux machine
+
+These are the **reviewer's** results, reproduced from their report. They are not
+output produced by this tree; the machine that produced `wire-final-26` has no
+WSL, no Docker and no distro.
+
+Reviewer ran the **unmodified `wire-final-25` zip** on Linux (node v22.22.2,
+`npm ci`, Chromium via `@sparticuz/chromium`, `CHROMIUM_DIR=/tmp/browser-check`):
+
+**Non-browser set (72 files): `607 tests / 603 pass / 0 fail / 0 cancelled / 4 skipped`.**
+
+The 4th skip, against this tree's 3, is:
+
+```
+upgrade: DB created by the base code ... # SKIP BASE_TAG not available in this checkout
+```
+
+A git tag is missing from the zip. That is an environment artefact of shipping a
+zip rather than a clone, **not a defect**. (A tag cannot be carried by
+`git archive` of a single commit.)
+
+**Browser files - all pass, 0 fail, 0 cancelled:**
+
+| file | tests |
+|---|---|
+| `dm-v2-wire-browser` | 1 |
+| `dm-e2ee-default-browser` | 1 |
+| `peer-trust-browser` | 3 |
+| `mobile-groups-tab-browser` | 4 |
+| `identity-key-history-browser` | - |
+| `csp-confirm-enforced-browser` | - |
+| `dm-csp-handlers-enforced-browser` | - |
+| `credentials/f12-browser-login` | 6 |
+| `groups/group-e2e-browser` | - |
+| `group-confirm-in-dialog-browser` | - |
+| `group-csp-browser` | - |
+| `group-dialog-create-settled-browser` | - |
+| `group-hostile-browser` | - |
+| `acceptance-xss-sweep-browser` | 8 (1 skip) |
+| `acceptance-no-plaintext` | 8 |
+
+### What this corrects
+
+The earlier "Windows-only renderer freeze" labels were **environmental** for
+`groups/group-e2e-browser`, `peer-trust-browser`, `mobile-groups-tab-browser`
+and `acceptance-xss-sweep-browser`: those files are not Windows-only, the local
+Chromium shim was the problem.
+
+For `dm-v2-wire-browser` the label was **wrong on both counts**. It was the two
+production bugs found in STEP 1E, not the environment: `buildDmV2Content()` did
+not return `content` (1D) and `openDmV2Envelope()` handed `decryptDmV2()` the
+flat normalised envelope (1E). Windows could run that file all along.
+
+### Defect in our own procedure document
+
+`docs/ci/RUN_ON_LINUX.md` shipped with a command that **fails**:
+
+```bash
+npm ci @sparticuz/chromium puppeteer-core   # WRONG: npm ci takes no package names
+```
+
+It must be `npm install @sparticuz/chromium puppeteer-core`. Fixed in
+`wire-final-26`. The reviewer hit it, which is how it was found.

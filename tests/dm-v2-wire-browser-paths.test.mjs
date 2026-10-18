@@ -873,3 +873,130 @@ test('h. after bob rotates his identity key the v2 thread holds, alarms, and rel
     await openDmUi(a.page, bid, PAIR.bn);
     await sendOnce(a.page, 'rotate-after');
 });
+
+
+// ================================================== (i) three rows, tamper in place
+test('i. three rows (good, tampered, good): 2 good bubbles + 1 placeholder in order', { timeout: 300000 }, async () => {
+    const { a, b, aid, bid, an, bn } = await freshPair();
+
+    await sendOnce(a.page, 'good-first');
+    await sendOnce(a.page, 'to-tamper');
+    await sendOnce(a.page, 'good-last');
+    const rows = (await recentRows(b.page, aid)).sort((x, y) => x.id - y.id);
+    assert.equal(rows.length, 3, 'three rows must be stored');
+    // tamper the MIDDLE one (rows[1])
+    const victim = rows[1];
+    const originalCiphertext = JSON.parse(victim.content).encryption.ciphertext;
+    await withDb((db) => {
+        const r = db.prepare('SELECT id, content FROM direct_messages WHERE id = ?').get(victim.id);
+        const e = JSON.parse(r.content);
+        e.senderId = e.senderId + 1000;
+        db.prepare('UPDATE direct_messages SET content = ? WHERE id = ?').run(JSON.stringify(e), r.id);
+    });
+
+    await reloadUser(b.page, PASSWORD);
+    await openDmUi(b.page, aid, an);
+    await new Promise((r) => setTimeout(r, 5000));
+
+    // 2 good bubbles + 1 placeholder = 3 .chat-msg elements
+    assert.equal(await decryptedCount(b.page), 2,
+        `the two good rows must still render (got ${await decryptedCount(b.page)})`);
+    assert.equal(await placeholderCount(b.page), 1,
+        `exactly one placeholder for the tampered row (got ${await placeholderCount(b.page)})`);
+
+    const text = await threadText(b.page);
+    assert.ok(text.includes('good-first'), 'the first good row must render');
+    assert.ok(text.includes('good-last'), 'the last good row must render');
+    assert.ok(!text.includes('to-tamper'), 'the tampered plaintext must not leak');
+
+    const html = await b.page.evaluate(() => document.body.innerHTML);
+    assert.ok(!html.includes(originalCiphertext),
+        'the ciphertext must not reach the DOM');
+
+    // Order: good-first before Unable to decrypt before good-last.
+    const idxFirst = text.indexOf('good-first');
+    const idxPh = text.indexOf('Unable to decrypt');
+    const idxLast = text.indexOf('good-last');
+    assert.ok(idxFirst >= 0 && idxPh > idxFirst && idxLast > idxPh,
+        `order wrong: first=${idxFirst} placeholder=${idxPh} last=${idxLast}`);
+
+    await closeUserBrowsers();
+    void an; void bn; void bid; void aid;
+});
+
+// ================================================== (j) v1 parity
+test('j. v1 parity: a v1 conversation with one flipped ciphertext byte shows a placeholder and keeps the good row', { timeout: 300000 }, async () => {
+    // Own server with default 1.
+    const dir = tmpDir();
+    const p = path.join(dir, 'wire.db');
+    fs.copyFileSync(FIXTURE_DB, p);
+    const { runMigrations } = await import('../database/migrations.js');
+    const db0 = new Database(p, { readonly: false });
+    runMigrations(db0);
+    db0.prepare('DELETE FROM direct_messages').run();
+    db0.close();
+    const v1server = await startRealServer({ work: dir, extraEnv: { DB_PATH: p, DM_E2EE_DEFAULT_MIN_VERSION: '1' } });
+
+    try {
+        const an = 'v1par';
+        const bn = 'v1par2';
+        await registerUser(v1server.origin, an);
+        await registerUser(v1server.origin, bn);
+        const a = await newUserPage();
+        const b = await newUserPage();
+        await loginUi(a.page, v1server.origin, an);
+        await loginUi(b.page, v1server.origin, bn);
+        await openDmUi(a.page, (await b.page.evaluate(async () => (await import('/js/core/auth.js')).getCurrentUser().id)), bn);
+        await openDmUi(b.page, (await a.page.evaluate(async () => (await import('/js/core/auth.js')).getCurrentUser().id)), an);
+
+        const aid = await a.page.evaluate(async () => (await import('/js/core/auth.js')).getCurrentUser().id);
+        const bid = await b.page.evaluate(async () => (await import('/js/core/auth.js')).getCurrentUser().id);
+
+        // Two messages: one good, one to be tampered.
+        await sendOnce(a.page, 'v1-good');
+        await sendOnce(a.page, 'v1-tamper');
+        await new Promise((r) => setTimeout(r, 2500));
+        const rows = (await recentRows(b.page, aid)).sort((x, y) => x.id - y.id);
+        assert.equal(rows.length, 2, 'two v1 rows must be stored');
+        assert.equal(JSON.parse(rows[0].content).encryption.version, 1, 'must really be v1');
+
+        const victim = rows[1];
+        const originalCiphertext = JSON.parse(victim.content).encryption.ciphertext;
+        // Test j has its OWN server (v1server), so the global withDb() helper -
+        // which stops and restarts the MAIN server - is wrong here. Write to the
+        // v1 DB directly; SQLite serialises the write lock per transaction and
+        // the v1 server commits per request, so the write lands between requests.
+        const jdb = new Database(p, { readonly: false });
+        try {
+            const r = jdb.prepare('SELECT id, content FROM direct_messages WHERE id = ?').get(victim.id);
+            const e = JSON.parse(r.content);
+            const c = Buffer.from(e.encryption.ciphertext, 'base64');
+            c[0] ^= 0xff;
+            e.encryption.ciphertext = c.toString('base64');
+            jdb.prepare('UPDATE direct_messages SET content = ? WHERE id = ?').run(JSON.stringify(e), r.id);
+        } finally {
+            jdb.close();
+        }
+
+        await reloadUser(b.page, PASSWORD);
+        await openDmUi(b.page, aid, an);
+        await new Promise((r) => setTimeout(r, 5000));
+
+        assert.equal(await decryptedCount(b.page), 1,
+            `the good v1 row must still render (got ${await decryptedCount(b.page)})`);
+        assert.equal(await placeholderCount(b.page), 1,
+            `exactly one placeholder (got ${await placeholderCount(b.page)})`);
+        const text = await threadText(b.page);
+        assert.ok(text.includes('v1-good'), 'the good v1 text must render');
+        assert.ok(!text.includes('v1-tamper'), 'the tampered plaintext must not leak');
+        const html = await b.page.evaluate(() => document.body.innerHTML);
+        assert.ok(!html.includes(originalCiphertext),
+            'the v1 ciphertext must not reach the DOM');
+
+        await closeUserBrowsers();
+    } finally {
+        await closeUserBrowsers();
+        await v1server.stop();
+        fs.rmSync(dir, { recursive: true, force: true });
+    }
+});

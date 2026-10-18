@@ -5,8 +5,8 @@ Put this file at `docs/agent-tasks/STEP_1J_PART_B_AGENT_TASK.md`.
 ## GATE - read first
 
 Do NOT start this until the reviewer's message contains the exact words "GO B". Without it, stop after
-reading and reply "waiting for GO B". 1I must be finished and committed first (clean tree, wire-final-26 shipped).
-Base: wire-final-26. Output zip: `wire-final-27`.
+reading and reply "waiting for GO B". 1I and its fix-up are finished (reviewer verified wire-final-27 on Linux: tests b and d pass 2/2 each).
+Base: wire-final-27 (sha256 01920e07...f74c, HEAD 6409d23). Output zip: `wire-final-28`.
 
 ## Why (evidence, all reproduced, v1 and v2)
 

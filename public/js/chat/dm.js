@@ -545,11 +545,56 @@ async function decryptDmMessage(msg) {
 }
 
 async function decryptDmMessages(messages) {
-  return Promise.all(
-    messages.map((message) =>
-      decryptDmMessage(message)
-    )
+  // Decrypt every row INDEPENDENTLY. Previously this was
+  // Promise.all(messages.map(decryptDmMessage)): a single rejected row
+  // rejected the whole batch, and the caller's single try/catch replaced the
+  // entire thread with emptyState('Failed to load', e.message). One corrupt
+  // row therefore blanked the good rows, the legacy rows and the reply
+  // quotes, and the user was told nothing about which row was wrong.
+  //
+  // Per-row outcome (STEP 1J Part B):
+  //   - resolved object  -> as before
+  //   - resolved null    -> held (Phase 2): left out of the result
+  //   - rejected         -> a placeholder message object, so the row keeps
+  //                        its place and the good rows around it still render
+  const results = await Promise.allSettled(
+    messages.map((message) => decryptDmMessage(message))
   );
+
+  const out = [];
+  for (let i = 0; i < messages.length; i++) {
+    const row = messages[i];
+    const res = results[i];
+
+    if (res.status === 'fulfilled') {
+      // Held (Phase 2): the raw row is kept in dm-key-trust.js and released
+      // on accept. It must not be rendered here, and it must not be counted
+      // as a rendered message.
+      if (res.value === null) continue;
+      out.push(res.value);
+    } else {
+      console.error(`Failed to process DM ${row.id}:`, res.reason);
+
+      // A placeholder that carries ONLY the row's identity and a fixed
+      // string. It must NEVER carry the original `content` (ciphertext),
+      // the reply target's content, attachment or media data, or the error
+      // text. buildDmMessageEl() renders it as a plain, non-interactive
+      // bubble (see the undecryptable gate below).
+      out.push({
+        id: row.id,
+        sender_id: row.sender_id,
+        recipient_id: row.recipient_id,
+        sender_username: row.sender_username,
+        created_at: row.created_at,
+        timestamp: row.timestamp,
+        reply_to_id: row.reply_to_id == null ? null : Number(row.reply_to_id),
+        content: 'Unable to decrypt',
+        undecryptable: true
+      });
+    }
+  }
+
+  return out;
 }
 
 // Shared by the composer's buildTextBody (new message) and
@@ -2043,8 +2088,15 @@ async function loadRecentDm() {
       return;
     }
 
-    entry.oldest = decryptedMessages[0].timestamp;
-    entry.hasMore = decryptedMessages.length >= 50;
+    // A page with only held or undecryptable rows still has rows: hasMore must
+    // count the ROWS returned, not the rendered messages, or pagination ends
+    // early. entry.oldest is only meaningful when at least one row rendered;
+    // an empty decrypted set means the page was all held/undecryptable and the
+    // previous oldest stays correct.
+    if (decryptedMessages.length > 0) {
+      entry.oldest = decryptedMessages[0].timestamp;
+    }
+    entry.hasMore = messages.length >= 50;
 
     const frag = document.createDocumentFragment();
     if (entry.hasMore) {
@@ -2115,8 +2167,15 @@ async function loadOlderDm() {
     // it will be fetched again from the fresh thread.
     if (!container.isConnected) return;
 
-    entry.oldest = decryptedMessages[0].timestamp;
-    entry.hasMore = decryptedMessages.length >= 50;
+    // A page with only held or undecryptable rows still has rows: hasMore must
+    // count the ROWS returned, not the rendered messages, or pagination ends
+    // early. entry.oldest is only meaningful when at least one row rendered;
+    // an empty decrypted set means the page was all held/undecryptable and the
+    // previous oldest stays correct.
+    if (decryptedMessages.length > 0) {
+      entry.oldest = decryptedMessages[0].timestamp;
+    }
+    entry.hasMore = messages.length >= 50;
 
     const oldTop = container.scrollTop;
     const prevHeight = container.scrollHeight;
@@ -2243,8 +2302,12 @@ function buildDmMessageEl(msg, currentUser) {
   // attachment (see dm.controller.js's editMessage for the matching
   // server-side check; this is UI affordance only, not the real
   // enforcement).
+  // An undecryptable row is a plain, non-interactive bubble: no edit, no
+  // reply, no react, no copy, no quote, no link/media handling. The same
+  // fixed text as the live-path placeholder (addDmMessage, ~2528).
+  const undecryptable = !!msg.undecryptable;
   const canEdit =
-    own && !!messageText && !msg.has_attachment;
+    own && !!messageText && !msg.has_attachment && !undecryptable;
 
   div.innerHTML = `
     ${avatarHtml(msg.sender_id, msg.sender_username, 'chat-avatar')}
@@ -2259,24 +2322,24 @@ function buildDmMessageEl(msg, currentUser) {
         }
         ${dmTicksHtml(msg, own)}
       </div>
-      ${buildReplyQuoteHtml(msg, 'dm')}
+      ${undecryptable ? '' : buildReplyQuoteHtml(msg, 'dm')}
       ${
         messageText
-          ? `<div class="chat-bubble" dir="auto">${linkifyHtml(messageText)}</div>`
+          ? `<div class="chat-bubble" dir="auto">${undecryptable ? escapeHtml(messageText) : linkifyHtml(messageText)}</div>`
           : ''
       }
       ${msg.has_attachment ? renderAttachment(msg, 'dm') : ''}
       <div class="chat-msg-actions" role="toolbar" aria-label="Message actions">
         <div class="chat-msg-actions-bar">
-        <button type="button" class="chat-msg-reply" title="Reply" aria-label="Reply" onclick="window.replyToDmMessage(${msg.id})">${ICONS.reply}</button>
+        ${undecryptable ? '' : `<button type="button" class="chat-msg-reply" title="Reply" aria-label="Reply" onclick="window.replyToDmMessage(${msg.id})">${ICONS.reply}</button>`}
         ${
           canEdit
             ? `<button type="button" class="chat-msg-edit" title="Edit message" aria-label="Edit message" onclick="window.editDmMessage(${msg.id})">${ICONS.edit}</button>`
             : ''
         }
-        ${reactButtonHtml(msg, 'dm')}
+        ${undecryptable ? '' : reactButtonHtml(msg, 'dm')}
         ${
-          messageText
+          messageText && !undecryptable
             ? `<button type="button" class="chat-msg-copy" title="Copy message text" aria-label="Copy message text">${ICONS.copy}</button>`
             : ''
         }
@@ -2288,7 +2351,7 @@ function buildDmMessageEl(msg, currentUser) {
         }
         </div>
       </div>
-      ${renderReactionsRow(msg, 'dm')}
+      ${undecryptable ? '' : renderReactionsRow(msg, 'dm')}
     </div>
     <time class="chat-time chat-time-side" datetime="${escapeAttr(msg.timestamp)}" title="${escapeAttr(formatFullDateTime(msg.timestamp))}" aria-hidden="true">${formatTime(msg.timestamp)}</time>
     ${dmSideStatusHtml(msg, own)}

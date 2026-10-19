@@ -171,10 +171,13 @@ test('the meta builder clamps the name and the mime to the documented limits', (
 
 test('the file name is sanitised: path separators, control and bidi characters are stripped, empty becomes "file"', () => {
     assert.equal(ga.sanitiseGroupFileName('photo.png'), 'photo.png');
-    assert.equal(ga.sanitiseGroupFileName('../../etc/passwd'), '....etcpasswd', 'the separators go, the rest stays');
+    // STEP 3D item 1: the leading dots go too, so the download is never a
+    // hidden file ("....etcpasswd" became "etcpasswd").
+    assert.equal(ga.sanitiseGroupFileName('../../etc/passwd'), 'etcpasswd');
     assert.equal(ga.sanitiseGroupFileName('a/b\\c.png'), 'abc.png');
     assert.equal(ga.sanitiseGroupFileName('a\u0000b\u001fc.png'), 'abc.png');
     assert.equal(ga.sanitiseGroupFileName('a\u202Eb.png'), 'ab.png');
+    assert.equal(ga.sanitiseGroupFileName('.bashrc'), 'bashrc');
     assert.equal(ga.sanitiseGroupFileName('   '), 'file');
     assert.equal(ga.sanitiseGroupFileName(''), 'file');
     assert.equal(ga.sanitiseGroupFileName(null), 'file');

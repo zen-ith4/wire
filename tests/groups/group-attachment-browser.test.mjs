@@ -75,6 +75,14 @@ function fixture(name, bytes) {
     return p;
 }
 
+/** A click on an element. The DOM click is used (not puppeteer's mouse
+ *  click) because the thread repaints can replace the element between the
+ *  hit test and the click; the delegated handler is what is under test. */
+async function clickIn(page, selector) {
+    await page.waitForSelector(selector, { timeout: 15000 });
+    await page.$eval(selector, (el) => el.click());
+}
+
 /** The whole world for one scenario. */
 async function world() {
     server = await startRealServer();
@@ -149,16 +157,24 @@ test('1 honest send and receive: an image renders inline, a PDF is a download', 
     await sendFile(w.alicePage, w.gid, png, 'a picture');
     await sendFile(w.alicePage, w.gid, pdf, 'a document');
 
-    // The image renders INLINE (a blob URL of the decrypted bytes).
+    // The image renders INLINE (a blob URL of the decrypted bytes). It is
+    // auto-loaded because the row is visible and the file is a small image
+    // (STEP 3D item 2).
     const img = await bobSees(w.bobPage, w.gid, '#group-messages .chat-attachment-image');
     assert.ok(img, 'the image must render inline for the recipient');
     const src = await w.bobPage.$eval('#group-messages .chat-attachment-image', (e) => e.getAttribute('src'));
     assert.ok(src && src.startsWith('blob:'), `the inline image must be a blob URL, got ${src}`);
 
-    // The PDF is a DOWNLOAD, not an inline render.
-    const link = await bobSees(w.bobPage, w.gid, '#group-messages .chat-attachment-download');
-    assert.ok(link, 'a non-image must be a download link');
-    const dl = await w.bobPage.$eval('#group-messages .chat-attachment-download', (e) => ({
+    // The PDF is NOT auto-loaded: a non-image waits for an explicit click.
+    const btn = await bobSees(w.bobPage, w.gid, '#group-messages button.chat-attachment-download');
+    assert.ok(btn, 'the PDF row must offer a download button');
+    const label = await w.bobPage.$eval('#group-messages button.chat-attachment-download', (e) => e.textContent);
+    assert.match(label, /Download \(.*\)/, `the button must name the size, got ${label}`);
+    await clickIn(w.bobPage, '#group-messages button.chat-attachment-download');
+
+    const link = await bobSees(w.bobPage, w.gid, '#group-messages a.chat-attachment-download');
+    assert.ok(link, 'a non-image must be a download link after the click');
+    const dl = await w.bobPage.$eval('#group-messages a.chat-attachment-download', (e) => ({
         href: e.getAttribute('href') || '',
         download: e.getAttribute('download') || '',
     }));
@@ -226,6 +242,12 @@ test('3 a hostile relay serves file A under message B: the row shows "Attachment
     assert.equal(swapped.changes, 1);
 
     const bob2 = await freshRecipient(w);
+    // The document row is not auto-loaded: the download needs an explicit
+    // click (STEP 3D item 2), and only then is the swap noticed.
+    const btn = await bobSees(bob2, w.gid, '#group-messages button.chat-attachment-download');
+    assert.ok(btn, 'the row must offer a download button');
+    await clickIn(bob2, '#group-messages button.chat-attachment-download');
+    await sleep(2500);
     const placeholder = await bobSees(bob2, w.gid, '#group-messages .chat-attachment-unsupported');
     assert.ok(placeholder, 'the row whose file was swapped must show the placeholder');
 });
@@ -298,11 +320,16 @@ test('6 the sanitised name is used for BOTH the visible text and the download at
     const pdf = fixture(rawName, PDF);
     await sendFile(w.alicePage, w.gid, pdf, 'a document');
 
-    const link = await bobSees(w.bobPage, w.gid, '#group-messages .chat-attachment-download');
-    assert.ok(link, 'a non-image must be a download link');
+    const link = await bobSees(w.bobPage, w.gid, '#group-messages button.chat-attachment-download');
+    assert.ok(link, 'a non-image must offer a download button');
+
+    // The download needs an explicit click (a non-image is never auto-loaded).
+    await clickIn(w.bobPage, '#group-messages button.chat-attachment-download');
+    const a = await bobSees(w.bobPage, w.gid, '#group-messages a.chat-attachment-download');
+    assert.ok(a, 'the download link must appear after the click');
 
     const view = await w.bobPage.evaluate(() => {
-        const a = document.querySelector('#group-messages .chat-attachment-download');
+        const a = document.querySelector('#group-messages a.chat-attachment-download');
         const span = document.querySelector('#group-messages .chat-attachment-name');
         return {
             download: a ? a.getAttribute('download') : null,
@@ -320,4 +347,111 @@ test('6 the sanitised name is used for BOTH the visible text and the download at
     // The RAW name (with the bidi override) never reaches the DOM.
     assert.ok(!view.html.includes(rawName), 'the raw name must not reach the DOM');
     assert.ok(!view.html.includes('\u202E'), 'the bidi override must not reach the DOM');
+});
+
+test('7 the file is NOT fetched while the thread is decorated: the fetch happens only after the placeholder is in the DOM', async (t) => {
+    const w = await world();
+    await enableFlag(w.alicePage);
+    await enableFlag(w.bobPage);
+
+    await sendFile(w.alicePage, w.gid, fixture('photo.png', PNG), 'a picture');
+
+    // Log every attachment fetch with what the DOM looked like at that moment.
+    await w.bobPage.evaluate(() => {
+        globalThis.__fetchLog = [];
+        const orig = window.fetch;
+        window.fetch = async (...args) => {
+            const url = String(args[0]);
+            if (url.includes('/attachments/')) {
+                globalThis.__fetchLog.push({
+                    placeholderPresent: !!document.querySelector('[data-group-attachment-id]'),
+                    imagePresent: !!document.querySelector('.chat-attachment-image'),
+                });
+            }
+            return orig(...args);
+        };
+    });
+
+    await bobSees(w.bobPage, w.gid, '#group-messages .chat-attachment-image');
+    const log = await w.bobPage.evaluate(() => globalThis.__fetchLog);
+    assert.ok(log.length >= 1, 'the attachment must have been fetched');
+    assert.equal(log[0].placeholderPresent, true, 'the fetch must not happen during the decorate: the placeholder row was not in the DOM yet');
+    assert.equal(log[0].imagePresent, false, 'the fetch must happen before the image exists');
+});
+
+test('8 the download queue never has more than 2 downloads in flight', async (t) => {
+    const w = await world();
+    await enableFlag(w.alicePage);
+    await enableFlag(w.bobPage);
+
+    // The attachments are fetched slowly, so the downloads really overlap
+    // and the cap is observable. The counter lives in the page (the service
+    // worker serves the requests, so puppeteer's page-level request events
+    // do not see them).
+    await w.bobPage.evaluate(() => {
+        globalThis.__conc = { inflight: 0, max: 0, started: 0 };
+        const orig = window.fetch;
+        window.fetch = async (...args) => {
+            const url = String(args[0]);
+            const isAtt = url.includes('/attachments/');
+            if (!isAtt) return orig(...args);
+            globalThis.__conc.inflight++;
+            globalThis.__conc.started++;
+            globalThis.__conc.max = Math.max(globalThis.__conc.max, globalThis.__conc.inflight);
+            try {
+                await new Promise((r) => setTimeout(r, 400));
+                return await orig(...args);
+            } finally {
+                globalThis.__conc.inflight--;
+            }
+        };
+    });
+
+    // Five small images: all of them want to be auto-loaded at once.
+    for (let i = 0; i < 5; i++) {
+        await sendFile(w.alicePage, w.gid, fixture(`photo${i}.png`, PNG), `picture ${i}`);
+    }
+
+    // Bob opens the group: the rows become visible and want to be loaded.
+    await openGroupUi(w.bobPage, w.gid);
+
+    // Wait for all five to be rendered.
+    await waitFor(async () => {
+        const n = await w.bobPage.$$eval('#group-messages .chat-attachment-image', (e) => e.length);
+        return n >= 5;
+    }, 60000, 250);
+
+    const conc = await w.bobPage.evaluate(() => globalThis.__conc);
+    assert.ok(conc.started >= 5, `all five files must have been fetched, saw ${conc.started}`);
+    assert.ok(conc.max >= 1, 'at least one download must have run');
+    assert.ok(conc.max <= 2, `at most 2 downloads may be in flight, saw ${conc.max}`);
+});
+
+test('9 a file over the auto-load limit waits for an explicit click', async (t) => {
+    const w = await world();
+    await enableFlag(w.alicePage);
+    await enableFlag(w.bobPage);
+
+    // 6 MB: over GROUP_ATTACHMENT_AUTO_LOAD_MAX_BYTES (5 MB).
+    const big = Buffer.concat([PNG, Buffer.alloc(6 * 1024 * 1024, 3)]);
+    await sendFile(w.alicePage, w.gid, fixture('big.png', big), 'a big picture');
+
+    const btn = await bobSees(w.bobPage, w.gid, '#group-messages button.chat-attachment-download');
+    assert.ok(btn, 'the row must offer a download button');
+    const label = await w.bobPage.$eval('#group-messages button.chat-attachment-download', (e) => e.textContent);
+    assert.match(label, /Download \(6\.0 MB\)/, `the button must name the size, got ${label}`);
+
+    // It must NOT have been auto-loaded.
+    await sleep(1500);
+    assert.equal(
+        await w.bobPage.$$eval('#group-messages .chat-attachment-image', (e) => e.length),
+        0,
+        'a file over the auto-load limit must not be fetched automatically'
+    );
+
+    // The explicit click loads it.
+    await clickIn(w.bobPage, '#group-messages button.chat-attachment-download');
+    await sleep(3000);
+    const img = await bobSees(w.bobPage, w.gid, '#group-messages .chat-attachment-image');
+    assert.ok(img, 'the click must load the file');
 });

@@ -74,9 +74,13 @@ import { isGroupAttachmentsUiEnabled } from './group-attachments-flag.js';
 import {
     prepareGroupAttachmentUpload,
     parseGroupAttachmentPlaintext,
-    receiveGroupAttachment,
-    groupAttachmentHtml,
+    stageGroupAttachment,
+    registerGroupAttachmentRow,
+    groupAttachmentPlaceholderHtml,
     groupAttachmentUnavailableHtml,
+    downloadGroupAttachment,
+    revokeAllGroupAttachments,
+    abortDetachedGroupAttachments,
     sanitiseGroupFileName,
 } from './group-attachments.js';
 import { setActiveGroupIdGetter } from './reactions.js';
@@ -128,6 +132,9 @@ window.addEventListener('wire:logout', () => {
     activeGroupId = null;
     activeGroupMembers = [];
     groupThreads.clear();
+    // STEP 3D item 2: every blob URL of a loaded attachment is revoked when
+    // the threads go away.
+    revokeAllGroupAttachments();
     membershipByGroupId.clear();
     groupTypingIndicator.clearAll();
 });
@@ -316,15 +323,26 @@ export async function decorateGroupMessages(groupId, rawMessages, { live = false
                     continue;
                 }
                 content = meta.text;
-                try {
-                    const received = await receiveGroupAttachment({ groupId, raw, plaintext, binding: attachmentBinding, senderKeyId });
-                    attachmentHtml = groupAttachmentHtml(raw, received);
-                } catch (e) {
-                    // attachment-mismatch (or any other failure): this row
-                    // shows the placeholder; the other rows are unaffected.
-                    console.warn(`[group] attachment ${raw.id} could not be rendered (${e?.message || e})`);
-                    attachmentHtml = groupAttachmentUnavailableHtml();
-                }
+                // STEP 3D item 2: the decorate NEVER downloads the file. It
+                // renders a placeholder from the SIGNED meta - the size is
+                // the signed att_len (the file's plaintext length), the type
+                // is the DECLARED one and only a hint - and stages the row
+                // for the lazy loader (public/js/chat/group-attachments.js).
+                const size = Number(attachmentBinding.len) || 0;
+                stageGroupAttachment({
+                    id: raw.id,
+                    groupId,
+                    raw,
+                    binding: attachmentBinding,
+                    senderKeyId,
+                    meta,
+                    size,
+                });
+                attachmentHtml = groupAttachmentPlaceholderHtml(raw, {
+                    name: meta.file.name,
+                    size,
+                    mime: meta.file.mime,
+                });
             }
 
             out.push({
@@ -428,6 +446,9 @@ function getOrCreateThread(groupId) {
         fetchSince: (since, limit) =>
             api(`/api/groups/${groupId}/messages/since?since=${encodeURIComponent(since)}&limit=${limit}`),
         decorate: (raw, opts) => decorateGroupMessages(groupId, raw, opts),
+        // STEP 3D item 2: the row is rendered, so the lazy loader can watch
+        // it for visibility. The hook runs AFTER the element is in the DOM.
+        afterRender: (msg, node) => registerGroupAttachmentRow(msg, node),
         isMounted: () => activeGroupId === groupId,
         onDecorateError: onGroupDecorateError,
         canDelete: canDeleteGroupMessage,
@@ -685,6 +706,10 @@ function renderActiveGroupShell(group) {
             </div>
         </div>
     `;
+
+    // STEP 3D item 2: the rows of the group we are leaving are no longer in
+    // the DOM, so their downloads are aborted and their blob URLs revoked.
+    abortDetachedGroupAttachments();
 
     if (groupComposer) groupComposer.destroy();
 
@@ -971,6 +996,12 @@ if (typeof document !== 'undefined') document.addEventListener('click', (e) => {
             break;
         case 'group-attach':
             document.getElementById('group-file-input')?.click();
+            break;
+        case 'group-attachment-download':
+        case 'group-attachment-retry':
+            // STEP 3D item 2: the explicit "Download (X MB)" click (and the
+            // retry of a failed download) starts the fetch.
+            downloadGroupAttachment(Number(btn.dataset.msgId));
             break;
         case 'group-send':
             window.sendGroupMessage();

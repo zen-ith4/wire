@@ -509,7 +509,8 @@ function groupAttachmentUrl(groupId, messageId) {
 
 /**
  * Downloads the ciphertext of a group attachment (session header, never a
- * token in the URL).
+ * token in the URL). The signal aborts the download when the row leaves the
+ * DOM.
  */
 export async function fetchGroupAttachmentCiphertext({ groupId, messageId, signal } = {}) {
     const token = getToken();
@@ -535,53 +536,39 @@ export async function decryptGroupAttachmentBytes({ groupId, ciphertext, rowIvBa
     return new Uint8Array(plain);
 }
 
-/**
- * The whole receive side for one group message: the verified binding comes
- * from decryptGroupMessageDetailed, the file is downloaded and decrypted, and
- * the bytes are sniffed before anything may be rendered inline.
- *
- * @param {object} a
- * @param {number} a.groupId
- * @param {object} a.raw the message ROW (for its id and its attachment_iv column)
- * @param {string} a.plaintext the DECRYPTED message plaintext (the meta JSON)
- * @param {object} a.binding the verified binding
- * @param {string} a.senderKeyId
- * @returns {Promise<{name: string, mime: string, w?: number, h?: number, bytes: Uint8Array, inlineMime: string|null}>}
- */
-export async function receiveGroupAttachment({ groupId, raw, plaintext, binding, senderKeyId }) {
-    const meta = parseGroupAttachmentPlaintext(plaintext);
-    if (!meta || !meta.file) throw new Error('Malformed group attachment meta');
-
-    const ciphertext = await fetchGroupAttachmentCiphertext({ groupId, messageId: raw.id });
-    const bytes = await decryptGroupAttachmentBytes({
-        groupId,
-        ciphertext,
-        rowIvBase64: raw.attachment_iv,
-        binding,
-        senderKeyId,
-        ref: `att:${raw.id}`,
-    });
-    const inlineMime = sniffInlineImageMime(bytes);
-    return {
-        name: sanitiseGroupFileName(meta.file.name),
-        mime: meta.file.mime,
-        w: meta.file.w,
-        h: meta.file.h,
-        bytes,
-        // Only a sniffed type may be rendered inline - the declared mime is
-        // never enough.
-        inlineMime: inlineMime && INLINE_IMAGE_MIMES.includes(inlineMime) ? inlineMime : null,
-    };
-}
-
-export { encryptOutgoingGroupMessage, decryptIncomingGroupMessageDetailed };
-
 /* =========================================================
- * Render
+ * The lazy receive path (STEP 3D item 2)
+ *
+ * The decorate NEVER downloads a file: it renders a placeholder row built
+ * from the SIGNED meta (the name, the size from the signed att_len, and the
+ * declared type - a hint only). The file is fetched when its row becomes
+ * visible AND it is small enough to be auto-loaded; everything else waits
+ * for an explicit click.
  * ========================================================= */
 
-// Blob URLs of the rendered files, per message id, so a re-render can revoke
-// the previous one (and so a removed row can revoke its own).
+/** The largest file that is fetched automatically when its row becomes
+ *  visible. Anything bigger waits for an explicit "Download (X MB)" click. */
+export const GROUP_ATTACHMENT_AUTO_LOAD_MAX_BYTES = 5 * 1024 * 1024;
+
+/** How many downloads may be in flight at the same time. */
+export const GROUP_ATTACHMENT_MAX_CONCURRENT_DOWNLOADS = 2;
+
+/** The rows of this module: message id -> the row's state. */
+const rows = new Map();
+
+/** The rows waiting for their file: filled by the decorate (the signed meta,
+ *  the binding and the message row) and consumed by the loader. */
+const staged = new Map();
+
+/** The download queue and the number of downloads in flight. */
+const queue = [];
+let inFlight = 0;
+
+/** The observer that watches the rows for visibility. */
+let observer = null;
+
+/** The blob URLs of the rendered files, per message id, so a re-render can
+ *  revoke the previous one (and so a removed row can revoke its own). */
 const blobUrls = new Map();
 
 function escapeHtml(value) {
@@ -593,49 +580,87 @@ function escapeHtml(value) {
         .replace(/'/g, '&#39;');
 }
 
+/** "5 MB", "1.2 MB", "512 KB", "80 B" - a hint for the user. */
+export function formatGroupAttachmentSize(bytes) {
+    const n = Number(bytes);
+    if (!Number.isFinite(n) || n <= 0) return 'unknown size';
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
+    return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 /**
- * The HTML of a received group attachment.
+ * Whether the file may be fetched AUTOMATICALLY when its row becomes
+ * visible: an image (by the DECLARED type - the sniffed type decides what is
+ * rendered later) that is not bigger than the auto-load limit.
+ */
+export function isAutoLoadableGroupAttachment({ mime, size } = {}) {
+    const type = String(mime || '').toLowerCase();
+    if (!INLINE_IMAGE_MIMES.includes(type)) return false;
+    const bytes = Number(size);
+    if (!Number.isFinite(bytes) || bytes < 0) return false;
+    return bytes <= GROUP_ATTACHMENT_AUTO_LOAD_MAX_BYTES;
+}
+
+/**
+ * The placeholder row of a message whose file is not loaded yet.
+ *
+ * The name is the SANITISED name, the size comes from the SIGNED att_len
+ * and the type is the DECLARED one - shown only as a hint (the real type is
+ * the sniffed one, after the download).
+ */
+export function groupAttachmentPlaceholderHtml(msg, { name, size, mime } = {}) {
+    const id = Number(msg?.id ?? 0);
+    const shown = sanitiseGroupFileName(name);
+    const bytes = Number(size) > 0 ? Number(size) : 0;
+    const type = String(mime || '').slice(0, MAX_GROUP_ATTACHMENT_MIME);
+    const auto = isAutoLoadableGroupAttachment({ mime: type, size: bytes });
+    const label = auto ? 'Download' : `Download (${formatGroupAttachmentSize(bytes)})`;
+    const sizeText = escapeHtml(formatGroupAttachmentSize(bytes));
+    const typeText = type ? escapeHtml(type) : '';
+    return `<div class="chat-attachment chat-attachment-lazy" data-group-attachment-id="${id}">
+      <span class="chat-attachment-name">${escapeHtml(shown)}</span>
+      <span class="chat-attachment-size">${sizeText}${typeText ? ' - ' + typeText : ''}</span>
+      <button type="button" class="chat-attachment-download" data-action="group-attachment-download" data-msg-id="${id}" title="Download">${label}</button>
+    </div>`;
+}
+
+/**
+ * The content of a loaded file: the image (inline, from a blob URL) or the
+ * name and the download link.
  *
  * The name is written as TEXT (escaped, never as markup) and is always the
- * SANITISED name. Only a sniffed inline type is rendered as an image, from a
- * blob URL; everything else is a download link to a blob URL of the decrypted
- * bytes, served as application/octet-stream (never the declared mime).
+ * SANITISED name. Only a sniffed inline type is rendered as an image; the
+ * download is always served as application/octet-stream (never the declared
+ * mime).
  */
-export function groupAttachmentHtml(msg, received) {
-    // The escaped values are computed ONCE and interpolated: the CSP guard
-    // (tests/csp-static.test.mjs) allows no escapeHtml() call inside a
-    // quoted attribute value in a new file.
+export function groupAttachmentContentHtml(id, received) {
     const name = escapeHtml(received.name);
-    const id = String(msg?.id ?? '');
 
-    const old = blobUrls.get(id);
+    const old = blobUrls.get(String(id));
     if (old) {
         URL.revokeObjectURL(old);
-        blobUrls.delete(id);
+        blobUrls.delete(String(id));
     }
 
     if (received.inlineMime) {
         const url = URL.createObjectURL(new Blob([received.bytes], { type: received.inlineMime }));
-        blobUrls.set(id, url);
+        blobUrls.set(String(id), url);
         const urlAttr = escapeHtml(url);
         const dims = received.w && received.h
             ? ` width="${Number(received.w)}" height="${Number(received.h)}"`
             : '';
-        return `<div class="chat-attachment chat-attachment-image-wrap">
+        return `<div class="chat-attachment-image-wrap">
       <img class="chat-attachment-image" src="${urlAttr}" alt="${name}"${dims}>
     </div>`;
     }
 
-    // Not an inline type: a download of the decrypted bytes, as
-    // application/octet-stream, with the sanitised name.
     const url = URL.createObjectURL(new Blob([received.bytes], { type: 'application/octet-stream' }));
-    blobUrls.set(id, url);
+    blobUrls.set(String(id), url);
     const urlAttr = escapeHtml(url);
     const nameAttr = escapeHtml(received.name);
-    return `<div class="chat-attachment chat-attachment-file">
-      <span class="chat-attachment-name">${name}</span>
-      <a class="chat-attachment-download" href="${urlAttr}" download="${nameAttr}" title="Download">Download</a>
-    </div>`;
+    return `<span class="chat-attachment-name">${name}</span>
+      <a class="chat-attachment-download" href="${urlAttr}" download="${nameAttr}" title="Download">Download</a>`;
 }
 
 /** The per-row placeholder for a file that must not be rendered. */
@@ -645,14 +670,277 @@ export function groupAttachmentUnavailableHtml() {
     </div>`;
 }
 
+/** The per-row error for a download that failed for a reason the user can
+ *  act on (a network error): a retry button. */
+export function groupAttachmentErrorHtml(msg, reason) {
+    const id = Number(msg?.id ?? 0);
+    const why = escapeHtml(String(reason || 'download failed').slice(0, 120));
+    return `<span class="chat-attachment-name">Download failed (${why})</span>
+      <button type="button" class="chat-attachment-retry" data-action="group-attachment-retry" data-msg-id="${id}" title="Retry">Retry</button>`;
+}
+
 /**
- * Revokes the blob URL (and forgets the bytes) of one message.
+ * Stages a message whose file is not loaded yet. Called by the decorate.
+ * NO network happens here.
  */
-export function revokeGroupAttachment(messageId) {
-    const id = String(messageId);
-    const url = blobUrls.get(id);
-    if (url) {
-        URL.revokeObjectURL(url);
-        blobUrls.delete(id);
+export function stageGroupAttachment({ id, groupId, raw, binding, senderKeyId, meta, size } = {}) {
+    staged.set(String(id), { id: String(id), groupId, raw, binding, senderKeyId, meta, size });
+}
+
+/**
+ * Registers a RENDERED row so the loader can pick it up: the row is watched
+ * for visibility, and a re-render replaces the element (the old one is
+ * aborted and its blob URL revoked).
+ */
+export function registerGroupAttachmentRow(msg, node) {
+    const id = String(msg?.id ?? '');
+    const info = staged.get(id);
+    if (!info || !node) return;
+    const el = node.querySelector(`[data-group-attachment-id="${id}"]`);
+    if (!el) return;
+
+    let row = rows.get(id);
+    if (row && row.el && row.el !== el) {
+        // The row was re-rendered (the thread repaints). An in-flight
+        // download is aborted (its row is gone) and started again when the
+        // new row becomes visible; a LOADED row keeps its bytes and its blob
+        // URL - there is no second download.
+        if (row.state === 'loading' || row.state === 'queued') {
+            softAbortGroupAttachment(row);
+        } else {
+            row.el = el;
+        }
+    }
+    if (!row) {
+        row = { id, state: 'idle', controller: null, blobUrl: null };
+        rows.set(id, row);
+    }
+    row.el = el;
+    row.groupId = info.groupId;
+    row.raw = info.raw;
+    row.binding = info.binding;
+    row.senderKeyId = info.senderKeyId;
+    row.meta = info.meta;
+    row.size = info.size;
+
+    if (row.state === 'loaded' || row.state === 'mismatch' || row.state === 'error') {
+        // A finished row keeps its outcome across a re-render: the loaded
+        // content, the "Attachment unavailable" placeholder or the error with
+        // its retry button.
+        renderRow(row);
+    } else {
+        observeRow(row);
     }
 }
+
+/** The observer that watches the rows for visibility. */
+function ensureObserver() {
+    if (observer) return observer;
+    if (typeof IntersectionObserver === 'undefined') return null;
+    observer = new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+            if (!entry.isIntersecting) continue;
+            const id = String(entry.target?.dataset?.groupAttachmentId ?? '');
+            const row = rows.get(id);
+            if (!row) continue;
+            observer.unobserve(entry.target);
+            if (row.state === 'idle' && isAutoLoadableGroupAttachment({ mime: row.meta?.file?.mime, size: row.size })) {
+                enqueueGroupAttachment(row);
+            }
+        }
+    }, { rootMargin: '200px' });
+    return observer;
+}
+
+function observeRow(row) {
+    const obs = ensureObserver();
+    if (!obs || !row.el) return;
+    obs.observe(row.el);
+}
+
+/**
+ * Starts (or retries) the download of one row. At most
+ * GROUP_ATTACHMENT_MAX_CONCURRENT_DOWNLOADS downloads run at the same time.
+ */
+export function downloadGroupAttachment(id) {
+    const row = rows.get(String(id));
+    if (!row) return false;
+    if (row.state === 'queued' || row.state === 'loading') return false;
+    enqueueGroupAttachment(row);
+    return true;
+}
+
+function enqueueGroupAttachment(row) {
+    if (!row || row.state === 'queued' || row.state === 'loading') return;
+    row.state = 'queued';
+    if (!queue.includes(row.id)) queue.push(row.id);
+    pumpQueue();
+}
+
+function pumpQueue() {
+    while (inFlight < GROUP_ATTACHMENT_MAX_CONCURRENT_DOWNLOADS && queue.length) {
+        const id = queue.shift();
+        const row = rows.get(String(id));
+        if (!row || row.state !== 'queued') continue;
+        inFlight++;
+        row.state = 'loading';
+        row.controller = typeof AbortController === 'undefined' ? null : new AbortController();
+        runDownload(row).finally(() => {
+            inFlight--;
+            row.controller = null;
+            pumpQueue();
+        });
+    }
+}
+
+/** How many downloads are in flight right now (the tests assert the cap). */
+export function groupAttachmentDownloadsInFlight() {
+    return inFlight;
+}
+
+/** How many downloads are waiting in the queue right now. */
+export function groupAttachmentQueueLength() {
+    return queue.length;
+}
+
+/** The state of one row: 'idle', 'queued', 'loading', 'loaded', 'mismatch',
+ *  'error' or 'aborted'. */
+export function groupAttachmentRowState(id) {
+    const row = rows.get(String(id));
+    return row ? row.state : null;
+}
+
+async function runDownload(row) {
+    try {
+        const ciphertext = await fetchGroupAttachmentCiphertext({
+            groupId: row.groupId,
+            messageId: row.raw.id,
+            signal: row.controller?.signal,
+        });
+        const bytes = await decryptGroupAttachmentBytes({
+            groupId: row.groupId,
+            ciphertext,
+            rowIvBase64: row.raw.attachment_iv,
+            binding: row.binding,
+            senderKeyId: row.senderKeyId,
+            ref: `att:${row.raw.id}`,
+        });
+        if (row.state === 'aborted') return;
+        const inlineMime = sniffInlineImageMime(bytes);
+        row.bytes = bytes;
+        row.inlineMime = inlineMime && INLINE_IMAGE_MIMES.includes(inlineMime) ? inlineMime : null;
+        row.name = sanitiseGroupFileName(row.meta?.file?.name);
+        row.state = 'loaded';
+        renderRow(row);
+    } catch (e) {
+        if (row.state === 'aborted') return;
+        if (e?.name === 'AbortError') {
+            row.state = 'idle';
+            return;
+        }
+        const reason = String(e?.reason || e?.message || e);
+        if (e?.reason === 'attachment-mismatch') {
+            // The bytes do not match what the sender signed: permanent, no
+            // retry loop.
+            row.state = 'mismatch';
+        } else {
+            row.state = 'error';
+            row.error = reason;
+        }
+        renderRow(row);
+    }
+}
+
+function renderRow(row) {
+    const el = row.el;
+    if (!el || !el.isConnected) return;
+    if (row.state === 'loaded') {
+        el.innerHTML = groupAttachmentContentHtml(row.id, {
+            name: row.name,
+            mime: row.meta?.file?.mime,
+            w: row.meta?.file?.w,
+            h: row.meta?.file?.h,
+            bytes: row.bytes,
+            inlineMime: row.inlineMime,
+        });
+        return;
+    }
+    if (row.state === 'mismatch') {
+        el.innerHTML = groupAttachmentUnavailableHtml();
+        return;
+    }
+    if (row.state === 'error') {
+        el.innerHTML = groupAttachmentErrorHtml({ id: row.id }, row.error);
+    }
+}
+
+/**
+ * Aborts the download of one row and revokes its blob URL. The nonce is NOT
+ * claimed: the claim happens inside the decrypt, which an aborted download
+ * never reaches.
+ */
+export function abortGroupAttachment(id) {
+    const key = String(id);
+    const row = rows.get(key);
+    if (row) {
+        softAbortGroupAttachment(row);
+        row.state = 'aborted';
+        row.el = null;
+    }
+    const url = blobUrls.get(key);
+    if (url) {
+        URL.revokeObjectURL(url);
+        blobUrls.delete(key);
+    }
+    const qi = queue.indexOf(key);
+    if (qi !== -1) queue.splice(qi, 1);
+}
+
+/**
+ * Aborts only the in-flight download of a row (the row's element is gone,
+ * so the result would be thrown away). The bytes of a LOADED row are kept:
+ * the thread repaints and the loader re-renders the content into the new
+ * element - there is no second download and no lost content.
+ */
+function softAbortGroupAttachment(row) {
+    if (row.controller) {
+        try { row.controller.abort(); } catch { /* ignore */ }
+        row.controller = null;
+    }
+    if (row.state === 'loading' || row.state === 'queued') row.state = 'idle';
+    const qi = queue.indexOf(row.id);
+    if (qi !== -1) queue.splice(qi, 1);
+}
+
+/**
+ * Aborts the downloads of the rows that are no longer in the DOM: the group
+ * was left, or the thread was repainted.
+ *
+ * The STAGED information (the signed meta, the binding) is kept: a repaint
+ * re-uses the decorated messages from the thread's cache, so the row has to
+ * be loadable again without decrypting the message a second time.
+ */
+export function abortDetachedGroupAttachments() {
+    for (const [, row] of [...rows.entries()]) {
+        if (row.el && row.el.isConnected) continue;
+        softAbortGroupAttachment(row);
+        row.el = null;
+    }
+}
+
+/**
+ * Aborts every download and revokes every blob URL: the thread was torn down
+ * or the group was left for good.
+ */
+export function revokeAllGroupAttachments() {
+    for (const id of [...rows.keys()]) abortGroupAttachment(id);
+    rows.clear();
+    staged.clear();
+    queue.length = 0;
+    if (observer) {
+        observer.disconnect();
+        observer = null;
+    }
+}
+
+export { encryptOutgoingGroupMessage, decryptIncomingGroupMessageDetailed };

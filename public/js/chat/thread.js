@@ -149,6 +149,10 @@ export function createMessageThread(config) {
         fetchSince,
         decorate = async (raw) => raw,
         onDecorateError = null,
+        // Called with (msg, element) AFTER the element is in the DOM. The
+        // group attachment loader uses it to watch a rendered row for
+        // visibility (STEP 3D item 2). Absent = nothing happens.
+        afterRender = null,
         getSenderId = (m) => m.sender_id,
         getSenderName = (m) => m.sender_username,
         canDelete,
@@ -267,6 +271,17 @@ export function createMessageThread(config) {
         el.innerHTML = emptyState(icon, title, subtitle);
     }
 
+    function notifyRendered(pairs) {
+        if (!afterRender) return;
+        for (const [msg, node] of pairs) {
+            try {
+                afterRender(msg, node);
+            } catch (e) {
+                console.error(`[thread:${scope}] afterRender failed:`, e);
+            }
+        }
+    }
+
     function paintFromCache() {
         const el = container();
         if (!el || !isMounted()) return;
@@ -283,17 +298,23 @@ export function createMessageThread(config) {
         }
 
         const frag = document.createDocumentFragment();
+        const built = [];
 
         if (cache.hasMore) {
             frag.appendChild(buildLoadMoreEl(loadOlder));
         }
 
         for (const msg of cache.messages) {
-            frag.appendChild(buildMessageEl(msg));
+            const node = buildMessageEl(msg);
+            frag.appendChild(node);
+            built.push([msg, node]);
         }
 
         el.innerHTML = '';
         el.appendChild(frag);
+
+        // The elements are in the DOM now, so a row can be observed.
+        notifyRendered(built);
 
         el.scrollTop = cache.atBottom ? el.scrollHeight : cache.scrollTop;
     }
@@ -392,11 +413,14 @@ export function createMessageThread(config) {
 
             const frag = document.createDocumentFragment();
             if (cache.hasMore) frag.appendChild(buildLoadMoreEl(loadOlder));
+            const built = [];
 
             for (const msg of fresh) {
                 cache.ids.add(msg.id);
                 cache.byId.set(msg.id, msg);
-                frag.appendChild(buildMessageEl(msg));
+                const node = buildMessageEl(msg);
+                frag.appendChild(node);
+                built.push([msg, node]);
             }
 
             cache.messages = [...fresh, ...cache.messages];
@@ -404,6 +428,7 @@ export function createMessageThread(config) {
             if (el && isMounted()) {
                 if (fresh.length > 0) el.querySelector('.empty-state')?.remove();
                 el.insertBefore(frag, el.firstChild);
+                notifyRendered(built);
                 el.scrollTop = oldTop + (el.scrollHeight - prevHeight);
             }
         } catch (e) {
@@ -523,6 +548,7 @@ export function createMessageThread(config) {
         const node = buildMessageEl(finalMsg);
         node.classList.add('msg-enter');
         el.appendChild(node);
+        notifyRendered([[finalMsg, node]]);
 
         const currentUser = getCurrentUser();
         const isOwn = decorated && Number(getSenderId(decorated)) === Number(currentUser?.id);

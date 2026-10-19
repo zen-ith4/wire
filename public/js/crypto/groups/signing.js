@@ -105,6 +105,49 @@ export function encodeSignedBytes(f) {
 }
 
 /**
+ * Concatenates Uint8Arrays into a single Uint8Array.
+ */
+function concatBytes(...parts) {
+    const total = parts.reduce((n, p) => n + p.length, 0);
+    const out = new Uint8Array(total);
+    let offset = 0;
+    for (const p of parts) {
+        out.set(p, offset);
+        offset += p.length;
+    }
+    return out;
+}
+
+/**
+ * Builds the 40-byte attachment slot that is bound into the signed bytes of a
+ * group message carrying a file.
+ *
+ * slot = SHA-256(iv || ciphertext)  ||  plaintextLength (8-byte big-endian)
+ *
+ * `iv` and `ciphertext` are the canonical (decoded) bytes: the 12-byte file
+ * nonce and the raw AES-256-GCM output (ciphertext + 16-byte tag), never the
+ * base64 text. `plaintextLength` is the original plaintext length in bytes.
+ *
+ * @param {object} f
+ * @param {Uint8Array} f.iv 12 bytes
+ * @param {Uint8Array} f.ciphertext raw decoded ciphertext, length >= 16
+ * @param {number} f.plaintextLength safe non-negative integer; must equal ciphertext.length - 16
+ * @returns {Promise<Uint8Array>} exactly 40 bytes
+ * @throws {SigningFormatError} on any malformed input
+ */
+export async function buildAttachmentSlot({ iv, ciphertext, plaintextLength }) {
+    if (!(iv instanceof Uint8Array) || iv.length !== IV_LENGTH) throw new SigningFormatError('Invalid attachment iv');
+    if (!(ciphertext instanceof Uint8Array) || ciphertext.length < 16) throw new SigningFormatError('Invalid attachment ciphertext');
+    if (!Number.isSafeInteger(plaintextLength) || plaintextLength < 0) throw new SigningFormatError('Invalid attachment plaintext length');
+    if (ciphertext.length !== plaintextLength + 16) throw new SigningFormatError('Attachment ciphertext length does not equal plaintext length + GCM tag');
+    const digest = await crypto.subtle.digest({ name: 'SHA-256' }, concatBytes(iv, ciphertext));
+    const slot = new Uint8Array(40);
+    slot.set(new Uint8Array(digest));
+    new DataView(slot.buffer).setBigUint64(32, BigInt(plaintextLength), false);
+    return slot;
+}
+
+/**
  * Generates a fresh signing key pair for ONE Sender Key.
  *
  * The private key is returned EXTRACTABLE on purpose: C2 exports it once (PKCS#8)

@@ -281,6 +281,57 @@ test('encoding is unambiguous: two different field tuples never encode to the sa
     }
 });
 
+/* -------------------------------------------------------------- attachment slot */
+
+test('text-only message keeps byte-identical signed bytes (known-answer vector)', async () => {
+    const f = {
+        groupId: 1,
+        senderKeyId: 'ab'.repeat(32),
+        counter: 5,
+        iv: Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]),
+        ciphertext: Uint8Array.from([200, 201, 202, 203]),
+        replyToId: null,
+        attachment: new Uint8Array(0),
+    };
+    const bytes = S.encodeSignedBytes(f);
+    assert.equal(bytes.length, 143);
+    assert.equal(
+        Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join(''),
+        '0000000015776972652d67726f75702d6d73672d7369672f7631000000000131000000004061626162616261626162616261626162616261626162616261626162616261626162616261626162616261626162616261626162616261626162616261626162000000000135010000000c0102030405060708090a0b0c0100000004c8c9cacb01000000000100000000',
+        'text-only signed bytes must stay byte-identical'
+    );
+});
+
+test('buildAttachmentSlot returns exactly 40 bytes: SHA-256(iv || ciphertext) || plaintextLength BE-8 (known-answer vector)', async () => {
+    const iv = Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    const ciphertext = Uint8Array.from([170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185]);
+    const slot = await S.buildAttachmentSlot({ iv, ciphertext, plaintextLength: 0 });
+    assert.ok(slot instanceof Uint8Array);
+    assert.equal(slot.length, 40);
+    assert.equal(
+        Array.from(slot).map((b) => b.toString(16).padStart(2, '0')).join(''),
+        'dc5639601ead6c5b8c202a211f95a47933f2384f996a8005b6ed41e7d5e20f9e0000000000000000',
+        'attachment slot KAT must match'
+    );
+});
+
+test('buildAttachmentSlot rejects malformed input with SigningFormatError', async () => {
+    const good = { iv: Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]), ciphertext: Uint8Array.from([170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185]), plaintextLength: 0 };
+    const bad = [
+        { ...good, iv: Uint8Array.from([1, 2, 3]) },
+        { ...good, iv: 'x'.repeat(12) },
+        { ...good, ciphertext: Uint8Array.from([1, 2, 3]) },
+        { ...good, ciphertext: 'x'.repeat(16) },
+        { ...good, plaintextLength: -1 },
+        { ...good, plaintextLength: 1.5 },
+        { ...good, plaintextLength: '0' },
+        { ...good, ciphertext: Uint8Array.from([...good.ciphertext, 0]) },
+    ];
+    for (const b of bad) {
+        await assert.rejects(() => S.buildAttachmentSlot(b), S.SigningFormatError);
+    }
+});
+
 /* -------------------------------------------------------------- public key */
 
 test('importVerifyKey fails closed on every malformed public key', async () => {

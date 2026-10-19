@@ -375,8 +375,15 @@ test('C3-11: a superseded own signing key left by NON-deferred generation is eve
 
 /* ----------------------------------------------- condition E: no group attachments */
 
-test('C3-12 (E): the attachment bytes ARE bound into the signature, and still no client path SENDS group attachments', () => {
+test('C3-12 (E): the file bytes ARE bound into the signature, ONE send module is the only caller, and the UI sits behind a flag that ships false', () => {
     const root = path.resolve(import.meta.dirname, '../../public/js');
+    // The ONLY modules allowed to mention encryptAttachmentForGroup:
+    //   crypto/messages/attachment-crypto.js  (the definition)
+    //   chat/group-attachments.js             (the ONE send module, STEP 3C)
+    const ALLOWED = new Set([
+        path.join('crypto', 'messages', 'attachment-crypto.js'),
+        path.join('chat', 'group-attachments.js'),
+    ]);
     const hits = [];
     const walk = (dir) => {
         for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -384,19 +391,23 @@ test('C3-12 (E): the attachment bytes ARE bound into the signature, and still no
             if (entry.isDirectory()) walk(p);
             else if (p.endsWith('.js')) {
                 const text = fs.readFileSync(p, 'utf8');
-                if (/encryptAttachmentForGroup/.test(text) && !p.endsWith(path.join('crypto', 'messages', 'attachment-crypto.js'))) hits.push(path.relative(root, p));
+                if (/encryptAttachmentForGroup/.test(text)) {
+                    const rel = path.relative(root, p);
+                    if (!ALLOWED.has(rel)) hits.push(rel);
+                }
             }
         }
     };
     walk(root);
 
     assert.deepEqual(hits, [],
-        'A client path now calls encryptAttachmentForGroup. The signature binding now EXISTS (STEP 3B: the file bytes - iv, ciphertext hash and ' +
-        'plaintext length - are bound into the message signature via buildAttachmentSlot and the attachment slot in signing.js), so the next step is ' +
-        'the COMPOSER wiring, which is step 3C. Update this test then, and only then enable group attachment sending.');
+        'A SECOND client path now calls encryptAttachmentForGroup. The signature binding EXISTS (STEP 3B: the file bytes - iv, ciphertext hash ' +
+        'and plaintext length - are bound into the message signature via buildAttachmentSlot and the attachment slot in signing.js), so this is ' +
+        'no longer the "bind the bytes first" problem: it is the COMPOSER WIRING of step 3C. Only chat/group-attachments.js may call it. ' +
+        'Update this test deliberately when a second send path appears.');
 
-    // STEP 3B: the binding must actually be ON the send path. If a future edit
-    // removes it, this test fails instead of the binding silently disappearing.
+    // The binding must still be ON the send path. If a future edit removes
+    // it, this test fails instead of the binding silently disappearing.
     const messageCrypto = fs.readFileSync(path.join(root, 'crypto/groups/message-crypto.js'), 'utf8');
     assert.ok(/buildAttachmentSlot/.test(messageCrypto),
         'the send path must build the attachment slot (buildAttachmentSlot) - the binding was removed');
@@ -404,7 +415,20 @@ test('C3-12 (E): the attachment bytes ARE bound into the signature, and still no
     assert.ok(/export async function buildAttachmentSlot/.test(signing),
         'signing.js must export buildAttachmentSlot');
 
+    // The flag module must exist and ship FALSE: the group attachment UI is
+    // OFF unless an owner flips the constant.
+    const flagPath = path.join(root, 'chat/group-attachments-flag.js');
+    assert.ok(fs.existsSync(flagPath), 'the group attachment flag module must exist');
+    const flagSrc = fs.readFileSync(flagPath, 'utf8');
+    assert.ok(/GROUP_ATTACHMENTS_UI_ENABLED\s*=\s*false/.test(flagSrc), 'the flag must ship FALSE');
+    assert.ok(/groupAttachmentsEnabled/.test(fs.readFileSync(path.join(root, 'chat/group.js'), 'utf8')),
+        'group.js must gate the attach UI on the flag');
+
+    // With the flag OFF the old behaviour is intact: the composer's file ids
+    // point at elements that do not exist, so its staging code no-ops, and
+    // the paste hook stays a no-op.
     const groupJs = fs.readFileSync(path.join(root, 'chat/group.js'), 'utf8');
-    assert.ok(!/uploadUrl\s*:/.test(groupJs), 'the group composer has no upload URL');
-    assert.ok(/group attachments aren't supported/i.test(groupJs));
+    assert.ok(/fileInputId:\s*'group-file-input'/.test(groupJs), 'the composer keeps its file ids');
+    assert.ok(/stagingId:\s*'group-staging-area'/.test(groupJs));
+    assert.ok(/wirePasteImage\('group-input', \(\) => \{\}\)/.test(groupJs), 'the group paste hook stays a no-op');
 });

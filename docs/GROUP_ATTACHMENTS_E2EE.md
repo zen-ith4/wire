@@ -251,6 +251,82 @@ Decisions only the owner can make (do not decide here):
 - **Version label change?** The design keeps `v: 2` (changed in place, unreleased). Confirm the owner does not want a `v: 3` for the attachment binding (would break all unreleased v2 clients and require a compatibility layer).
 - **Voice-file size/duration limits:** no maximum voice-recording duration exists today for DMs (DM_ATTACHMENTS_E2EE.md:76); decide if groups need one.
 
+## 3C: file metadata and what the server sees
+
+STEP 3C wires the composer, the upload and the thread rendering. The group
+protocol stays `v:2`; the file bytes are bound into the signature exactly as in
+3B. What changes is WHERE the file's metadata lives.
+
+### What the server sees for a group file
+
+| Server field | Value |
+|---|---|
+| `attachment_path` (on disk) | an opaque random name (no extension) |
+| `attachment_name` (the row) | the constant `encrypted-attachment` |
+| `attachment_mime` (the row) | the constant `application/octet-stream` |
+| `attachment_width` / `attachment_height` | `NULL` |
+| `is_voice_message` | `0` (voice is out of scope in 3C) |
+| `attachment_size` | the CIPHERTEXT size (plaintext + 16-byte GCM tag) |
+| `attachment_iv` | the file nonce, base64 (and it is UNSIGNED server-side: the signed `att_iv` in the envelope is the authority, see C2) |
+| `content` | the signed `v:2` envelope (opaque) |
+
+Nothing else. The client's real file name, mime type, dimensions and voice
+flag are **never** sent to the server.
+
+### Where the real metadata lives
+
+Inside the **encrypted message plaintext**. The discriminator is the SIGNED
+envelope, so there is no ambiguity to resolve:
+
+- The verified envelope HAS `att_iv` / `att_ct_hash` / `att_len` (they are in
+  the signed slot) -> the plaintext is a JSON object:
+
+  ```json
+  {"v":1,"text":"<caption>","file":{"name":"photo.png","mime":"image/png","w":800,"h":600}}
+  ```
+
+- The verified envelope has NO `att_*` fields -> the plaintext is the plain
+  text, exactly as today. A text message that merely *looks* like JSON stays
+  text: without the signed `att_*` fields the receiver never tries to parse it.
+
+Limits the client enforces and the receiver re-checks:
+- `v` must be exactly `1`; an unknown `v` is rejected.
+- `name` at most 255 characters, `mime` at most 127 characters.
+- `w` / `h` are positive integers at most 20000, or absent.
+- No key other than `v`, `text` and `file` is allowed; a key inside `file`
+  other than `name`, `mime`, `w`, `h` is rejected. An unknown key is a
+  malformed meta object, not something to ignore.
+
+### Receiver sanitising rules (testable statements)
+
+1. The file name is only ever written with `textContent` (never `innerHTML`).
+2. Path separators (`/`, `\`) and control characters (U+0000-U+001F,
+   U+007F) and bidi/override characters (U+202A-U+202E, U+2066-U+2069) are
+   stripped from the name.
+3. If the sanitised name is empty, it becomes the literal `file`.
+4. Inline rendering is allowed ONLY for `image/png`, `image/jpeg`, `image/gif`
+   and `image/webp` - and only after the **decrypted bytes** were sniffed to
+   match that type. The declared `mime` alone is never enough.
+5. Everything else is a download served as `application/octet-stream`, with the
+   sanitised name.
+6. SVG is NEVER rendered inline (it can carry script), whatever the mime says.
+
+### The caption limit and the 90,000-character server limit
+
+The server still refuses a `content` longer than 90,000 characters
+(`controllers/groups.controller.js`, `sendMessageWithAttachmentHandler`), and
+the envelope is a JSON string whose `ciphertext` is the base64 of
+`plaintext bytes + 16` bytes of GCM tag, so it is about `4/3` of the plaintext
+plus a fixed envelope overhead (~250 characters).
+
+- The plaintext JSON wrapper (version, caption, name, mime, width, height)
+  costs about 440 bytes with the maximum name and mime.
+- `4/3 x (plaintext + 16) + 250 <= 90000` leaves about 67,300 plaintext bytes.
+
+The client therefore enforces a caption of at most **60,000 characters**
+(`MAX_GROUP_ATTACHMENT_CAPTION`), which leaves a wide margin
+(`4/3 x 60,440 + 250 = 80,836` characters, well under 90,000).
+
 ---
 
 ## Doc consistency

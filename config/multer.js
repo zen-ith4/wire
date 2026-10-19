@@ -89,6 +89,10 @@ const TMP_UPLOAD_DIR = path.join(os.tmpdir(), 'wire-uploads');
   constants.BANNER_DIR,
   constants.CHAT_UPLOAD_DIR,
   constants.DM_UPLOAD_DIR,
+  // STEP 3C: GROUP_UPLOAD_DIR was missing here, so a FIRST-EVER group upload
+  // into a fresh tree failed with ENOENT (a 500). The group uploader needs its
+  // directory to exist, exactly like the other upload directories.
+  constants.GROUP_UPLOAD_DIR,
   constants.USER_DATA_ROOT,
   TMP_UPLOAD_DIR,
 ].forEach((dir) => {
@@ -302,11 +306,22 @@ const groupAvatarUpload = createUploader({
   // No userPrefix: this is a group's avatar, not a user's.
 });
 
+// STEP 3C: the group file bytes are AES-GCM ciphertext: the plaintext plus a
+// 16-byte GCM tag. The upload cap limits the PLAINTEXT, so the multer limit
+// gets exactly that overhead on top, the same way dmUpload does.
+const GROUP_CIPHERTEXT_OVERHEAD_BYTES = 16;
+
 const groupUpload = createUploader({
   dir: constants.GROUP_UPLOAD_DIR,
   maxSizeMB: constants.GROUP_UPLOAD_MAX_MB,
-  // Group attachment bodies are AES-GCM ciphertext (opaque bytes), so
-  // there is no file type to sniff or restrict at the multer layer.
+  // STEP 3C: the group file name is metadata and it lives in the ENCRYPTED
+  // message plaintext - so the stored name must not carry it. Same posture as
+  // dmUpload (opaqueNames: true).
+  opaqueNames: true,
+  // +1: multer/busboy treat fileSize as EXCLUSIVE (a body of exactly that
+  // many bytes is rejected), so without it a file of exactly
+  // GROUP_UPLOAD_MAX_MB could never be sent.
+  extraBytes: GROUP_CIPHERTEXT_OVERHEAD_BYTES + 1,
 });
 
 module.exports = {

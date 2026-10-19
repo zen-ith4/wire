@@ -606,10 +606,12 @@ function toggleGroupReactionHandler(req, res) {
 // place of DM_UPLOAD_DIR.
 // ---------------------------------------------------------------
 
-function clampPositiveIntOrNull(value) {
-  const n = Number.parseInt(value, 10);
-  return Number.isInteger(n) && n > 0 && n < 100000 ? n : null;
-}
+// STEP 3C: the neutral values the server stores for a group file. The real
+// name, mime, dimensions and voice flag travel inside the ENCRYPTED message
+// plaintext (see docs/GROUP_ATTACHMENTS_E2EE.md section "3C"), so the server
+// never learns them and never stores what the client sent.
+const E2EE_GROUP_ATTACHMENT_NAME = 'encrypted-attachment';
+const E2EE_GROUP_ATTACHMENT_MIME = 'application/octet-stream';
 
 async function sendMessageWithAttachmentHandler(req, res) {
   const groupId = parseGroupId(req);
@@ -644,12 +646,16 @@ async function sendMessageWithAttachmentHandler(req, res) {
     return res.status(400).json({ error: 'attachment_iv (base64) is required' });
   }
 
-  const originalName = path.basename(req.file.originalname);
-  const clientMime = String(req.body.mime || '').trim().slice(0, 255);
-  const mime = clientMime || 'application/octet-stream';
+  // STEP 3C: the group's real file name, mime type, dimensions and voice flag
+  // live in the ENCRYPTED message plaintext, never in a server column. The
+  // client cannot set them, so whatever it sent is ignored and the neutral
+  // values are stored - the same posture the DM path takes (its
+  // E2EE_ATTACHMENT_NAME constant in services/dm.service.js).
+  const originalName = E2EE_GROUP_ATTACHMENT_NAME;
+  const mime = E2EE_GROUP_ATTACHMENT_MIME;
 
-  const width = clampPositiveIntOrNull(req.body.width);
-  const height = clampPositiveIntOrNull(req.body.height);
+  const width = null;
+  const height = null;
 
   const content = (req.body.content || '').trim();
 
@@ -659,7 +665,9 @@ async function sendMessageWithAttachmentHandler(req, res) {
   }
 
   const replyToId = normalizeGroupReplyToId(req.body?.reply_to_id, groupId);
-  const isVoiceMessage = !!req.body?.is_voice_message && mime.startsWith('audio/');
+  // Voice is out of scope in STEP 3C: the flag is always false, whatever the
+  // client sent.
+  const isVoiceMessage = false;
   const timestamp = new Date().toISOString();
 
   const info = insertGroupMessageWithAttachment(

@@ -14,9 +14,34 @@ Group attachments are out of scope and unchanged.
 
 The DB row stores constants: `attachment_name = 'encrypted-attachment'`,
 `attachment_mime = 'application/octet-stream'`, no dimensions, voice flag 0.
-The real values live in `attachment_meta`, an envelope encrypted with the
-existing DM session key (same trust model as DM text: no forward secrecy,
-and a server that swaps a user's public key is not covered).
+The real values live in `attachment_meta`, an envelope whose version follows the
+peer's `dm_e2ee_min_version`, exactly like a DM text message (STEP 2A):
+
+| peer | `attachment_meta` envelope | caption envelope |
+|---|---|---|
+| min 1 | v1: the DM session key, no AAD | v1 |
+| min 2 | v2: directional key, AAD under the label `dm-att-v2` | v2: the ordinary `dm-msg-v2` text envelope |
+
+The v2 meta envelope has the SAME fields as a v2 text envelope (`version`,
+`algorithm`, `iv`, `ciphertext`, `senderFp`, `msgId`) and the same envelope
+shape, so the server's rules and its `isEncryptedEnvelopeShape` check accept it
+unchanged. Its AAD binds
+`version, fromUserId, toUserId, senderKeyFp, direction, iv, replyToId` - the
+text AAD with only the label changed, which is what stops a file's metadata
+being replayed as a message. The design sketch's `attachmentId` field is NOT
+implemented (see `docs/e2ee-dm-hardening.md` 3.5): the per-file key inside the
+meta already binds the blob, and an unauthenticated id would repeat the `msgId`
+problem. The caption is text, so it uses the unchanged v2 text path.
+
+Version choice and the layer-2 pin are the text rules, unchanged, and the
+decision is made BEFORE the file is read, decoded or encrypted, so a refusal
+uploads nothing. The server refuses to STORE a v2 meta or caption for a
+recipient below version 2, with the same message as text, and it never rewrites
+a stored byte.
+
+Replay detection keys on the AAD-bound `iv`, not on `msgId`
+(`docs/DM_V2_WIRE.md`). The trust model is still the text one: the long-term
+identity key derives the meta key, so there is still no forward secrecy.
 
 ## Format (STREAM AES-256-GCM)
 
@@ -110,5 +135,13 @@ kept (not owned by this task) and only run on the legacy/flag-off path.
 
 Real push notifications (every new attachment shows the generic "File"
 label), the APK / Capacitor (the native download of an encrypted file is
-decrypted in the client and saved from a blob; untested on a device), and
-real multi-device use.
+decrypted in a client and saved from a blob; untested on a device), and real
+multi-device use.
+
+Also not tested in STEP 2A: the real-BROWSER attachment scenarios (upload
+through the composer, tamper, replay). `tests/dm-v2-attachments-browser.test.mjs`
+was NOT written - that sub-step is reported as not done in
+`docs/e2ee-dm-hardening.md` 3.5. What does cover the v2 meta and caption:
+`tests/dm-attachments/*` (seven files, unmodified and green), plus
+`tests/dm-v2-attachments.test.mjs` (client, real server, real modules) and
+`tests/dm-v2-attachments-server.test.mjs` (real server).

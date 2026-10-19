@@ -224,3 +224,32 @@ batch through decryptDmMessages. No test currently exercises that path: plant 3
 (stop filtering null) stayed green on the existing held-row test (k), because
 (k) does not produce a null in the batch during the initial history load.
 The filter is retained as defence in depth.
+
+
+## STEP 2A - attachments get the v2 envelope, and the replay key is the iv
+
+Added by this step. The "Observed on Linux" section above is the reviewer's and
+was not touched.
+
+- **The replay key is the `iv`, not the `msgId`.** A replay is the same iv on a
+  DIFFERENT server row id. The iv is random per message and bound into the AAD,
+  so the server cannot change it without breaking decryption; `msgId` is not in
+  the AAD and is trivially swappable, which is why keying on it was a bypass (a
+  server could copy a row to a new id and change the clear `msgId`). The store
+  key is versioned: `wire.dm.v2.replay.v2`. Old `wire.dm.v2.replay` entries are
+  msgIds and are never read as ivs. Remaining honest limits: per device,
+  windowed (FIFO at the cap), and a same-row rollback is not covered.
+- **Attachments.** `attachment_meta` and the caption of a DM attachment are v2
+  envelopes for a peer at `dm_e2ee_min_version` >= 2, and stay v1 for a peer at
+  1. The meta uses a new AAD label `dm-att-v2` (the text AAD with only the label
+  changed, `attachmentId` dropped); the caption is the ordinary v2 text envelope.
+  The STREAM file format is unchanged. The server refuses to STORE a v2 meta or
+  caption for a recipient below 2, with the same message as text.
+- **Operator-visible rule change:** a DM attachment to a peer that has not
+  opted in behaves exactly as before (v1). A peer at 2 who receives a v1
+  attachment from this browser is the downgrade case, unchanged from text.
+
+Tests: `tests/dm-v2-attachments.test.mjs` (client, real server, no mocks),
+`tests/dm-v2-attachments-server.test.mjs` (real server),
+`tests/dm-v2.test.mjs` (attachment AAD KATs), `tests/dm-v2-wire.test.mjs`
+(replay). NOT done: `tests/dm-v2-attachments-browser.test.mjs` (real browser).

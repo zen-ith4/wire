@@ -255,7 +255,19 @@ secrecy) is not started, and DM attachments are still v1 with no AAD.
 - **Phase 2 (shipped earlier, unchanged):** the per-peer key archive in IndexedDB
   (every accepted key is kept, not just the current one) and the safety number
   `SHA-256('wire-safety-number-v1' || ...)` over the two raw keys, order-independent.
-- **Replay store**: 2000 msgIds per conversation, 50 conversations, per device.
+- **Replay store**: 2000 ivs per conversation, 50 conversations, per device
+  (keyed on the AAD-bound iv since STEP 2A.1, not on `msgId`).
+- **DM attachments get the v2 envelope (STEP 2A).** For a peer at
+  `dm_e2ee_min_version` 2 or higher, `attachment_meta` is a v2 envelope under
+  its own AAD label `dm-att-v2` (the text AAD with only the label changed), and
+  the caption is the ordinary v2 text envelope. For a peer at 1 both stay v1.
+  The file bytes are unchanged: the STREAM format, `attachment-stream.js`,
+  `config/dm-stream.js` and the blob storage are untouched. A meta that cannot be
+  opened becomes the existing "Attachment unavailable" placeholder and never
+  throws; with the per-row isolation above, the other rows still render. The
+  design's `attachmentId` field is DROPPED: it predates the STREAM format (the
+  per-file key inside the meta already binds the blob) and an unauthenticated id
+  would repeat the `msgId` problem.
 - **Undecryptable-row placeholder (v1 and v2, shared code).** `decryptDmMessages`
   decrypts each row independently (`Promise.allSettled`); a rejected row becomes
   one placeholder (`content = 'Unable to decrypt'`, `undecryptable: true`) in its
@@ -264,7 +276,18 @@ secrecy) is not started, and DM attachments are still v1 with no AAD.
 
 **NOT done:**
 
-- DM attachments are still v1 with no AAD (section 10.1 of this document).
+- **Group attachments** are still v1 with no AAD, and the feature is disabled.
+  `docs/DM_ATTACHMENTS_E2EE.md` covers the DM path only.
+- `attachment-crypto.js`'s `encryptAttachmentForDm` / `decryptAttachmentForDm` are
+  DEAD (no importer; a static test in `tests/dm-v2-attachments.test.mjs` keeps
+  them unused) and weaker than the live path. Left in place, not deleted.
+- **The real-browser attachment scenarios were not written** in STEP 2A:
+  `tests/dm-v2-attachments-browser.test.mjs` does not exist, so real-Chromium
+  upload/tamper/replay for attachments is UNPROVEN. The node and real-server
+  coverage is in `tests/dm-v2-attachments.test.mjs` and
+  `tests/dm-v2-attachments-server.test.mjs`.
+- The replay store is per device and windowed (FIFO), and a same-row rollback is
+  not covered.
 - Phase 3 forward secrecy: not started.
 - Own-key rotation makes older own v2 rows unreadable (no escrow).
 - Message cap ~1328 plaintext bytes because the server cuts `content` at 2000

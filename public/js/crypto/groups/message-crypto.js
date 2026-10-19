@@ -15,7 +15,7 @@ import { encryptBytes, decryptBytes } from './aead.js';
 import { base64ToBytes, bytesToBase64, encodeFields } from './codec.js';
 import { reserveNextCounter, getNoncePrefix } from './nonce-lock.js';
 import { getMySenderKey, loadSenderKeyBundle } from './sender-key.js';
-import { signMessage, verifyMessage, SIGNATURE_LENGTH } from './signing.js';
+import { signMessage, verifyMessage, SIGNATURE_LENGTH, buildAttachmentSlot } from './signing.js';
 import { claimNonce } from './sender-key-store.js';
 
 const ENVELOPE_VERSION = 2;
@@ -85,7 +85,7 @@ export function attachmentAad(groupId, senderKeyId, counter, iv) {
  * @returns {Promise<string>} JSON string ready to send as
  *   group_messages.content
  */
-export async function encryptGroupMessage(identity, groupId, plaintext, { replyToId = null } = {}) {
+export async function encryptGroupMessage(identity, groupId, plaintext, { replyToId = null, attachment = null } = {}) {
     if (typeof plaintext !== 'string' || !plaintext.length) {
         throw new Error('Message cannot be empty');
     }
@@ -119,10 +119,36 @@ export async function encryptGroupMessage(identity, groupId, plaintext, { replyT
         messageAad(groupId, mine.senderKeyId, counter, nonce)
     );
 
+    // STEP 3B: bind the attachment file bytes into the signature when a file
+    // accompanies the message. The signature commits to SHA-256(iv || ciphertext)
+    // and the plaintext length; the receiver checks the downloaded file against
+    // that commitment before decrypting (see decryptGroupMessageDetailed).
+    // When absent, behaviour and output bytes are unchanged (empty slot, no att_* keys).
+    let attachmentSlot;
+    let attIv, attCtHash, attLen;
+    if (attachment) {
+        // The file ciphertext is the raw bytes (an ArrayBuffer from the
+        // group attachment encryptor), never the base64 text: the receiver
+        // hashes the bytes it DOWNLOADS, so the sender must hash the same bytes.
+        const ivBytes = base64ToBytes(attachment.ivBase64);
+        const ciphertextBytes = attachment.ciphertext instanceof Uint8Array
+            ? attachment.ciphertext
+            : new Uint8Array(attachment.ciphertext);
+        attachmentSlot = await buildAttachmentSlot({
+            iv: ivBytes,
+            ciphertext: ciphertextBytes,
+            plaintextLength: attachment.plaintextLength,
+        });
+        attIv = attachment.ivBase64;
+        attCtHash = bytesToBase64(attachmentSlot.slice(0, 32));
+        attLen = String(attachment.plaintextLength);
+    }
+
     // Phase C3: sign what the receiver verifies BEFORE decrypting. The signing key
     // belongs to THIS device's Sender Key only. reply_to_id is part of the signed
-    // bytes (and of the envelope); the attachment slot is empty (group attachments
-    // are disabled: see UNBOUND_ENVELOPE_KEYS).
+    // bytes (and of the envelope). The attachment slot carries the file binding
+    // when an attachment is present, otherwise it is empty (group attachments are
+    // disabled: see UNBOUND_ENVELOPE_KEYS).
     const signature = await signMessage(mine.signKey, {
         groupId: Number(groupId),
         senderKeyId: mine.senderKeyId,
@@ -130,7 +156,7 @@ export async function encryptGroupMessage(identity, groupId, plaintext, { replyT
         iv: nonce,
         ciphertext: base64ToBytes(ciphertext),
         replyToId,
-        attachment: new Uint8Array(0),
+        attachment: attachmentSlot,
     });
 
     return JSON.stringify({
@@ -142,6 +168,7 @@ export async function encryptGroupMessage(identity, groupId, plaintext, { replyT
         ciphertext,
         reply_to_id: replyToId,
         sig: bytesToBase64(signature),
+        ...(attIv !== undefined ? { att_iv: attIv, att_ct_hash: attCtHash, att_len: attLen } : {}),
     });
 }
 

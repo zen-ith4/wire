@@ -32,6 +32,8 @@ import {
     senderKeyFingerprint,
     encryptDmV2,
     decryptDmV2,
+    encryptDmAttachmentV2,
+    decryptDmAttachmentV2,
     validateDmV2Envelope
 } from './dm-v2.js';
 
@@ -513,6 +515,45 @@ export async function buildDmV2Content({ plaintext, senderId, recipientId, reply
     return { envelope, msgId, content, contentChars: content.length };
 }
 
+/**
+ * Encrypt one attachment-meta JSON string as a v2 envelope, ready for
+ * `attachment_meta`.
+ *
+ * Same directional key and same envelope shape as buildDmV2Content; the AAD is
+ * built under the attachment label ('dm-att-v2'). No size guard here: the meta
+ * cap (8 KB) is a REJECTION server-side, not a silent truncation, so unlike
+ * `content` there is no undecryptable-by-anyone row to prevent.
+ *
+ * @param {object} o
+ * @param {string} o.plaintext the meta JSON
+ * @param {number} o.senderId
+ * @param {number} o.recipientId
+ * @param {number} [o.replyToId] 0 when absent; MUST be the value the server keeps
+ * @returns {Promise<{envelope: object, msgId: string, content: string, contentChars: number}>}
+ */
+export async function buildDmV2AttachmentMetaContent({ plaintext, senderId, recipientId, replyToId = 0 } = {}) {
+    const identity = getCurrentIdentity();
+    if (!identity || !identity.privateKey) {
+        throw new Error('Identity is not unlocked');
+    }
+
+    const senderFp = await senderKeyFingerprint(base64ToBytes(identity.publicKey));
+    const peerPublicKey = await getPeerPublicKey(recipientId);
+    const key = await deriveDmV2Key(senderId, recipientId, identity.privateKey, peerPublicKey);
+
+    const { envelope, msgId } = await encryptDmAttachmentV2({
+        plaintext,
+        fromUserId: senderId,
+        toUserId: recipientId,
+        senderKeyFp: senderFp,
+        key,
+        replyToId
+    });
+
+    const content = JSON.stringify(envelope);
+    return { envelope, msgId, content, contentChars: content.length };
+}
+
 /* =========================================================
  * Receive
  * ========================================================= */
@@ -531,7 +572,7 @@ export async function buildDmV2Content({ plaintext, senderId, recipientId, reply
  * @param {number} [o.rowId] the stored row's id, for replay accounting
  * @returns {Promise<{plaintext: string, msgId: string, replay: string}>}
  */
-export async function openDmV2Envelope({ payload, peerId, ownUserId, replyToId = 0, rowId = null } = {}) {
+async function openDmV2Payload({ payload, peerId, ownUserId, replyToId = 0, rowId = null, attachment = false } = {}) {
     const validated = validateDmV2Envelope(payload);
 
     // 1. replay check, before any key derivation. The key is the AAD-bound iv,
@@ -569,6 +610,22 @@ export async function openDmV2Envelope({ payload, peerId, ownUserId, replyToId =
     // no `encryption` key - so passing it back in made the second validation
     // throw "Missing encryption payload" and EVERY real v2 decrypt failed.
     // Hand decryptDmV2 the ORIGINAL envelope and let it do its own check.
+    // STEP 2A.2: same key, same replay check, same sender-key selection - the
+    // ONLY difference is the AAD label, so a meta envelope cannot be opened as
+    // text and a text envelope cannot be opened as a meta. Two branches rather
+    // than a picked function reference on purpose: the text call below stays
+    // byte-identical, which is what tests/dm-v2-seam.test.mjs pins (it greps
+    // this call to prove the ORIGINAL envelope is passed, not the flat one).
+    if (attachment) {
+        const plaintext = await decryptDmAttachmentV2({
+            envelope: payload,
+            senderKeyFp: base64ToBytes(sender.fingerprint),
+            key,
+            replyToId
+        });
+        return { plaintext, msgId: validated.msgId, replay: verdict };
+    }
+
     const plaintext = await decryptDmV2({
         envelope: payload,
         senderKeyFp: base64ToBytes(sender.fingerprint),
@@ -577,6 +634,21 @@ export async function openDmV2Envelope({ payload, peerId, ownUserId, replyToId =
     });
 
     return { plaintext, msgId: validated.msgId, replay: verdict };
+}
+
+/** Open a received v2 TEXT envelope (docs 4.3). Unchanged entry point. */
+export async function openDmV2Envelope(options = {}) {
+    return openDmV2Payload(options);
+}
+
+/**
+ * Open a received v2 ATTACHMENT META envelope (STEP 2A).
+ *
+ * Identical to openDmV2Envelope except the AAD is built under 'dm-att-v2', so a
+ * file's metadata can never be replayed as a message.
+ */
+export async function openDmV2AttachmentEnvelope(options = {}) {
+    return openDmV2Payload({ ...options, attachment: true });
 }
 
 /* =========================================================

@@ -1717,13 +1717,15 @@ thread.innerHTML = `
     buildFormExtra: (form) => form.append('recipient_id', dmActivePeer.id),
     // Encrypts the file (and caption) before upload. Needs the
     // composer's prepareUpload hook (composer.js hunk, pending approval).
-    prepareUpload: ({ file, caption, isVoice }) =>
+    prepareUpload: ({ file, caption, isVoice, replyToId }) =>
       prepareDmAttachmentUpload({
         file,
         caption,
         isVoice,
         senderId: Number(getCurrentUser().id),
         recipientId: Number(dmActivePeer.id),
+        // STEP 2A D4: the composer's reply target, bound into the AAD.
+        replyToId: Number(replyToId) || 0,
       }),
     onMessage: (message) => {
       addDmMessage(message);

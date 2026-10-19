@@ -17,7 +17,14 @@
 import { getToken, logout } from '../core/auth.js';
 import { api } from '../core/api.js';
 import { resolveServerUrl } from '../core/server.js';
-import { encryptOutgoingMessage, decryptIncomingMessage } from '../crypto/messages/message-crypto.js';
+import {
+  encryptOutgoingMessage,
+  decryptIncomingMessage,
+  encryptDmTextV2,
+  resolveDmAttachmentVersion,
+  encryptDmAttachmentMetaV2,
+  decryptDmAttachmentMetaV2,
+} from '../crypto/messages/message-crypto.js';
 import { computeImageDimensions } from '../crypto/messages/attachment-crypto.js';
 import {
   encryptAttachmentStream,
@@ -100,14 +107,26 @@ function cacheDecrypted(key, blob) {
  * ========================================================= */
 
 /**
+ * @param {string} envelopeString
+ * @param {number} peerId
+ * @param {{replyToId?: number, rowId?: number}} [ctx] the STORED row's values.
+ *   Required for a v2 envelope (its AAD binds replyToId and its replay check
+ *   needs the row id) and ignored for v1.
  * @returns the parsed metadata (with key material) or null when the
  * envelope is missing, tampered, or malformed. Never throws.
  */
-export async function decryptAttachmentMetaEnvelope(envelopeString, peerId) {
+export async function decryptAttachmentMetaEnvelope(envelopeString, peerId, ctx = {}) {
   try {
     if (typeof envelopeString !== 'string' || !envelopeString) return null;
     const payload = JSON.parse(envelopeString);
-    const plaintext = await decryptIncomingMessage(payload, Number(peerId));
+    // STEP 2A: a v2 meta opens under the attachment label 'dm-att-v2'; a v1
+    // meta keeps the unchanged v1 path. A text envelope in this slot fails the
+    // AEAD and becomes the "Attachment unavailable" placeholder - it can never be
+    // opened as a message.
+    const version = payload && payload.encryption ? Number(payload.encryption.version) : null;
+    const plaintext = version === 2
+      ? await decryptDmAttachmentMetaV2(payload, peerId, ctx)
+      : await decryptIncomingMessage(payload, Number(peerId));
     if (typeof plaintext !== 'string') return null;
     return parseAttachmentMeta(plaintext);
   } catch {
@@ -128,7 +147,10 @@ export const UNREADABLE_ATTACHMENT_NAME = 'Attachment unavailable';
 export async function applyAttachmentMeta(msg, peerId, scope = 'dm') {
   if (!msg || typeof msg.attachment_meta !== 'string' || !msg.attachment_meta) return msg;
 
-  const meta = await decryptAttachmentMetaEnvelope(msg.attachment_meta, peerId);
+  const meta = await decryptAttachmentMetaEnvelope(msg.attachment_meta, peerId, {
+    replyToId: msg.reply_to_id == null ? 0 : Number(msg.reply_to_id),
+    rowId: msg.id,
+  });
 
   if (!meta) {
     markAttachmentUnreadable(scope, msg.id);
@@ -161,7 +183,12 @@ export async function applyAttachmentMeta(msg, peerId, scope = 'dm') {
 export async function applyReplyAttachmentMeta(replyTo, peerId) {
   if (!replyTo || typeof replyTo.attachment_meta !== 'string' || !replyTo.attachment_meta) return replyTo;
 
-  const meta = await decryptAttachmentMetaEnvelope(replyTo.attachment_meta, peerId);
+  const meta = await decryptAttachmentMetaEnvelope(replyTo.attachment_meta, peerId, {
+    // The QUOTED row's own reply_to_id, which the server adds via
+    // attachDmReplyToIds for exactly this reason.
+    replyToId: replyTo.reply_to_id == null ? 0 : Number(replyTo.reply_to_id),
+    rowId: replyTo.id,
+  });
   const { attachment_meta: _omit, ...rest } = replyTo;
 
   if (!meta) {
@@ -289,7 +316,7 @@ const DIMENSIONS_TIMEOUT_MS = 5000;
  * mime, size, dimensions and voice flag only ever appear inside the
  * encrypted `attachment_meta` envelope.
  */
-export async function prepareDmAttachmentUpload({ file, caption, isVoice, senderId, recipientId }) {
+export async function prepareDmAttachmentUpload({ file, caption, isVoice, senderId, recipientId, replyToId = 0 }) {
   if (!file || typeof file.size !== 'number') throw new Error('No file to encrypt');
 
   // Size gate FIRST: file.size is metadata only, so nothing is read,
@@ -300,6 +327,11 @@ export async function prepareDmAttachmentUpload({ file, caption, isVoice, sender
   if (file.size > maxMb * 1024 * 1024) {
     throw new AttachmentTooLargeError(maxMb);
   }
+
+  // STEP 2A D5: version choice + layer-2 pin, BEFORE anything reads, decodes or
+  // encrypts the file. A refusal (v1 to a peer this browser is pinned at 2 with)
+  // therefore costs nothing: no bytes read, nothing uploaded, no file written.
+  const { version } = await resolveDmAttachmentVersion(recipientId);
 
   let width = null;
   let height = null;
@@ -338,16 +370,36 @@ export async function prepareDmAttachmentUpload({ file, caption, isVoice, sender
     height,
   });
 
-  const metaEnvelope = await encryptOutgoingMessage(metaPlain, Number(senderId), Number(recipientId));
+  // Meta envelope: v2 under 'dm-att-v2', or v1 unchanged for a v1 peer. The
+  // version was decided before the file was touched, so both branches are the
+  // same value for the meta, the caption and the pin.
+  let metaContent;
+  if (version === 2) {
+    metaContent = (await encryptDmAttachmentMetaV2(metaPlain, senderId, recipientId, replyToId)).content;
+  } else {
+    metaContent = JSON.stringify(await encryptOutgoingMessage(metaPlain, Number(senderId), Number(recipientId)));
+  }
 
   const fields = {
-    attachment_meta: JSON.stringify(metaEnvelope),
+    attachment_meta: metaContent,
     attachment_iv: streamBytesToBase64(material.baseIv),
   };
 
   if (caption) {
-    const captionEnvelope = await encryptOutgoingMessage(caption, Number(senderId), Number(recipientId));
-    fields.content = JSON.stringify(captionEnvelope);
+    if (version === 2) {
+      // The caption is text, so it uses the unchanged v2 text path and the
+      // 'dm-msg-v2' label - which is also what the receiver's text path opens.
+      const captionEnvelope = await encryptDmTextV2(caption, senderId, recipientId, replyToId);
+      if (captionEnvelope.version !== 2) {
+        // Unreachable unless the peer or the pin changed mid-send. Refuse
+        // rather than store a v2 meta beside a v1 caption for the same row.
+        throw new Error('attachment caption version did not follow the attachment version');
+      }
+      fields.content = captionEnvelope.content;
+    } else {
+      const captionEnvelope = await encryptOutgoingMessage(caption, Number(senderId), Number(recipientId));
+      fields.content = JSON.stringify(captionEnvelope);
+    }
   }
 
   return {

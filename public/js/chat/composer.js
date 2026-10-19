@@ -2506,7 +2506,12 @@ export function createComposer(
               caption:
                 caption || '',
               isVoice:
-                false
+                false,
+              // STEP 2A D4: the reply target is bound into the meta/caption
+              // AAD, so the hook needs it. Additive: a hook that ignores the
+              // extra argument (groups) is unaffected.
+              replyToId:
+                replyToId || 0
             })
           : null;
 
@@ -3296,7 +3301,10 @@ export function createComposer(
               caption:
                 '',
               isVoice:
-                true
+                true,
+              // STEP 2A D4: as above, for the voice path.
+              replyToId:
+                replyToId || 0
             })
           : null;
 

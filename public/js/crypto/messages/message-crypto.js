@@ -13,7 +13,9 @@ import {
 
 import {
     buildDmV2Content,
+    buildDmV2AttachmentMetaContent,
     openDmV2Envelope,
+    openDmV2AttachmentEnvelope,
     noteDmV2Version,
     chooseDmVersion,
     assertDmVersionAllowed,
@@ -216,6 +218,73 @@ export async function decryptDmTextV2(payload, peerId, ctx = {}) {
         rowId: ctx ? ctx.rowId : null
     });
 
+    noteDmV2Version(peerId, 2);
+    return plaintext;
+}
+
+/* =========================================================
+ * STEP 2A - DM attachments
+ *
+ * The attachment meta gets the v2 envelope under its own AAD label
+ * ('dm-att-v2'); the caption is TEXT and uses the unchanged v2 text path. The
+ * version choice and the layer-2 pin are the text rules, unchanged (docs 5.4).
+ * ========================================================= */
+
+/**
+ * The version to use for this upload, decided and pin-checked BEFORE any file is
+ * read, decoded or encrypted (STEP 2A D5).
+ *
+ * Split from the encryption on purpose: prepareDmAttachmentUpload must refuse a
+ * downgrade while it still has nothing on disk and nothing in memory, and a test
+ * proves it by spying on the File's read methods.
+ *
+ * @param {number} recipientId
+ * @returns {Promise<{version: number, peerMinVersion: number}>}
+ */
+export async function resolveDmAttachmentVersion(recipientId) {
+    const peerMinVersion = await getPeerDmMinVersion(recipientId);
+    const version = chooseDmVersion(recipientId, peerMinVersion);
+    // Throws DmDowngradeRefusedError rather than silently sending v1 to a peer
+    // this browser has already exchanged v2 with.
+    assertDmVersionAllowed(recipientId, version);
+    return { version, peerMinVersion };
+}
+
+/**
+ * Encrypt one attachment-meta JSON string as a v2 envelope (label 'dm-att-v2').
+ *
+ * @returns {Promise<{version: number, content: string, msgId: string, peerMinVersion: number}>}
+ */
+export async function encryptDmAttachmentMetaV2(metaPlain, senderId, recipientId, replyToId = 0) {
+    const { content, msgId } = await buildDmV2AttachmentMetaContent({
+        plaintext: metaPlain,
+        senderId: Number(senderId),
+        recipientId: Number(recipientId),
+        replyToId: Number(replyToId) || 0
+    });
+    noteDmV2Version(recipientId, 2);
+    return { version: 2, content, msgId, peerMinVersion: null };
+}
+
+/**
+ * Decrypt a received v2 attachment-meta envelope.
+ *
+ * The caller MUST supply the stored row's `reply_to_id` and id, exactly like
+ * decryptDmTextV2: the AAD binds replyToId and the replay check needs the row id.
+ *
+ * @param {object} payload
+ * @param {number} peerId
+ * @param {{replyToId?: number, rowId?: number}} [ctx]
+ * @returns {Promise<string>}
+ */
+export async function decryptDmAttachmentMetaV2(payload, peerId, ctx = {}) {
+    const { plaintext } = await openDmV2AttachmentEnvelope({
+        payload,
+        peerId: Number(peerId),
+        ownUserId: Number(getCurrentUser()?.id),
+        replyToId: Number((ctx && ctx.replyToId) || 0),
+        rowId: ctx ? ctx.rowId : null
+    });
     noteDmV2Version(peerId, 2);
     return plaintext;
 }

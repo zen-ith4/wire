@@ -281,11 +281,13 @@ secrecy) is not started, and DM attachments are still v1 with no AAD.
 - `attachment-crypto.js`'s `encryptAttachmentForDm` / `decryptAttachmentForDm` are
   DEAD (no importer; a static test in `tests/dm-v2-attachments.test.mjs` keeps
   them unused) and weaker than the live path. Left in place, not deleted.
-- **The real-browser attachment scenarios were not written** in STEP 2A:
-  `tests/dm-v2-attachments-browser.test.mjs` does not exist, so real-Chromium
-  upload/tamper/replay for attachments is UNPROVEN. The node and real-server
-  coverage is in `tests/dm-v2-attachments.test.mjs` and
-  `tests/dm-v2-attachments-server.test.mjs`.
+- **The real-browser attachment scenarios ARE written now (STEP 2B):**
+  `tests/dm-v2-attachments-browser.test.mjs` covers the upload happy path (v2 and
+  v1), reply binding both ways, history + downgrade notice, seven tampers, and
+  replay (untouched and msgId-changed). What is STILL not covered in the browser:
+  voice recording (recorder UI; `isVoice: true` is covered in the node test
+  instead), the full 7-tamper set under a multi-row thread, and any non-Chromium
+  browser.
 - The replay store is per device and windowed (FIFO), and a same-row rollback is
   not covered.
 - Phase 3 forward secrecy: not started.

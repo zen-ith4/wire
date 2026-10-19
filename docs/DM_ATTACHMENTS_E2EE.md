@@ -24,8 +24,10 @@ peer's `dm_e2ee_min_version`, exactly like a DM text message (STEP 2A):
 
 The v2 meta envelope has the SAME fields as a v2 text envelope (`version`,
 `algorithm`, `iv`, `ciphertext`, `senderFp`, `msgId`) and the same envelope
-shape, so the server's rules and its `isEncryptedEnvelopeShape` check accept it
-unchanged. Its AAD binds
+shape. The server's `isEncryptedEnvelopeShape` was EXTENDED in 2A (it used to
+accept version 1 only) so it accepts the v2 shape for both `attachment_meta`
+and the caption; the text rule (`dmV2RuleViolation`) is applied to both fields
+with the same message. See `controllers/dm.controller.js` ~188-221. Its AAD binds
 `version, fromUserId, toUserId, senderKeyFp, direction, iv, replyToId` - the
 text AAD with only the label changed, which is what stops a file's metadata
 being replayed as a message. The design sketch's `attachmentId` field is NOT

@@ -192,6 +192,26 @@ npm ci @sparticuz/chromium puppeteer-core   # WRONG: npm ci takes no package nam
 It must be `npm install @sparticuz/chromium puppeteer-core`. Fixed in
 `wire-final-26`. The reviewer hit it, which is how it was found.
 
+
+### 2B (reviewer, Linux, wire-final-31) - additional observations
+
+- **Non-browser set (74 files): 636 tests / 631 pass / 1 fail / 0 cancelled / 3 skipped** (the
+  fourth skip from wire-final-25 does not apply here). The single failure is the **known
+  pre-existing race** `deleting the message removes the ciphertext file from disk`
+  (fire-and-forget `fs.unlink` before the response, `controllers/dm.controller.js` ~931;
+  passes when run alone; same code since wire-final-25). NOT caused by 2A.
+- **Browser regression, all pass:** `dm-v2-wire-browser`, `dm-e2ee-default-browser`,
+  `peer-trust-browser` (3), `dm-csp-handlers-enforced-browser` (2),
+  `acceptance-xss-sweep-browser` (8, 1 skip), paths tests a-d.
+- **Reviewer probe** (`tests/_reference/probe-attachment-v2.mjs`): alice uploads a file
+  with a caption through the real composer to bob. Bob opted in to v2 -> stored
+  `attachment_meta` v2 and caption v2, bob sees the caption and the file name.
+  Bob at default 1 -> both stored v1, same result. With the v2 meta mutated in the DB
+  (`version` 2->1; one ciphertext character flipped; `changes = 1`): bob's row shows
+  "Attachment unavailable", the caption is still shown, other rows still render.
+  So the happy path and two tampers are proven by hand; the committed browser tests
+  (`tests/dm-v2-attachments-browser.test.mjs`, STEP 2B) cover them as tests.
+
 ## Part B (STEP 1J) - one undecryptable row shows a placeholder
 
 Before: a single row that failed to decrypt (tampered ciphertext, rewritten

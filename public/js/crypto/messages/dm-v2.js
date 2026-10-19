@@ -311,8 +311,8 @@ function requireMsgId(value) {
  * `messageId` is deliberately absent (section 3.3): it lives in the envelope, and
  * the envelope is authenticated by being inside the ciphertext's own fields only
  * in the sense that the server cannot alter it without detection - the msgId is
- * NOT bound here, so a server CAN swap a msgId. That is accepted in section 4.3:
- * msgId is a replay hint, not an integrity claim.
+ * NOT bound here, so a server CAN swap a msgId (it is not an integrity claim).
+ * Replay detection keys on the AAD-bound iv, not on msgId (STEP 2A.1).
  *
  * `direction` is accepted rather than derived so the caller controls it, but it
  * is CROSS-CHECKED against directionLabel(from, to). A caller that disagrees with

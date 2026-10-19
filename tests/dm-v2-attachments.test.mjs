@@ -210,6 +210,19 @@ test('2A.4: the version decision happens before ANY file work - a failed gate le
 
 // ---------------------------------------------------------------- caption cap
 
+test('2B-isVoice: isVoice: true is carried in the v2 meta for a v2 peer (node, no recorder)', async () => {
+    const sent = await send(alice, carol, { bytes: bytesPattern(64, 23), name: 'voice.webm', mime: 'audio/webm', isVoice: true });
+    assert.equal(sent.status, 200, JSON.stringify(sent.body));
+    const row = stored(sent.body.id);
+    const meta = JSON.parse(row.attachment_meta);
+    assert.equal(meta.encryption.version, 2);
+    carol.actor.use();
+    const e2ee = await carol.actor.importModule('media/attachment-e2ee.js');
+    const parsed = await e2ee.decryptAttachmentMetaEnvelope(row.attachment_meta, alice.id, { replyToId: row.reply_to_id || 0, rowId: row.id });
+    assert.equal(parsed.isVoice, true, 'isVoice must survive the v2 round trip');
+    assert.equal(parsed.name, 'voice.webm');
+});
+
 test('2A.4: a v2 caption over the server cap is refused client-side, before any upload', async () => {
     const long = 'x'.repeat(2100);
     alice.actor.use();

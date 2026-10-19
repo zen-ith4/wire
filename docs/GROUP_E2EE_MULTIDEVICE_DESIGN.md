@@ -280,6 +280,8 @@ user the server names as its author.
    by **C3-12** (`tests/groups/group-signing-messages.test.mjs`), which fails if any client module starts calling
    `encryptAttachmentForGroup` and says what must be done first. The binding design is specified in
    `docs/GROUP_ATTACHMENTS_E2EE.md` (design only; not implemented in this step).
+   The binding is IMPLEMENTED in STEP 3B (crypto layer only; the UI is still
+   disabled and the composer wiring is STEP 3C).
 6. **A hostile role through a hostile members API is not covered.** The real-Chromium test
    (`tests/groups/group-hostile-browser.test.mjs`) edits the database, where `group_members.role` is schema-constrained to
    `owner`/`admin`/`member`, so a hostile role cannot be stored and was not exercised; a server that answers the members API
@@ -388,7 +390,8 @@ Proposed text changes (not applied; the skill is outside this repository). State
 +21. Unverified is a permanent state: static placeholder, no retry; only "key not arrived" is retried.
 +22. Fail closed on every structural problem (lengths, point prefix and curve check, reply id type, signature length).
 +23. Before group attachments are ever enabled, bind their bytes into the signature. The binding design is
-+   specified in `docs/GROUP_ATTACHMENTS_E2EE.md` (design only; not implemented in this step).
++   specified in `docs/GROUP_ATTACHMENTS_E2EE.md` (crypto layer implemented in
++   STEP 3B; the UI is still disabled and the composer wiring is STEP 3C).
 
  ## Lifecycle cheat-sheet
 +- First send on a device: also requires an own key WITH a signing key (a row without one triggers a re-key); generate the key pair together with the root.

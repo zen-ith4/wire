@@ -1,12 +1,17 @@
-# Group attachments: E2EE design (STEP 3A)
+# Group attachments: E2EE design (STEP 3A) + crypto layer (STEP 3B)
 
-Status: design only. Group attachments stay **disabled**. Nothing in `public/`,
-`routes/`, `controllers/`, `services/` or `database/` changes in this step.
-Implementation is STEP 3B, after this design is reviewed.
+Status: **design reviewed; crypto layer implemented in STEP 3B, UI still
+disabled.** The file bytes (iv, ciphertext hash, plaintext length) are bound
+into the per-message ECDSA signature, and the receive side refuses a file whose
+bytes do not match what the sender signed. Group attachment SENDING is still
+unreachable from any UI path: no client module calls the group attachment
+encryptor, and the group composer still says "group attachments aren't
+supported". Wiring the composer, the upload call and the thread rendering is
+STEP 3C.
 
-Base tree: `wire-final-33`. This document describes the current group-attachment
-code (which exists but is disabled) and the change needed before it can be
-enabled. Every claim about current behaviour carries a `file:line` citation.
+Base tree: `wire-final-33` (design), `wire-final-34` (STEP 3B implementation).
+Every claim about current behaviour carries a `file:line` citation, re-checked
+after the STEP 3B code changes.
 
 ## 3.1 Current state (with file:line citations)
 
@@ -28,7 +33,7 @@ opaque to the server) is:
 
 Any envelope key named `att`, `attachment` or `attachments` is **refused** (treated
 as unverified): group attachments are disabled and their bytes are not bound into
-the signature (design doc `:145`; `public/js/crypto/groups/message-crypto.js:174,297-301`).
+the signature (design doc `:145`; `public/js/crypto/groups/message-crypto.js:201,324-328`).
 
 The **signed bytes** (`public/js/crypto/groups/signing.js:78-105`,
 `encodeSignedBytes`), in order:
@@ -45,7 +50,7 @@ The **signed bytes** (`public/js/crypto/groups/signing.js:78-105`,
 | 8 | attachment slot | raw bytes, **empty today** (reserved) |
 
 The signature is over the ciphertext: **encrypt, then sign**, verified **before**
-anything is decrypted (design doc `:167`; `message-crypto.js:336-348`).
+anything is decrypted (design doc `:167`; `message-crypto.js:400-412`).
 
 **AAD** (`message-crypto.js:72-79`):
 - `messageAad(groupId, senderKeyId, counter, iv)` = `encodeFields("group-msg-v2", ...)` — binds the message text to group, key, counter, nonce.
@@ -53,11 +58,11 @@ anything is decrypted (design doc `:167`; `message-crypto.js:336-348`).
 
 ### What `encryptAttachmentForGroup` / `decryptAttachmentForGroup` do today
 
-`public/js/crypto/messages/attachment-crypto.js:79-106`
+`public/js/crypto/messages/attachment-crypto.js:109-136`
 `encryptAttachmentForGroup(groupId, fileBytes)`:
 - Gets this device's own Sender Key for the group (`getMySenderKey`, line 81). Throws if none (line 83-85).
 - Reserves the **next counter from the SAME per-Sender-Key sequence message text uses** (`reserveNextCounter`, line 92) — messages and attachments share one counter/nonce space per key.
-- Derives the nonce via `nonceFromCounter(counter, getNoncePrefix())` (line 93): 4 random prefix bytes + 8-byte counter (the prefix is random per JS process, redrawn on lock/unlock — `nonce-lock.js:19-35`).
+- Derives the nonce via `nonceFromCounter(counter, getNoncePrefix())` (line 122): 4 random prefix bytes + 8-byte counter (the prefix is random per JS process, redrawn on lock/unlock — `nonce-lock.js:19-35`).
 - Encrypts with AES-256-GCM under `mine.cryptoKey` (the Sender Key itself), with `additionalData: attachmentAad(...)` (line 99).
 - Returns `{ivBase64, ciphertext}` — no per-file key, no key delivery, nothing bound into any signature.
 
@@ -84,7 +89,7 @@ anything is decrypted (design doc `:167`; `message-crypto.js:336-348`).
 
 ### What `C3-12` asserts and how it detects a call
 
-`tests/groups/group-signing-messages.test.mjs:378-399`:
+`tests/groups/group-signing-messages.test.mjs:378-410`:
 - Walks every file under `public/js`, reads its text, and records any file (other than `crypto/messages/attachment-crypto.js` itself) whose text matches `/encryptAttachmentForGroup/`.
 - Asserts the hits list is empty: *"A client path now calls encryptAttachmentForGroup. Before group attachment SENDING is enabled, the attachment bytes (iv + ciphertext hash) MUST be bound into the message signature ... Do that first, then update this test."*
 - Separately asserts `public/js/chat/group.js` has no `uploadUrl` and contains "group attachments aren't supported" (lines 397-399).
@@ -93,7 +98,7 @@ anything is decrypted (design doc `:167`; `message-crypto.js:336-348`).
 ### Whether any client module imports the group attachment helpers today
 
 Grep of the repo confirms: in `public/js`, `encryptAttachmentForGroup` is **defined only in**
-`public/js/crypto/messages/attachment-crypto.js:79`. No other `public/js` module imports or calls it. The only other references are in `tests/` (`tests/attachment-crypto.test.mjs:84,156,175,190`,
+`public/js/crypto/messages/attachment-crypto.js:109`. No other `public/js` module imports or calls it. The only other references are in `tests/` (`tests/attachment-crypto.test.mjs:84,156,175,190`,
 `tests/groups/group-hardening-f4-replay.test.mjs:209`, `tests/groups/group-senderkeyid.test.mjs:17,124`) and `docs/PORT_NOTES.md:13` — tests and docs, not client send paths. `C3-12` currently passes (zero hits in `public/js`).
 
 ## 3.2 The threat, stated concretely
@@ -101,7 +106,7 @@ Grep of the repo confirms: in `public/js`, `encryptAttachmentForGroup` is **defi
 For each attack: attacker, what they can do, what they gain, what happens today.
 
 1. **A group member forges a file "from" another member.**
-   Attacker: any group member holding Alice's Sender Key (KDMs are fan-out to all current members, design doc 3.3/6.2). They can produce AES-GCM ciphertext under Alice's key that authenticates as Alice's key — the encryption is symmetric. Today they can already forge message text as Alice (design doc 6.1); for files the same applies because `encryptAttachmentForGroup` uses the shared Sender Key with no signature over the file bytes (attachment-crypto.js:79-106). Gain: a file appears to originate from Alice.
+   Attacker: any group member holding Alice's Sender Key (KDMs are fan-out to all current members, design doc 3.3/6.2). They can produce AES-GCM ciphertext under Alice's key that authenticates as Alice's key — the encryption is symmetric. Today they can already forge message text as Alice (design doc 6.1); for files the same applies because `encryptAttachmentForGroup` uses the shared Sender Key with no signature over the file bytes (attachment-crypto.js:109-136). Gain: a file appears to originate from Alice.
 
 2. **A member or the server serves file A's bytes under message B (splice).**
    Attacker: any member (holds the group Sender Key) or the server (stores rows). They take the attachment ciphertext/iv from row A and serve it as the file for message B. The attacker cannot edit message B's signed envelope, so message B's signed `att_ct_hash` is still the hash of file B's bytes. When the receiver downloads file A's bytes for message B and recomputes `SHA-256(iv || ciphertext)`, it does not match message B's signed `att_ct_hash` → `attachment-mismatch`, before any decryption and before any nonce is claimed. Gain: a file is attributed to a different message/sender.
@@ -113,16 +118,16 @@ For each attack: attacker, what they can do, what they gain, what happens today.
    Attacker: the server (or anyone with write access to `GROUP_UPLOAD_DIR`). It replaces the stored ciphertext blob for message B with different bytes of its choosing, leaving message B's envelope intact. The attacker cannot edit message B's signed envelope, so message B's signed `att_ct_hash` is still the hash of file B's bytes. When the receiver downloads the swapped bytes for message B and recomputes `SHA-256(iv || ciphertext)`, it does not match → `attachment-mismatch`, before any decryption and before any nonce is claimed. AES-GCM would also fail on the swapped bytes unless the attacker re-encrypted under the same Sender Key (which any member can do), so the signature-bound hash check is the real defence. Gain: file content is substituted while still attributed to the original sender.
 
 5. **The server truncates or reorders chunks of a streamed file.**
-   Today this attack **does not apply to groups as implemented**: group attachments use a **single** AES-256-GCM encryption over the whole file (attachment-crypto.js:95-103), not the DM stream container (`attachment-stream.js:43-45`, `WAT1` header + 64 KiB chunks). The GCM tag authenticates the entire ciphertext at once, so any truncation, reorder or bit-flip fails authentication — no chunk-level stream exists to attack. Note for STEP 3B: if groups later adopt the stream format, the stream's per-chunk authenticated index/final flag (attachment-stream.js:15-24) already covers this.
+   Today this attack **does not apply to groups as implemented**: group attachments use a **single** AES-256-GCM encryption over the whole file (attachment-crypto.js:125-133), not the DM stream container (`attachment-stream.js:43-45`, `WAT1` header + 64 KiB chunks). The GCM tag authenticates the entire ciphertext at once, so any truncation, reorder or bit-flip fails authentication — no chunk-level stream exists to attack. Note for STEP 3B: if groups later adopt the stream format, the stream's per-chunk authenticated index/final flag (attachment-stream.js:15-24) already covers this.
 
 6. **Nonce/counter reuse: file encryption reuses a (key, nonce) pair that message encryption already used.**
-   Today it **does not**: `encryptAttachmentForGroup` calls `reserveNextCounter(mine.senderKeyId)` (attachment-crypto.js:92), the **same monotonically increasing, durably-persisted-per-use counter sequence** that `encryptGroupMessage` uses (`message-crypto.js:111`). Every encryption under a given Sender Key — message text or attachment — gets a fresh counter, so each `(key, nonce)` pair is used once (nonce-lock.js:62-80: counter is read, persisted as `current+1`, and the lock released before encryption; nothing is ever handed the same value twice for a senderKeyId). The nonce itself is `4 random prefix bytes || 8-byte counter` (message-crypto.js:33-50, nonce-lock.js:19-27) — **not** "4 zero bytes"; the random prefix protects against counter rollback on a restored/cloned profile (nonce-lock.js:19-27). The design in 3.3 preserves this: one fresh counter per file, bound into the signature.
+   Today it **does not**: `encryptAttachmentForGroup` calls `reserveNextCounter(mine.senderKeyId)` (attachment-crypto.js:122), the **same monotonically increasing, durably-persisted-per-use counter sequence** that `encryptGroupMessage` uses (`message-crypto.js:111`). Every encryption under a given Sender Key — message text or attachment — gets a fresh counter, so each `(key, nonce)` pair is used once (nonce-lock.js:62-80: counter is read, persisted as `current+1`, and the lock released before encryption; nothing is ever handed the same value twice for a senderKeyId). The nonce itself is `4 random prefix bytes || 8-byte counter` (message-crypto.js:33-50, nonce-lock.js:19-27) — **not** "4 zero bytes"; the random prefix protects against counter rollback on a restored/cloned profile (nonce-lock.js:19-27). The design in 3.3 preserves this: one fresh counter per file, bound into the signature.
 
 ## 3.3 Proposed design
 
 ### What goes into the signature for a file
 
-The reserved attachment slot (#8 in `encodeSignedBytes`, signing.js:103, today `new Uint8Array(0)` at message-crypto.js:133) is populated with a **domain-separated binding of the file bytes**:
+The reserved attachment slot (#8 in `encodeSignedBytes`, signing.js:103, today `new Uint8Array(0)` at message-crypto.js:159) is populated with a **domain-separated binding of the file bytes** (built by `buildAttachmentSlot`, `signing.js:138-148`):
 
 ```
 attachment slot = SHA-256(iv || ciphertext)  ||  plaintext length (8-byte big-endian)
@@ -140,7 +145,7 @@ Alternative considered and rejected: signing the whole ciphertext. Rejected beca
 
 ### File key
 
-**Keep the Sender Key as the file encryption key** (as `encryptAttachmentForGroup` already does, attachment-crypto.js:81-85), with the existing fresh per-file counter/nonce (line 92-93). Do **not** introduce a fresh random per-file key carried inside the envelope.
+**Keep the Sender Key as the file encryption key** (as `encryptAttachmentForGroup` already does, attachment-crypto.js:111-115), with the existing fresh per-file counter/nonce (line 92-93). Do **not** introduce a fresh random per-file key carried inside the envelope.
 
 Comparison:
 | Option | Cost | Protects | Chosen? |
@@ -159,17 +164,17 @@ Fields **added** to a group message envelope when an attachment is present (all 
 
 **C2 - `attachment_iv` column is not trusted:** `groups.controller.js` stores `attachment_iv` from the multipart body, unsigned (`controllers/groups.controller.js:640-645`). The receiver must use the envelope's signed `att_iv`, and must treat a row whose `attachment_iv` column differs from the signed `att_iv` as `attachment-mismatch` (checked before decryption, before the nonce is claimed).
 
-The **attachment slot** in `encodeSignedBytes` (signing.js:78-105, currently empty) becomes `SHA-256(iv || ciphertext) || length-BE-8` (raw bytes, ~40 bytes). `message-crypto.js:133` changes from `attachment: new Uint8Array(0)` to the computed slot; `decryptGroupMessageDetailed` verification (`message-crypto.js:343`) passes the same slot so a tampered file fails `verifyMessage` **before** decryption (message-crypto.js:336-348).
+The **attachment slot** in `encodeSignedBytes` (signing.js:78-105, currently empty) becomes `SHA-256(iv || ciphertext) || length-BE-8` (raw bytes, ~40 bytes). `message-crypto.js:159` changes from `attachment: new Uint8Array(0)` to the computed slot; `decryptGroupMessageDetailed` verification (`message-crypto.js:407`) passes the same slot so a tampered file fails `verifyMessage` **before** decryption (message-crypto.js:400-412).
 
 The envelope keeps `v: 2` (design doc :136). **The group protocol version does NOT change** — v2 was changed in place and is unreleased (design doc :115-117: "the group protocol version is still `v:2`. It was changed in place: the group protocol is unreleased, there is no v3 and no compatibility layer. Test groups created before Phase C must be recreated"). Evidence that in-place change still holds: sections 6.1, 6.8 (:290-292 "there is no migration code; test groups created before Phase C must be recreated") and 7.1 are all proposals/not-implemented; nothing in the tree introduces v3. So this design adds fields inside the existing v2 envelope, byte-identical for messages without attachments (attachment slot empty → same signed bytes as today for text-only messages; existing message rows stay readable).
 
 ### How the streaming format (`attachment-stream`) fits
 
-It **does not** — group attachments do not use `attachment-stream.js` today (single AES-GCM, attachment-crypto.js:95-103). The file digest is computed over the **whole ciphertext** after encryption completes:
-1. Sender encrypts file → `{iv, ciphertext}` (attachment-crypto.js:95-103).
+It **does not** — group attachments do not use `attachment-stream.js` today (single AES-GCM, attachment-crypto.js:125-133). The file digest is computed over the **whole ciphertext** after encryption completes:
+1. Sender encrypts file → `{iv, ciphertext}` (attachment-crypto.js:125-133).
 2. Sender computes `SHA-256(iv || ciphertext)` and plaintext length.
 3. Sender signs message with attachment slot = digest || length (encrypt, then sign — signing happens before decrypt on receive, design doc :167).
-4. Receiver verifies signature first (before decrypting), then decrypts the file under `attachmentAad` and claims `att:${ref}` nonce (attachment-crypto.js:157).
+4. Receiver verifies signature first (before decrypting), then decrypts the file under `attachmentAad` and claims `att:${ref}` nonce (attachment-crypto.js:223).
 
 A partial/interrupted download: the receiver holds incomplete ciphertext, GCM tag verification fails when it tries to decrypt, nothing is rendered — the row shows the per-row placeholder (3.5). No partial plaintext is ever returned (attachment-stream.js:220-221 philosophy; groups don't stream but the same fail-closed principle applies).
 
@@ -206,10 +211,10 @@ These are estimates from primitive sizes (design doc 7.1 gives sign 0.10 ms / ve
 
 ## 3.5 Failure behaviour
 
-- **Signature verification fails** (`bad-signature`): the row renders a per-row placeholder (the same `content = 'Unable to decrypt'` pattern used for unverified messages today, design doc 6.5 and message-crypto.js:158-165 `UnverifiedMessageError`), **never a crash, never a thrown error that blocks the thread**. The signature is verified over the envelope **before** anything is decrypted and **before** the nonce is claimed (message-crypto.js:336-348), so a bad signature cannot burn a nonce or break rendering of the thread. `bad-signature` is for a bad signature only — it is **not** used for a file-bytes mismatch.
+- **Signature verification fails** (`bad-signature`): the row renders a per-row placeholder (the same `content = 'Unable to decrypt'` pattern used for unverified messages today, design doc 6.5 and message-crypto.js:185-192 `UnverifiedMessageError`), **never a crash, never a thrown error that blocks the thread**. The signature is verified over the envelope **before** anything is decrypted and **before** the nonce is claimed (message-crypto.js:400-412), so a bad signature cannot burn a nonce or break rendering of the thread. `bad-signature` is for a bad signature only — it is **not** used for a file-bytes mismatch.
 - **File-bytes mismatch** (`attachment-mismatch`, fixed enum, never message content): after the signature verifies, the receiver downloads the file and runs, in order: (1) check the row's `attachment_iv` column equals the signed `att_iv` (C2 — the server-stored column is unsigned and not trusted), (2) check `ciphertext.byteLength === att_len + 16` (GCM tag), (3) recompute `SHA-256(iv || ciphertext)` and compare with the signed `att_ct_hash` using a constant-time compare (C1). Any failure in (1)-(3) throws `UnverifiedMessageError('attachment-mismatch')` **before** decrypt and **before** the nonce is claimed. Only after all three pass does AES-GCM decrypt with `attachmentAad` happen, followed by claiming `att:${ref}`.
 - **Other rows in the same thread:** still render. Each message is verified independently (K-2, group-keys-contract.test.mjs:88-156: unknown/missing/malformed senderKeyId handled per message; well-formed-but-unknown-key envelopes become placeholders, structurally invalid ones dropped). Attachment failures follow the same per-row contract.
-- **Malformed envelope carrying attachment fields today:** `UnverifiedMessageError('attachment-not-bound')` (message-crypto.js:297-301), dropped per message; C3-4 (group-signing-messages.test.mjs:202-231) covers `att`, `attachment`, `attachments` fields. **The contract does not change**: C3 all-or-none fields (one or two of `att_iv`/`att_ct_hash`/`att_len` present, wrong base64, wrong byte lengths, or non-canonical `att_len`) are structurally malformed → plain `Error`, dropped per message exactly as today.
+- **Malformed envelope carrying attachment fields today:** `UnverifiedMessageError('attachment-not-bound')` (message-crypto.js:324-328), dropped per message; C3-4 (group-signing-messages.test.mjs:202-231) covers `att`, `attachment`, `attachments` fields. **The contract does not change**: C3 all-or-none fields (one or two of `att_iv`/`att_ct_hash`/`att_len` present, wrong base64, wrong byte lengths, or non-canonical `att_len`) are structurally malformed → plain `Error`, dropped per message exactly as today.
 
 ## 3.6 Test plan (written now, implemented in 3B)
 

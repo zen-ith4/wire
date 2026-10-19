@@ -276,9 +276,11 @@ secrecy) is not started, and DM attachments are still v1 with no AAD.
 
 **NOT done:**
 
-- **Group attachments**: design written (`docs/GROUP_ATTACHMENTS_E2EE.md`), not implemented. The feature is
-   still disabled; group attachment bytes are not bound into the signature (see `GROUP_E2EE_MULTIDEVICE_DESIGN.md`
-   section 6.7 item 5 and `C3-12`).
+- **Group attachments**: crypto layer implemented (STEP 3B); UI disabled; composer wiring is STEP 3C.
+  The file bytes (iv, ciphertext hash, plaintext length) are bound into the per-message signature
+  (`docs/GROUP_ATTACHMENTS_E2EE.md`), but no client path SENDS group attachments yet: the group
+  composer still says "group attachments aren't supported" and `C3-12` fails if any `public/js`
+  module calls the group attachment encryptor.
   `docs/DM_ATTACHMENTS_E2EE.md` covers the DM path only.
 - `attachment-crypto.js`'s `encryptAttachmentForDm` / `decryptAttachmentForDm` are
   DEAD (no importer; a static test in `tests/dm-v2-attachments.test.mjs` keeps

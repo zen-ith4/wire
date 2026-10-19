@@ -18,13 +18,43 @@
 import { getOrCreateSessionKey } from '../keys/session.js';
 import { bytesToBase64, base64ToBytes } from '../groups/codec.js';
 import { reserveNextCounter } from '../groups/nonce-lock.js';
-import { nonceFromCounter, readNonce, attachmentAad, acceptNonceOnce, ReplayedMessageError } from '../groups/message-crypto.js';
+import { nonceFromCounter, readNonce, attachmentAad, acceptNonceOnce, ReplayedMessageError, UnverifiedMessageError } from '../groups/message-crypto.js';
 import { getNoncePrefix } from '../groups/nonce-lock.js';
 import { getMySenderKey, loadSenderKey } from '../groups/sender-key.js';
 import { getGroupIdentity } from './group-message-crypto.js';
 import { MissingSenderKeyError } from '../groups/message-crypto.js';
 
 export { MissingSenderKeyError, ReplayedMessageError };
+
+/**
+ * Concatenates Uint8Arrays into a single Uint8Array.
+ */
+function concatBytes(...parts) {
+    const total = parts.reduce((n, p) => n + p.length, 0);
+    const out = new Uint8Array(total);
+    let offset = 0;
+    for (const p of parts) {
+        out.set(p, offset);
+        offset += p.length;
+    }
+    return out;
+}
+
+/**
+ * Constant-time comparison of two Uint8Arrays. Always runs the full length so
+ * comparison time does not depend on how many bytes match (or where they first
+ * differ), preventing timing side-channels on the MAC comparison.
+ */
+function constantTimeEqual(a, b) {
+    if (!(a instanceof Uint8Array) || !(b instanceof Uint8Array) || a.length !== b.length) {
+        return false;
+    }
+    let diff = 0;
+    for (let i = 0; i < a.length; i++) {
+        diff |= a[i] ^ b[i];
+    }
+    return diff === 0;
+}
 
 /**
  * @param {number} peerId
@@ -119,7 +149,20 @@ export async function encryptAttachmentForGroup(groupId, fileBytes) {
  *   decryptGroupMessage — the caller should treat this the same way
  *   (background KDM drain + retry), not as a hard failure.
  */
-export async function decryptAttachmentForGroup(groupId, ciphertext, ivBase64, senderKeyId, ref) {
+export async function decryptAttachmentForGroup(groupId, ciphertext, rowIvBase64, bindingOrSenderKeyId, senderKeyIdOrRef, refOrUndefined) {
+    let binding, senderKeyId, ref;
+    if (arguments.length === 6) {
+        // STEP 3B signed path: (groupId, ciphertext, rowIvBase64, binding, senderKeyId, ref)
+        binding = bindingOrSenderKeyId;
+        senderKeyId = senderKeyIdOrRef;
+        ref = refOrUndefined;
+    } else {
+        // Legacy path: (groupId, ciphertext, ivBase64, senderKeyId, ref).
+        binding = undefined;
+        senderKeyId = bindingOrSenderKeyId;
+        ref = senderKeyIdOrRef;
+    }
+
     if (ref === undefined || ref === null || ref === '') {
         throw new Error('An attachment reference is required for replay protection');
     }
@@ -131,13 +174,36 @@ export async function decryptAttachmentForGroup(groupId, ciphertext, ivBase64, s
         throw new MissingSenderKeyError(senderKeyId);
     }
 
-    const iv = base64ToBytes(ivBase64);
-    // Attachments draw from the same counter sequence as messages; the counter
-    // is read back out of the iv (its last 8 bytes) and bound in the AAD.
+    // Normalize the ciphertext to a Uint8Array (it may arrive as an ArrayBuffer).
+    const ct = ciphertext instanceof Uint8Array ? ciphertext : new Uint8Array(ciphertext);
+
+    let iv;
+    if (binding) {
+        // STEP 3B: a verified binding is required. The signed iv (binding.iv) is
+        // the authority; the row's attachment_iv column must match it (C2).
+        // C2: row's attachment_iv column must equal the signed iv.
+        if (rowIvBase64 !== binding.iv) {
+            throw new UnverifiedMessageError('attachment-mismatch');
+        }
+        // C4: length check before hashing (cheap early reject).
+        if (ct.byteLength !== binding.len + 16) {
+            throw new UnverifiedMessageError('attachment-mismatch');
+        }
+        // C1: recompute SHA-256(iv || ciphertext) and compare with the signed
+        // ctHash using a constant-time compare, before any decryption.
+        iv = base64ToBytes(binding.iv);
+        const digest = await crypto.subtle.digest({ name: 'SHA-256' }, concatBytes(iv, ct));
+        if (!constantTimeEqual(new Uint8Array(digest), base64ToBytes(binding.ctHash))) {
+            throw new UnverifiedMessageError('attachment-mismatch');
+        }
+    } else {
+        // Legacy path without a verified binding: decrypt with the row's iv.
+        iv = base64ToBytes(rowIvBase64);
+    }
+
     const { counter } = readNonce(iv);
 
     let plaintext;
-
     try {
         plaintext = await crypto.subtle.decrypt(
             {
@@ -146,7 +212,7 @@ export async function decryptAttachmentForGroup(groupId, ciphertext, ivBase64, s
                 additionalData: attachmentAad(groupId, senderKeyId, counter, iv),
             },
             cryptoKey,
-            ciphertext
+            ct
         );
     } catch {
         throw new Error('Attachment authentication failed');

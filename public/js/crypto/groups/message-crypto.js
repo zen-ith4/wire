@@ -346,6 +346,43 @@ export async function decryptGroupMessageDetailed(identity, groupId, envelopeJso
         throw new UnverifiedMessageError('bad-reply-id');
     }
 
+    // STEP 3B: parse the attachment binding fields (att_iv, att_ct_hash, att_len).
+    // C3: all-or-none - either all three are present or none (text message).
+    // Anything else is structurally malformed and dropped per message (K-2).
+    // The slot is built from the envelope fields alone: no file bytes are needed
+    // here because the file ciphertext is downloaded separately (C1).
+    let attachmentBinding = null;
+    let attachmentSlot = new Uint8Array(0);
+    const hasAttIv = Object.hasOwn(envelope, 'att_iv');
+    const hasAttCtHash = Object.hasOwn(envelope, 'att_ct_hash');
+    const hasAttLen = Object.hasOwn(envelope, 'att_len');
+    const attFieldCount = [hasAttIv, hasAttCtHash, hasAttLen].filter(Boolean).length;
+    if (attFieldCount > 0 && attFieldCount < 3) {
+        // C3: all-or-none. One or two of the three fields present is a
+        // structurally malformed envelope -> plain Error, dropped per message
+        // exactly like any other malformed envelope (K-2 contract).
+        throw new Error('Malformed group message envelope');
+    }
+    if (attFieldCount === 3) {
+        let attIvBytes;
+        try { attIvBytes = base64ToBytes(envelope.att_iv); } catch { throw new Error('Malformed group message envelope'); }
+        if (attIvBytes.length !== IV_LENGTH) throw new Error('Malformed group message envelope');
+        let attCtHashBytes;
+        try { attCtHashBytes = base64ToBytes(envelope.att_ct_hash); } catch { throw new Error('Malformed group message envelope'); }
+        if (attCtHashBytes.length !== 32) throw new Error('Malformed group message envelope');
+        if (typeof envelope.att_len !== 'string' || !/^\d+$/.test(envelope.att_len)) {
+            throw new Error('Malformed group message envelope');
+        }
+        const attLenNum = Number(envelope.att_len);
+        if (!Number.isSafeInteger(attLenNum) || attLenNum < 0) {
+            throw new Error('Malformed group message envelope');
+        }
+        attachmentBinding = { iv: envelope.att_iv, ctHash: envelope.att_ct_hash, len: attLenNum };
+        attachmentSlot = new Uint8Array(40);
+        attachmentSlot.set(attCtHashBytes);
+        new DataView(attachmentSlot.buffer).setBigUint64(32, BigInt(attLenNum), false);
+    }
+
     let bundle;
     try {
         bundle = await loadSenderKeyBundle(identity, senderKeyId);
@@ -367,7 +404,7 @@ export async function decryptGroupMessageDetailed(identity, groupId, envelopeJso
         iv,
         ciphertext: ciphertextBytes,
         replyToId: signedReplyToId,
-        attachment: new Uint8Array(0),
+        attachment: attachmentSlot,
     });
 
     if (!valid) {
@@ -406,5 +443,6 @@ export async function decryptGroupMessageDetailed(identity, groupId, envelopeJso
         senderKeyId,
         ownerUserId,
         replyToId: signedReplyToId,
+        attachmentBinding,
     };
 }

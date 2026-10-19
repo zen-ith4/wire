@@ -375,7 +375,7 @@ test('C3-11: a superseded own signing key left by NON-deferred generation is eve
 
 /* ----------------------------------------------- condition E: no group attachments */
 
-test('C3-12 (E): no client path sends group attachments, and an envelope with attachment data is refused until its bytes are bound into the signature', () => {
+test('C3-12 (E): the attachment bytes ARE bound into the signature, and still no client path SENDS group attachments', () => {
     const root = path.resolve(import.meta.dirname, '../../public/js');
     const hits = [];
     const walk = (dir) => {
@@ -391,8 +391,18 @@ test('C3-12 (E): no client path sends group attachments, and an envelope with at
     walk(root);
 
     assert.deepEqual(hits, [],
-        'A client path now calls encryptAttachmentForGroup. Before group attachment SENDING is enabled, the attachment bytes (iv + ciphertext hash) MUST be bound into the message signature ' +
-        '(signing.js "attachment" slot, UNBOUND_ENVELOPE_KEYS in groups/message-crypto.js, docs warning). Do that first, then update this test.');
+        'A client path now calls encryptAttachmentForGroup. The signature binding now EXISTS (STEP 3B: the file bytes - iv, ciphertext hash and ' +
+        'plaintext length - are bound into the message signature via buildAttachmentSlot and the attachment slot in signing.js), so the next step is ' +
+        'the COMPOSER wiring, which is step 3C. Update this test then, and only then enable group attachment sending.');
+
+    // STEP 3B: the binding must actually be ON the send path. If a future edit
+    // removes it, this test fails instead of the binding silently disappearing.
+    const messageCrypto = fs.readFileSync(path.join(root, 'crypto/groups/message-crypto.js'), 'utf8');
+    assert.ok(/buildAttachmentSlot/.test(messageCrypto),
+        'the send path must build the attachment slot (buildAttachmentSlot) - the binding was removed');
+    const signing = fs.readFileSync(path.join(root, 'crypto/groups/signing.js'), 'utf8');
+    assert.ok(/export async function buildAttachmentSlot/.test(signing),
+        'signing.js must export buildAttachmentSlot');
 
     const groupJs = fs.readFileSync(path.join(root, 'chat/group.js'), 'utf8');
     assert.ok(!/uploadUrl\s*:/.test(groupJs), 'the group composer has no upload URL');

@@ -328,6 +328,9 @@ function escapeHtml(value) {
  * bytes, served as application/octet-stream (never the declared mime).
  */
 export function groupAttachmentHtml(msg, received) {
+    // The escaped values are computed ONCE and interpolated: the CSP guard
+    // (tests/csp-static.test.mjs) allows no escapeHtml() call inside a
+    // quoted attribute value in a new file.
     const name = escapeHtml(received.name);
     const id = String(msg?.id ?? '');
 
@@ -340,11 +343,12 @@ export function groupAttachmentHtml(msg, received) {
     if (received.inlineMime) {
         const url = URL.createObjectURL(new Blob([received.bytes], { type: received.inlineMime }));
         blobUrls.set(id, url);
+        const urlAttr = escapeHtml(url);
         const dims = received.w && received.h
             ? ` width="${Number(received.w)}" height="${Number(received.h)}"`
             : '';
         return `<div class="chat-attachment chat-attachment-image-wrap">
-      <img class="chat-attachment-image" src="${escapeHtml(url)}" alt="${name}"${dims}>
+      <img class="chat-attachment-image" src="${urlAttr}" alt="${name}"${dims}>
     </div>`;
     }
 
@@ -352,9 +356,11 @@ export function groupAttachmentHtml(msg, received) {
     // application/octet-stream, with the sanitised name.
     const url = URL.createObjectURL(new Blob([received.bytes], { type: 'application/octet-stream' }));
     blobUrls.set(id, url);
+    const urlAttr = escapeHtml(url);
+    const nameAttr = escapeHtml(received.name);
     return `<div class="chat-attachment chat-attachment-file">
       <span class="chat-attachment-name">${name}</span>
-      <a class="chat-attachment-download" href="${escapeHtml(url)}" download="${escapeHtml(received.name)}" title="Download">Download</a>
+      <a class="chat-attachment-download" href="${urlAttr}" download="${nameAttr}" title="Download">Download</a>
     </div>`;
 }
 

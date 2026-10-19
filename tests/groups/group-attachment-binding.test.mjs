@@ -635,6 +635,7 @@ test('15 real server: a group file produced by the real encrypt path leaves only
     // The BYTES are opaque, but (unlike the DM path) the group server still
     // stores the client-supplied file NAME in the clear - pre-existing server
     // behaviour, unchanged here.
-    assert.equal(row.attachment_name, 'attachment.bin');
+    // STEP 3C: the server stores the NEUTRAL name, never the client's.
+    assert.equal(row.attachment_name, 'encrypted-attachment');
 });
 

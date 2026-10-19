@@ -78,6 +78,9 @@ mock.module(jsPath('crypto/messages/attachment-crypto.js'), {
         decryptAttachmentForDm: async (peerId, buf) => new Uint8Array(buf),
         encryptAttachmentForDm: async () => ({}),
         computeImageDimensions: async () => null,
+        // STEP 3C: chat/group-attachments.js imports the group half.
+        encryptAttachmentForGroup: async () => ({ ivBase64: 'AAAAAAAAAAAAAAAA', ciphertext: new Uint8Array(16) }),
+        decryptAttachmentForGroup: async () => new Uint8Array(16),
     },
 });
 mock.module(jsPath('vendor/capacitor.js'), {

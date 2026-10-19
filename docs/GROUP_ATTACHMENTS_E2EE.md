@@ -1,13 +1,21 @@
 # Group attachments: E2EE design (STEP 3A) + crypto layer (STEP 3B)
 
-Status: **design reviewed; crypto layer implemented in STEP 3B, UI still
-disabled.** The file bytes (iv, ciphertext hash, plaintext length) are bound
-into the per-message ECDSA signature, and the receive side refuses a file whose
-bytes do not match what the sender signed. Group attachment SENDING is still
-unreachable from any UI path: no client module calls the group attachment
-encryptor, and the group composer still says "group attachments aren't
-supported". Wiring the composer, the upload call and the thread rendering is
-STEP 3C.
+Status: **design reviewed; crypto layer implemented in STEP 3B; the composer,
+the upload and the thread rendering are implemented in STEP 3C, but the whole
+UI stays behind `GROUP_ATTACHMENTS_UI_ENABLED`, which ships as FALSE.**
+
+What is in place: the file bytes (iv, ciphertext hash, plaintext length) are
+bound into the per-message ECDSA signature; the receive side refuses a file whose
+bytes do not match what the sender signed; the server stores an opaque name and
+neutral metadata; the composer can encrypt and sign a file and the thread can
+render the decrypted bytes (an image inline, anything else as a download).
+
+What is NOT in place: the feature flag is FALSE, so the group page shows no
+attach button, no file input and no file paste/drop path. Flipping the flag to
+true is an owner step, and it happens only after these browser tests have been
+reviewed. The browser tests (tests/groups/group-attachment-browser.test.mjs)
+PASSED on Windows with the system Chrome (the Linux Chromium package ships a
+Linux binary and cannot run on Windows).
 
 Base tree: `wire-final-33` (design), `wire-final-34` (STEP 3B implementation).
 Every claim about current behaviour carries a `file:line` citation, re-checked

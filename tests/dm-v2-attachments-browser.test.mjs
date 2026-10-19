@@ -269,7 +269,7 @@ test('c2. a text reply to an attachment message: the quote shows the parent atta
   }
 });
 
-test('c2b. a text reply to a CAPTION-LESS attachment: the quote falls back to the parent attachment label, and no key/iv/ciphertext material reaches the DOM', { timeout: 120000 }, async () => {
+test("c2b. a text reply to a CAPTION-LESS attachment: the quote shows the parent's decrypted file name (not the opaque placeholder), and no key/iv/ciphertext material reaches the DOM", { timeout: 120000 }, async () => {
   const dir = tmpDir(); const dbPath = path.join(dir, 'wire.db'); fs.copyFileSync(FIXTURE_DB, dbPath);
   const { runMigrations } = await import('../database/migrations.js');
   const d0 = new Database(dbPath); runMigrations(d0); d0.close();

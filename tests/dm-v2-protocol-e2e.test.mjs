@@ -299,14 +299,14 @@ test('8. server changes reply_to_id: AAD differs', async () => {
 });
 
 // Scenario 9
-test('9. replay: same msgId on new row dropped; same row twice not replay', () => {
+test('9. replay: same iv on new row dropped; same row twice not replay', () => {
     client.dmV2Wire.resetDmDowngradeNotices();
     // reset replay store by clearing localStorage
     ls.clear();
-    const m = '0123456789abcdef';
-    assert.equal(client.dmV2Wire.classifyDmV2MsgId(3, m, 100), 'new');
-    assert.equal(client.dmV2Wire.classifyDmV2MsgId(3, m, 100), 'same-row');
-    assert.equal(client.dmV2Wire.classifyDmV2MsgId(3, m, 101), 'replay');
+    const iv = Buffer.alloc(12, 9).toString('base64');
+    assert.equal(client.dmV2Wire.classifyDmV2Iv(3, iv, 100), 'new');
+    assert.equal(client.dmV2Wire.classifyDmV2Iv(3, iv, 100), 'same-row');
+    assert.equal(client.dmV2Wire.classifyDmV2Iv(3, iv, 101), 'replay');
 });
 
 // Scenario 11

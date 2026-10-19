@@ -6,7 +6,7 @@
 //
 //   - version selection per peer        doc 5.4  (the sender picks, per peer)
 //   - the layer-2 client pin            doc 5.2  (localStorage, refuses v1 to a pinned peer)
-//   - the msgId replay store            doc 4.3  (bounded, per conversation)
+//   - the iv replay store               doc 4.3  (bounded, per conversation)
 //   - the one-time "downgraded" notice  doc 5.2
 //
 // The three layers in doc 5, and which of them this file is:
@@ -27,6 +27,7 @@ import { getPeerPublicKey, getPeerKeyCandidates, getPeerDmMinVersion } from '../
 import { mayTryRetiredKey, bytesToBase64, base64ToBytes } from '../keys/peer-trust.js';
 import {
     DM_V2_VERSION,
+    DM_V2_IV_LENGTH,
     deriveDmV2Key,
     senderKeyFingerprint,
     encryptDmV2,
@@ -85,7 +86,9 @@ export function assertDmV2ContentFits(contentChars) {
 }
 
 const PIN_STORAGE_KEY = 'wire.dm.v2.pins';
-const REPLAY_STORAGE_KEY = 'wire.dm.v2.replay';
+// v2 = keyed by the AAD-bound iv. The old `wire.dm.v2.replay` key holds
+// msgId -> row entries and must never be misread as iv -> row entries.
+const REPLAY_STORAGE_KEY = 'wire.dm.v2.replay.v2';
 
 /* =========================================================
  * Errors
@@ -254,17 +257,24 @@ export function assertDmVersionAllowed(peerId, version) {
 }
 
 /* =========================================================
- * msgId replay store (doc 4.3)
+ * iv replay store (doc 4.3; STEP 2A D3)
  *
- * A replay is the same msgId on a DIFFERENT server row id. The same row opened
- * again - a reload, a scroll back, a held row released after accepting a changed
- * key, an edit re-render - is NOT a replay, and treating it as one is the bug
+ * A replay is the same iv on a DIFFERENT server row id. The iv is random per
+ * message AND bound into the AAD, so unlike msgId the server cannot change it
+ * without breaking decryption - that is what makes it the right replay key.
+ * msgId stays in the envelope (format unchanged, existing rows stay readable)
+ * but is no longer used for replay accounting: it is not in the AAD and the
+ * server can swap it freely.
+ *
+ * The same row opened again - a reload, a scroll back, a held row released
+ * after accepting a changed key, or an edit re-render (which carries a NEW iv,
+ * so it is simply new) - is NOT a replay, and treating it as one is the bug
  * this shape exists to avoid.
  * ========================================================= */
 
-export const DM_V2_MSGID_NEW = 'new';
-export const DM_V2_MSGID_SAME_ROW = 'same-row';
-export const DM_V2_MSGID_REPLAY = 'replay';
+export const DM_V2_IV_NEW = 'new';
+export const DM_V2_IV_SAME_ROW = 'same-row';
+export const DM_V2_IV_REPLAY = 'replay';
 
 function normaliseRowId(rowId) {
     const n = Number(rowId);
@@ -273,22 +283,42 @@ function normaliseRowId(rowId) {
 }
 
 /**
- * Classify an incoming (msgId, rowId) pair and record it.
+ * The canonical base64 spelling of a 12-byte iv, or null when `iv` cannot be
+ * one. Canonical so two spellings of the same nonce cannot occupy two entries.
+ */
+function canonicalIvBase64(iv) {
+    if (typeof iv !== 'string' || !iv.length) return null;
+    let bytes;
+    try {
+        bytes = base64ToBytes(iv);
+    } catch {
+        return null;
+    }
+    if (bytes.length !== DM_V2_IV_LENGTH) return null;
+    return bytesToBase64(bytes);
+}
+
+/**
+ * Classify an incoming (iv, rowId) pair and record it.
  *
  * Runs BEFORE any key is derived (doc 4.3 step 1), so a replayed message costs
  * no key derivation and cannot be opened even if every key is available.
  *
+ * @param {number} peerId
+ * @param {string} iv base64 of the 12-byte AAD-bound nonce
+ * @param {number} rowId the stored row's id
  * @returns {'new'|'same-row'|'replay'}
  */
-export function classifyDmV2MsgId(peerId, msgId, rowId) {
+export function classifyDmV2Iv(peerId, iv, rowId) {
     const row = normaliseRowId(rowId);
+    const nonce = canonicalIvBase64(iv);
 
-    // No row id means the caller cannot distinguish a replay from a re-read
-    // (a conversation-list preview has no row id of its own). Refusing to
-    // account for it is the honest choice; the thread view, which does have the
-    // id, is where the check actually runs.
-    if (typeof msgId !== 'string' || !msgId.length || row === null) {
-        return DM_V2_MSGID_NEW;
+    // No usable nonce or row id means the caller cannot distinguish a replay
+    // from a re-read (a conversation-list preview has no row id of its own).
+    // Refusing to account for it is the honest choice; the thread view, which
+    // does have both, is where the check actually runs.
+    if (!nonce || row === null) {
+        return DM_V2_IV_NEW;
     }
 
     const storeKey = REPLAY_STORAGE_KEY;
@@ -296,7 +326,7 @@ export function classifyDmV2MsgId(peerId, msgId, rowId) {
     try {
         store = readJsonStore(storeKey);
     } catch {
-        return DM_V2_MSGID_NEW;
+        return DM_V2_IV_NEW;
     }
 
     const k = scopeKey(peerId);
@@ -306,14 +336,14 @@ export function classifyDmV2MsgId(peerId, msgId, rowId) {
         store[k] = entries;
     }
 
-    const known = entries[msgId];
+    const known = entries[nonce];
     if (known !== undefined && known !== null) {
-        return Number(known) === row ? DM_V2_MSGID_SAME_ROW : DM_V2_MSGID_REPLAY;
+        return Number(known) === row ? DM_V2_IV_SAME_ROW : DM_V2_IV_REPLAY;
     }
 
     // Record, newest last so eviction is insertion-ordered FIFO.
-    delete entries[msgId];
-    entries[msgId] = row;
+    delete entries[nonce];
+    entries[nonce] = row;
 
     const names = Object.keys(entries);
     while (names.length > DM_V2_REPLAY_PER_CONV_MAX) {
@@ -330,7 +360,7 @@ export function classifyDmV2MsgId(peerId, msgId, rowId) {
     }
 
     writeJsonStore(storeKey, store);
-    return DM_V2_MSGID_NEW;
+    return DM_V2_IV_NEW;
 }
 
 /* =========================================================
@@ -504,14 +534,16 @@ export async function buildDmV2Content({ plaintext, senderId, recipientId, reply
 export async function openDmV2Envelope({ payload, peerId, ownUserId, replyToId = 0, rowId = null } = {}) {
     const validated = validateDmV2Envelope(payload);
 
-    // 1. replay check, before any key derivation.
-    const verdict = classifyDmV2MsgId(peerId, validated.msgId, rowId);
-    if (verdict === DM_V2_MSGID_REPLAY) {
+    // 1. replay check, before any key derivation. The key is the AAD-bound iv,
+    //    not the msgId: the server controls msgId (it is not in the AAD) and can
+    //    swap it freely, while changing the iv breaks decryption outright.
+    const verdict = classifyDmV2Iv(peerId, validated.iv, rowId);
+    if (verdict === DM_V2_IV_REPLAY) {
         const err = new Error(
-            'Dropped as a replay: this msgId already arrived on a different message.'
+            'Dropped as a replay: this iv already arrived on a different message.'
         );
         err.code = 'DM_V2_REPLAY';
-        err.msgId = validated.msgId;
+        err.iv = validated.iv;
         throw err;
     }
 

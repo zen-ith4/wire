@@ -233,10 +233,14 @@ secrecy) is not started, and DM attachments are still v1 with no AAD.
   type | 4-byte length | data discipline as `groups/codec.js`, in this fixed order:
   `'dm-msg-v2'`, version, fromUserId, toUserId, senderKeyFp (32 raw bytes),
   direction, iv, replyToId (0 when there is none). `msgId` is NOT in the AAD.
-- **`msgId`** - a client-generated 16-hex id carried in the envelope. It is NOT
-  bound into the AAD, so a server can swap it (section 4.3: a replay hint, not an
-  integrity claim). The client drops the same `msgId` seen on a DIFFERENT server
-  row id; re-reading the same row is not a replay.
+- **Replay key is the `iv` (STEP 2A.1)**, not the `msgId`. The `iv` is random
+  per message and bound into the AAD, so a server cannot change it without
+  breaking decryption; the client drops the same `iv` seen on a DIFFERENT server
+  row id. The `msgId` stays in the envelope (format unchanged, existing rows stay
+  readable) but is NOT bound by the AAD, so the server can swap it and it is no
+  longer used for replay accounting. Remaining honest limits: per-device and
+  windowed (FIFO at the cap, so an attacker can push an entry out), and a
+  same-row rollback is not covered.
 - **Server rule and ratchet.** `dm_e2ee_min_version` column on `users`; the
   default is 2 for self-registration only (the four sites that stay at 1:
   `database/seed.js:55`, `utils/setupWizard.js:632`, `services/user.service.js:91`,

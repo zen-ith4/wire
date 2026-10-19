@@ -82,10 +82,11 @@ const {
     DM_V2_MAX_CONTENT_CHARS,
     assertDmV2ContentFits,
     DmV2TooLargeError,
-    classifyDmV2MsgId,
-    DM_V2_MSGID_NEW,
-    DM_V2_MSGID_SAME_ROW,
-    DM_V2_MSGID_REPLAY,
+    classifyDmV2Iv,
+    DM_V2_IV_NEW,
+    DM_V2_IV_SAME_ROW,
+    DM_V2_IV_REPLAY,
+    openDmV2Envelope,
     resetDmDowngradeNotices,
     takeDmDowngradeNotice,
     envelopeVersion,
@@ -246,100 +247,114 @@ test('decryptIncomingMessage on a v2 payload throws (no context)', async () => {
     await assert.rejects(() => decryptIncomingMessage(p, 34), /cannot read a v2 payload/);
 });
 
-// ---------------------------------------------------------------- replay store
-test('classifyDmV2MsgId: new -> same-row -> replay', () => {
+// ---------------------------------------------------------------- replay store (iv-keyed, STEP 2A.1)
+const ivOf = (fill) => Buffer.alloc(12, fill).toString('base64');
+
+test('classifyDmV2Iv: new -> same-row -> replay', () => {
     ls.clear();
     setCurrentUser({ id: 9, groups_enabled: true });
     globalThis.window.location.origin = 'http://127.0.0.1:5000';
-    const m = '0123456789abcdef';
-    assert.equal(classifyDmV2MsgId(34, m, 100), DM_V2_MSGID_NEW);
-    assert.equal(classifyDmV2MsgId(34, m, 100), DM_V2_MSGID_SAME_ROW);
-    assert.equal(classifyDmV2MsgId(34, m, 101), DM_V2_MSGID_REPLAY);
+    const iv = ivOf(1);
+    assert.equal(classifyDmV2Iv(34, iv, 100), DM_V2_IV_NEW);
+    assert.equal(classifyDmV2Iv(34, iv, 100), DM_V2_IV_SAME_ROW);
+    assert.equal(classifyDmV2Iv(34, iv, 101), DM_V2_IV_REPLAY);
 });
 
-test('classifyDmV2MsgId: different msgId is new', () => {
+test('classifyDmV2Iv: a different iv is new', () => {
     ls.clear();
     setCurrentUser({ id: 9, groups_enabled: true });
     globalThis.window.location.origin = 'http://127.0.0.1:5000';
-    assert.equal(classifyDmV2MsgId(34, '0123456789abcdef', 100), DM_V2_MSGID_NEW);
-    assert.equal(classifyDmV2MsgId(34, 'fedcba9876543210', 101), DM_V2_MSGID_NEW);
+    assert.equal(classifyDmV2Iv(34, ivOf(1), 100), DM_V2_IV_NEW);
+    assert.equal(classifyDmV2Iv(34, ivOf(2), 101), DM_V2_IV_NEW);
 });
 
-test('classifyDmV2MsgId: no rowId -> not accounted', () => {
+test('classifyDmV2Iv: no rowId -> not accounted', () => {
     ls.clear();
     setCurrentUser({ id: 9, groups_enabled: true });
     globalThis.window.location.origin = 'http://127.0.0.1:5000';
-    const m = '0123456789abcdef';
-    assert.equal(classifyDmV2MsgId(34, m, null), DM_V2_MSGID_NEW);
+    const iv = ivOf(3);
+    assert.equal(classifyDmV2Iv(34, iv, null), DM_V2_IV_NEW);
     // still not accounted, so a second call with a real row is "new"
-    assert.equal(classifyDmV2MsgId(34, m, 100), DM_V2_MSGID_NEW);
+    assert.equal(classifyDmV2Iv(34, iv, 100), DM_V2_IV_NEW);
 });
 
-test('classifyDmV2MsgId: FIFO eviction at the cap', () => {
+test('classifyDmV2Iv: a value that is not a 12-byte base64 iv is not accounted', () => {
+    ls.clear();
+    setCurrentUser({ id: 9, groups_enabled: true });
+    globalThis.window.location.origin = 'http://127.0.0.1:5000';
+    // too long: 24 bytes
+    assert.equal(classifyDmV2Iv(34, Buffer.alloc(24, 1).toString('base64'), 100), DM_V2_IV_NEW);
+    // not base64 at all
+    assert.equal(classifyDmV2Iv(34, 'not base64 !!!', 101), DM_V2_IV_NEW);
+    // empty / missing
+    assert.equal(classifyDmV2Iv(34, '', 102), DM_V2_IV_NEW);
+    assert.equal(classifyDmV2Iv(34, undefined, 103), DM_V2_IV_NEW);
+});
+
+test('classifyDmV2Iv: FIFO eviction at the cap', () => {
     ls.clear();
     setCurrentUser({ id: 9, groups_enabled: true });
     globalThis.window.location.origin = 'http://127.0.0.1:5000';
     const cap = DM_V2_REPLAY_PER_CONV_MAX;
-    // fill
+    const ivFor = (i) => {
+        const b = Buffer.alloc(12, 0);
+        b.writeUInt32BE(i, 8);
+        return b.toString('base64');
+    };
     for (let i = 0; i < cap; i++) {
-        const id = i.toString(16).padStart(16, '0');
-        classifyDmV2MsgId(34, id, i + 1);
+        classifyDmV2Iv(34, ivFor(i), i + 1);
     }
-    const first = (0).toString(16).padStart(16, '0');
-    // one more, NEW msgId, triggers eviction of the oldest
-    const trigger = (cap + 1).toString(16).padStart(16, '0');
-    assert.equal(classifyDmV2MsgId(34, trigger, cap + 2), DM_V2_MSGID_NEW);
+    // one more, NEW iv, triggers eviction of the oldest
+    assert.equal(classifyDmV2Iv(34, ivFor(cap + 1), cap + 2), DM_V2_IV_NEW);
     // first should now be evicted
-    assert.equal(classifyDmV2MsgId(34, first, 999999), DM_V2_MSGID_NEW);
+    assert.equal(classifyDmV2Iv(34, ivFor(0), 999999), DM_V2_IV_NEW);
 });
 
-test('classifyDmV2MsgId: cross-account isolation', () => {
+test('classifyDmV2Iv: cross-account isolation', () => {
     ls.clear();
     setCurrentUser({ id: 9, groups_enabled: true });
     globalThis.window.location.origin = 'http://127.0.0.1:5000';
-    const m = '0123456789abcdef';
-    classifyDmV2MsgId(34, m, 100);
+    const iv = ivOf(4);
+    classifyDmV2Iv(34, iv, 100);
     setCurrentUser({ id: 10, groups_enabled: true });
     // account 10 must not see account 9's record
-    assert.equal(classifyDmV2MsgId(34, m, 200), DM_V2_MSGID_NEW);
+    assert.equal(classifyDmV2Iv(34, iv, 200), DM_V2_IV_NEW);
 });
 
-test('classifyDmV2MsgId: cross-origin isolation', () => {
+test('classifyDmV2Iv: cross-origin isolation', () => {
     ls.clear();
     setCurrentUser({ id: 9, groups_enabled: true });
     globalThis.window.location.origin = 'http://127.0.0.1:5000';
-    const m = '0123456789abcdef';
-    classifyDmV2MsgId(34, m, 100);
+    const iv = ivOf(5);
+    classifyDmV2Iv(34, iv, 100);
     globalThis.window.location.origin = 'http://127.0.0.1:5001';
-    assert.equal(classifyDmV2MsgId(34, m, 200), DM_V2_MSGID_NEW);
+    assert.equal(classifyDmV2Iv(34, iv, 200), DM_V2_IV_NEW);
     globalThis.window.location.origin = 'http://127.0.0.1:5000';
 });
 
-// ---------------------------------------------------------------- 2A.0 replay bypass (KNOWN BUG; fixed in 2A.1)
-//
-// The reviewer reproduced this in node: msgId is NOT in the AAD, the store is
-// keyed by msgId, so a server that copies a row to a new id AND changes the
-// clear msgId is not detected as a replay. These three tests pin the CURRENT
-// behaviour. 2A.1 flips the first one: the key becomes the AAD-bound iv.
-test('2A.0 KNOWN BUG: the msgId-keyed store accepts a row COPIED to a new id when the server swaps the msgId', async () => {
+// ---------------------------------------------------------------- 2A.1 replay key fix
+test('2A.1 (was 2A.0, flipped): a row COPIED to a new id is dropped even when the server swaps the msgId', async () => {
     ls.clear();
     setCurrentUser({ id: 9, groups_enabled: true });
     globalThis.window.location.origin = 'http://127.0.0.1:5000';
+    const iv = ivOf(6);
     const m1 = '0123456789abcdef';
     const m2 = 'fedcba9876543210';
 
     // Row R1 arrives and is accounted as new.
-    assert.equal(classifyDmV2MsgId(34, m1, 100), DM_V2_MSGID_NEW);
+    assert.equal(classifyDmV2Iv(34, iv, 100), DM_V2_IV_NEW);
     // The server copies R1's ciphertext to R2 and changes the clear msgId.
-    // Keyed by msgId, this looks like a brand-new message. That is the bypass.
+    // The iv is unchanged (it cannot be changed without breaking the AEAD),
+    // and the iv is what the store keys on: dropped.
     assert.equal(
-        classifyDmV2MsgId(34, m2, 101),
-        DM_V2_MSGID_NEW,
-        'KNOWN BUG (2A.0): the replay key is msgId, which the server controls'
+        classifyDmV2Iv(34, iv, 101),
+        DM_V2_IV_REPLAY,
+        'the copied row must be dropped now that the replay key is the AAD-bound iv'
     );
 
-    // And no key check can catch it, because msgId is deliberately NOT in the
-    // AAD (design 4.3): the copied ciphertext still opens under the same key.
+    // msgId is still NOT bound by the AAD (design 4.3), so the copy would
+    // decrypt if it ever reached the crypto layer. That is exactly why the
+    // store has to catch it, and why keying on the iv fixes the bypass.
     const keyBytes = crypto.getRandomValues(new Uint8Array(32));
     const key = await crypto.subtle.importKey('raw', keyBytes, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
     const fp = crypto.getRandomValues(new Uint8Array(32));
@@ -349,7 +364,7 @@ test('2A.0 KNOWN BUG: the msgId-keyed store accepts a row COPIED to a new id whe
         toUserId: 34,
         senderKeyFp: fp,
         key,
-        iv: crypto.getRandomValues(new Uint8Array(12)),
+        iv: Buffer.alloc(12, 6),
         msgId: m1
     });
     const copied = JSON.parse(JSON.stringify(envelope));
@@ -357,21 +372,30 @@ test('2A.0 KNOWN BUG: the msgId-keyed store accepts a row COPIED to a new id whe
     assert.equal(
         await decryptDmV2({ envelope: copied, senderKeyFp: fp, key, replyToId: 0 }),
         'hello',
-        'KNOWN BUG (2A.0): swapping msgId does not break decryption - it is not bound'
+        'msgId is not an integrity claim: the AAD does not bind it'
     );
 });
 
-test('2A.0: the same row opened twice is not a replay; a lazy copy (same msgId, new row) is', () => {
+test('2A.1: the same row opened twice is not a replay; a lazy copy (same iv, new row) is', () => {
     ls.clear();
     setCurrentUser({ id: 9, groups_enabled: true });
     globalThis.window.location.origin = 'http://127.0.0.1:5000';
-    const m = '0123456789abcdef';
-    assert.equal(classifyDmV2MsgId(34, m, 100), DM_V2_MSGID_NEW);
-    assert.equal(classifyDmV2MsgId(34, m, 100), DM_V2_MSGID_SAME_ROW);
-    assert.equal(classifyDmV2MsgId(34, m, 101), DM_V2_MSGID_REPLAY);
+    const iv = ivOf(7);
+    assert.equal(classifyDmV2Iv(34, iv, 100), DM_V2_IV_NEW);
+    assert.equal(classifyDmV2Iv(34, iv, 100), DM_V2_IV_SAME_ROW);
+    assert.equal(classifyDmV2Iv(34, iv, 101), DM_V2_IV_REPLAY);
 });
 
-test('2A.0: the iv IS bound - a server that swaps it fails the AEAD, so it is the right replay key', async () => {
+test('2A.1: an edit (new iv, same row) is not a replay', () => {
+    ls.clear();
+    setCurrentUser({ id: 9, groups_enabled: true });
+    globalThis.window.location.origin = 'http://127.0.0.1:5000';
+    assert.equal(classifyDmV2Iv(34, ivOf(8), 100), DM_V2_IV_NEW);
+    // the edited envelope carries a fresh iv; same row, new nonce -> new
+    assert.equal(classifyDmV2Iv(34, ivOf(9), 100), DM_V2_IV_NEW);
+});
+
+test('2A.1: the iv IS bound - a server that swaps it fails the AEAD, so it is the right replay key', async () => {
     const keyBytes = crypto.getRandomValues(new Uint8Array(32));
     const key = await crypto.subtle.importKey('raw', keyBytes, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
     const fp = crypto.getRandomValues(new Uint8Array(32));
@@ -396,6 +420,81 @@ test('2A.0: the iv IS bound - a server that swaps it fails the AEAD, so it is th
         () => decryptDmV2({ envelope: swapped, senderKeyFp: fp, key, replyToId: 0 }),
         (e) => !/replay/i.test(String(e && e.message)),
         'a swapped iv must fail as an AEAD error, not be excused as a replay'
+    );
+});
+
+test('2A.1: the store key is versioned; the old msgId-keyed store is never read', () => {
+    ls.clear();
+    setCurrentUser({ id: 9, groups_enabled: true });
+    globalThis.window.location.origin = 'http://127.0.0.1:5000';
+    const scope = 'http://127.0.0.1:5000|9|34';
+
+    // Pre-seed the OLD key with a msgId entry pointing at row 100.
+    ls.set('wire.dm.v2.replay', JSON.stringify({ [scope]: { '0123456789abcdef': 100 } }));
+
+    // '0123456789abcdef' happens to also be valid base64 (12 bytes), so if the
+    // code read the old store it would say REPLAY here.
+    assert.equal(
+        classifyDmV2Iv(34, '0123456789abcdef', 101),
+        DM_V2_IV_NEW,
+        'the old msgId-keyed store must not be consulted'
+    );
+
+    assert.equal(ls.has('wire.dm.v2.replay.v2'), true, 'the new store is written under the versioned key');
+});
+
+test('2A.1 seam (no mocks): openDmV2Envelope drops a copied row before any key derivation', async () => {
+    ls.clear();
+    setCurrentUser({ id: 9, groups_enabled: true });
+    globalThis.window.location.origin = 'http://127.0.0.1:5000';
+    const iv = Buffer.alloc(12, 11).toString('base64');
+    const payload = {
+        encryption: {
+            version: 2,
+            algorithm: 'AES-GCM',
+            iv,
+            ciphertext: Buffer.from('aa', 'hex').toString('base64'),
+            senderFp: Buffer.alloc(32).toString('base64'),
+            msgId: '0123456789abcdef'
+        },
+        senderId: 12,
+        recipientId: 34
+    };
+
+    // Positive control: the first sighting passes the replay check and reaches
+    // the key stage, which fails only because node has no unlocked identity.
+    await assert.rejects(
+        () => openDmV2Envelope({ payload, peerId: 34, ownUserId: 9, rowId: 100 }),
+        (e) => /Identity is not unlocked/.test(String(e && e.message)),
+        'a fresh iv must reach key selection'
+    );
+
+    // The server copies the row to a new id and swaps the msgId; the iv is
+    // unchanged. Same iv on a different row: dropped, and dropped BEFORE the
+    // key stage (the error is the replay error, not the identity error).
+    await assert.rejects(
+        () => openDmV2Envelope({ payload, peerId: 34, ownUserId: 9, rowId: 101 }),
+        (e) => e && e.code === 'DM_V2_REPLAY',
+        'the copied row must be dropped as a replay'
+    );
+
+    // The same row again is NOT a replay (a reload or a scroll back): it must
+    // get past the replay check to the identity stage again.
+    await assert.rejects(
+        () => openDmV2Envelope({ payload, peerId: 34, ownUserId: 9, rowId: 100 }),
+        (e) => /Identity is not unlocked/.test(String(e && e.message)),
+        're-reading the same row must not be treated as a replay'
+    );
+
+    // The actual BYPASS: the server also changes the clear msgId. A msgId-keyed
+    // store calls this "new" (that was 2A.0); the iv is unchanged, so the
+    // iv-keyed store drops it. This leg is what makes the plant fire.
+    const swappedMsgId = JSON.parse(JSON.stringify(payload));
+    swappedMsgId.encryption.msgId = 'fedcba9876543210';
+    await assert.rejects(
+        () => openDmV2Envelope({ payload: swappedMsgId, peerId: 34, ownUserId: 9, rowId: 102 }),
+        (e) => e && e.code === 'DM_V2_REPLAY',
+        'a copied row whose msgId was swapped must still be dropped'
     );
 });
 

@@ -317,7 +317,7 @@ export async function decorateGroupMessages(groupId, rawMessages, { live = false
                 }
                 content = meta.text;
                 try {
-                    const received = await receiveGroupAttachment({ groupId, raw, binding: attachmentBinding, senderKeyId });
+                    const received = await receiveGroupAttachment({ groupId, raw, plaintext, binding: attachmentBinding, senderKeyId });
                     attachmentHtml = groupAttachmentHtml(raw, received);
                 } catch (e) {
                     // attachment-mismatch (or any other failure): this row
@@ -708,6 +708,9 @@ function renderActiveGroupShell(group) {
         // composer appends reply_to_id itself.
         ...(groupAttachmentsEnabled ? {
             uploadUrl: `/api/groups/${group?.id}/upload`,
+            // The group routes are behind the group protocol gate, so the
+            // upload must carry the same header core/api.js sends.
+            uploadHeaders: { 'X-Wire-Group-Proto': '2' },
             prepareUpload: async ({ file, caption, isVoice, replyToId }) => {
                 // The Sender Key first, before anything is encrypted.
                 await ensureSenderKeyReady(group.id);

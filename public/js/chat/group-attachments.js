@@ -266,10 +266,16 @@ export async function decryptGroupAttachmentBytes({ groupId, ciphertext, rowIvBa
  * from decryptGroupMessageDetailed, the file is downloaded and decrypted, and
  * the bytes are sniffed before anything may be rendered inline.
  *
+ * @param {object} a
+ * @param {number} a.groupId
+ * @param {object} a.raw the message ROW (for its id and its attachment_iv column)
+ * @param {string} a.plaintext the DECRYPTED message plaintext (the meta JSON)
+ * @param {object} a.binding the verified binding
+ * @param {string} a.senderKeyId
  * @returns {Promise<{name: string, mime: string, w?: number, h?: number, bytes: Uint8Array, inlineMime: string|null}>}
  */
-export async function receiveGroupAttachment({ groupId, raw, binding, senderKeyId }) {
-    const meta = parseGroupAttachmentPlaintext(raw);
+export async function receiveGroupAttachment({ groupId, raw, plaintext, binding, senderKeyId }) {
+    const meta = parseGroupAttachmentPlaintext(plaintext);
     if (!meta || !meta.file) throw new Error('Malformed group attachment meta');
 
     const ciphertext = await fetchGroupAttachmentCiphertext({ groupId, messageId: raw.id });

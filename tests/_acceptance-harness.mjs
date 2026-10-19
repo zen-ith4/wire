@@ -273,8 +273,50 @@ export async function launchBrowser() {
         const browser = await puppeteer.launch({ args: [...chromium.args, '--no-sandbox'], executablePath: await chromium.executablePath(), headless: 'shell', protocolTimeout: 90000 });
         return { browser, reason: null };
     } catch (e) {
+        // @sparticuz/chromium ships a LINUX binary, so it cannot run on
+        // Windows. When it cannot be used, fall back to a locally installed
+        // Chrome/Edge - but ONLY if one is really there, and only with the
+        // Linux-only flags removed. On Linux (where the primary path works)
+        // this fallback is never reached.
+        const system = systemBrowserPath();
+        if (system) {
+            try {
+                const req = createRequire(path.join(dir, 'noop.js'));
+                const chromium = (await import(pathToFileURL(req.resolve('@sparticuz/chromium')).href)).default;
+                const puppeteer = (await import(pathToFileURL(req.resolve('puppeteer-core')).href)).default;
+                const LINUX_ONLY = /--single-process|--no-zygote|--in-process-gpu|--use-gl=angle|--use-angle=swiftshader|--headless='shell'|--disable-setuid-sandbox/;
+                const args = chromium.args.filter((a) => !LINUX_ONLY.test(a));
+                const browser = await puppeteer.launch({
+                    args: [...args, '--no-sandbox', '--headless=new', '--disable-gpu'],
+                    executablePath: system,
+                    headless: 'shell',
+                    protocolTimeout: 90000,
+                });
+                return { browser, reason: null };
+            } catch (e2) {
+                return { browser: null, reason: `${e.message} | system browser failed: ${e2.message}` };
+            }
+        }
         return { browser: null, reason: e.message };
     }
+}
+
+/** A locally installed Chrome/Edge, if there is one (Windows fallback). */
+function systemBrowserPath() {
+    const candidates = [
+        process.env.CHROME_PATH,
+        'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+        'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+        'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+        'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+        '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    ].filter(Boolean);
+    for (const c of candidates) {
+        try {
+            if (fs.existsSync(c)) return c;
+        } catch { /* ignore */ }
+    }
+    return null;
 }
 
 /**

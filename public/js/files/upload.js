@@ -61,7 +61,16 @@ export function hideUploadProgress(containerId) {
 }
 
 
-export function xhrUpload(url, formData, onProgress) {
+/**
+ * @param {string} url
+ * @param {FormData} formData
+ * @param {(pct:number)=>void} [onProgress]
+ * @param {Record<string,string>} [extraHeaders] optional extra request headers.
+ *   The group attachment upload needs the `X-Wire-Group-Proto` header (its
+ *   route is behind the group protocol gate, and core/api.js sends that header
+ *   for its own calls). Callers that do not pass it are unaffected.
+ */
+export function xhrUpload(url, formData, onProgress, extraHeaders) {
 
   let xhr;
 
@@ -85,6 +94,13 @@ export function xhrUpload(url, formData, onProgress) {
         'Authorization',
         `Bearer ${token}`
       );
+    }
+
+    if (extraHeaders && typeof extraHeaders === 'object') {
+      for (const [name, value] of Object.entries(extraHeaders)) {
+        if (value === undefined || value === null) continue;
+        xhr.setRequestHeader(name, String(value));
+      }
     }
 
 

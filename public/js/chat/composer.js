@@ -216,6 +216,9 @@ function iconForFile(
  * @param {string} config.uploadUrl
  * @param {(content:string, replyToId:number|null) => object|Promise<object>} config.buildTextBody
  * @param {(form: FormData) => void} [config.buildFormExtra]
+ * @param {Record<string,string>} [config.uploadHeaders] optional extra headers
+ *   for the upload request (the group attachment upload needs the group
+ *   protocol header). Absent = no extra headers, exactly as before.
  * @param {(ctx: {file: File, caption: string, isVoice: boolean}) =>
  *   Promise<{file: File, fields: Record<string,string>}>} [config.prepareUpload]
  *   Optional. Called with the plaintext file and caption right before a
@@ -264,6 +267,7 @@ export function createComposer(
     buildTextBody,
     buildFormExtra,
     prepareUpload,
+    uploadHeaders,
     onMessage,
     typingEmitter,
     canSend = () => true,
@@ -2562,7 +2566,8 @@ export function createComposer(
               item.key,
               pct
             );
-          }
+          },
+          uploadHeaders
         );
 
       item.cancel =
@@ -3347,7 +3352,8 @@ export function createComposer(
         await xhrUpload(
           uploadUrl,
           form,
-          () => {}
+          () => {},
+          uploadHeaders
         );
 
       onMessage(

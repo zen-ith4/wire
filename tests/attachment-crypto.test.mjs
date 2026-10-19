@@ -101,6 +101,16 @@ function setActor(userId) {
     currentActorId = userId;
 }
 
+async function groupBinding(identity, groupId, { ivBase64, ciphertext, plaintextLength }, messageId) {
+    const mc = await import(js('crypto/groups/message-crypto.js'));
+    const envelope = await mc.encryptGroupMessage(identity, groupId, 'group caption', {
+        attachment: { ivBase64, ciphertext, plaintextLength },
+    });
+    const opened = await mc.decryptGroupMessageDetailed(identity, groupId, envelope, messageId);
+    assert.ok(opened.attachmentBinding, 'a verified attachment message must expose a binding');
+    return opened.attachmentBinding;
+}
+
 test('DM attachment: encrypt as alice, decrypt as bob, plaintext matches', async () => {
     await ensureUsers(1, 2);
 
@@ -154,28 +164,32 @@ test('group attachment: encrypt/decrypt round trip using the message-associated 
     const original = new TextEncoder().encode('group photo bytes').buffer;
 
     const { ivBase64, ciphertext } = await encryptAttachmentForGroup(groupId, original);
-    const decrypted = await decryptAttachmentForGroup(groupId, ciphertext, ivBase64, mine.senderKeyId, 'a1');
+    // STEP 3C: the group decrypt path REQUIRES the binding of a VERIFIED
+    // message envelope, so the round trip goes through a real signed message.
+    const binding = await groupBinding(identity, groupId, { ivBase64, ciphertext, plaintextLength: original.byteLength }, 1);
+    const decrypted = await decryptAttachmentForGroup({ groupId, ciphertext, rowIvBase64: ivBase64, binding, senderKeyId: mine.senderKeyId, ref: 'a1' });
 
     assert.deepEqual(Buffer.from(decrypted), Buffer.from(original));
 
     // F3: the attachment is bound to (group, senderKeyId, counter, iv): presenting it
     // as another group's attachment, or with a relabelled iv/counter, fails.
     await assert.rejects(
-        () => decryptAttachmentForGroup(groupId + 1, ciphertext, ivBase64, mine.senderKeyId, 'a1'),
+        () => decryptAttachmentForGroup({ groupId: groupId + 1, ciphertext, rowIvBase64: ivBase64, binding, senderKeyId: mine.senderKeyId, ref: 'a1' }),
         /authentication failed/
     );
     const ivBytes = Buffer.from(ivBase64, 'base64');
     ivBytes[11] ^= 0x01; // counter 0 -> 1: a different nonce AND a different AAD counter
     await assert.rejects(
-        () => decryptAttachmentForGroup(groupId, ciphertext, ivBytes.toString('base64'), mine.senderKeyId, 'a1'),
-        /authentication failed/
+        () => decryptAttachmentForGroup({ groupId, ciphertext, rowIvBase64: ivBytes.toString('base64'), binding, senderKeyId: mine.senderKeyId, ref: 'a1' }),
+        /attachment-mismatch/
     );
 
     // Counter is shared with messages: two attachments get distinct counters and nonces.
     const second = await encryptAttachmentForGroup(groupId, original);
     assert.notEqual(second.ivBase64, ivBase64);
+    const binding2 = await groupBinding(identity, groupId, { ivBase64: second.ivBase64, ciphertext: second.ciphertext, plaintextLength: original.byteLength }, 2);
     assert.deepEqual(
-        Buffer.from(await decryptAttachmentForGroup(groupId, second.ciphertext, second.ivBase64, mine.senderKeyId, 'a2')),
+        Buffer.from(await decryptAttachmentForGroup({ groupId, ciphertext: second.ciphertext, rowIvBase64: second.ivBase64, binding: binding2, senderKeyId: mine.senderKeyId, ref: 'a2' })),
         Buffer.from(original)
     );
 });
@@ -202,8 +216,18 @@ test('group attachment: unknown senderKeyId raises MissingSenderKeyError (self-h
         js('crypto/messages/attachment-crypto.js')
     );
 
+    // A well-formed binding but a key this device does not hold -> the typed
+    // self-heal error (the binding check comes first, so the shape must be valid).
+    const fakeBinding = { iv: 'AAAAAAAAAAAAAAAA', ctHash: 'A'.repeat(43) + '=', len: 0 };
     await assert.rejects(
-        () => decryptAttachmentForGroup(1, new ArrayBuffer(8), 'AAAAAAAAAAAAAAAA', 'nonexistent-sender-key-id', 'a1'),
+        () => decryptAttachmentForGroup({ groupId: 1, ciphertext: new ArrayBuffer(8), rowIvBase64: 'AAAAAAAAAAAAAAAA', binding: fakeBinding, senderKeyId: 'nonexistent-sender-key-id', ref: 'a1' }),
         MissingSenderKeyError
+    );
+
+    // STEP 3C: a call WITHOUT a binding is refused outright - there is no
+    // unbound fallback path any more.
+    await assert.rejects(
+        () => decryptAttachmentForGroup({ groupId: 1, ciphertext: new ArrayBuffer(8), rowIvBase64: 'AAAAAAAAAAAAAAAA', senderKeyId: 'nonexistent-sender-key-id', ref: 'a1' }),
+        /verified attachment binding is required/i
     );
 });

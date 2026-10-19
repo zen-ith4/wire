@@ -149,18 +149,45 @@ export async function encryptAttachmentForGroup(groupId, fileBytes) {
  *   decryptGroupMessage — the caller should treat this the same way
  *   (background KDM drain + retry), not as a hard failure.
  */
-export async function decryptAttachmentForGroup(groupId, ciphertext, rowIvBase64, bindingOrSenderKeyId, senderKeyIdOrRef, refOrUndefined) {
-    let binding, senderKeyId, ref;
-    if (arguments.length === 6) {
-        // STEP 3B signed path: (groupId, ciphertext, rowIvBase64, binding, senderKeyId, ref)
-        binding = bindingOrSenderKeyId;
-        senderKeyId = senderKeyIdOrRef;
-        ref = refOrUndefined;
-    } else {
-        // Legacy path: (groupId, ciphertext, ivBase64, senderKeyId, ref).
-        binding = undefined;
-        senderKeyId = bindingOrSenderKeyId;
-        ref = senderKeyIdOrRef;
+/**
+ * Decrypts a GROUP attachment. STEP 3C: the verified binding is MANDATORY -
+ * there is no unbound fallback path. A group attachment's bytes are only
+ * accepted when they match what the sender signed (`att_iv`, `att_ct_hash`,
+ * `att_len` in the message envelope), so a file can never be decrypted
+ * outside the signed message that carries it.
+ *
+ * The checks run in this fixed order, all BEFORE any decryption and before
+ * the nonce is claimed:
+ *   1. the row's `attachment_iv` column must be the SAME BYTES as the signed
+ *      `att_iv` (compared decoded, so two base64 spellings of one iv do not
+ *      cause a false mismatch, while a different iv still fails) - C2;
+ *   2. the ciphertext length must be `len + 16` (the GCM tag) - C4;
+ *   3. `SHA-256(iv || ciphertext)` must equal the signed `att_ct_hash`,
+ *      compared in constant time - C1.
+ *
+ * @param {object} args
+ * @param {number} args.groupId the group the attachment was posted in (bound into the AAD)
+ * @param {ArrayBuffer|Uint8Array} args.ciphertext the downloaded ciphertext
+ * @param {string} args.rowIvBase64 the row's `attachment_iv` column (base64)
+ * @param {{iv: string, ctHash: string, len: number}} args.binding the VERIFIED
+ *   binding from decryptGroupMessageDetailed's `attachmentBinding`
+ * @param {string} args.senderKeyId the Sender Key that encrypted this attachment
+ * @param {string} args.ref a stable per-row reference (used for the nonce claim)
+ * @returns {Promise<ArrayBuffer>} plaintext file bytes
+ * @throws {MissingSenderKeyError} same self-heal contract as
+ *   decryptGroupMessage — the caller should treat this the same way
+ *   (background KDM drain + retry), not as a hard failure.
+ * @throws {UnverifiedMessageError} 'attachment-mismatch' when the file bytes
+ *   do not match what the sender signed.
+ */
+export async function decryptAttachmentForGroup({ groupId, ciphertext, rowIvBase64, binding, senderKeyId, ref } = {}) {
+    // A verified binding is REQUIRED. Without it there is nothing that ties
+    // these bytes to a signed message, so this fails closed.
+    if (!binding || typeof binding !== 'object'
+        || typeof binding.iv !== 'string' || !binding.iv
+        || typeof binding.ctHash !== 'string' || !binding.ctHash
+        || !Number.isSafeInteger(binding.len) || binding.len < 0) {
+        throw new Error('A verified attachment binding is required to decrypt a group attachment');
     }
 
     if (ref === undefined || ref === null || ref === '') {
@@ -177,28 +204,28 @@ export async function decryptAttachmentForGroup(groupId, ciphertext, rowIvBase64
     // Normalize the ciphertext to a Uint8Array (it may arrive as an ArrayBuffer).
     const ct = ciphertext instanceof Uint8Array ? ciphertext : new Uint8Array(ciphertext);
 
-    let iv;
-    if (binding) {
-        // STEP 3B: a verified binding is required. The signed iv (binding.iv) is
-        // the authority; the row's attachment_iv column must match it (C2).
-        // C2: row's attachment_iv column must equal the signed iv.
-        if (rowIvBase64 !== binding.iv) {
-            throw new UnverifiedMessageError('attachment-mismatch');
-        }
-        // C4: length check before hashing (cheap early reject).
-        if (ct.byteLength !== binding.len + 16) {
-            throw new UnverifiedMessageError('attachment-mismatch');
-        }
-        // C1: recompute SHA-256(iv || ciphertext) and compare with the signed
-        // ctHash using a constant-time compare, before any decryption.
-        iv = base64ToBytes(binding.iv);
-        const digest = await crypto.subtle.digest({ name: 'SHA-256' }, concatBytes(iv, ct));
-        if (!constantTimeEqual(new Uint8Array(digest), base64ToBytes(binding.ctHash))) {
-            throw new UnverifiedMessageError('attachment-mismatch');
-        }
-    } else {
-        // Legacy path without a verified binding: decrypt with the row's iv.
-        iv = base64ToBytes(rowIvBase64);
+    // C2: the row's attachment_iv column must equal the signed iv. Compared as
+    // DECODED BYTES: two base64 spellings of the same iv (padding or not) are
+    // the same iv, but a different iv is a different iv.
+    const iv = base64ToBytes(binding.iv);
+    let rowIv;
+    try {
+        rowIv = base64ToBytes(rowIvBase64);
+    } catch {
+        throw new UnverifiedMessageError('attachment-mismatch');
+    }
+    if (!constantTimeEqual(rowIv, iv)) {
+        throw new UnverifiedMessageError('attachment-mismatch');
+    }
+    // C4: length check before hashing (cheap early reject).
+    if (ct.byteLength !== binding.len + 16) {
+        throw new UnverifiedMessageError('attachment-mismatch');
+    }
+    // C1: recompute SHA-256(iv || ciphertext) and compare with the signed
+    // ctHash using a constant-time compare, before any decryption.
+    const digest = await crypto.subtle.digest({ name: 'SHA-256' }, concatBytes(iv, ct));
+    if (!constantTimeEqual(new Uint8Array(digest), base64ToBytes(binding.ctHash))) {
+        throw new UnverifiedMessageError('attachment-mismatch');
     }
 
     const { counter } = readNonce(iv);

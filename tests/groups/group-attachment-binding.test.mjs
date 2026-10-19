@@ -162,7 +162,7 @@ async function sendAttachment(dev, fileBytes, opts = {}) {
 }
 
 async function decrypt(dev, ciphertext, rowIvBase64, binding, senderKeyId, ref) {
-    return dev.run(() => ac.decryptAttachmentForGroup(GROUP, ciphertext, rowIvBase64, binding, senderKeyId, ref));
+    return dev.run(() => ac.decryptAttachmentForGroup({ groupId: GROUP, ciphertext, rowIvBase64, binding, senderKeyId, ref }));
 }
 
 /** How many nonces this device has claimed for a Sender Key. */
@@ -464,6 +464,63 @@ test('13 nonce: no reuse - two files + one text under one Sender Key -> three di
     const textEnv = JSON.parse(await send(w.A, 'plain text message'));
     assert.notEqual(textEnv.counter, envA.counter, 'text message counter must differ from attachment counter');
     assert.notEqual(textEnv.counter, envB.counter, 'text message counter must differ from second attachment counter');
+});
+
+/* ------------------------------- 16. the length check runs BEFORE the hash */
+
+test('16 length check runs before the hash: crypto.subtle.digest is NOT called when the ciphertext length is wrong', async () => {
+    const w = await world();
+    const fileBytes = randomBytes(256);
+    const sent = await sendAttachment(w.A, fileBytes);
+    const binding = (await open(w.B, sent.envelope, 21)).attachmentBinding;
+    assert.ok(binding);
+
+    const truncated = new Uint8Array(sent.ciphertext).slice(0, sent.ciphertext.byteLength - 1);
+    assert.notEqual(truncated.byteLength, binding.len + 16, 'control: the length really is wrong');
+
+    // Count the digest calls made during the decrypt attempt.
+    const subtle = globalThis.crypto.subtle;
+    const original = subtle.digest;
+    let digestCalls = 0;
+    subtle.digest = function (...args) {
+        digestCalls += 1;
+        return original.apply(this, args);
+    };
+    try {
+        await assert.rejects(
+            () => decrypt(w.B, truncated, sent.ivBase64, binding, w.aliceKeyId, 'b9'),
+            (e) => e instanceof mc.UnverifiedMessageError && e.reason === 'attachment-mismatch',
+            'a wrong-length ciphertext must fail at the length check'
+        );
+    } finally {
+        subtle.digest = original;
+    }
+    assert.equal(digestCalls, 0, 'the hash must NOT be computed when the length is already wrong');
+});
+
+/* ------------------- 17. the row iv and the signed iv are compared as BYTES */
+
+test('17 the row iv and the signed iv are compared as DECODED BYTES, not as base64 strings', async () => {
+    const w = await world();
+    const fileBytes = randomBytes(128);
+    const sent = await sendAttachment(w.A, fileBytes);
+    const binding = (await open(w.B, sent.envelope, 22)).attachmentBinding;
+    assert.ok(binding);
+
+    // Same BYTES, a different base64 spelling (whitespace is ignored by the
+    // decoder): must NOT be a false mismatch.
+    const spaced = sent.ivBase64.slice(0, 8) + '\n' + sent.ivBase64.slice(8);
+    const ok = await decrypt(w.B, sent.ciphertext, spaced, binding, w.aliceKeyId, 'b10');
+    assert.deepEqual(new Uint8Array(ok), new Uint8Array(fileBytes), 'the same bytes in another spelling must be accepted');
+
+    // Different BYTES: must still fail.
+    const otherBytes = Buffer.from(sent.ivBase64, 'base64');
+    otherBytes[0] ^= 0x01;
+    await assert.rejects(
+        () => decrypt(w.B, sent.ciphertext, otherBytes.toString('base64'), binding, w.aliceKeyId, 'b11'),
+        (e) => e instanceof mc.UnverifiedMessageError && e.reason === 'attachment-mismatch',
+        'a different iv must fail the row-iv check'
+    );
 });
 
 /* ---------------------------------------------------------------- 15. per-row isolation */

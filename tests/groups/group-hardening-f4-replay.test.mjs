@@ -55,6 +55,28 @@ async function store_(u) {
 
 const count = (arr, x) => arr.filter((b) => b === x).length;
 
+/**
+ * STEP 3C: the group attachment decrypt path REQUIRES the binding of a
+ * VERIFIED message envelope, so a test that wants to decrypt a file has to
+ * produce one: Alice signs a message that carries the file, Bob opens it and
+ * the verified binding comes back.
+ */
+async function groupAttachmentBinding(alice, bob, groupId, { ivBase64, ciphertext, plaintextLength }, messageId) {
+    alice.actor.use();
+    const aliceMc = await alice.actor.importModule('crypto/groups/message-crypto.js');
+    const aliceGm = await alice.actor.importModule('crypto/messages/group-message-crypto.js');
+    const envelope = await aliceMc.encryptGroupMessage(aliceGm.getGroupIdentity(), groupId, 'attachment', {
+        attachment: { ivBase64, ciphertext, plaintextLength },
+    });
+
+    bob.actor.use();
+    const bobMc = await bob.actor.importModule('crypto/groups/message-crypto.js');
+    const bobGm = await bob.actor.importModule('crypto/messages/group-message-crypto.js');
+    const opened = await bobMc.decryptGroupMessageDetailed(bobGm.getGroupIdentity(), groupId, envelope, messageId);
+    assert.ok(opened.attachmentBinding, 'a verified attachment message must expose a binding');
+    return opened.attachmentBinding;
+}
+
 test('F4-a: a hostile relay re-posts stored ciphertext under a FRESH message id: the replay is rejected, the original stays', async () => {
     const { S, alice, bob, g } = await groupWithHistory('f4a', ['hello', 'second'], 'b1');
     const original = S.envelopes(g.id).find((e) => e.env.counter === Math.min(...S.envelopes(g.id).map((x) => x.env.counter)));
@@ -208,16 +230,19 @@ test('F4-g: attachments share the nonce space: same ref idempotent, other ref re
     const file = crypto.getRandomValues(new Uint8Array(64)).buffer;
     const { ivBase64, ciphertext } = await ac.encryptAttachmentForGroup(g.id, file);
     const senderKeyId = S.envelopes(g.id)[0].env.senderKeyId;
+    const binding = await groupAttachmentBinding(alice, bob, g.id, { ivBase64, ciphertext, plaintextLength: file.byteLength }, 'att-msg-1');
 
-    const ok1 = await bobAtt.decryptAttachmentForGroup(g.id, ciphertext, ivBase64, senderKeyId, 'att-1');
-    const ok2 = await bobAtt.decryptAttachmentForGroup(g.id, ciphertext, ivBase64, senderKeyId, 'att-1');
+    const ok1 = await bobAtt.decryptAttachmentForGroup({ groupId: g.id, ciphertext, rowIvBase64: ivBase64, binding, senderKeyId, ref: 'att-1' });
+    const ok2 = await bobAtt.decryptAttachmentForGroup({ groupId: g.id, ciphertext, rowIvBase64: ivBase64, binding, senderKeyId, ref: 'att-1' });
     assert.deepEqual(Buffer.from(ok1), Buffer.from(file));
     assert.deepEqual(Buffer.from(ok2), Buffer.from(file), 'same ref again: idempotent');
     await assert.rejects(
-        () => bobAtt.decryptAttachmentForGroup(g.id, ciphertext, ivBase64, senderKeyId, 'att-2'),
+        () => bobAtt.decryptAttachmentForGroup({ groupId: g.id, ciphertext, rowIvBase64: ivBase64, binding, senderKeyId, ref: 'att-2' }),
         (e) => e.name === 'ReplayedMessageError'
     );
-    await assert.rejects(() => bobAtt.decryptAttachmentForGroup(g.id, ciphertext, ivBase64, senderKeyId), /reference is required/i);
+    await assert.rejects(() => bobAtt.decryptAttachmentForGroup({ groupId: g.id, ciphertext, rowIvBase64: ivBase64, binding, senderKeyId }), /reference is required/i);
+    // A call WITHOUT a binding is refused: there is no unbound path any more.
+    await assert.rejects(() => bobAtt.decryptAttachmentForGroup({ groupId: g.id, ciphertext, rowIvBase64: ivBase64, senderKeyId, ref: 'att-3' }), /verified attachment binding is required/i);
 
     // the attachment took a counter of its own: the next TEXT message still goes through
     await S.send(alice, 'after-attachment');

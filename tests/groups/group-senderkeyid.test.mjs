@@ -9,7 +9,8 @@
 //   group.js's decorate callback (decorateGroupMessages) attaches
 //   `senderKeyId` (string) to every successfully decrypted message
 //   object, and a caller can hand exactly that value to
-//   decryptAttachmentForGroup(ciphertext, ivBase64, senderKeyId) to
+//   decryptAttachmentForGroup({groupId, ciphertext, rowIvBase64, binding,
+//   senderKeyId, ref}) to
 //   decrypt an attachment the sender encrypted under the same key.
 //
 // Deliberately NOT full media wiring: no upload, no attachment
@@ -123,16 +124,33 @@ test('decorate() attaches senderKeyId, usable with decryptAttachmentForGroup', a
     const aliceAttach = await alice.importModule('crypto/messages/attachment-crypto.js');
     const { ivBase64, ciphertext } = await aliceAttach.encryptAttachmentForGroup(group.id, fileBytes);
 
+    // STEP 3C: the group decrypt path REQUIRES the binding of a VERIFIED
+    // message envelope, so Alice signs a message that carries the file and
+    // Bob opens it; the verified binding comes back from that open.
+    alice.use();
+    const aliceMc = await alice.importModule('crypto/groups/message-crypto.js');
+    const aliceGm = await alice.importModule('crypto/messages/group-message-crypto.js');
+    const envelope = await aliceMc.encryptGroupMessage(aliceGm.getGroupIdentity(), group.id, 'file caption', {
+        attachment: { ivBase64, ciphertext, plaintextLength: fileBytes.byteLength },
+    });
+
+    bob.use();
+    const bobMc = await bob.importModule('crypto/groups/message-crypto.js');
+    const bobGm = await bob.importModule('crypto/messages/group-message-crypto.js');
+    const opened = await bobMc.decryptGroupMessageDetailed(bobGm.getGroupIdentity(), group.id, envelope, 1);
+    assert.ok(opened.attachmentBinding, 'a verified attachment message must expose a binding');
+    const binding = opened.attachmentBinding;
+
     bob.use();
     const bobAttach = await bob.importModule('crypto/messages/attachment-crypto.js');
-    const decrypted = await bobAttach.decryptAttachmentForGroup(group.id, ciphertext, ivBase64, decorated.senderKeyId, 'a1');
+    const decrypted = await bobAttach.decryptAttachmentForGroup({ groupId: group.id, ciphertext, rowIvBase64: ivBase64, binding, senderKeyId: decorated.senderKeyId, ref: 'a1' });
     assert.deepEqual(new Uint8Array(decrypted), new Uint8Array(fileBytes), 'attachment bytes must round-trip');
 
     // Wrong / missing id must fail as MissingSenderKeyError (the
     // self-heal contract), never yield garbage.
     // A well-formed but unknown id -> the typed self-heal error.
     await assert.rejects(
-        () => bobAttach.decryptAttachmentForGroup(group.id, ciphertext, ivBase64, 'not-a-real-key-id', 'a1'),
+        () => bobAttach.decryptAttachmentForGroup({ groupId: group.id, ciphertext, rowIvBase64: ivBase64, binding, senderKeyId: 'not-a-real-key-id', ref: 'a1' }),
         (e) => e.name === 'MissingSenderKeyError',
         'unknown senderKeyId must throw MissingSenderKeyError'
     );
@@ -144,9 +162,16 @@ test('decorate() attaches senderKeyId, usable with decryptAttachmentForGroup', a
     // `typeof msg.senderKeyId === 'string'` BEFORE calling, rather than
     // relying on the typed error for this case.
     await assert.rejects(
-        () => bobAttach.decryptAttachmentForGroup(group.id, ciphertext, ivBase64, undefined, 'a1'),
+        () => bobAttach.decryptAttachmentForGroup({ groupId: group.id, ciphertext, rowIvBase64: ivBase64, binding, senderKeyId: undefined, ref: 'a1' }),
         (e) => e.name !== 'MissingSenderKeyError',
         'missing senderKeyId rejects, but as a non-typed error (documented caller-side guard)'
+    );
+
+    // STEP 3C: no binding at all -> refused outright (no unbound path).
+    await assert.rejects(
+        () => bobAttach.decryptAttachmentForGroup({ groupId: group.id, ciphertext, rowIvBase64: ivBase64, senderKeyId: decorated.senderKeyId, ref: 'a1' }),
+        /verified attachment binding is required/i,
+        'a call without a binding must be refused'
     );
 
     // Envelope-level guard: a malformed envelope yields no senderKeyId.

@@ -264,6 +264,62 @@ export const textContains = (text, needle) =>
     text.includes(needle) || text.includes(Buffer.from(needle).toString('base64'));
 
 // ---------------------------------------------------------------- browser
+
+/**
+ * The OPT-IN for the system-browser fallback (STEP 3D item 4).
+ *
+ * The project normally runs the browser tests with @sparticuz/chromium,
+ * which ships a LINUX binary. On a machine without it the tests are BLOCKED
+ * with the reason - that is the behaviour without this variable. A locally
+ * installed Chrome/Edge is used ONLY when the run explicitly asks for it:
+ *
+ *     WIRE_TEST_ALLOW_SYSTEM_BROWSER=1 node --test ...
+ *
+ * The decision is a pure function so it can be unit-tested without a
+ * browser.
+ *
+ * @param {object} o
+ * @param {string|null} o.chromiumError why the primary path failed
+ * @param {boolean} o.allowSystemBrowser the opt-in
+ * @param {string|null} o.systemPath a locally installed browser, if there is one
+ * @returns {{use: boolean, path: string|null, reason: string|null}}
+ */
+export function browserFallbackDecision({ chromiumError = null, allowSystemBrowser = false, systemPath = null } = {}) {
+    if (!allowSystemBrowser) {
+        return { use: false, path: null, reason: chromiumError };
+    }
+    if (!systemPath) {
+        return { use: false, path: null, reason: chromiumError || 'no local browser found' };
+    }
+    return { use: true, path: systemPath, reason: null };
+}
+
+/** Is the system-browser fallback allowed in this run? */
+export function systemBrowserAllowed() {
+    return process.env.WIRE_TEST_ALLOW_SYSTEM_BROWSER === '1';
+}
+
+/**
+ * The line the browser tests print into their TAP output, so a report can
+ * never hide which engine ran.
+ * @param {{engine?: string, reason?: string|null}} launched
+ */
+export function browserEngineTapLine(launched) {
+    const engine = launched?.engine || 'unknown';
+    const reason = launched?.reason ? ` (${launched.reason})` : '';
+    return `# browser: ${engine}${reason}`;
+}
+
+/**
+ * Launches the browser.
+ *
+ * The primary path is @sparticuz/chromium (the project's own). When it
+ * cannot be used AND the run opted into the system-browser fallback, a
+ * locally installed Chrome/Edge is used instead - and the run says so, in
+ * the console and (through browserEngineTapLine) in the TAP output.
+ *
+ * @returns {Promise<{browser: object|null, reason: string|null, engine: string}>}
+ */
 export async function launchBrowser() {
     const dir = process.env.CHROMIUM_DIR || '/tmp/browser-check';
     try {
@@ -271,38 +327,46 @@ export async function launchBrowser() {
         const chromium = (await import(pathToFileURL(req.resolve('@sparticuz/chromium')).href)).default;
         const puppeteer = (await import(pathToFileURL(req.resolve('puppeteer-core')).href)).default;
         const browser = await puppeteer.launch({ args: [...chromium.args, '--no-sandbox'], executablePath: await chromium.executablePath(), headless: 'shell', protocolTimeout: 90000 });
-        return { browser, reason: null };
+        const engine = `chromium (@sparticuz/chromium) ${await browser.version()}`;
+        console.log(browserEngineTapLine({ engine }));
+        return { browser, reason: null, engine };
     } catch (e) {
-        // @sparticuz/chromium ships a LINUX binary, so it cannot run on
-        // Windows. When it cannot be used, fall back to a locally installed
-        // Chrome/Edge - but ONLY if one is really there, and only with the
-        // Linux-only flags removed. On Linux (where the primary path works)
-        // this fallback is never reached.
-        const system = systemBrowserPath();
-        if (system) {
-            try {
-                const req = createRequire(path.join(dir, 'noop.js'));
-                const chromium = (await import(pathToFileURL(req.resolve('@sparticuz/chromium')).href)).default;
-                const puppeteer = (await import(pathToFileURL(req.resolve('puppeteer-core')).href)).default;
-                const LINUX_ONLY = /--single-process|--no-zygote|--in-process-gpu|--use-gl=angle|--use-angle=swiftshader|--headless='shell'|--disable-setuid-sandbox/;
-                const args = chromium.args.filter((a) => !LINUX_ONLY.test(a));
-                const browser = await puppeteer.launch({
-                    args: [...args, '--no-sandbox', '--headless=new', '--disable-gpu'],
-                    executablePath: system,
-                    headless: 'shell',
-                    protocolTimeout: 90000,
-                });
-                return { browser, reason: null };
-            } catch (e2) {
-                return { browser: null, reason: `${e.message} | system browser failed: ${e2.message}` };
-            }
+        const decision = browserFallbackDecision({
+            chromiumError: e.message,
+            allowSystemBrowser: systemBrowserAllowed(),
+            systemPath: systemBrowserPath(),
+        });
+        if (!decision.use) {
+            console.log(browserEngineTapLine({ engine: 'none', reason: decision.reason }));
+            return { browser: null, reason: decision.reason, engine: 'none' };
         }
-        return { browser: null, reason: e.message };
+        try {
+            const req = createRequire(path.join(dir, 'noop.js'));
+            const chromium = (await import(pathToFileURL(req.resolve('@sparticuz/chromium')).href)).default;
+            const puppeteer = (await import(pathToFileURL(req.resolve('puppeteer-core')).href)).default;
+            // The Linux-only flags of @sparticuz/chromium mean nothing to a
+            // Windows Chrome and some of them break it.
+            const LINUX_ONLY = /--single-process|--no-zygote|--in-process-gpu|--use-gl=angle|--use-angle=swiftshader|--disable-setuid-sandbox/;
+            const args = chromium.args.filter((a) => !LINUX_ONLY.test(a));
+            const browser = await puppeteer.launch({
+                args: [...args, '--no-sandbox', '--headless=new', '--disable-gpu'],
+                executablePath: decision.path,
+                headless: 'shell',
+                protocolTimeout: 90000,
+            });
+            const engine = `system browser ${decision.path} ${await browser.version()}`;
+            console.log(browserEngineTapLine({ engine }));
+            return { browser, reason: null, engine };
+        } catch (e2) {
+            const reason = `${e.message} | system browser failed: ${e2.message}`;
+            console.log(browserEngineTapLine({ engine: 'none', reason }));
+            return { browser: null, reason, engine: 'none' };
+        }
     }
 }
 
 /** A locally installed Chrome/Edge, if there is one (Windows fallback). */
-function systemBrowserPath() {
+export function systemBrowserPath() {
     const candidates = [
         process.env.CHROME_PATH,
         'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',

@@ -276,7 +276,9 @@ secrecy) is not started, and DM attachments are still v1 with no AAD.
 
 **NOT done:**
 
-- **Group attachments** are still v1 with no AAD, and the feature is disabled.
+- **Group attachments**: design written (`docs/GROUP_ATTACHMENTS_E2EE.md`), not implemented. The feature is
+   still disabled; group attachment bytes are not bound into the signature (see `GROUP_E2EE_MULTIDEVICE_DESIGN.md`
+   section 6.7 item 5 and `C3-12`).
   `docs/DM_ATTACHMENTS_E2EE.md` covers the DM path only.
 - `attachment-crypto.js`'s `encryptAttachmentForDm` / `decryptAttachmentForDm` are
   DEAD (no importer; a static test in `tests/dm-v2-attachments.test.mjs` keeps

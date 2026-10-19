@@ -286,3 +286,38 @@ test('5 with the flag OFF the group composer has NO attach control and NO file i
     assert.equal(state.staging, false, 'there must be no staging area');
     assert.equal(state.attachButtons, 0, 'there must be no attach button');
 });
+
+test('6 the sanitised name is used for BOTH the visible text and the download attribute, and the raw name never reaches the DOM', async (t) => {
+    const w = await world();
+    await enableFlag(w.alicePage);
+    await enableFlag(w.bobPage);
+
+    // A name with a leading dot and a bidi override: the receiver must strip
+    // both (STEP 3D item 1).
+    const rawName = '.bashrc\u202Egnp.pdf';
+    const pdf = fixture(rawName, PDF);
+    await sendFile(w.alicePage, w.gid, pdf, 'a document');
+
+    const link = await bobSees(w.bobPage, w.gid, '#group-messages .chat-attachment-download');
+    assert.ok(link, 'a non-image must be a download link');
+
+    const view = await w.bobPage.evaluate(() => {
+        const a = document.querySelector('#group-messages .chat-attachment-download');
+        const span = document.querySelector('#group-messages .chat-attachment-name');
+        return {
+            download: a ? a.getAttribute('download') : null,
+            text: span ? span.textContent : null,
+            html: document.body.innerHTML,
+        };
+    });
+
+    // The sanitised name: the leading dot and the bidi override are gone.
+    const expected = 'bashrcgnp.pdf';
+    assert.equal(view.text, expected, `the visible text must be the sanitised name, got ${JSON.stringify(view.text)}`);
+    assert.equal(view.download, expected, `the download attribute must be the same name, got ${JSON.stringify(view.download)}`);
+    assert.equal(view.download, view.text, 'the visible text and the download attribute must be identical');
+
+    // The RAW name (with the bidi override) never reaches the DOM.
+    assert.ok(!view.html.includes(rawName), 'the raw name must not reach the DOM');
+    assert.ok(!view.html.includes('\u202E'), 'the bidi override must not reach the DOM');
+});

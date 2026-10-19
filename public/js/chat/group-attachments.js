@@ -302,17 +302,86 @@ export function parseGroupAttachmentPlaintext(plaintext) {
  * Receiver sanitising rules
  * ========================================================= */
 
-// Path separators, control characters and bidi/override characters.
-const STRIP_RE = /[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069/\\]/g;
+/** The maximum length of the DISPLAYED name. The signed meta keeps up to
+ *  MAX_GROUP_ATTACHMENT_NAME (255) characters - this is what the receiver
+ *  shows and what the download is named. */
+export const MAX_GROUP_ATTACHMENT_DISPLAY_NAME = 120;
 
 /**
- * The file name as the receiver shows it: path separators, control
- * characters and bidi/override characters are stripped, and an empty result
- * becomes the literal "file".
+ * The characters that are stripped from a receiver-visible file name:
+ *
+ *  - C0 controls (U+0000-U+001F) and DEL;
+ *  - the path separators "/" and "\";
+ *  - the bidi controls: the Arabic letter mark U+061C, the embeddings and
+ *    overrides U+202A-U+202E and the isolates U+2066-U+2069;
+ *  - the zero-width and formatting characters: U+200B-U+200F (zero-width
+ *    space/non-joiner/joiner, LRM, RLM), U+2028/U+2029 (line and paragraph
+ *    separator), U+2060-U+2064 (word joiner, invisible operators, invisible
+ *    separator) and U+FEFF (BOM / zero-width no-break space);
+ *  - the variation selectors U+FE00-U+FE0F.
+ *
+ * The supplementary planes are stripped separately (see below).
+ */
+const STRIP_RE = /[\u0000-\u001F\u007F\u061C\u200B-\u200F\u2028\u2029\u202A-\u202E\u2060-\u2069\uFEFF\uFE00-\uFE0F/\\]/g;
+
+/**
+ * The same, from the supplementary planes: the variation selectors
+ * U+E0100-U+E01EF and the tag characters U+E0000-U+E007F. They are invisible
+ * and can carry a hidden payload (an emoji tag sequence is a known way to
+ * smuggle data past a human reader), so a file name never keeps them.
+ */
+const STRIP_SUPPLEMENTARY_RE = /[\u{E0000}-\u{E007F}\u{E0100}-\u{E01EF}]/gu;
+
+/** The longest extension that is kept when the displayed name is capped. */
+const MAX_KEPT_EXTENSION_CHARS = 16;
+
+/**
+ * Caps the DISPLAYED name, keeping the extension.
+ * @param {string} name
+ * @param {number} [max]
+ */
+export function capGroupFileName(name, max = MAX_GROUP_ATTACHMENT_DISPLAY_NAME) {
+    const text = String(name == null ? '' : name);
+    if (text.length <= max) return text;
+    const dot = text.lastIndexOf('.');
+    // Only a SHORT extension is kept - otherwise the "extension" is really
+    // part of the name.
+    const ext = dot > 0 && text.length - dot <= MAX_KEPT_EXTENSION_CHARS ? text.slice(dot) : '';
+    const base = ext ? text.slice(0, dot) : text;
+    const room = Math.max(1, max - ext.length);
+    return base.slice(0, room) + ext;
+}
+
+/**
+ * The file name as the receiver shows it.
+ *
+ * Stripped: path separators, control characters, the bidi controls, the
+ * zero-width and formatting characters (and their supplementary-plane
+ * cousins). Then: the trailing dots and spaces go (they are invisible on
+ * some file systems), the leading dots go (the download must not be a
+ * hidden file), and what is left is capped to
+ * MAX_GROUP_ATTACHMENT_DISPLAY_NAME characters with the extension kept.
+ * An empty result becomes the literal "file".
+ *
+ * @param {string} name
+ * @returns {string}
  */
 export function sanitiseGroupFileName(name) {
-    const cleaned = String(name == null ? '' : name).replace(STRIP_RE, '').trim();
-    return cleaned || 'file';
+    let cleaned = String(name == null ? '' : name)
+        .replace(STRIP_RE, '')
+        .replace(STRIP_SUPPLEMENTARY_RE, '')
+        .trim();
+
+    // Leading dots go: ".bashrc" must not become a hidden download.
+    cleaned = cleaned.replace(/^\.+/, '');
+    // Trailing dots and spaces go.
+    cleaned = cleaned.replace(/[. ]+$/, '');
+
+    if (!cleaned) return 'file';
+
+    // The cap can cut a name so that it ends in a dot again.
+    const capped = capGroupFileName(cleaned).replace(/[. ]+$/, '');
+    return capped || 'file';
 }
 
 /* =========================================================

@@ -47,12 +47,15 @@ async function scenario() {
 }
 after(async () => { await S?.stop(); });
 
-async function upload(s, u, groupId, { fields = {}, bytes = Buffer.from('opaque ciphertext bytes'), filename = 'client-name.png', attachmentIv = IV_B64 } = {}) {
+async function upload(s, u, groupId, { fields = {}, bytes = Buffer.from('opaque ciphertext bytes'), filename = 'client-name.png', attachmentIv = IV_B64, content = ENVELOPE } = {}) {
     const fd = new FormData();
     fd.append('file', new Blob([bytes], { type: 'application/octet-stream' }), filename);
     fd.append('attachment_iv', attachmentIv);
-    fd.append('content', ENVELOPE);
-    for (const [k, v] of Object.entries(fields)) fd.append(k, v);
+    fd.append('content', content);
+    for (const [k, v] of Object.entries(fields)) {
+        if (k === 'content' || k === 'attachment_iv') continue;
+        fd.append(k, v);
+    }
     const res = await globalThis.__nodeFetch(`${s.server.origin}/api/groups/${groupId}/upload`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${u.ident.token}`, 'X-Wire-Group-Proto': '2' },
@@ -178,6 +181,28 @@ test('3C-2e: the REAL encrypt path leaves only ciphertext on disk (acceptance-no
     assert.equal(onDisk.length, plaintext.length + 16, 'the stored bytes are the plaintext plus the GCM tag');
     assert.ok(!onDisk.includes(Buffer.from(marker)), 'the plaintext marker must not be in the stored bytes');
     assert.equal(r.attachment_size, plaintext.length + 16);
+});
+
+test('3C-3D-0: an oversize content is refused with 400 and leaves NO orphan file on disk', async () => {
+    // STEP 3D item 0: the server refuses a `content` above 90,000 characters.
+    // The multer file has already been written to disk when the handler runs,
+    // so the handler must delete it (controllers/groups.controller.js: the
+    // `cleanup()` helper) - otherwise every rejected upload leaves an orphan
+    // file behind.
+    const s = await scenario();
+    const { g, alice } = await groupWith(s, '3d-0');
+
+    const before = fs.readdirSync(UPLOAD_DIR).sort();
+    const res = await upload(s, alice, g.id, { content: 'x'.repeat(90001) });
+    assert.equal(res.status, 400, `an oversize content must be refused: ${JSON.stringify(res.body)}`);
+
+    // The unlink is asynchronous (fs.unlink with a callback).
+    await new Promise((r) => setTimeout(r, 400));
+    const after = fs.readdirSync(UPLOAD_DIR).sort();
+    assert.deepEqual(after, before, `the rejected upload must not leave a file behind (before=${before} after=${after})`);
+
+    // And no message row.
+    assert.equal(row(s, g.id), undefined, 'no message row must be created');
 });
 
 test('3C-2f: a non-member and a removed member cannot download the file', async () => {

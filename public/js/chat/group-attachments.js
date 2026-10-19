@@ -35,6 +35,20 @@ export const MAX_GROUP_ATTACHMENT_NAME = 255;
 export const MAX_GROUP_ATTACHMENT_MIME = 127;
 export const MAX_GROUP_ATTACHMENT_DIMENSION = 20000;
 
+/**
+ * The client's fallback upload cap, in MB.
+ *
+ * STEP 3D item 3: the SERVER's cap is `GROUP_UPLOAD_MAX_MB`
+ * (config/constants.js), an environment value. The client cannot read it
+ * today: the DM path learns the DM cap from `GET /api/dm/limits`
+ * (public/js/media/attachment-e2ee.js:292) and there is NO group
+ * equivalent - adding one would need `routes/groups.routes.js`, which this
+ * step may not touch. Until that endpoint exists this constant is the
+ * client's best knowledge, and the server stays the authority: it rejects
+ * anything over its own cap (the client would then get a 400).
+ */
+export const DEFAULT_GROUP_ATTACHMENT_UPLOAD_MAX_MB = 50;
+
 /** The four types that may ever be rendered inline - and only after the
  *  DECRYPTED bytes were sniffed to match. SVG is never in this list. */
 export const INLINE_IMAGE_MIMES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
@@ -42,6 +56,181 @@ export const INLINE_IMAGE_MIMES = ['image/png', 'image/jpeg', 'image/gif', 'imag
 /** The wording of the per-row placeholder of a file that must not be rendered
  *  (the same wording the DM path uses). */
 export const GROUP_ATTACHMENT_UNAVAILABLE_NAME = 'Attachment unavailable';
+
+/* =========================================================
+ * The envelope limit (STEP 3D item 0)
+ *
+ * The server refuses a `content` longer than 90,000 characters
+ * (controllers/groups.controller.js). The client must refuse BEFORE the
+ * upload, because a refusal after the upload burns the file's counter and
+ * the message's counter and leaves an orphan file on disk.
+ *
+ * The caption cap alone is NOT enough: the plaintext is JSON (a newline
+ * costs 2 characters, a NUL costs 6), then UTF-8 (an accent costs 2
+ * bytes, an emoji 4) and then base64 (4 characters per 3 bytes). So
+ * 60,000 characters of caption can be 160,000 - 480,000 envelope
+ * characters. The client therefore measures the ENVELOPE, not the caption.
+ * ========================================================= */
+
+/** The server's hard limit on the `content` field. */
+export const SERVER_MAX_CONTENT_CHARS = 90000;
+
+/** The margin the client keeps: the client refuses before the server would. */
+export const GROUP_ATTACHMENT_ENVELOPE_MARGIN = 2000;
+
+/** The named limit the client enforces on the FINAL signed envelope. */
+export const MAX_GROUP_ATTACHMENT_ENVELOPE_CHARS = SERVER_MAX_CONTENT_CHARS - GROUP_ATTACHMENT_ENVELOPE_MARGIN;
+
+/** The AES-GCM tag length (the ciphertext is the plaintext plus these bytes). */
+const GCM_TAG_BYTES = 16;
+
+/**
+ * The shape of the signed envelope (crypto/groups/message-crypto.js). Only
+ * `ciphertext` grows with the caption (it is the base64 of the encrypted
+ * plaintext); every other field has a fixed width. The values below are the
+ * WIDEST possible ones, so the estimate is an upper bound.
+ *
+ * A test compares this estimate against a REAL envelope, so a change in the
+ * envelope shape cannot pass unnoticed.
+ */
+const ENVELOPE_SHAPE = {
+    v: 2,
+    alg: 'AES-GCM',
+    senderKeyId: 'f'.repeat(64),
+    counter: Number.MAX_SAFE_INTEGER,
+    iv: 'A'.repeat(16),
+    ciphertext: '',
+    reply_to_id: Number.MAX_SAFE_INTEGER,
+    sig: 'A'.repeat(88),
+    att_iv: 'A'.repeat(16),
+    att_ct_hash: 'A'.repeat(44),
+    att_len: '99999999999999999999',
+};
+
+/** The fixed part of the envelope: its length with an empty ciphertext,
+ *  minus the two quote characters the empty string occupies. */
+const ENVELOPE_FIXED_CHARS = JSON.stringify(ENVELOPE_SHAPE).length - 2;
+
+/** The JSON-escaped form of a string, without the surrounding quotes: a
+ *  newline is 2 characters, a NUL is 6, an accent stays 1. */
+function jsonEscapedLength(text) {
+    const s = String(text == null ? '' : text);
+    if (s.length === 0) return '';
+    const quoted = JSON.stringify(s);
+    return quoted.length - 2;
+}
+
+/** The UTF-8 byte length of a string. */
+export function utf8ByteLength(text) {
+    return new TextEncoder().encode(String(text == null ? '' : text)).length;
+}
+
+/**
+ * An upper bound of the signed envelope's length for a given plaintext.
+ */
+export function estimateEnvelopeChars(plaintext) {
+    const bytes = utf8ByteLength(plaintext);
+    const ciphertextChars = 4 * Math.ceil((bytes + GCM_TAG_BYTES) / 3);
+    return ENVELOPE_FIXED_CHARS + ciphertextChars;
+}
+
+/**
+ * An upper bound of the signed envelope's length for a given caption, computed
+ * WITHOUT building the plaintext and without touching the file bytes: the
+ * caption's JSON-escaped, UTF-8 encoded length on top of the fixed part of
+ * the meta object.
+ *
+ * @param {string} caption
+ * @param {number} fixedMetaBytes the UTF-8 length of the meta object with an
+ *   EMPTY caption (the name, mime and the largest possible dimensions)
+ */
+export function estimateEnvelopeCharsForCaption(caption, fixedMetaBytes) {
+    // The escaped caption is what ends up in the plaintext; its UTF-8 byte
+    // length is what the base64 runs over.
+    const escapedBytes = utf8ByteLength(JSON.stringify(String(caption == null ? '' : caption)).slice(1, -1));
+    const worstPlaintextBytes = fixedMetaBytes + escapedBytes;
+    const ciphertextChars = 4 * Math.ceil((worstPlaintextBytes + GCM_TAG_BYTES) / 3);
+    return ENVELOPE_FIXED_CHARS + ciphertextChars;
+}
+
+/**
+ * The largest caption (in PLAIN ASCII characters) that still fits into the
+ * envelope limit. Non-ASCII characters and control characters cost more, so
+ * this is the upper bound, not a promise.
+ */
+export function maxCaptionCharsForLimit(fixedMetaBytes) {
+    const room = Math.floor(((MAX_GROUP_ATTACHMENT_ENVELOPE_CHARS - ENVELOPE_FIXED_CHARS) * 3) / 4) - GCM_TAG_BYTES;
+    return Math.max(0, room - fixedMetaBytes);
+}
+
+/** Thrown when the caption would produce an envelope the server would refuse. */
+export class GroupAttachmentEnvelopeTooLargeError extends Error {
+    constructor(measured, limit, maxCaptionChars) {
+        super(
+            `The caption is too long: this message would be ${measured} characters, the limit is ${limit}. `
+            + `At most ${maxCaptionChars} plain characters (fewer if the caption contains newlines, quotes or non-ASCII characters).`
+        );
+        this.name = 'GroupAttachmentEnvelopeTooLargeError';
+        this.measured = measured;
+        this.limit = limit;
+        this.maxCaptionChars = maxCaptionChars;
+    }
+}
+
+/** The fixed part of the meta object, in UTF-8 bytes: the name, the mime and
+ *  the LARGEST possible dimensions (the real ones are only known after the
+ *  image was read, and the bound must stay an upper bound). */
+function metaFixedBytesForBound(name, mime) {
+    const probe = buildGroupAttachmentPlaintext({
+        text: '',
+        file: {
+            name: String(name || 'file'),
+            mime: String(mime || 'application/octet-stream'),
+            w: MAX_GROUP_ATTACHMENT_DIMENSION,
+            h: MAX_GROUP_ATTACHMENT_DIMENSION,
+        },
+    });
+    return utf8ByteLength(probe);
+}
+
+/**
+ * Refuses a caption whose WORST-CASE envelope would be over the limit.
+ * Called before anything is encrypted, so no counter is reserved.
+ *
+ * @param {string} caption
+ * @param {number} fixedMetaBytes
+ * @returns {number} the upper bound it measured
+ */
+export function assertCaptionFitsEnvelope(caption, fixedMetaBytes) {
+    const bound = estimateEnvelopeCharsForCaption(caption, fixedMetaBytes);
+    if (bound > MAX_GROUP_ATTACHMENT_ENVELOPE_CHARS) {
+        throw new GroupAttachmentEnvelopeTooLargeError(
+            bound,
+            MAX_GROUP_ATTACHMENT_ENVELOPE_CHARS,
+            maxCaptionCharsForLimit(fixedMetaBytes)
+        );
+    }
+    return bound;
+}
+
+/**
+ * The final guard: the MEASURED signed envelope. The bound above is
+ * deliberately pessimistic, so this only fires if the envelope shape changed
+ * under us.
+ *
+ * @param {string} envelope
+ * @param {number} [fixedMetaBytes]
+ */
+export function assertEnvelopeWithinLimit(envelope, fixedMetaBytes = 0) {
+    if (typeof envelope === 'string' && envelope.length > MAX_GROUP_ATTACHMENT_ENVELOPE_CHARS) {
+        throw new GroupAttachmentEnvelopeTooLargeError(
+            envelope.length,
+            MAX_GROUP_ATTACHMENT_ENVELOPE_CHARS,
+            maxCaptionCharsForLimit(fixedMetaBytes)
+        );
+    }
+    return envelope;
+}
 
 /* =========================================================
  * The encrypted plaintext format
@@ -177,13 +366,24 @@ export class GroupAttachmentTooLargeError extends Error {
  *
  * @returns {Promise<{file: File, fields: Record<string,string>}>}
  */
-export async function prepareGroupAttachmentUpload({ file, caption = '', replyToId = 0, groupId, ensureKey, maxMb = 50 }) {
+export async function prepareGroupAttachmentUpload({ file, caption = '', replyToId = 0, groupId, ensureKey, maxMb = DEFAULT_GROUP_ATTACHMENT_UPLOAD_MAX_MB }) {
     if (!file || typeof file.size !== 'number') throw new Error('No file to encrypt');
     if (file.size <= 0) throw new Error('The file is empty');
     if (file.size > maxMb * 1024 * 1024) throw new GroupAttachmentTooLargeError(maxMb);
-    if (String(caption || '').length > MAX_GROUP_ATTACHMENT_CAPTION) {
-        throw new Error(`The caption is longer than ${MAX_GROUP_ATTACHMENT_CAPTION} characters`);
+    const captionText = String(caption || '');
+    if (captionText.length > MAX_GROUP_ATTACHMENT_CAPTION) {
+        throw new Error(
+            `The caption is longer than ${MAX_GROUP_ATTACHMENT_CAPTION} characters `
+            + '(fewer if it contains newlines, quotes or non-ASCII characters).'
+        );
     }
+
+    // (0) STEP 3D item 0: the CHEAP check comes FIRST, before any counter is
+    // reserved. The caption is JSON-escaped, UTF-8 encoded and then base64
+    // encoded, so 60,000 characters can be far more than 60,000 envelope
+    // characters; measuring the caption alone is not enough.
+    const fixedMetaBytes = metaFixedBytesForBound(file.name, file.type);
+    assertCaptionFitsEnvelope(captionText, fixedMetaBytes);
 
     // (1) the Sender Key, before anything is encrypted.
     if (typeof ensureKey === 'function') await ensureKey();
@@ -206,7 +406,7 @@ export async function prepareGroupAttachmentUpload({ file, caption = '', replyTo
         }
     }
     const plaintext = buildGroupAttachmentPlaintext({
-        text: caption,
+        text: captionText,
         file: { name: file.name || 'file', mime: file.type || 'application/octet-stream', w: width, h: height },
     });
 
@@ -215,6 +415,11 @@ export async function prepareGroupAttachmentUpload({ file, caption = '', replyTo
         replyToId: Number(replyToId) || null,
         attachment: { ivBase64, ciphertext, plaintextLength: bytes.byteLength },
     });
+
+    // The final guard: the MEASURED envelope, not the estimate. The bound
+    // above is deliberately pessimistic, so this only fires if the envelope
+    // shape changed under us.
+    assertEnvelopeWithinLimit(envelope, fixedMetaBytes);
 
     return {
         file: new File([ciphertext], 'attachment.bin', { type: 'application/octet-stream' }),

@@ -321,19 +321,47 @@ Limits the client enforces and the receiver re-checks:
 
 ### The caption limit and the 90,000-character server limit
 
-The server still refuses a `content` longer than 90,000 characters
+The server refuses a `content` longer than 90,000 characters
 (`controllers/groups.controller.js`, `sendMessageWithAttachmentHandler`), and
 the envelope is a JSON string whose `ciphertext` is the base64 of
 `plaintext bytes + 16` bytes of GCM tag, so it is about `4/3` of the plaintext
 plus a fixed envelope overhead (~250 characters).
 
-- The plaintext JSON wrapper (version, caption, name, mime, width, height)
-  costs about 440 bytes with the maximum name and mime.
-- `4/3 x (plaintext + 16) + 250 <= 90000` leaves about 67,300 plaintext bytes.
+**A caption is counted in CHARACTERS, but the server counts the ENVELOPE.**
+That is the trap: the caption is JSON-escaped (a newline costs 2 characters,
+a `"` 2, a NUL 6), then UTF-8 encoded (an accent costs 2 bytes, an emoji 4)
+and then base64 encoded. So the old claim - "60,000 characters is
+`4/3 x 60,440 + 250 = 80,836` characters" - is only true for plain ASCII:
 
-The client therefore enforces a caption of at most **60,000 characters**
-(`MAX_GROUP_ATTACHMENT_CAPTION`), which leaves a wide margin
-(`4/3 x 60,440 + 250 = 80,836` characters, well under 90,000).
+| 60,000 characters of | JSON chars | UTF-8 bytes | envelope characters |
+|---|---|---|---|
+| `a` (ASCII) | 60,000 | 60,000 | ~80,400 |
+| `\n` (newline) | 120,000 | 120,000 | ~160,400 |
+| `"` (quote) | 120,000 | 120,000 | ~160,400 |
+| `é` (accent) | 60,000 | 120,000 | ~160,400 |
+| emoji | 120,000 | 240,000 | ~320,400 |
+| NUL | 360,000 | 360,000 | ~480,400 |
+
+Only the ASCII row fits under 90,000. The client therefore enforces **two**
+rules, and the second one is the real one:
+
+- `MAX_GROUP_ATTACHMENT_CAPTION = 60000` - a caption of at most 60,000
+  UTF-16 code units. (An emoji is two code units, so 60,000 emoji are
+  120,000 code units and hit this rule first.)
+- `MAX_GROUP_ATTACHMENT_ENVELOPE_CHARS = 90000 - 2000 = 88000` - the limit on
+  the **final signed envelope**. The client measures it twice: first an upper
+  bound computed from the caption alone (the escaped, UTF-8 encoded caption
+  plus the fixed part of the meta object) - which is refused BEFORE anything
+  is encrypted, so no counter is burned and no file is left on disk - and
+  then the real envelope, as the final guard.
+
+The refusal is a typed error (`GroupAttachmentEnvelopeTooLargeError`) that
+tells the user how many characters are allowed. A caption is **never
+truncated** silently.
+
+The server side is unchanged: it refuses the over-long `content` with a 400
+and deletes the uploaded file (`cleanup()` in the handler), so a rejected
+upload leaves no orphan file on disk.
 
 ---
 

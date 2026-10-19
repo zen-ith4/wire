@@ -145,6 +145,14 @@ mock.module(jsPath('crypto/messages/message-crypto.js'), {
         decryptIncomingMessage: async () => ({}),
         encryptDmTextV2: async () => ({ version: 1, content: '{}', msgId: null, peerMinVersion: 1 }),
         decryptDmTextV2: async () => 'decrypted',
+        // STEP 2A: dm.js loads media/attachment-e2ee.js for real, and that module
+        // now imports these from message-crypto.js. A mock that does not provide
+        // them makes the module LINK fail ("does not provide an export named
+        // ...") before a single assertion runs - which is what happened. Additive
+        // only: no assertion and no production line changed.
+        resolveDmAttachmentVersion: async () => ({ version: 1, peerMinVersion: 1 }),
+        encryptDmAttachmentMetaV2: async () => ({ version: 2, content: '{}', msgId: null }),
+        decryptDmAttachmentMetaV2: async () => '{}',
     },
 });
 mock.module(jsPath('core/view-session.js'), {

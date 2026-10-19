@@ -79,7 +79,9 @@ function normalizeDmReplyToId(value, userId, peerId) {
 // rewrites version/senderId/recipientId/reply_to_id/senderFp/msgId; it adds no
 // new field to the stored content.
 //
-// Returns an error string, or null. Does NOT apply to the attachment route.
+// Returns an error string, or null. Since STEP 2A it applies to the attachment
+// meta AND the caption on the upload route as well, with the same rule and the
+// same message, so a v2 attachment cannot bypass a policy that applies to text.
 function dmV2RuleViolation(content, recipientId) {
   let parsed;
   try {
@@ -185,6 +187,15 @@ function base64ByteLength(value) {
 
 // Shape-only check of the client's encrypted-envelope JSON (the same
 // {encryption:{version,algorithm,iv,ciphertext}} object text DMs use).
+//
+// STEP 2A: the v2 shape is accepted too, for attachment_meta and for the
+// caption. It is the SAME object as v2 text, so the version is the only
+// discriminator and it is read first: 1 -> the old shape, 2 -> the shape below,
+// anything else (including 3) -> not an encrypted envelope.
+//
+// Still shape-only: the server holds no key material and never could, so it
+// cannot verify a tag. What it can refuse is an envelope shape the client could
+// never have produced - storing one would create a row nobody can ever open.
 function isEncryptedEnvelopeShape(text) {
   let parsed;
   try {
@@ -193,10 +204,21 @@ function isEncryptedEnvelopeShape(text) {
     return false;
   }
   const enc = parsed && typeof parsed === 'object' ? parsed.encryption : null;
-  return !!enc &&
-    typeof enc === 'object' &&
-    enc.version === 1 &&
-    enc.algorithm === 'AES-GCM' &&
+  if (!enc || typeof enc !== 'object') return false;
+
+  if (enc.version === 2) {
+    return enc.algorithm === 'AES-GCM' &&
+      base64ByteLength(enc.iv) === 12 &&
+      base64ByteLength(enc.ciphertext) > 0 &&
+      base64ByteLength(enc.senderFp) === 32 &&
+      typeof enc.msgId === 'string' &&
+      /^[0-9a-f]{16}$/.test(enc.msgId);
+  }
+
+  if (enc.version !== 1) {
+    return false;
+  }
+  return enc.algorithm === 'AES-GCM' &&
     base64ByteLength(enc.iv) === 12 &&
     base64ByteLength(enc.ciphertext) > 0;
 }
@@ -263,7 +285,19 @@ async function sendEncryptedAttachment(req, res, recipientId, cleanup) {
     return res.status(400).json({ error: problem });
   }
 
-  const caption = (req.body.content || '').trim();
+  // STEP 2A D6: the text rule, on BOTH fields, with the same message. A v2
+  // attachment must not be a way around a policy that already applies to text.
+  // Runs before any insert, and cleanup() unlinks the upload that was just
+  // written, so a refusal leaves nothing behind.
+  const metaViolation = dmV2RuleViolation(req.body.attachment_meta, recipientId);
+  const captionForRule = typeof req.body.content === 'string' ? req.body.content.trim() : '';
+  const captionViolation = captionForRule ? dmV2RuleViolation(captionForRule, recipientId) : null;
+  if (metaViolation || captionViolation) {
+    cleanup();
+    return res.status(400).json({ error: metaViolation || captionViolation });
+  }
+
+  const caption = captionForRule;
   const replyToId = normalizeDmReplyToId(req.body?.reply_to_id, req.user.id, Number(recipientId));
   const timestamp = new Date().toISOString();
 

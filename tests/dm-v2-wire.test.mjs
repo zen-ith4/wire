@@ -97,6 +97,7 @@ const { api } = await import('../public/js/core/api.js');
 
 // dm-v2.js is pure WebCrypto; import for the payload-switch test.
 const { validateEncryptedMessagePayload } = await import('../public/js/crypto/messages/payload.js');
+const { encryptDmV2, decryptDmV2 } = await import('../public/js/crypto/messages/dm-v2.js');
 const { decryptIncomingMessage } = await import('../public/js/crypto/messages/message-crypto.js');
 
 // ---------------------------------------------------------------- dmScopeKey
@@ -312,6 +313,90 @@ test('classifyDmV2MsgId: cross-origin isolation', () => {
     globalThis.window.location.origin = 'http://127.0.0.1:5001';
     assert.equal(classifyDmV2MsgId(34, m, 200), DM_V2_MSGID_NEW);
     globalThis.window.location.origin = 'http://127.0.0.1:5000';
+});
+
+// ---------------------------------------------------------------- 2A.0 replay bypass (KNOWN BUG; fixed in 2A.1)
+//
+// The reviewer reproduced this in node: msgId is NOT in the AAD, the store is
+// keyed by msgId, so a server that copies a row to a new id AND changes the
+// clear msgId is not detected as a replay. These three tests pin the CURRENT
+// behaviour. 2A.1 flips the first one: the key becomes the AAD-bound iv.
+test('2A.0 KNOWN BUG: the msgId-keyed store accepts a row COPIED to a new id when the server swaps the msgId', async () => {
+    ls.clear();
+    setCurrentUser({ id: 9, groups_enabled: true });
+    globalThis.window.location.origin = 'http://127.0.0.1:5000';
+    const m1 = '0123456789abcdef';
+    const m2 = 'fedcba9876543210';
+
+    // Row R1 arrives and is accounted as new.
+    assert.equal(classifyDmV2MsgId(34, m1, 100), DM_V2_MSGID_NEW);
+    // The server copies R1's ciphertext to R2 and changes the clear msgId.
+    // Keyed by msgId, this looks like a brand-new message. That is the bypass.
+    assert.equal(
+        classifyDmV2MsgId(34, m2, 101),
+        DM_V2_MSGID_NEW,
+        'KNOWN BUG (2A.0): the replay key is msgId, which the server controls'
+    );
+
+    // And no key check can catch it, because msgId is deliberately NOT in the
+    // AAD (design 4.3): the copied ciphertext still opens under the same key.
+    const keyBytes = crypto.getRandomValues(new Uint8Array(32));
+    const key = await crypto.subtle.importKey('raw', keyBytes, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+    const fp = crypto.getRandomValues(new Uint8Array(32));
+    const { envelope } = await encryptDmV2({
+        plaintext: 'hello',
+        fromUserId: 12,
+        toUserId: 34,
+        senderKeyFp: fp,
+        key,
+        iv: crypto.getRandomValues(new Uint8Array(12)),
+        msgId: m1
+    });
+    const copied = JSON.parse(JSON.stringify(envelope));
+    copied.encryption.msgId = m2;
+    assert.equal(
+        await decryptDmV2({ envelope: copied, senderKeyFp: fp, key, replyToId: 0 }),
+        'hello',
+        'KNOWN BUG (2A.0): swapping msgId does not break decryption - it is not bound'
+    );
+});
+
+test('2A.0: the same row opened twice is not a replay; a lazy copy (same msgId, new row) is', () => {
+    ls.clear();
+    setCurrentUser({ id: 9, groups_enabled: true });
+    globalThis.window.location.origin = 'http://127.0.0.1:5000';
+    const m = '0123456789abcdef';
+    assert.equal(classifyDmV2MsgId(34, m, 100), DM_V2_MSGID_NEW);
+    assert.equal(classifyDmV2MsgId(34, m, 100), DM_V2_MSGID_SAME_ROW);
+    assert.equal(classifyDmV2MsgId(34, m, 101), DM_V2_MSGID_REPLAY);
+});
+
+test('2A.0: the iv IS bound - a server that swaps it fails the AEAD, so it is the right replay key', async () => {
+    const keyBytes = crypto.getRandomValues(new Uint8Array(32));
+    const key = await crypto.subtle.importKey('raw', keyBytes, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+    const fp = crypto.getRandomValues(new Uint8Array(32));
+    const { envelope } = await encryptDmV2({
+        plaintext: 'hello',
+        fromUserId: 12,
+        toUserId: 34,
+        senderKeyFp: fp,
+        key,
+        iv: crypto.getRandomValues(new Uint8Array(12)),
+        msgId: '0123456789abcdef'
+    });
+
+    // Positive control: the untouched envelope opens.
+    assert.equal(await decryptDmV2({ envelope, senderKeyFp: fp, key, replyToId: 0 }), 'hello');
+
+    // Swap the iv for another 12-byte one: the AAD and the GCM nonce change,
+    // so this is an authentication failure, not a replay verdict.
+    const swapped = JSON.parse(JSON.stringify(envelope));
+    swapped.encryption.iv = Buffer.from(crypto.getRandomValues(new Uint8Array(12))).toString('base64');
+    await assert.rejects(
+        () => decryptDmV2({ envelope: swapped, senderKeyFp: fp, key, replyToId: 0 }),
+        (e) => !/replay/i.test(String(e && e.message)),
+        'a swapped iv must fail as an AEAD error, not be excused as a replay'
+    );
 });
 
 // ---------------------------------------------------------------- 2000-char boundary

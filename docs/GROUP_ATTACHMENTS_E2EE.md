@@ -1,21 +1,30 @@
 # Group attachments: E2EE design (STEP 3A) + crypto layer (STEP 3B)
 
-Status: **design reviewed; crypto layer implemented in STEP 3B; the composer,
-the upload and the thread rendering are implemented in STEP 3C, but the whole
-UI stays behind `GROUP_ATTACHMENTS_UI_ENABLED`, which ships as FALSE.**
+Status: **the crypto layer (STEP 3B), the whole client path (STEP 3C) and
+the hardening (STEP 3D) are implemented; the UI stays behind
+`GROUP_ATTACHMENTS_UI_ENABLED`, which ships as FALSE.**
 
 What is in place: the file bytes (iv, ciphertext hash, plaintext length) are
 bound into the per-message ECDSA signature; the receive side refuses a file whose
 bytes do not match what the sender signed; the server stores an opaque name and
-neutral metadata; the composer can encrypt and sign a file and the thread can
-render the decrypted bytes (an image inline, anything else as a download).
+neutral metadata; the composer can encrypt and sign a file; the thread renders
+the decrypted bytes (an image inline, anything else as a download).
+
+STEP 3D hardened it: the client measures the **envelope** (not the caption) and
+refuses before anything is encrypted, the file name is sanitised harder, the
+receive path is **lazy** (the file is fetched when its row becomes visible, at
+most two downloads at a time, and only a small image is auto-loaded), and the
+browser-test fallback is opt-in.
 
 What is NOT in place: the feature flag is FALSE, so the group page shows no
 attach button, no file input and no file paste/drop path. Flipping the flag to
-true is an owner step, and it happens only after these browser tests have been
-reviewed. The browser tests (tests/groups/group-attachment-browser.test.mjs)
-PASSED on Windows with the system Chrome (the Linux Chromium package ships a
-Linux binary and cannot run on Windows).
+true is an owner step, and it happens only after the checklist in
+`docs/GROUP_ATTACHMENTS_FLAG_FLIP.md` is ticked. The browser tests
+(tests/groups/group-attachment-browser.test.mjs) PASSED on **Windows with the
+system Chrome** - the project's own `@sparticuz/chromium` ships a Linux binary
+and cannot run there, so the Linux run is still open. The client also cannot
+learn the server's upload cap yet (there is no `GET /api/groups/limits`): see
+the STOP in STEP 3D item 3.
 
 Base tree: `wire-final-33` (design), `wire-final-34` (STEP 3B implementation).
 Every claim about current behaviour carries a `file:line` citation, re-checked

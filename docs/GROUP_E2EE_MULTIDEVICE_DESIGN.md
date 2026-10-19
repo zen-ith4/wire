@@ -279,10 +279,10 @@ user the server names as its author.
    bytes themselves are only AEAD-protected under the Sender Key, so any member could forge a file "from" the key's owner. Pinned
    by **C3-12** (`tests/groups/group-signing-messages.test.mjs`), which fails if any client module starts calling
    `encryptAttachmentForGroup` and says what must be done first. The binding design is specified in
-   `docs/GROUP_ATTACHMENTS_E2EE.md`. The binding is IMPLEMENTED (STEP 3B) and
-   the composer/upload/render are implemented (STEP 3C) but sit behind
-   `GROUP_ATTACHMENTS_UI_ENABLED`, which ships FALSE: group attachment SENDING
-   is still unreachable from any UI path.
+   `docs/GROUP_ATTACHMENTS_E2EE.md`. The binding is IMPLEMENTED (STEP 3B), the
+   composer/upload/render are implemented (STEP 3C) and hardened (STEP 3D) - but
+   they sit behind `GROUP_ATTACHMENTS_UI_ENABLED`, which ships FALSE: group
+   attachment SENDING is still unreachable from any UI path.
 6. **A hostile role through a hostile members API is not covered.** The real-Chromium test
    (`tests/groups/group-hostile-browser.test.mjs`) edits the database, where `group_members.role` is schema-constrained to
    `owner`/`admin`/`member`, so a hostile role cannot be stored and was not exercised; a server that answers the members API
@@ -392,7 +392,8 @@ Proposed text changes (not applied; the skill is outside this repository). State
 +22. Fail closed on every structural problem (lengths, point prefix and curve check, reply id type, signature length).
 +23. Before group attachments are ever enabled, bind their bytes into the signature. The binding design is
 +   specified in `docs/GROUP_ATTACHMENTS_E2EE.md` (the binding is implemented in
-+   STEP 3B and the UI in STEP 3C, but behind a flag that ships FALSE).
++   STEP 3B, the UI in STEP 3C, the hardening in STEP 3D - all behind a flag
++   that ships FALSE).
 
  ## Lifecycle cheat-sheet
 +- First send on a device: also requires an own key WITH a signing key (a row without one triggers a re-key); generate the key pair together with the root.

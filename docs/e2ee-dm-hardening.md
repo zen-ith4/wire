@@ -276,13 +276,16 @@ secrecy) is not started, and DM attachments are still v1 with no AAD.
 
 **NOT done:**
 
-- **Group attachments**: crypto layer implemented (STEP 3B) and the composer/upload/render
-  implemented (STEP 3C) - but the whole UI is behind `GROUP_ATTACHMENTS_UI_ENABLED`, which ships
-  FALSE, so group attachment SENDING is still unreachable: with the flag off the group page shows
-  no attach button, no file input and no file paste/drop path. The file bytes (iv, ciphertext hash,
-  plaintext length) are bound into the per-message signature and the server stores only an opaque
-  name and neutral metadata (`docs/GROUP_ATTACHMENTS_E2EE.md`); `C3-12` fails if any `public/js`
-  module other than the one send module calls the group attachment encryptor.
+- **Group attachments**: crypto layer implemented (STEP 3B), the composer/upload/render
+  implemented (STEP 3C) and hardened (STEP 3D: the client measures the envelope, the file name is
+  sanitised harder, the receive path is lazy) - but the whole UI is behind
+  `GROUP_ATTACHMENTS_UI_ENABLED`, which ships FALSE, so group attachment SENDING is still
+  unreachable: with the flag off the group page shows no attach button, no file input and no file
+  paste/drop path. The file bytes (iv, ciphertext hash, plaintext length) are bound into the
+  per-message signature and the server stores only an opaque name and neutral metadata
+  (`docs/GROUP_ATTACHMENTS_E2EE.md`); `C3-12` fails if any `public/js` module other than the one
+  send module calls the group attachment encryptor. The flip checklist is
+  `docs/GROUP_ATTACHMENTS_FLAG_FLIP.md`.
   `docs/DM_ATTACHMENTS_E2EE.md` covers the DM path only.
 - `attachment-crypto.js`'s `encryptAttachmentForDm` / `decryptAttachmentForDm` are
   DEAD (no importer; a static test in `tests/dm-v2-attachments.test.mjs` keeps

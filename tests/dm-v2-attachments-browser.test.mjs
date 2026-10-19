@@ -199,10 +199,12 @@ test('c1. an attachment sent AS a reply to a text message: stored reply_to_id eq
   }
 });
 
-test('c2. a text reply to an attachment message: the quote shows the attachment label', { timeout: 120000 }, async () => {
+test('c2. a text reply to an attachment message: the quote shows the parent attachment CAPTION', { timeout: 120000 }, async () => {
   const dir = tmpDir(); const dbPath = path.join(dir, 'wire.db'); fs.copyFileSync(FIXTURE_DB, dbPath);
   const { runMigrations } = await import('../database/migrations.js');
   const d0 = new Database(dbPath); runMigrations(d0); d0.close();
+  // Both peers must opt in: bob's reply is a v2 text envelope, and the server
+  // rule refuses v2 towards a peer whose min_version is still 1 (alice).
   spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'dm-e2ee-optin.mjs'), 'bob'], { cwd: ROOT, env: { ...process.env, DB_PATH: dbPath }, encoding: 'utf8' });
   spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'dm-e2ee-optin.mjs'), 'alice'], { cwd: ROOT, env: { ...process.env, DB_PATH: dbPath }, encoding: 'utf8' });
   const server = await startRealServer({ work: dir, extraEnv: { DB_PATH: dbPath } });
@@ -216,47 +218,138 @@ test('c2. a text reply to an attachment message: the quote shows the attachment 
     await stageAndSend(a.page, file, 'parent attachment');
     await sleep(300);
     const attRow = readDb(dbPath, 'SELECT id FROM direct_messages WHERE attachment_meta IS NOT NULL ORDER BY id DESC LIMIT 1');
-    await openDmUi(b.page, 2, 'alice');
-    await sleep(2500);
-    await b.page.evaluate((pid) => { window.replyToDmMessage && window.replyToDmMessage(pid); }, attRow.id);
-    await sleep(200);
-    const replyState = await b.page.evaluate(() => ({
-      preview: document.querySelector('.reply-preview-bar')?.textContent?.trim()?.slice(0, 80) || null,
-      previewActive: !!document.querySelector('.reply-preview-bar.active'),
-    }));
-    // capture console errors
+    const rowsBefore = Number(readDb(dbPath, 'SELECT COUNT(*) AS n FROM direct_messages').n);
+
     const consoleErrors = [];
     b.page.on('console', (msg) => { if (msg.type() === 'error') consoleErrors.push(msg.text()); });
     b.page.on('pageerror', (err) => consoleErrors.push('PAGEERROR: ' + err.message));
+
+    await openDmUi(b.page, 2, 'alice');
+    await sleep(2500);
+    const msgsBefore = await b.page.$$eval('#dm-thread .chat-msg', (e) => e.length);
+
+    // Precondition: the composer must actually be in reply mode before typing.
+    await b.page.evaluate((pid) => { window.replyToDmMessage && window.replyToDmMessage(pid); }, attRow.id);
+    await sleep(300);
+    const previewActive = await b.page.evaluate(() => !!document.querySelector('.reply-preview-bar.active'));
+    assert.equal(previewActive, true, 'replying to an attachment must activate the composer reply preview');
+
     await b.page.type('#dm-input', 'text reply to attachment');
-    const rs2 = await b.page.evaluate(() => ({
-      previewActive: !!document.querySelector('.reply-preview-bar.active'),
-      previewText: document.querySelector('.reply-preview-bar')?.textContent?.trim()?.slice(0, 60) || null,
-      inputVal: document.querySelector('#dm-input')?.value || null,
-    }));
     await b.page.evaluate(() => window.sendDm());
-    await sleep(1500);
-    await b.page.waitForFunction(() => document.querySelectorAll('#dm-thread .chat-msg').length >= 2, { timeout: 30000 });
-    await sleep(500);
-    const info = await b.page.evaluate(() => {
-      return [...document.querySelectorAll('.chat-msg')].map((m, i) => ({
-        i,
-        bubbleText: m.querySelector('.chat-bubble')?.textContent?.trim()?.slice(0, 120) || null,
-        hasQuote: !!m.querySelector('.reply-quote, [class*="reply-quote"]'),
-        quoteText: m.querySelector('.reply-quote, [class*="reply-quote"]')?.textContent?.trim()?.slice(0, 120) || null,
-        isAttachment: !!m.querySelector('.chat-attachment'),
-        attName: m.querySelector('.chat-attachment-name')?.textContent?.trim() || null
-      }));
-    });
+    await b.page.waitForFunction((n) => document.querySelectorAll('#dm-thread .chat-msg').length > n, { timeout: 30000 }, msgsBefore);
+    await sleep(800);
+
+    // DB: exactly one new row, and it references the attachment as its parent.
     const dbAll = openDb(dbPath);
-    const allRows = dbAll.prepare("SELECT id, reply_to_id, content FROM direct_messages ORDER BY id").all();
+    const allRows = dbAll.prepare('SELECT id, reply_to_id, content FROM direct_messages ORDER BY id').all();
     dbAll.close();
-    const replyRow = allRows.length > 1 ? allRows[allRows.length - 1] : null;
-    if (!replyRow || Number(replyRow.reply_to_id) !== Number(attRow.id)) {
+    assert.equal(allRows.length, rowsBefore + 1, 'the reply must add exactly one row');
+    const replyRow = allRows[allRows.length - 1];
+    assert.equal(Number(replyRow.reply_to_id), Number(attRow.id),
+      'stored reply_to_id of the text reply must equal the attachment parent id');
+
+    // UI: the bubble carries the reply text plus a quote of the parent CAPTION.
+    const info = await b.page.evaluate(() => [...document.querySelectorAll('.chat-msg')].map((m) => ({
+      bubbleText: m.querySelector('.chat-bubble')?.textContent?.trim()?.slice(0, 120) || null,
+      hasQuote: !!m.querySelector('.reply-quote'),
+      quoteText: m.querySelector('.reply-quote')?.textContent?.trim()?.slice(0, 120) || null,
+      attName: m.querySelector('.chat-attachment-name')?.textContent?.trim() || null
+    })));
+    const last = info[info.length - 1];
+    assert.match(last.bubbleText, /text reply to attachment/, 'the reply text must render in the bubble');
+    assert.equal(last.hasQuote, true, 'the reply must render a quote of the parent');
+    assert.ok(/parent attachment/.test(last.quoteText), `quote must show the parent caption, got ${JSON.stringify(last.quoteText)}`);
+    assert.deepEqual(consoleErrors, [], 'no console errors during the reply flow');
+
+    // The parent attachment still renders (asserted once).
+    const names = await b.page.evaluate(() => [...document.querySelectorAll('.chat-attachment-name')].map((e) => e.textContent.trim()));
+    assert.ok(names.includes('parent-att.bin'), 'parent attachment must still render');
+  } finally {
+    await closeUserBrowsers(); await server.stop(); cleanupTmp(); fs.rmSync(fx, { recursive: true, force: true });
+  }
+});
+
+test('c2b. a text reply to a CAPTION-LESS attachment: the quote falls back to the parent attachment label, and no key/iv/ciphertext material reaches the DOM', { timeout: 120000 }, async () => {
+  const dir = tmpDir(); const dbPath = path.join(dir, 'wire.db'); fs.copyFileSync(FIXTURE_DB, dbPath);
+  const { runMigrations } = await import('../database/migrations.js');
+  const d0 = new Database(dbPath); runMigrations(d0); d0.close();
+  // Both peers must opt in: bob's reply is a v2 text envelope, and the server
+  // rule refuses v2 towards a peer whose min_version is still 1 (alice).
+  spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'dm-e2ee-optin.mjs'), 'bob'], { cwd: ROOT, env: { ...process.env, DB_PATH: dbPath }, encoding: 'utf8' });
+  spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'dm-e2ee-optin.mjs'), 'alice'], { cwd: ROOT, env: { ...process.env, DB_PATH: dbPath }, encoding: 'utf8' });
+  const server = await startRealServer({ work: dir, extraEnv: { DB_PATH: dbPath } });
+  const fx = fs.mkdtempSync(path.join(os.tmpdir(), 'attfx-'));
+  const file = makeFile(fx, 'secret-plaintext-name.bin', Buffer.from('secret bytes'));
+  try {
+    const a = await newUserPage(); const b = await newUserPage();
+    await login(a.page, server.origin, 'alice', 'alice-legacy-pass');
+    await login(b.page, server.origin, 'bob', 'bob-legacy-pass');
+    await openDmUi(a.page, 3, 'bob');
+    await stageAndSend(a.page, file, '');          // NO caption
+    await sleep(300);
+
+    // A caption-less attachment stores no caption envelope at all
+    // (prepareDmAttachmentUpload only sets fields.content when caption is truthy),
+    // so this row exercises the meta path alone.
+    const attRow = readDb(dbPath, 'SELECT id, content FROM direct_messages WHERE attachment_meta IS NOT NULL ORDER BY id DESC LIMIT 1');
+    assert.ok(!attRow.content || String(attRow.content).trim() === '',
+      `a caption-less attachment must store no caption envelope, got ${JSON.stringify(attRow.content).slice(0, 60)}`);
+
+    const consoleErrors = [];
+    b.page.on('console', (msg) => { if (msg.type() === 'error') consoleErrors.push(msg.text()); });
+    b.page.on('pageerror', (err) => consoleErrors.push('PAGEERROR: ' + err.message));
+
+    await openDmUi(b.page, 2, 'alice');
+    await sleep(2500);
+    const msgsBefore = await b.page.$$eval('#dm-thread .chat-msg', (e) => e.length);
+
+    await b.page.evaluate((pid) => { window.replyToDmMessage && window.replyToDmMessage(pid); }, attRow.id);
+    await sleep(300);
+    const previewActive = await b.page.evaluate(() => !!document.querySelector('.reply-preview-bar.active'));
+    assert.equal(previewActive, true, 'replying to an attachment must activate the composer reply preview');
+
+    await b.page.type('#dm-input', 'reply to a caption-less attachment');
+    await b.page.evaluate(() => window.sendDm());
+    await b.page.waitForFunction((n) => document.querySelectorAll('#dm-thread .chat-msg').length > n, { timeout: 30000 }, msgsBefore);
+    await sleep(800);
+
+    const info = await b.page.evaluate(() => [...document.querySelectorAll('.chat-msg')].map((m) => ({
+      bubbleText: m.querySelector('.chat-bubble')?.textContent?.trim()?.slice(0, 120) || null,
+      hasQuote: !!m.querySelector('.reply-quote'),
+      quoteText: m.querySelector('.reply-quote')?.textContent?.trim()?.slice(0, 120) || null,
+      attName: m.querySelector('.chat-attachment-name')?.textContent?.trim() || null
+    })));
+    const last = info[info.length - 1];
+    assert.match(last.bubbleText, /reply to a caption-less attachment/, 'the reply text must render in the bubble');
+    assert.equal(last.hasQuote, true, 'the reply must render a quote of the parent');
+
+    // OBSERVED BEHAVIOUR (not what the fix-up task guessed): with no caption the
+    // quote falls back to reply.js attachmentLabel(), which prefers
+    // `r.attachment_name`; the client's applyAttachmentMeta has ALREADY replaced
+    // that field with the decrypted name, so a viewer who can read the meta sees
+    // the real file name - not the server-side 'encrypted-attachment' constant.
+    // That is not a leak: this viewer received the attachment itself, so the name
+    // is already on their screen (asserted below). A viewer who CANNOT decrypt
+    // the meta keeps the opaque placeholder, which e4b/e1 cover.
+    assert.ok(/secret-plaintext-name\.bin/.test(last.quoteText),
+      `quote shows the parent's decrypted file name, got ${JSON.stringify(last.quoteText)}`);
+    assert.ok(!/encrypted-attachment/.test(last.quoteText),
+      'the server-side placeholder is replaced by the decrypted name for a viewer who can read the meta');
+
+    // The viewer could already read that name from the attachment row itself.
+    const names = await b.page.evaluate(() => [...document.querySelectorAll('.chat-attachment-name')].map((e) => e.textContent.trim()));
+    assert.ok(names.includes('secret-plaintext-name.bin'),
+      `the viewer already sees the file name on the attachment row itself, got ${JSON.stringify(names)}`);
+
+    // Real no-leak claim: no key/iv/ciphertext material from the meta envelope
+    // reaches the DOM.
+    const metaRow = readDb(dbPath, 'SELECT attachment_meta FROM direct_messages WHERE id = ?', attRow.id);
+    const env = JSON.parse(metaRow.attachment_meta).encryption;
+    const html = await b.page.evaluate(() => document.body.innerHTML);
+    for (const field of ['iv', 'ciphertext', 'senderFp']) {
+      assert.ok(!html.includes(env[field]), `the ${field} must not appear in the DOM`);
     }
-    const names = await b.page.evaluate(() => [...document.querySelectorAll(".chat-attachment-name")].map((e) => e.textContent.trim()));
-    assert.ok(names.includes('parent-att.bin'), 'parent attachment must still render');
-    assert.ok(names.includes('parent-att.bin'), 'parent attachment must still render');
+    assert.deepEqual(consoleErrors, [], 'no console errors during the reply flow');
   } finally {
     await closeUserBrowsers(); await server.stop(); cleanupTmp(); fs.rmSync(fx, { recursive: true, force: true });
   }
@@ -364,7 +457,14 @@ test('e3. tamper: meta recipientId rewritten -> "Attachment unavailable" only', 
   });
 });
 
-test('e4. tamper: row reply_to_id changed -> "Attachment unavailable" only', { timeout: 120000 }, async () => {
+// WHY "Unable to decrypt" AND NOT "Attachment unavailable":
+// reply_to_id is in the AAD of BOTH layers - the caption goes through the
+// unchanged v2 text path (dmMessageAad) and the meta through dmAttachmentAad.
+// The receiver decrypts the caption FIRST (decryptDmMessage -> decryptDmTextV2),
+// so tampering the row's reply_to_id breaks the caption before the meta path is
+// ever reached and the WHOLE row falls back to the "Unable to decrypt"
+// placeholder. e4b covers the meta-only case with a caption-less attachment.
+test('e4. tamper: row reply_to_id changed -> the WHOLE row renders "Unable to decrypt" (reply_to_id is in BOTH the meta and the caption AAD)', { timeout: 120000 }, async () => {
   const dir = tmpDir(); const dbPath = path.join(dir, 'wire.db'); fs.copyFileSync(FIXTURE_DB, dbPath);
   const { runMigrations } = await import('../database/migrations.js');
   const d0 = new Database(dbPath); runMigrations(d0); d0.close();
@@ -395,16 +495,79 @@ test('e4. tamper: row reply_to_id changed -> "Attachment unavailable" only', { t
     assert.equal(changes, 1);
     await openDmUi(b.page, 2, 'alice');
     await sleep(2500);
-    const view = await b.page.evaluate(() => ({
-      unavailable: /Attachment unavailable/.test(document.getElementById('dm-thread').innerText),
-      unable: /Unable to decrypt/.test(document.getElementById('dm-thread').innerText)
-    }));
+    const view = await b.page.evaluate(() => {
+      const t = document.getElementById('dm-thread').innerText;
+      return {
+        unavailable: /Attachment unavailable/.test(t),
+        unable: /Unable to decrypt/.test(t),
+        parentShown: /parent-for-reply/.test(t)
+      };
+    });
     assert.equal(view.unable, true, 'the tampered row must render as "Unable to decrypt"');
+    assert.equal(view.unavailable, false, 'the meta path is never reached here, so no "Attachment unavailable"');
+    assert.equal(view.parentShown, true, 'the untouched parent text row must still render');
   } finally {
     await closeUserBrowsers(); await server.stop(); cleanupTmp(); fs.rmSync(fx, { recursive: true, force: true });
   }
 });
 
+test('e4b. tamper: row reply_to_id changed on a CAPTION-LESS attachment -> "Attachment unavailable" (meta-level check, caption path inert)', { timeout: 120000 }, async () => {
+  const dir = tmpDir(); const dbPath = path.join(dir, 'wire.db'); fs.copyFileSync(FIXTURE_DB, dbPath);
+  const { runMigrations } = await import('../database/migrations.js');
+  const d0 = new Database(dbPath); runMigrations(d0); d0.close();
+  spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'dm-e2ee-optin.mjs'), 'bob'], { cwd: ROOT, env: { ...process.env, DB_PATH: dbPath }, encoding: 'utf8' });
+  const server = await startRealServer({ work: dir, extraEnv: { DB_PATH: dbPath } });
+  const fx = fs.mkdtempSync(path.join(os.tmpdir(), 'attfx-'));
+  const file = makeFile(fx, 'nocaption-tamper.bin', Buffer.from('nocaption tamper bytes'));
+  try {
+    const a = await newUserPage(); const b = await newUserPage();
+    await login(a.page, server.origin, 'alice', 'alice-legacy-pass');
+    await login(b.page, server.origin, 'bob', 'bob-legacy-pass');
+    await openDmUi(a.page, 3, 'bob');
+    await a.page.type('#dm-input', 'good-first');
+    await a.page.evaluate(() => window.sendDm());
+    await sleep(400);
+    await stageAndSend(a.page, file, '');          // NO caption: no caption envelope at all
+    await a.page.type('#dm-input', 'good-last');
+    await a.page.evaluate(() => window.sendDm());
+    await sleep(500);
+
+    const attRow = readDb(dbPath, 'SELECT id, content, reply_to_id FROM direct_messages WHERE attachment_meta IS NOT NULL ORDER BY id DESC LIMIT 1');
+    assert.ok(!attRow.content || String(attRow.content).trim() === '',
+      `a caption-less attachment must store no caption envelope, got ${JSON.stringify(attRow.content).slice(0, 60)}`);
+    assert.ok(attRow.reply_to_id == null, 'the parent attachment starts with no reply_to_id');
+
+    // Tamper ONLY the row's reply_to_id. The caption path has nothing to
+    // decrypt, so this exercises the meta AAD on its own.
+    const db = openDb(dbPath);
+    const changes = db.prepare('UPDATE direct_messages SET reply_to_id = ? WHERE id = ?').run(999999, attRow.id).changes;
+    db.close();
+    assert.equal(changes, 1, 'the tamper UPDATE must affect exactly one row');
+
+    await openDmUi(b.page, 2, 'alice');
+    await sleep(2500);
+    const view = await b.page.evaluate(() => {
+      const t = document.getElementById('dm-thread').innerText;
+      return {
+        unavailable: /Attachment unavailable/.test(t),
+        unable: /Unable to decrypt/.test(t),
+        otherRows: /good-first/.test(t) && /good-last/.test(t),
+        html: document.body.innerHTML
+      };
+    });
+    assert.equal(view.unavailable, true, 'the tampered row must render as "Attachment unavailable"');
+    assert.equal(view.unable, false, 'no caption envelope exists, so no "Unable to decrypt" placeholder');
+    assert.equal(view.otherRows, true, 'the other rows must still render');
+
+    // No key material from the (now unusable) meta envelope reaches the DOM.
+    const env = JSON.parse(readDb(dbPath, 'SELECT attachment_meta FROM direct_messages WHERE id = ?', attRow.id).attachment_meta).encryption;
+    for (const field of ['iv', 'ciphertext', 'senderFp']) {
+      assert.ok(!view.html.includes(env[field]), `the ${field} must not appear in the DOM`);
+    }
+  } finally {
+    await closeUserBrowsers(); await server.stop(); cleanupTmp(); fs.rmSync(fx, { recursive: true, force: true });
+  }
+});
 test('e5. tamper: attachment_meta swapped between two rows -> "Attachment unavailable" only', { timeout: 120000 }, async () => {
   const dir = tmpDir(); const dbPath = path.join(dir, 'wire.db'); fs.copyFileSync(FIXTURE_DB, dbPath);
   const { runMigrations } = await import('../database/migrations.js');
@@ -517,7 +680,12 @@ test('e7. tamper: the attachment meta envelope put into the content slot -> text
 
 // ---------------------------------------------------------------- f. replay
 
-test('f1. replay: copying an attachment row (meta + path) to a new row id -> "Attachment unavailable" on the copy', { timeout: 120000 }, async () => {
+// WHY "Unable to decrypt" AND NOT "Attachment unavailable" ON THE COPY:
+// the copied row keeps the caption envelope too, and the caption is decrypted
+// FIRST. The caption's replay check (keyed on the AAD-bound iv) therefore fires
+// before the meta path is reached, so the whole copy renders as "Unable to
+// decrypt". f1b covers the meta-only case with a caption-less attachment.
+test('f1. replay: copying an attachment row (meta + path) to a new row id -> the COPY renders "Unable to decrypt" (the caption-level replay check fires first)', { timeout: 120000 }, async () => {
   const dir = tmpDir(); const dbPath = path.join(dir, 'wire.db'); fs.copyFileSync(FIXTURE_DB, dbPath);
   const { runMigrations } = await import('../database/migrations.js');
   const d0 = new Database(dbPath); runMigrations(d0); d0.close();
@@ -562,7 +730,65 @@ test('f1. replay: copying an attachment row (meta + path) to a new row id -> "At
   }
 });
 
-test('f2. replay: copying with the clear msgId changed (iv untouched) is still "Attachment unavailable"', { timeout: 120000 }, async () => {
+// The meta-only replay path: a CAPTION-LESS attachment has no caption envelope
+// (prepareDmAttachmentUpload only sets fields.content when caption is truthy),
+// so the copy cannot break the caption first - the iv-keyed meta replay check is
+// what fires, and the copy renders as "Attachment unavailable".
+test('f1b. replay: copying a CAPTION-LESS attachment row to a new row id -> the COPY renders "Attachment unavailable" (meta-level replay check)', { timeout: 120000 }, async () => {
+  const dir = tmpDir(); const dbPath = path.join(dir, 'wire.db'); fs.copyFileSync(FIXTURE_DB, dbPath);
+  const { runMigrations } = await import('../database/migrations.js');
+  const d0 = new Database(dbPath); runMigrations(d0); d0.close();
+  spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'dm-e2ee-optin.mjs'), 'bob'], { cwd: ROOT, env: { ...process.env, DB_PATH: dbPath }, encoding: 'utf8' });
+  const server = await startRealServer({ work: dir, extraEnv: { DB_PATH: dbPath } });
+  const fx = fs.mkdtempSync(path.join(os.tmpdir(), 'attfx-'));
+  const file = makeFile(fx, 'nocap-replay.bin', Buffer.from('nocap replay bytes'));
+  try {
+    const a = await newUserPage(); const b = await newUserPage();
+    await login(a.page, server.origin, 'alice', 'alice-legacy-pass');
+    await login(b.page, server.origin, 'bob', 'bob-legacy-pass');
+    await openDmUi(a.page, 3, 'bob');
+    await stageAndSend(a.page, file, '');          // NO caption
+    await sleep(300);
+    const src = readDb(dbPath, 'SELECT id, content FROM direct_messages WHERE attachment_meta IS NOT NULL ORDER BY id DESC LIMIT 1');
+    assert.ok(!src.content || String(src.content).trim() === '',
+      `a caption-less attachment must store no caption envelope, got ${JSON.stringify(src.content).slice(0, 60)}`);
+
+    const db = openDb(dbPath);
+    const cols = 'sender_id, recipient_id, content, created_at, reply_to_id, attachment_name, attachment_path, attachment_size, attachment_mime, attachment_meta, attachment_iv, is_voice_message';
+    const ins = db.prepare(`INSERT INTO direct_messages (${cols}) SELECT ${cols} FROM direct_messages WHERE id = ?`).run(src.id);
+    const newId = ins.lastInsertRowid;
+    db.close();
+    assert.ok(newId && Number(newId) !== Number(src.id), 'the copy must get its own row id');
+
+    await openDmUi(b.page, 2, 'alice');
+    await sleep(3000);
+    const view = await b.page.evaluate(() => {
+      const t = document.getElementById('dm-thread').innerText;
+      return {
+        unavailable: /Attachment unavailable/.test(t),
+        unable: /Unable to decrypt/.test(t),
+        names: [...document.querySelectorAll('.chat-attachment-name')].map((e) => e.textContent.trim()),
+        bubbles: document.querySelectorAll('#dm-thread .chat-msg').length
+      };
+    });
+    assert.ok(view.names.includes('nocap-replay.bin'), `the original row must still open, got ${JSON.stringify(view.names)}`);
+    assert.equal(view.unavailable, true, 'the copied row must render as "Attachment unavailable"');
+    assert.equal(view.unable, false, 'no caption envelope exists, so no "Unable to decrypt" placeholder');
+
+    // Re-reading the ORIGINAL row in a fresh open is not a replay.
+    await openDmUi(b.page, 2, 'alice');
+    await sleep(2000);
+    const view2 = await b.page.evaluate(() => [...document.querySelectorAll('.chat-attachment-name')].map((e) => e.textContent.trim()));
+    assert.ok(view2.includes('nocap-replay.bin'), 're-reading the original row must not be treated as a replay');
+  } finally {
+    await closeUserBrowsers(); await server.stop(); await sleep(800); try { cleanupTmp(); fs.rmSync(fx, { recursive: true, force: true }); } catch (e) { console.warn('cleanup (non-fatal on Windows):', e && e.code); }
+  }
+});
+
+// Same ordering as f1: the caption's replay check (which keys on the AAD-bound
+// iv, NOT on the unbound clear msgId) fires first, so the copy renders as
+// "Unable to decrypt" rather than "Attachment unavailable".
+test('f2. replay: copying with the clear msgId changed (iv untouched) -> the copy still renders "Unable to decrypt" (the iv-keyed check is not bypassed by a msgId swap)', { timeout: 120000 }, async () => {
   const dir = tmpDir(); const dbPath = path.join(dir, 'wire.db'); fs.copyFileSync(FIXTURE_DB, dbPath);
   const { runMigrations } = await import('../database/migrations.js');
   const d0 = new Database(dbPath); runMigrations(d0); d0.close();

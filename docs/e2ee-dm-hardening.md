@@ -281,13 +281,20 @@ secrecy) is not started, and DM attachments are still v1 with no AAD.
 - `attachment-crypto.js`'s `encryptAttachmentForDm` / `decryptAttachmentForDm` are
   DEAD (no importer; a static test in `tests/dm-v2-attachments.test.mjs` keeps
   them unused) and weaker than the live path. Left in place, not deleted.
-- **The real-browser attachment scenarios ARE written now (STEP 2B):**
+- **The real-browser attachment scenarios ARE written now (STEP 2B, 17 tests):**
   `tests/dm-v2-attachments-browser.test.mjs` covers the upload happy path (v2 and
-  v1), reply binding both ways, history + downgrade notice, seven tampers, and
-  replay (untouched and msgId-changed). What is STILL not covered in the browser:
-  voice recording (recorder UI; `isVoice: true` is covered in the node test
-  instead), the full 7-tamper set under a multi-row thread, and any non-Chromium
+  v1), reply binding both ways (including a caption-less parent), history +
+  downgrade notice, seven tampers, and replay (untouched and msgId-changed),
+  plus three tests (`e4b`, `f1b`, `c2b`) that pin the meta-only failure path.
+  What is STILL not covered in the browser: voice recording (recorder UI;
+  `isVoice: true` is covered in the node test instead) and any non-Chromium
   browser.
+- **`reply_to_id` is bound in the AAD of both layers, and the caption is opened
+  first.** Tampering a row's `reply_to_id`, or replaying a row that carries a
+  caption, therefore fails the CAPTION and the whole row becomes
+  `content = 'Unable to decrypt'`. "Attachment unavailable" is the meta-only
+  outcome and is reachable only when the row has no caption envelope
+  (`e4b`, `f1b`).
 - The replay store is per device and windowed (FIFO), and a same-row rollback is
   not covered.
 - Phase 3 forward secrecy: not started.

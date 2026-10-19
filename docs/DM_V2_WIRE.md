@@ -212,6 +212,45 @@ It must be `npm install @sparticuz/chromium puppeteer-core`. Fixed in
   So the happy path and two tampers are proven by hand; the committed browser tests
   (`tests/dm-v2-attachments-browser.test.mjs`, STEP 2B) cover them as tests.
 
+### 2B-fixup (agent, Windows, wire-final-32) - what the browser tests actually prove
+
+An independent review of `wire-final-32` found that test `c2` was **hollow**: it
+contained an empty `if (...) { }` block that never read its result and a
+duplicated assert, so it passed whether or not a reply row was stored. The
+conclusion drawn from it in the first 2B report ("`sendDm()` does not create a
+reply row", "a browser gap") was therefore **wrong**. With real asserts added,
+`c2` passes: the reply row IS created, its stored `reply_to_id` equals the
+attachment's row id, and the UI renders a quote of the parent. A mutation check
+(setting that column to `NULL` before the read) makes `c2` fail with
+`expected: 2, actual: 0`, so the assert is live.
+
+Three behavioural facts the browser tests now pin down:
+
+1. **`reply_to_id` is in the AAD of BOTH layers.** The caption goes through the
+   unchanged v2 text path (`dmMessageAad`) and the meta through
+   `dmAttachmentAad`. The receiver decrypts the caption FIRST
+   (`decryptDmMessage` -> `decryptDmTextV2`), so tampering a row's `reply_to_id`
+   breaks the caption before the meta path is reached and the WHOLE row becomes
+   the `content = 'Unable to decrypt'` placeholder. It does **not** degrade to
+   "Attachment unavailable" - that string only appears when the meta alone fails.
+2. **A replayed row that carries a caption fails the same way.** Copying an
+   attachment row to a new id copies its caption envelope too, and the caption's
+   iv-keyed replay check fires first. The copy renders as "Unable to decrypt".
+3. **The meta-only path is therefore covered by caption-less rows.** A
+   caption-less attachment stores no caption envelope at all
+   (`prepareDmAttachmentUpload` only sets `fields.content` when `caption` is
+   truthy), so `e4b` (tampered `reply_to_id`) and `f1b` (replayed row) both show
+   exactly `Attachment unavailable` while the surrounding rows stay intact.
+
+One more measured detail (`c2b`): for a **caption-less** attachment parent, the
+reply quote does NOT show the server-side `'encrypted-attachment'` placeholder -
+it shows the real file name, because the client's `applyAttachmentMeta` has
+already replaced `attachment_name` with the decrypted value before
+`buildReplyQuoteHtml` runs. That is not a disclosure: the viewer received that
+attachment, so the name is already on their screen (the test asserts both). A
+viewer who cannot decrypt the meta keeps the opaque placeholder, which `e1` and
+`e4b` cover.
+
 ## Part B (STEP 1J) - one undecryptable row shows a placeholder
 
 Before: a single row that failed to decrypt (tampered ciphertext, rewritten

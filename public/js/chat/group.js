@@ -678,7 +678,7 @@ function renderActiveGroupShell(group) {
             ${groupAttachmentsEnabled ? '<div class="attach-staging" id="group-staging-area"></div>' : ''}
             <div class="chat-input-area" id="group-input-area">
                 ${groupAttachmentsEnabled ? `<input type="file" id="group-file-input" class="hidden" multiple>
-                <button class="btn btn-ghost btn-icon" title="Attach" onclick="document.getElementById('group-file-input').click()">${ICONS.paperclip}</button>` : ''}
+                <button class="btn btn-ghost btn-icon" title="Attach" data-action="group-attach">${ICONS.paperclip}</button>` : ''}
                 <button class="btn btn-ghost btn-icon emoji-trigger" title="Emoji" data-action="group-emoji">${ICONS.emoji}</button>
                 <textarea id="group-input" rows="1" placeholder="Message ${escapeHtmlAttr(group?.name || 'group')}…"></textarea>
                 <button type="button" data-action="group-send" class="btn-send" title="Send message (Enter) — Shift+Enter for a new line">${ICONS.send}</button>
@@ -968,6 +968,9 @@ if (typeof document !== 'undefined') document.addEventListener('click', (e) => {
             break;
         case 'group-back':
             document.querySelector('.dm-layout')?.classList.remove('showing-thread');
+            break;
+        case 'group-attach':
+            document.getElementById('group-file-input')?.click();
             break;
         case 'group-send':
             window.sendGroupMessage();

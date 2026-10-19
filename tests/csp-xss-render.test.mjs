@@ -141,6 +141,10 @@ mock.module(jsPath('crypto/messages/group-message-crypto.js'), {
         }),
         readEnvelopeSenderKeyId: () => '1',
         ensureSenderKeyForGroup: async () => {},
+        // STEP 3C: chat/group-attachments.js imports this (the group
+        // attachment encryptor needs the current identity). The mock is the
+        // identity the group crypto would use.
+        getGroupIdentity: () => ({ privateKey: null, publicKey: null, userId: 1 }),
         drainGroupKdms: async () => {},
         forgetGroupKeys: async () => {},
         MissingSenderKeyError,

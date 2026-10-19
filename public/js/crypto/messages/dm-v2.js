@@ -675,6 +675,204 @@ export class IvReplayGuard {
 }
 
 /* =========================================================
+ * Attachment meta envelope (STEP 2A.2)
+ *
+ * Section 3.3's dmAttachmentAad: the TEXT AAD with only the label changed, so a
+ * file can never be replayed as a message and vice versa. The envelope shape and
+ * the key derivation are shared with v2 text (no new HKDF info, no new key):
+ * only the bytes the AAD commits to differ.
+ *
+ * These functions are deliberately self-contained instead of delegating to
+ * dmMessageAad/encryptDmV2/decryptDmV2: the two labels are separate wire formats
+ * and either must be able to change without silently moving the other. The text
+ * path's bytes are pinned by KATs and were NOT touched by this step.
+ * ========================================================= */
+
+/** AAD protocol label for attachment meta. Fixed forever; distinct from the text label. */
+export const DM_ATTACHMENT_AAD_LABEL = 'dm-att-v2';
+
+/**
+ * The additionalData for one attachment-meta envelope.
+ *
+ *     encodeFields(
+ *         'dm-att-v2',   type 0,  10 bytes  protocol label
+ *         version,       type 0,   1 byte   "2"
+ *         fromUserId,    type 0,   decimal
+ *         toUserId,      type 0,   decimal
+ *         senderKeyFp,   type 1,  32 bytes  SHA-256 of the SENDER's pk
+ *         direction,     type 0,   3 bytes  'a2b' | 'b2a'
+ *         iv,            type 1,  12 bytes  the nonce itself
+ *         replyToId,     type 0,   decimal, 0 when absent
+ *     )
+ *
+ * The design sketch (section 3.3) also listed an `attachmentId`. It is DROPPED
+ * (STEP 2A D2): it predates the STREAM format - the per-file key inside the meta
+ * already binds the blob - and an unauthenticated id would repeat the msgId
+ * problem (a server could swap it). The list above is final.
+ *
+ * @returns {Uint8Array}
+ */
+export function dmAttachmentAad({
+    version = DM_V2_VERSION,
+    fromUserId,
+    toUserId,
+    senderKeyFp,
+    direction,
+    iv,
+    replyToId = 0
+} = {}) {
+    const v = requireVersion(version);
+    if (v !== DM_V2_VERSION) {
+        throw new DmV2ValidationError(
+            `dmAttachmentAad is v2 only; got version ${v}`
+        );
+    }
+
+    const from = requireUserId(fromUserId, 'fromUserId');
+    const to = requireUserId(toUserId, 'toUserId');
+    const fp = requireFingerprint(senderKeyFp);
+    const nonce = requireIv(iv);
+    const reply = requireReplyToId(replyToId);
+
+    const expected = directionLabel(from, to);
+    if (direction !== expected) {
+        throw new DmV2ValidationError(
+            `direction "${direction}" contradicts directionLabel(${from}, ${to}) = "${expected}"`
+        );
+    }
+
+    return encodeFields(
+        DM_ATTACHMENT_AAD_LABEL,
+        String(v),
+        String(from),
+        String(to),
+        fp,
+        expected,
+        nonce,
+        String(reply)
+    );
+}
+
+/**
+ * Encrypt one attachment-meta JSON string as a v2 envelope under the
+ * attachment label. Identical to encryptDmV2 except for the AAD label, so the
+ * envelope shape, the version discriminator and the server's shape checks are
+ * exactly the text ones.
+ *
+ * `iv` and `msgId` are injectable ONLY for the known-answer tests.
+ *
+ * @returns {Promise<{envelope: object, iv: Uint8Array, aad: Uint8Array, msgId: string}>}
+ */
+export async function encryptDmAttachmentV2({
+    plaintext,
+    fromUserId,
+    toUserId,
+    senderKeyFp,
+    key,
+    replyToId = 0,
+    iv = null,
+    msgId = null
+} = {}) {
+    if (typeof plaintext !== 'string') {
+        throw new DmV2ValidationError('Message must be a string');
+    }
+    if (plaintext.length === 0) {
+        throw new DmV2ValidationError('Message cannot be empty');
+    }
+
+    const from = requireUserId(fromUserId, 'fromUserId');
+    const to = requireUserId(toUserId, 'toUserId');
+    const direction = directionLabel(from, to);
+    const nonce = iv === null
+        ? crypto.getRandomValues(new Uint8Array(DM_V2_IV_LENGTH))
+        : requireIv(iv);
+    const id = msgId === null ? newDmV2MsgId() : requireMsgId(msgId);
+
+    const aad = dmAttachmentAad({
+        version: DM_V2_VERSION,
+        fromUserId: from,
+        toUserId: to,
+        senderKeyFp,
+        direction,
+        iv: nonce,
+        replyToId
+    });
+
+    const ciphertext = await crypto.subtle.encrypt(
+        {
+            name: DM_V2_ALGORITHM,
+            iv: nonce,
+            additionalData: aad,
+            tagLength: DM_V2_TAG_LENGTH
+        },
+        key,
+        new TextEncoder().encode(plaintext)
+    );
+
+    const envelope = buildDmV2Envelope({
+        ciphertext: bytesToBase64(ciphertext),
+        iv: nonce,
+        senderFp: senderKeyFp,
+        msgId: id,
+        senderId: from,
+        recipientId: to
+    });
+
+    return { envelope, iv: nonce, aad, msgId: id };
+}
+
+/**
+ * Decrypt a v2 attachment-meta envelope. Same contract as decryptDmV2: every
+ * AAD input comes from the envelope except `senderKeyFp`, which the caller
+ * supplies because choosing WHICH of the sender's keys to try is the receiver's
+ * job.
+ *
+ * @returns {Promise<string>} the plaintext
+ */
+export async function decryptDmAttachmentV2({
+    envelope,
+    senderKeyFp,
+    key,
+    replyToId = 0
+} = {}) {
+    const validated = validateDmV2Envelope(envelope);
+
+    const iv = base64ToBytes(validated.iv, 'IV');
+    const fp = base64ToBytes(validated.senderFp, 'senderFp');
+    const direction = directionLabel(validated.senderId, validated.recipientId);
+
+    const callerFp = requireFingerprint(senderKeyFp);
+    if (bytesToBase64(callerFp) !== validated.senderFp) {
+        throw new DmV2ValidationError(
+            'senderKeyFp does not match the envelope senderFp: the wrong sender key was selected'
+        );
+    }
+
+    const aad = dmAttachmentAad({
+        version: validated.version,
+        fromUserId: validated.senderId,
+        toUserId: validated.recipientId,
+        senderKeyFp: fp,
+        direction,
+        iv,
+        replyToId
+    });
+
+    const plaintext = await crypto.subtle.decrypt(
+        {
+            name: DM_V2_ALGORITHM,
+            iv,
+            additionalData: aad,
+            tagLength: DM_V2_TAG_LENGTH
+        },
+        key,
+        base64ToBytes(validated.ciphertext, 'ciphertext')
+    );
+
+    return new TextDecoder().decode(plaintext);
+}
+
+/* =========================================================
  * DEVIATIONS FROM THE DESIGN DOC
  *
  * 1. Section 3.3 states the AAD is "worst case ... 109 bytes" for 10-digit ids.
@@ -687,9 +885,12 @@ export class IvReplayGuard {
  *    exact length of a worked example so the number is pinned rather than
  *    assumed. The doc's figure should be corrected.
  *
- * 2. Section 3.3 specifies dmAttachmentAad under the label 'dm-att-v2'. Not
- *    implemented - see the header. This means 'dm-att-v2' is currently unused,
- *    and attachment-crypto.js gains no AAD and keeps its existing key.
+ * 2. Section 3.3's dmAttachmentAad is implemented (STEP 2A.2) under the label
+ *    'dm-att-v2'. The sketch's `attachmentId` field is DROPPED (STEP 2A D2): it
+ *    predates the STREAM format (the per-file key inside the meta already binds
+ *    the blob) and an unauthenticated id would repeat the msgId problem. Field
+ *    order is otherwise the text AAD's, only the label changed.
+ *    attachment-crypto.js remains dead code and keeps its existing key.
  * ========================================================= */
 
 /** Byte size of one AAD, for callers that need a bound. Derived, not a constant. */

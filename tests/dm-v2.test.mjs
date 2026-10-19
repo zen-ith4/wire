@@ -33,6 +33,7 @@ import {
     DM_V1_INFO,
     GROUP_KDM_INFO,
     DM_V2_AAD_LABEL,
+    DM_ATTACHMENT_AAD_LABEL,
     DM_V2_IV_LENGTH,
     DM_V2_FINGERPRINT_LENGTH,
     directionLabel,
@@ -40,12 +41,15 @@ import {
     deriveDmV2Key,
     senderKeyFingerprint,
     dmMessageAad,
+    dmAttachmentAad,
     dmV2AadLength,
     newDmV2MsgId,
     buildDmV2Envelope,
     validateDmV2Envelope,
     encryptDmV2,
     decryptDmV2,
+    encryptDmAttachmentV2,
+    decryptDmAttachmentV2,
     IvReplayGuard,
     DmV2IvReplayError,
     DmV2ValidationError
@@ -696,6 +700,7 @@ test('the four HKDF infos are distinct and none is a prefix of another', () => {
 
 test('the AAD label is the documented one', () => {
     assert.equal(DM_V2_AAD_LABEL, 'dm-msg-v2');
+    assert.equal(DM_ATTACHMENT_AAD_LABEL, 'dm-att-v2');
     assert.equal(DM_V2_VERSION, 2);
     assert.equal(DM_V2_ALGORITHM, 'AES-GCM');
     assert.equal(DM_V2_IV_LENGTH, 12);
@@ -728,4 +733,230 @@ test('round trip: encrypt then decrypt returns the exact plaintext, envelopes an
         seen.add(envelope.encryption.iv);
     }
     assert.equal(seen.size, 20, 'every message must get a fresh random IV');
+});
+
+/* =========================================================
+ * 4. Attachment meta (STEP 2A.2): a separate label, same field order
+ * ========================================================= */
+
+const clone = (o) => JSON.parse(JSON.stringify(o));
+
+const isAuthFailure = (e) => {
+    // An AEAD failure: WebCrypto rejects with OperationError and no useful
+    // message. Anything else ("no key", "bad JSON", "unsupported version") would
+    // mean the test proved the wrong thing.
+    assert.ok(
+        e && (e.name === 'OperationError' || /auth/i.test(String(e.message))),
+        `expected an AEAD failure, got ${e && e.name}: ${e && e.message}`
+    );
+    return true;
+};
+
+test('2A.2 KAT: the attachment AAD is the text AAD with only the label changed', async () => {
+    const fp = await senderKeyFingerprint(rawPublic(A));
+
+    const expAad = independentAad({
+        label: 'dm-att-v2', senderKeyFp: fp, direction: 'a2b', replyToId: 0
+    });
+    const gotAad = dmAttachmentAad({
+        version: 2, fromUserId: ALICE, toUserId: BOB,
+        senderKeyFp: fp, direction: 'a2b', iv: IV, replyToId: 0
+    });
+
+    assert.equal(hex(gotAad), hex(expAad), 'attachment AAD mismatch');
+
+    // Same field list and the same label LENGTH (both 9 bytes), so the two
+    // AADs have the same length and differ ONLY in the label's bytes.
+    const textAad = dmMessageAad({
+        version: 2, fromUserId: ALICE, toUserId: BOB,
+        senderKeyFp: fp, direction: 'a2b', iv: IV, replyToId: 0
+    });
+    assert.equal(gotAad.length, 102);
+    assert.equal(textAad.length, 102);
+    assert.equal(new TextDecoder().decode(gotAad.subarray(5, 14)), 'dm-att-v2');
+    assert.equal(new TextDecoder().decode(textAad.subarray(5, 14)), 'dm-msg-v2');
+    assert.equal(
+        hex(gotAad.subarray(14)), hex(textAad.subarray(14)),
+        'everything after the label must be byte-identical to the text AAD'
+    );
+
+    // Walk the bytes field by field, like the text KAT, so a reordering or a
+    // dropped field cannot hide inside a hex compare.
+    const dv = new DataView(gotAad.buffer, gotAad.byteOffset, gotAad.byteLength);
+    const fields = [];
+    let off = 0;
+    while (off < gotAad.length) {
+        const type = gotAad[off];
+        const len = dv.getUint32(off + 1);
+        const data = gotAad.subarray(off + 5, off + 5 + len);
+        fields.push({ type, len, text: type === 0 ? new TextDecoder().decode(data) : hex(data) });
+        off += 5 + len;
+    }
+    assert.deepEqual(fields, [
+        { type: 0, len: 9, text: 'dm-att-v2' },
+        { type: 0, len: 1, text: '2' },
+        { type: 0, len: 2, text: String(ALICE) },
+        { type: 0, len: 2, text: String(BOB) },
+        { type: 1, len: 32, text: hex(fp) },
+        { type: 0, len: 3, text: 'a2b' },
+        { type: 1, len: 12, text: hex(IV) },
+        { type: 0, len: 1, text: '0' }
+    ]);
+});
+
+test('2A.2: the two AAD labels are distinct and neither is a prefix of the other', () => {
+    assert.notEqual(DM_ATTACHMENT_AAD_LABEL, DM_V2_AAD_LABEL);
+    assert.ok(!DM_ATTACHMENT_AAD_LABEL.startsWith(DM_V2_AAD_LABEL));
+    assert.ok(!DM_V2_AAD_LABEL.startsWith(DM_ATTACHMENT_AAD_LABEL));
+});
+
+test('2A.2: attachment meta round trip, and the ciphertext matches the independent implementation', async () => {
+    const a = await wcKeys(A);
+    const b = await wcKeys(B);
+    const key = await deriveDmV2Key(ALICE, BOB, a.privateKey, b.publicKey);
+    const fp = await senderKeyFingerprint(rawPublic(A));
+    const metaPlain = JSON.stringify({ rawKey: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=', name: 'a.png' });
+
+    const { envelope } = await encryptDmAttachmentV2({
+        plaintext: metaPlain, fromUserId: ALICE, toUserId: BOB,
+        senderKeyFp: fp, key, iv: IV, msgId: MSG_ID
+    });
+
+    assert.equal(
+        await decryptDmAttachmentV2({ envelope, senderKeyFp: fp, key }),
+        metaPlain
+    );
+
+    // The envelope shape is the v2 text shape, unchanged: version/algorithm/iv/
+    // ciphertext/senderFp/msgId. Only the AAD bytes differ.
+    assert.equal(envelope.encryption.version, 2);
+    assert.equal(envelope.encryption.algorithm, 'AES-GCM');
+    assert.equal(envelope.encryption.msgId, MSG_ID);
+    assert.equal(envelope.encryption.iv, b64(IV));
+
+    // Independent ciphertext under the same attachment AAD: byte-identical.
+    const expKey = independentKey(ALICE, BOB, A.privateKey, B.publicKey);
+    const expCt = independentEncrypt(
+        expKey, IV,
+        independentAad({ label: 'dm-att-v2', senderKeyFp: fp, direction: 'a2b', replyToId: 0 }),
+        metaPlain
+    );
+    assert.equal(
+        Buffer.from(envelope.encryption.ciphertext, 'base64').toString('hex'),
+        expCt.toString('hex'),
+        'independent ciphertext mismatch'
+    );
+});
+
+test('2A.2: a text envelope does not open as attachment meta, and the reverse fails too', async () => {
+    const a = await wcKeys(A);
+    const b = await wcKeys(B);
+    const key = await deriveDmV2Key(ALICE, BOB, a.privateKey, b.publicKey);
+    const fp = await senderKeyFingerprint(rawPublic(A));
+
+    const text = await encryptDmV2({
+        plaintext: PLAINTEXT, fromUserId: ALICE, toUserId: BOB,
+        senderKeyFp: fp, key, iv: IV, msgId: MSG_ID
+    });
+    const meta = await encryptDmAttachmentV2({
+        plaintext: PLAINTEXT, fromUserId: ALICE, toUserId: BOB,
+        senderKeyFp: fp, key, iv: IV, msgId: MSG_ID
+    });
+
+    // Positive controls first: each opens with its own function.
+    assert.equal(await decryptDmV2({ envelope: text.envelope, senderKeyFp: fp, key }), PLAINTEXT);
+    assert.equal(await decryptDmAttachmentV2({ envelope: meta.envelope, senderKeyFp: fp, key }), PLAINTEXT);
+
+    // Cross-purpose: the label is in the AAD, so each fails authentication.
+    await assert.rejects(
+        () => decryptDmAttachmentV2({ envelope: text.envelope, senderKeyFp: fp, key }),
+        isAuthFailure
+    );
+    await assert.rejects(
+        () => decryptDmV2({ envelope: meta.envelope, senderKeyFp: fp, key }),
+        isAuthFailure
+    );
+});
+
+test('2A.2: every AAD field of the attachment meta is bound', async () => {
+    const a = await wcKeys(A);
+    const b = await wcKeys(B);
+    const key = await deriveDmV2Key(ALICE, BOB, a.privateKey, b.publicKey);
+    const fp = await senderKeyFingerprint(rawPublic(A));
+    const otherFp = Uint8Array.from({ length: 32 }, (_, i) => i + 1);
+    const metaPlain = '{"name":"a.png"}';
+
+    const enc = async (o = {}) => (await encryptDmAttachmentV2({
+        plaintext: metaPlain, fromUserId: ALICE, toUserId: BOB,
+        senderKeyFp: fp, key, iv: IV, msgId: MSG_ID, ...o
+    })).envelope;
+
+    // Positive control.
+    assert.equal(
+        await decryptDmAttachmentV2({ envelope: await enc(), senderKeyFp: fp, key }),
+        metaPlain
+    );
+
+    // replyToId: re-pointing a reply is refused...
+    const replyZero = await enc({ replyToId: 0 });
+    await assert.rejects(
+        () => decryptDmAttachmentV2({ envelope: replyZero, senderKeyFp: fp, key, replyToId: 5 }),
+        isAuthFailure
+    );
+    // ...and a reply the sender really used round-trips with the same value.
+    assert.equal(
+        await decryptDmAttachmentV2({ envelope: await enc({ replyToId: 11 }), senderKeyFp: fp, key, replyToId: 11 }),
+        metaPlain
+    );
+
+    // iv: a server swap is an AEAD failure, not a replay verdict.
+    const ivSwapped = clone(await enc());
+    ivSwapped.encryption.iv = b64(Buffer.alloc(12, 0x5a));
+    await assert.rejects(
+        () => decryptDmAttachmentV2({ envelope: ivSwapped, senderKeyFp: fp, key }),
+        isAuthFailure
+    );
+
+    // from/to relabel (reflection): the ids are in the AAD.
+    const relabelled = clone(await enc());
+    const t = relabelled.senderId;
+    relabelled.senderId = relabelled.recipientId;
+    relabelled.recipientId = t;
+    await assert.rejects(
+        () => decryptDmAttachmentV2({ envelope: relabelled, senderKeyFp: fp, key }),
+        isAuthFailure
+    );
+
+    // senderKeyFp: the server swaps the key the envelope names AND the caller
+    // matches it (the only way to reach the AAD with it) - still fails.
+    const tampered = clone(await enc());
+    tampered.encryption.senderFp = b64(otherFp);
+    await assert.rejects(
+        () => decryptDmAttachmentV2({ envelope: tampered, senderKeyFp: otherFp, key }),
+        isAuthFailure
+    );
+    // A caller fp that contradicts the envelope fails explicitly, before the AEAD.
+    const plain = await enc();
+    await assert.rejects(
+        () => decryptDmAttachmentV2({ envelope: plain, senderKeyFp: otherFp, key }),
+        /does not match the envelope senderFp/
+    );
+
+    // version: stripping 2 -> 1 is refused by the discriminator before any key work.
+    const stripped = clone(await enc());
+    stripped.encryption.version = 1;
+    await assert.rejects(
+        () => decryptDmAttachmentV2({ envelope: stripped, senderKeyFp: fp, key }),
+        /Unsupported encryption version/
+    );
+
+    // direction: a caller-chosen direction that contradicts the ids is refused
+    // when the AAD is built, so an AAD nobody can reproduce cannot exist.
+    assert.throws(
+        () => dmAttachmentAad({
+            version: 2, fromUserId: ALICE, toUserId: BOB,
+            senderKeyFp: fp, direction: 'b2a', iv: IV
+        }),
+        /contradicts directionLabel/
+    );
 });

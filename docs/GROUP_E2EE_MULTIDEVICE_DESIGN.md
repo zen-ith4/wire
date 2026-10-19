@@ -278,7 +278,8 @@ user the server names as its author.
    has a reserved, empty attachment slot in the signed bytes; an envelope carrying attachment fields is refused; the attachment
    bytes themselves are only AEAD-protected under the Sender Key, so any member could forge a file "from" the key's owner. Pinned
    by **C3-12** (`tests/groups/group-signing-messages.test.mjs`), which fails if any client module starts calling
-   `encryptAttachmentForGroup` and says what must be done first.
+   `encryptAttachmentForGroup` and says what must be done first. The binding design is specified in
+   `docs/GROUP_ATTACHMENTS_E2EE.md` (design only; not implemented in this step).
 6. **A hostile role through a hostile members API is not covered.** The real-Chromium test
    (`tests/groups/group-hostile-browser.test.mjs`) edits the database, where `group_members.role` is schema-constrained to
    `owner`/`admin`/`member`, so a hostile role cannot be stored and was not exercised; a server that answers the members API
@@ -386,7 +387,8 @@ Proposed text changes (not applied; the skill is outside this repository). State
 +20. Drop a superseded private signing key only after the new key is durably stored, after the KDM POST returned 201, under the lock; never share signing keys between devices.
 +21. Unverified is a permanent state: static placeholder, no retry; only "key not arrived" is retried.
 +22. Fail closed on every structural problem (lengths, point prefix and curve check, reply id type, signature length).
-+23. Before group attachments are ever enabled, bind their bytes into the signature.
++23. Before group attachments are ever enabled, bind their bytes into the signature. The binding design is
++   specified in `docs/GROUP_ATTACHMENTS_E2EE.md` (design only; not implemented in this step).
 
  ## Lifecycle cheat-sheet
 +- First send on a device: also requires an own key WITH a signing key (a row without one triggers a re-key); generate the key pair together with the root.

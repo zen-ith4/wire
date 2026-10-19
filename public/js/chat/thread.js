@@ -239,7 +239,7 @@ export function createMessageThread(config) {
                 </div>
                 ${buildReplyQuoteHtml(msg, scope)}
                 ${messageText ? `<div class="chat-bubble">${linkifyHtml(messageText)}</div>` : ''}
-                ${msg.has_attachment ? unsupportedAttachmentHtml(msg) : ''}
+                ${msg.has_attachment ? (msg.__groupAttachmentHtml || unsupportedAttachmentHtml(msg)) : ''}
                 ${renderReactionsRow(msg, scope)}
             </div>
         `;

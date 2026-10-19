@@ -13,11 +13,15 @@
 // bindDmMobileSwipeBack), no live-filtered picker search animation —
 // group creation/add-member reuse the same /api/share/users list
 // dm.js's picker already fetches, just without the extra polish.
-// Attachments are not wired at all (composer has no file input) —
-// see controllers/groups.controller.js's Phase-1 note and
-// media/attachments.js's Phase-4 TODOs; group messages never have
-// has_attachment=true yet, so thread.js's attachment code paths stay
-// correctly inert here.
+// Attachments are wired but OFF: GROUP_ATTACHMENTS_UI_ENABLED (see
+// chat/group-attachments-flag.js) ships as false, so the composer renders no
+// attach button and no file input and the page is exactly what it was
+// before. With the flag on, chat/group-attachments.js encrypts the file,
+// signs its bytes into the message envelope (the signed att_iv / att_ct_hash
+// / att_len are the receiver's authority) and the thread renders the
+// decrypted bytes. The server never sees the file name, mime or dimensions:
+// they travel inside the encrypted plaintext (docs/GROUP_ATTACHMENTS_E2EE.md,
+// section "3C").
 
 import { api } from '../core/api.js';
 import { getCurrentUser } from '../core/auth.js';
@@ -66,6 +70,15 @@ import { createTypingEmitter, createTypingIndicator, wireTypingInput } from './t
 import { getSocket } from '../core/socket.js';
 import { createComposer } from './composer.js';
 import { createMessageThread, wirePasteImage } from './thread.js';
+import { isGroupAttachmentsUiEnabled } from './group-attachments-flag.js';
+import {
+    prepareGroupAttachmentUpload,
+    parseGroupAttachmentPlaintext,
+    receiveGroupAttachment,
+    groupAttachmentHtml,
+    groupAttachmentUnavailableHtml,
+    sanitiseGroupFileName,
+} from './group-attachments.js';
 import { setActiveGroupIdGetter } from './reactions.js';
 
 import {
@@ -224,8 +237,18 @@ async function decryptReplyPreview(groupId, replyTo) {
     }
     try {
         const expect = replyTo.user_id != null ? { expectedSenderId: replyTo.user_id } : {};
-        const { plaintext } = await decryptIncomingGroupMessageDetailed(groupId, replyTo.content, replyTo.id, expect);
-        return { ...replyTo, content: plaintext };
+        const { plaintext, attachmentBinding } = await decryptIncomingGroupMessageDetailed(groupId, replyTo.content, replyTo.id, expect);
+        // A parent that carries a file: its plaintext is the META JSON. The
+        // quote shows the caption, or - for a caption-less file - the
+        // sanitised file name.
+        let text = plaintext;
+        if (attachmentBinding) {
+            const meta = parseGroupAttachmentPlaintext(plaintext);
+            text = meta
+                ? (meta.text || (meta.file ? sanitiseGroupFileName(meta.file.name) : ''))
+                : '';
+        }
+        return { ...replyTo, content: text };
     } catch (e) {
         return {
             ...replyTo,
@@ -258,7 +281,7 @@ export async function decorateGroupMessages(groupId, rawMessages, { live = false
             // key which authenticated this envelope (not a second parse).
             // The server's claims (author, reply target) are checked against the
             // VERIFIED envelope before anything is decrypted or rendered.
-            const { plaintext, senderKeyId, ownerUserId, replyToId } = await decryptIncomingGroupMessageDetailed(
+            const { plaintext, senderKeyId, ownerUserId, replyToId, attachmentBinding } = await decryptIncomingGroupMessageDetailed(
                 groupId, raw.content, raw.id,
                 { expectedSenderId: raw.sender_id, serverReplyToId: raw.reply_to_id ?? null }
             );
@@ -269,13 +292,49 @@ export async function decorateGroupMessages(groupId, rawMessages, { live = false
                 ? await decryptReplyPreview(groupId, raw.reply_to)
                 : null;
 
+            // STEP 3C: with a verified attachment binding the plaintext is the
+            // META JSON (the discriminator is the SIGNED att_* fields), not
+            // the caption. The caption is meta.text; the file name, mime and
+            // dimensions travel inside the encrypted plaintext and never
+            // reach the server.
+            let content = plaintext;
+            let attachmentHtml = null;
+            if (attachmentBinding) {
+                const meta = parseGroupAttachmentPlaintext(plaintext);
+                if (!meta || !meta.file) {
+                    // A malformed meta object: a per-row placeholder, never a
+                    // thrown error out of the thread.
+                    out.push({
+                        ...raw,
+                        sender_id: ownerUserId,
+                        content: '',
+                        senderKeyId,
+                        reply_to_id: replyToId,
+                        reply_to: quoted,
+                        __groupAttachmentHtml: groupAttachmentUnavailableHtml(),
+                    });
+                    continue;
+                }
+                content = meta.text;
+                try {
+                    const received = await receiveGroupAttachment({ groupId, raw, binding: attachmentBinding, senderKeyId });
+                    attachmentHtml = groupAttachmentHtml(raw, received);
+                } catch (e) {
+                    // attachment-mismatch (or any other failure): this row
+                    // shows the placeholder; the other rows are unaffected.
+                    console.warn(`[group] attachment ${raw.id} could not be rendered (${e?.message || e})`);
+                    attachmentHtml = groupAttachmentUnavailableHtml();
+                }
+            }
+
             out.push({
                 ...raw,
                 sender_id: ownerUserId,
-                content: plaintext,
+                content,
                 senderKeyId,
                 reply_to_id: replyToId,
                 reply_to: quoted,
+                ...(attachmentHtml ? { __groupAttachmentHtml: attachmentHtml } : {}),
             });
         } catch (e) {
             // Live arrival: let thread.js see the error so it can show a
@@ -597,6 +656,11 @@ function renderActiveGroupShell(group) {
     const panel = document.getElementById('group-active-panel');
     if (!panel) return;
 
+    // STEP 3C: with the flag off (the shipped value) the composer shows NO
+    // attach button and NO file input, so the group page is exactly what it
+    // was before this step.
+    const groupAttachmentsEnabled = isGroupAttachmentsUiEnabled();
+
     panel.innerHTML = `
         <div class="chat-top-bar">
             <button type="button" class="icon-btn dm-back-btn" title="Back" aria-label="Back" data-action="group-back">${ICONS.arrowLeft}</button>
@@ -611,7 +675,10 @@ function renderActiveGroupShell(group) {
         <div class="typing-indicator" id="group-typing-indicator"></div>
         <div class="composer-wrapper">
             <div class="reply-preview-bar" id="group-reply-preview"></div>
+            ${groupAttachmentsEnabled ? '<div class="attach-staging" id="group-staging-area"></div>' : ''}
             <div class="chat-input-area" id="group-input-area">
+                ${groupAttachmentsEnabled ? `<input type="file" id="group-file-input" class="hidden" multiple>
+                <button class="btn btn-ghost btn-icon" title="Attach" onclick="document.getElementById('group-file-input').click()">${ICONS.paperclip}</button>` : ''}
                 <button class="btn btn-ghost btn-icon emoji-trigger" title="Emoji" data-action="group-emoji">${ICONS.emoji}</button>
                 <textarea id="group-input" rows="1" placeholder="Message ${escapeHtmlAttr(group?.name || 'group')}…"></textarea>
                 <button type="button" data-action="group-send" class="btn-send" title="Send message (Enter) — Shift+Enter for a new line">${ICONS.send}</button>
@@ -623,9 +690,9 @@ function renderActiveGroupShell(group) {
 
     groupComposer = createComposer({
         inputId: 'group-input',
-        // fileInputId/stagingId point at ids that don't exist in the
-        // rendered markup above — group attachments aren't supported
-        // yet (see this file's top-of-file note). composer.js's
+        // fileInputId/stagingId point at ids that only exist in the
+        // rendered markup when GROUP_ATTACHMENTS_UI_ENABLED is on (the
+        // shipped value is off, so they do not resolve). composer.js's
         // file-staging code all gracefully no-ops when these ids
         // don't resolve to any element; passing concrete strings
         // here (rather than leaving them undefined) just avoids the
@@ -635,6 +702,23 @@ function renderActiveGroupShell(group) {
         stagingId: 'group-staging-area',
         replyPreviewId: 'group-reply-preview',
         sendTextUrl: `/api/groups/${group?.id}/messages`,
+        // STEP 3C: with the flag on, the composer can upload a file. The file
+        // is encrypted and signed into the message envelope by
+        // group-attachments.js, so the server only ever sees ciphertext. The
+        // composer appends reply_to_id itself.
+        ...(groupAttachmentsEnabled ? {
+            uploadUrl: `/api/groups/${group?.id}/upload`,
+            prepareUpload: async ({ file, caption, isVoice, replyToId }) => {
+                // The Sender Key first, before anything is encrypted.
+                await ensureSenderKeyReady(group.id);
+                return prepareGroupAttachmentUpload({
+                    file,
+                    caption,
+                    replyToId,
+                    groupId: group.id,
+                });
+            },
+        } : {}),
         // The reply target is part of the SIGNED envelope (the composer sends the same id
         // in the request body); it is normalised here so the signed and the sent value agree.
         buildTextBody: async (content, replyToId) => {

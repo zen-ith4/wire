@@ -19,7 +19,7 @@ of `docs/GROUP_ATTACHMENTS_FLAG_FLIP.md`.
 | What | Why | Where |
 |---|---|---|
 | Node 22 | the runner and the test files | `.node-version` (22.23.2) |
-| the tree's own dependencies | the server and the test helpers | `npm ci` |
+| the tree's own dependencies | the server and the test helpers | `npm ci` (with Node 22's npm 10 - see below) |
 | `puppeteer-core` + `@sparticuz/chromium` | the browser | **not** project dependencies: the harness resolves them from `CHROMIUM_DIR` (default `/tmp/browser-check`) - `tests/_acceptance-harness.mjs:324` |
 | a few shared libraries | the Chromium binary | see the Docker route below |
 
@@ -29,6 +29,21 @@ installed and that launched). Observed engine line on that run:
 `HeadlessChrome/153.0.8010.0` (i.e. `chromium (@sparticuz/chromium)`).
 Versions are pinned in scripts/run-browser-tests-linux.sh via
 PUPPETEER_VERSION / CHROMIUM_VERSION.
+
+**Use Node 22 (npm 10), not a newer Node.** `package-lock.json` lists only
+one of esbuild's optional platform packages (`@esbuild/linux-x64`). npm
+10.9 (Node 22) accepts that and `npm ci` installs; npm 11.19 refuses it
+(`npm ci can only install packages when your package.json and
+package-lock.json ... are in sync`, `Missing: fsevents@2.3.3 from lock
+file`, ...). `better-sqlite3@11.10.0` also has no prebuilt binary for Node
+24 on Windows. Observed on Windows in the STEP 3F review; the
+`node:22-bookworm` image of Route 2 already uses Node 22.
+
+**Recommended: Route 1 (WSL2).** Route 2 needs Docker with a Linux daemon,
+and must **not** be started from Git Bash on Windows: MSYS rewrites the
+`-v "$TREE:/src:ro"` and `-v "$WORK:/work"` arguments as Windows paths, so
+the bind mount breaks (the script refuses to run there). Start it from a
+WSL2 shell or from a Linux host.
 
 ---
 
@@ -66,7 +81,7 @@ node --experimental-test-module-mocks --env-file=tests/test.env \
 The first TAP lines must name the project's own browser:
 
 ```
-# # browser: chromium (@sparticuz/chromium) HeadlessChrome/153.0.0.0
+# # browser: chromium (@sparticuz/chromium) HeadlessChrome/153.0.8010.0
 ok 1 - 1 honest send and receive: an image renders inline, a PDF is a download
 ...
 # tests 10
@@ -84,9 +99,14 @@ happens only when `WIRE_TEST_ALLOW_SYSTEM_BROWSER=1` is set, so unset it
 ## Route 2 - Docker (one command)
 
 ```sh
-# from the tree root
+# from the tree root, in a WSL2 shell or on a Linux host (NOT Git Bash)
 scripts/run-browser-tests-linux.sh
 ```
+
+The container uses a named volume (`WORK=wire-browser-tests`, mounted at
+`/work`) and starts with `rm -rf /work/tree`: that deletes only the previous
+copy inside that volume, never the tree on the host (the host tree is
+mounted read-only at `/src`).
 
 That script runs, in one `docker run`:
 

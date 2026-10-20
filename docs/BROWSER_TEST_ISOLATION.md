@@ -66,6 +66,11 @@ export async function newUserPage({ viewport = { width: 1280, height: 900 }, tim
 Every test file's `after` hook calls `await closeUserBrowsers()`. `tests/groups/group-e2e-browser.test.mjs`
 already worked this way before this change and is the reference implementation.
 
+A file whose tests each build their own world (a fresh server and fresh pages per test) must
+also tear that world down in `afterEach` - close the browsers, stop the server, remove its work
+dir - or every earlier test's browsers and server child stay alive until the file ends
+(STEP 3F, `tests/groups/group-attachment-browser.test.mjs`).
+
 ## 2. Why a shared profile corrupts the tests at all
 
 This is the original bug the helper was written for, and it is worth keeping in the record.

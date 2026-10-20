@@ -19,7 +19,7 @@ The flag is read in **exactly one place**: `renderActiveGroupShell`
 | the composer's `uploadUrl` / `prepareUpload` (`group.js:739-743`) | the crypto, the server, the stored rows |
 
 So the flag is a **sending** switch, not a reading switch. That is what makes
-the rollback in section 6 harmless.
+the rollback in section 2.6 harmless.
 
 **In plain words:** a group member running a build with the flag OFF can
 still make the receivers of their messages **download small images** - the
@@ -44,7 +44,7 @@ bounded (STEP 3E):
 ### 2.1 The browser tests pass on Linux with the project's own Chromium
 
 The project's browser is `@sparticuz/chromium` (a **Linux** binary). The
-STEP 3D browser results were produced on **Windows with the system Chrome**,
+STEP 3D-3F browser results were produced on **Windows with the system Chrome**,
 because the Linux binary cannot run here - and since STEP 3D item 4 that
 fallback is **opt-in** and the run says which engine it used.
 
@@ -166,7 +166,7 @@ the client that can decrypt it.
 7. Device B: leave the group and re-open it. The already sent files must
    still be readable (they are fetched again when their rows become
    visible).
-8. Device A: send a file, then flip the flag back to `false` (see section 6)
+8. Device A: send a file, then flip the flag back to `false` (see section 2.6)
    and reload. Device B must still be able to read the file.
 
 ### 2.6 The rollback
@@ -188,6 +188,22 @@ So the rollback is **safe and non-destructive**: nothing on the server is
 touched, and the flag is the only thing that changes.
 
 - [ ] the owner has read section 2.6 and accepts it
+
+### 2.7 The STEP 3F gate (the Linux findings)
+
+STEP 3F could not run Linux (no WSL, no Docker on the agent's machine), so
+items 1-3 below are **BLOCKED / NOT RUN**, not passed.
+
+- [ ] three **consecutive** green runs of
+      `tests/groups/group-attachment-browser.test.mjs` on Linux (10/10 each,
+      the `# browser:` line says `chromium (@sparticuz/chromium)`), with the
+      count of Chromium processes alive after the file (STEP 3F item 1)
+- [ ] DM test `c1` in `tests/dm-v2-attachments-browser.test.mjs` (`0 !== 2`
+      on Linux) explained: old, caused by STEP 3C-3E, or environmental
+      (STEP 3F item 2)
+- [ ] `docs/RUN_BROWSER_TESTS_LINUX.md` run for real, and the non-browser
+      suite summary on Linux in both modes (STEP 3F item 3)
+- [ ] the owner's decision on the 50 MB client ceiling (section 4)
 
 ---
 
@@ -219,20 +235,24 @@ is small and stays inside the same envelope:
 
 Nothing in this section is implemented, and nothing may be implemented before
 the checklist above is ticked.
+
 ---
 
-## 7. The client hard ceiling (50 MB): options, not a decision
+## 4. The client hard ceiling (50 MB): options, not a decision
 
-STEP 3F clamps the server's reported cap to a client ceiling of 50 MB
+STEP 3E clamps the server's reported cap to a client ceiling of 50 MB
 (`MAX_GROUP_ATTACHMENT_HARD_MAX_MB`, `public/js/chat/group-attachments.js:62`).
 A server configured above 50 MB produces files the server accepts and the
-receivers refuse. Three options; **no code changes in this step**.
+receivers refuse. Three options; **no code changes in this step** (STEP 3F
+item 4).
 
 **(a) Keep 50 MB and refuse above it at the server too.** Cap
-`GROUP_UPLOAD_MAX_MB` at the ceiling in `config/constants.js` (one line):
+`GROUP_UPLOAD_MAX_MB` at the ceiling in `config/constants.js:144` (one line):
 
-    // config/constants.js
-    GROUP_UPLOAD_MAX_MB: Math.min(process.env.GROUP_UPLOAD_MAX_MB || 50, 50),
+    // config/constants.js:144 today
+    GROUP_UPLOAD_MAX_MB: Number(process.env.GROUP_UPLOAD_MAX_MB) || 50,
+    // with option (a)
+    GROUP_UPLOAD_MAX_MB: Math.min(Number(process.env.GROUP_UPLOAD_MAX_MB) || 50, 50),
 
 Cheapest, keeps the client simple, and makes the two sides agree. Cost: a
 deployment that wants bigger files must change the ceiling in both places.

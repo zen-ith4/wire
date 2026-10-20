@@ -22,6 +22,17 @@
 
 set -euo pipefail
 
+# Git Bash / MSYS on Windows rewrites the "-v host:container" arguments below
+# as Windows path lists, so the bind mount breaks. Run from WSL2 instead
+# (docs/RUN_BROWSER_TESTS_LINUX.md, Route 1 is the recommended route).
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*)
+    echo "run-browser-tests-linux.sh: refusing to run under $(uname -s) (Git Bash/MSYS breaks the docker bind mounts)." >&2
+    echo "Run it from a WSL2 shell or a Linux host - see docs/RUN_BROWSER_TESTS_LINUX.md." >&2
+    exit 2
+    ;;
+esac
+
 TREE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 IMAGE="${IMAGE:-node:22-bookworm}"
 WORK="${WORK:-wire-browser-tests}"

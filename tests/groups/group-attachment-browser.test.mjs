@@ -19,7 +19,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { test, after } from 'node:test';
+import { test, after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
@@ -46,6 +46,21 @@ const PDF = Buffer.from('%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Roo
 
 let server = null;
 let fixtureDir = null;
+
+// Every test builds its own world() - a server child and one browser per
+// account - so tear it down after EVERY test, pass or fail. Before STEP 3F
+// only the file-level `after` cleaned up, and only the LAST server: a full
+// run kept ten servers and twenty-odd browsers alive at once, and the load
+// of the earlier tests leaked into the later ones.
+afterEach(async () => {
+    await closeUserBrowsers();
+    const s = server;
+    server = null;
+    if (s) {
+        await Promise.race([s.stop().catch(() => {}), sleep(8000)]);
+        try { fs.rmSync(s.work, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* best effort */ }
+    }
+});
 
 after(async () => {
     await closeUserBrowsers();
@@ -343,9 +358,13 @@ test('6 the sanitised name is used for BOTH the visible text and the download at
     //
     // STEP 3F item 0: the name is carried by a File built IN THE PAGE (via
     // DataTransfer), not by a file on disk. On Linux + @sparticuz/chromium the
-    // OS file input did not carry a name with a leading dot + a bidi override,
-    // so the staging step depended on the platform instead of on the receiver's
-    // sanitiser. The bytes are a plain PDF; only the NAME is hostile.
+    // staging chip never appeared when this name went through uploadFile();
+    // why (Chromium dropping the file, or the fixture not being written under
+    // that name) was not established - 3F had no Linux. composer.js does not
+    // reject names (public/js/chat/composer.js:686, addFiles). Building the
+    // File in the page takes the OS out of the test. The bytes are a plain
+    // PDF; only the NAME is hostile. The node-level half of the property is
+    // tests/groups/group-attachment-filename.test.mjs.
     const rawName = '.bashrc\u202Egnp.pdf';
     const pdf = fixture('doc.pdf', PDF);
     await sendFileWithHostileName(w.alicePage, w.gid, pdf, rawName, 'a document');
@@ -457,6 +476,35 @@ test('8 the download queue never has more than 2 downloads in flight', async (t)
     assert.ok(conc.max <= 2, `at most 2 downloads may be in flight, saw ${conc.max}`);
 });
 
+test('9 a file over the auto-load limit waits for an explicit click', async (t) => {
+    const w = await world();
+    await enableFlag(w.alicePage);
+    await enableFlag(w.bobPage);
+
+    // 6 MB: over GROUP_ATTACHMENT_AUTO_LOAD_MAX_BYTES (5 MB).
+    const big = Buffer.concat([PNG, Buffer.alloc(6 * 1024 * 1024, 3)]);
+    await sendFile(w.alicePage, w.gid, fixture('big.png', big), 'a big picture');
+
+    const btn = await bobSees(w.bobPage, w.gid, '#group-messages button.chat-attachment-download');
+    assert.ok(btn, 'the row must offer a download button');
+    const label = await w.bobPage.$eval('#group-messages button.chat-attachment-download', (e) => e.textContent);
+    assert.match(label, /Download \(6\.0 MB\)/, `the button must name the size, got ${label}`);
+
+    // It must NOT have been auto-loaded.
+    await sleep(1500);
+    assert.equal(
+        await w.bobPage.$$eval('#group-messages .chat-attachment-image', (e) => e.length),
+        0,
+        'a file over the auto-load limit must not be fetched automatically'
+    );
+
+    // The explicit click loads it.
+    await clickIn(w.bobPage, '#group-messages button.chat-attachment-download');
+    await sleep(3000);
+    const img = await bobSees(w.bobPage, w.gid, '#group-messages .chat-attachment-image');
+    assert.ok(img, 'the click must load the file');
+});
+
 test('10 a hostile relay answers with a 100 MB body for a 1 KB file: the row shows "Attachment unavailable" and almost nothing is read', async (t) => {
     const w = await world();
     await enableFlag(w.alicePage);
@@ -510,32 +558,4 @@ test('10 a hostile relay answers with a 100 MB body for a 1 KB file: the row sho
 
     const read = await bob2.evaluate(() => globalThis.__bytesRead);
     assert.ok(read < 1024 * 1024, `the client must not read the 100 MB body, it read ${read} bytes`);
-});
-
-test('9 a file over the auto-load limit waits for an explicit click', async (t) => {    const w = await world();
-    await enableFlag(w.alicePage);
-    await enableFlag(w.bobPage);
-
-    // 6 MB: over GROUP_ATTACHMENT_AUTO_LOAD_MAX_BYTES (5 MB).
-    const big = Buffer.concat([PNG, Buffer.alloc(6 * 1024 * 1024, 3)]);
-    await sendFile(w.alicePage, w.gid, fixture('big.png', big), 'a big picture');
-
-    const btn = await bobSees(w.bobPage, w.gid, '#group-messages button.chat-attachment-download');
-    assert.ok(btn, 'the row must offer a download button');
-    const label = await w.bobPage.$eval('#group-messages button.chat-attachment-download', (e) => e.textContent);
-    assert.match(label, /Download \(6\.0 MB\)/, `the button must name the size, got ${label}`);
-
-    // It must NOT have been auto-loaded.
-    await sleep(1500);
-    assert.equal(
-        await w.bobPage.$$eval('#group-messages .chat-attachment-image', (e) => e.length),
-        0,
-        'a file over the auto-load limit must not be fetched automatically'
-    );
-
-    // The explicit click loads it.
-    await clickIn(w.bobPage, '#group-messages button.chat-attachment-download');
-    await sleep(3000);
-    const img = await bobSees(w.bobPage, w.gid, '#group-messages .chat-attachment-image');
-    assert.ok(img, 'the click must load the file');
 });

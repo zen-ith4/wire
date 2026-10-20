@@ -39,9 +39,10 @@ true is an owner step, and it happens only after the checklist in
 `docs/GROUP_ATTACHMENTS_FLAG_FLIP.md` is ticked. The browser tests
 (tests/groups/group-attachment-browser.test.mjs) PASSED on **Windows with the
 system Chrome** - the project's own `@sparticuz/chromium` ships a Linux binary
-and cannot run there, so the Linux run is still open. The client also cannot
-learn the server's upload cap yet (there is no `GET /api/groups/limits`): see
-the STOP in STEP 3D item 3.
+and cannot run there, so the Linux run is still open. On Linux the reviewer
+saw test 6 fail (rewritten in STEP 3F item 0), tests 2 and 3 fail in a full
+sequential run, and the DM test `c1` fail; STEP 3F had no Linux, so those
+items are BLOCKED (`docs/GROUP_ATTACHMENTS_FLAG_FLIP.md`, section 2.7).
 
 Base tree: `wire-final-33` (design), `wire-final-34` (STEP 3B implementation).
 Every claim about current behaviour carries a `file:line` citation, re-checked

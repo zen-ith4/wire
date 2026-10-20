@@ -11,15 +11,31 @@ manifest (item 7 of STEP 3D).
 ## 1. What the flag actually gates
 
 The flag is read in **exactly one place**: `renderActiveGroupShell`
-(`public/js/chat/group.js:683`).
+(`public/js/chat/group.js:684`).
 
 | Gated by the flag | Not gated by the flag |
 |---|---|
-| the attach button and the file input in the group composer (`group.js:699-701`) | the RECEIVE path: a received group attachment is decrypted and rendered whatever the flag says (`group.js:309`, `if (attachmentBinding)`) |
-| the composer's `uploadUrl` / `prepareUpload` (`group.js:734`) | the crypto, the server, the stored rows |
+| the attach button and the file input in the group composer (`group.js:700-702`) | the RECEIVE path: a received group attachment is decrypted and rendered whatever the flag says (`group.js:310`, `if (attachmentBinding)`) |
+| the composer's `uploadUrl` / `prepareUpload` (`group.js:739-743`) | the crypto, the server, the stored rows |
 
 So the flag is a **sending** switch, not a reading switch. That is what makes
 the rollback in section 6 harmless.
+
+**In plain words:** a group member running a build with the flag OFF can
+still make the receivers of their messages **download small images** - the
+receive path is not behind the flag. That is why the receive path is
+bounded (STEP 3E):
+
+- the download is bounded by the **signed** size, never by what the server
+  sends (`public/js/chat/group-attachments.js:669`,
+  `fetchGroupAttachmentCiphertext`, and `:609`, `readBoundedAttachmentBody`);
+- at most **20 MB** may be auto-loaded per thread view
+  (`public/js/chat/group-attachments.js:758`,
+  `GROUP_ATTACHMENT_AUTO_LOAD_BUDGET_BYTES`), and at most **2** downloads run
+  at the same time;
+- a file bigger than the client's own ceiling is refused before a request
+  is even sent (`public/js/chat/group-attachments.js:70`,
+  `MAX_GROUP_ATTACHMENT_PLAINTEXT_BYTES`).
 
 ---
 
@@ -53,8 +69,9 @@ ok 6 - 6 the sanitised name is used for BOTH the visible text and the download a
 ok 7 - 7 the file is NOT fetched while the thread is decorated
 ok 8 - 8 the download queue never has more than 2 downloads in flight
 ok 9 - 9 a file over the auto-load limit waits for an explicit click
-# tests 9
-# pass 9
+ok 10 - 10 a hostile relay answers with a 100 MB body for a 1 KB file
+# tests 10
+# pass 10
 # fail 0
 ```
 
@@ -74,15 +91,26 @@ ok 9 - 9 a file over the auto-load limit waits for an explicit click
       (`public/js/chat/group-attachments.js`: the placeholder, the
       IntersectionObserver, the 2-download queue, the abort, the blob-URL
       revocation)
-- [ ] **item 3** (the client upload cap) - **OPEN, a documented STOP**: the
-      client cannot learn `GROUP_UPLOAD_MAX_MB`, because the only mechanism
-      the project has is `GET /api/dm/limits`
-      (`public/js/media/attachment-e2ee.js:288-303`) and there is **no group
-      equivalent** (`routes/groups.routes.js` has no `/limits` route, and
-      `routes/` is out of scope for STEP 3D). The client therefore uses
-      `DEFAULT_GROUP_ATTACHMENT_UPLOAD_MAX_MB` (50) and the SERVER stays the
-      authority. **The owner has to decide** whether to add
-      `GET /api/groups/limits` in a later step.
+- [x] **item 3** (the client upload cap) - **CLOSED in STEP 3E**: the
+      endpoint exists now, `GET /api/groups/limits`
+      (`routes/groups.routes.js:68`), served by
+      `controllers/groups.controller.js:126` and read by the client at
+      `public/js/chat/group-attachments.js:97` (`getGroupUploadLimitMb`). It
+      is fetched once per session, it is the upload pre-check, and it is
+      **clamped** to the client's own hard ceiling
+      (`public/js/chat/group-attachments.js:62`,
+      `MAX_GROUP_ATTACHMENT_HARD_MAX_MB`) - a hostile server cannot raise
+      the client's own memory bound. If the request fails, the client falls
+      back to the named default and the server stays the authority.
+- [x] **item 0** (the bounded download) - **CLOSED in STEP 3E**: the
+      download is bounded by the signed `att_len`; a lying `Content-Length`
+      aborts the request before the body is read, and the body is read with a
+      hard bound that cancels the stream the moment it delivers more than
+      was signed (`public/js/chat/group-attachments.js:609`).
+- [x] **the per-thread auto-load budget** (STEP 3E item 2): 20 MB per thread
+      view (`public/js/chat/group-attachments.js:758`), so a flooding group
+      member cannot make every client download 5 MB for hundreds of
+      messages.
 
 ### 2.3 The clients that load `public/`
 
@@ -106,7 +134,7 @@ canonical bytes differ and **the signature does not verify**.
 
 An old client therefore shows the group message as an **unverified
 placeholder** - the neutral, static text "Message could not be verified"
-(`public/js/chat/group.js:238`, `UNVERIFIED_HTML`, and `group.js:369`,
+(`public/js/chat/group.js:239`, `UNVERIFIED_HTML`, and `group.js:370`,
 `out.push(unverifiedPlaceholder(raw))`). It is not retried and nothing
 crashes; the message is simply not readable on that client.
 
@@ -147,9 +175,9 @@ Flipping `GROUP_ATTACHMENTS_UI_ENABLED` back to `false` and reloading the
 client:
 
 - the attach button, the file input and the staging area are gone
-  (`group.js:699-701`) - sending is off again;
+  (`group.js:700-702`) - sending is off again;
 - **the already stored attachment messages stay readable**: the receive path
-  is not behind the flag (`group.js:309`), so the rows are still decrypted
+  is not behind the flag (`group.js:310`), so the rows are still decrypted
   and rendered;
 - the rows that were already downloaded keep their blob URLs only until the
   thread is torn down or the group is left

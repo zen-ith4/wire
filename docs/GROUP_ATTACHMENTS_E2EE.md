@@ -1,8 +1,8 @@
 # Group attachments: E2EE design (STEP 3A) + crypto layer (STEP 3B)
 
-Status: **the crypto layer (STEP 3B), the whole client path (STEP 3C) and
-the hardening (STEP 3D) are implemented; the UI stays behind
-`GROUP_ATTACHMENTS_UI_ENABLED`, which ships as FALSE.**
+Status: **the crypto layer (STEP 3B), the whole client path (STEP 3C), the
+hardening (STEP 3D) and the bounded receive path (STEP 3E) are implemented;
+the UI stays behind `GROUP_ATTACHMENTS_UI_ENABLED`, which ships as FALSE.**
 
 What is in place: the file bytes (iv, ciphertext hash, plaintext length) are
 bound into the per-message ECDSA signature; the receive side refuses a file whose
@@ -15,6 +15,23 @@ refuses before anything is encrypted, the file name is sanitised harder, the
 receive path is **lazy** (the file is fetched when its row becomes visible, at
 most two downloads at a time, and only a small image is auto-loaded), and the
 browser-test fallback is opt-in.
+
+STEP 3E bounded the receive path against a hostile server:
+
+- the download is bounded by the **signed** `att_len`: a signed size above the
+  client's own ceiling is refused **before a request is sent**, a
+  `Content-Length` that is not exactly `att_len + 16` aborts the request
+  before the body is read, and the body is read with a hard bound that
+  cancels the stream the moment it delivers more than was signed
+  (`public/js/chat/group-attachments.js`);
+- a **replayed** file (the same blob under a fresh message id) is a
+  permanent failure, not a retry;
+- at most **20 MB** may be auto-loaded per thread view
+  (`GROUP_ATTACHMENT_AUTO_LOAD_BUDGET_BYTES`), so a flooding group member
+  cannot make every client download 5 MB for hundreds of messages;
+- the client learns the server's upload cap from `GET /api/groups/limits`
+  (`routes/groups.routes.js:68`) - but it never trusts a value above its own
+  compiled-in hard ceiling.
 
 What is NOT in place: the feature flag is FALSE, so the group page shows no
 attach button, no file input and no file paste/drop path. Flipping the flag to
@@ -92,9 +109,9 @@ anything is decrypted (design doc `:167`; `message-crypto.js:400-412`).
 
 ### What the server stores for a group file
 
-`routes/groups.routes.js:81-88`: `POST /:groupId/upload` (authenticated, `requireGroupProtocol`, `uploadLimiter`, `groupUpload.single('file')`, then `sendMessageWithAttachmentHandler`).
+`routes/groups.routes.js:88-97`: `POST /:groupId/upload` (authenticated, `requireGroupProtocol`, `uploadLimiter`, `groupUpload.single('file')`, then `sendMessageWithAttachmentHandler`).
 
-`controllers/groups.controller.js:609-688` `sendMessageWithAttachmentHandler`:
+`controllers/groups.controller.js:608-687` `sendMessageWithAttachmentHandler`:
 - Requires `attachment_iv` (base64, validated line 642-645) — stored but **not** bound into anything signed.
 - Stores `req.file.filename` (random server-generated name), `originalName` (client's, via `path.basename`), `req.file.size`, `mime` (client-supplied, default `application/octet-stream`), `replyToId`, `isVoiceMessage`, `width`, `height`, `attachmentIv` via `insertGroupMessageWithAttachment` (line 665-679).
 - The uploaded bytes **are** the Sender-Key-encrypted ciphertext; mime/dimensions/voice flag come from the sender's client only, never sniffed server-side (line 637-638).

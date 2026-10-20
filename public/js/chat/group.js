@@ -664,13 +664,19 @@ export async function openGroup(groupId) {
 
     const thread = getOrCreateThread(groupId);
 
-    if (thread.cache.initialized) {
-        await thread.retryPlaceholders();
-        if (activeGroupId !== groupId) return;
-        thread.paintFromCache();
-        void thread.syncSince();
-    } else {
-        await thread.loadRecent();
+    try {
+        if (thread.cache.initialized) {
+            await thread.retryPlaceholders();
+            if (activeGroupId !== groupId) return;
+            thread.paintFromCache();
+            void thread.syncSince();
+        } else {
+            await thread.loadRecent();
+        }
+    } finally {
+        // After the paint: only the rows that did not come back (the group
+        // we left, a deleted message) are still detached.
+        if (activeGroupId === groupId) abortDetachedGroupAttachments();
     }
 }
 
@@ -708,9 +714,12 @@ function renderActiveGroupShell(group) {
         </div>
     `;
 
-    // STEP 3D item 2: the rows of the group we are leaving are no longer in
-    // the DOM, so their downloads are aborted and their blob URLs revoked.
-    abortDetachedGroupAttachments();
+    // STEP 3D item 2: the rows that left the DOM are aborted - but NOT here.
+    // The shell has just replaced the message list, so EVERY row is detached
+    // at this point, including the rows of this very group that the thread
+    // paint is about to re-register. The callers abort after the paint
+    // (STEP 3F follow-up 3.A: a download clicked just before a repaint was
+    // silently reset to idle).
     // STEP 3E item 2: a new thread view gets a fresh auto-load budget, so a
     // flooding group member cannot spend the budget of the next view.
     resetGroupAttachmentAutoLoadBudget();
@@ -1270,5 +1279,6 @@ export function handleGroupUpdated(payload) {
         renderActiveGroupShell(group);
         renderMemberBar();
         groupThreads.get(activeGroupId)?.paintFromCache();
+        abortDetachedGroupAttachments();
     }
 }

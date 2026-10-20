@@ -168,6 +168,20 @@ async function bobSees(bobPage, gid, selector, timeout = 25000) {
     return waitFor(async () => bobPage.$(selector), timeout, 250);
 }
 
+/** The loader's state of one row, read from the page's own module. */
+async function rowState(page, id) {
+    return page.evaluate(async (i) => {
+        const m = await import('/js/chat/group-attachments.js');
+        return m.groupAttachmentRowState(i);
+    }, String(id));
+}
+
+/** Polls until the row reaches one of `states` (an exact postcondition, not a timer). */
+async function waitRowState(page, id, states, timeout = 30000) {
+    const ok = await waitFor(async () => states.includes(await rowState(page, id)), timeout, 100);
+    return ok ? rowState(page, id) : `timeout in state ${await rowState(page, id)}`;
+}
+
 function db() {
     return new Database(server.dbPath, { readonly: true, fileMustExist: true });
 }
@@ -285,9 +299,14 @@ test('3 a hostile relay serves file A under message B: the row shows "Attachment
     // click (STEP 3D item 2), and only then is the swap noticed.
     const btn = await bobSees(bob2, w.gid, '#group-messages button.chat-attachment-download');
     assert.ok(btn, 'the row must offer a download button');
+    // The row is registered with the loader before the click (a settled
+    // thread), and the end state is polled - no sleep, no re-open of the
+    // group (re-opening repaints the thread, STEP 3F follow-up 3.A).
+    assert.equal(await waitRowState(bob2, rows[1].id, ['idle']), 'idle', 'the row must be registered before the click');
     await clickIn(bob2, '#group-messages button.chat-attachment-download');
-    await sleep(2500);
-    const placeholder = await bobSees(bob2, w.gid, '#group-messages .chat-attachment-unsupported');
+    assert.equal(await waitRowState(bob2, rows[1].id, ['mismatch', 'loaded', 'error']), 'mismatch',
+        'the swapped file must end in the "mismatch" state');
+    const placeholder = await bob2.$('#group-messages .chat-attachment-unsupported');
     assert.ok(placeholder, 'the row whose file was swapped must show the placeholder');
 });
 
@@ -558,4 +577,46 @@ test('10 a hostile relay answers with a 100 MB body for a 1 KB file: the row sho
 
     const read = await bob2.evaluate(() => globalThis.__bytesRead);
     assert.ok(read < 1024 * 1024, `the client must not read the 100 MB body, it read ${read} bytes`);
+});
+
+test('11 a download clicked just before a thread repaint still finishes (STEP 3F follow-up 3.A)', async (t) => {
+    const w = await world();
+    await enableFlag(w.alicePage);
+    await enableFlag(w.bobPage);
+
+    await sendFile(w.alicePage, w.gid, fixture('doc.pdf', PDF), 'a document');
+    const d = db();
+    const msgId = d.prepare('SELECT id FROM group_messages WHERE group_id = ? AND attachment_path IS NOT NULL ORDER BY id DESC LIMIT 1').get(w.gid).id;
+    d.close();
+
+    const btn = await bobSees(w.bobPage, w.gid, '#group-messages button.chat-attachment-download');
+    assert.ok(btn, 'the PDF row must offer a download button');
+    assert.equal(await waitRowState(w.bobPage, msgId, ['idle']), 'idle', 'the row must be registered before the click');
+
+    // The attachment request is held for 1.5 s, so the repaint below lands
+    // while the download is in flight.
+    await w.bobPage.evaluate(() => {
+        const orig = window.fetch;
+        window.fetch = async (...args) => {
+            if (String(args[0]).includes('/attachments/')) await new Promise((r) => setTimeout(r, 1500));
+            return orig(...args);
+        };
+    });
+
+    // The click, then - in the same task - a repaint: re-opening the group
+    // replaces the shell and the message list (renderActiveGroupShell).
+    const started = await w.bobPage.evaluate(async (id, gid) => {
+        document.querySelector('#group-messages button.chat-attachment-download').click();
+        const m = await import('/js/chat/group-attachments.js');
+        const state = m.groupAttachmentRowState(String(id));
+        document.querySelector(`.group-row[data-group-id="${gid}"]`).click();
+        return state;
+    }, String(msgId), w.gid);
+    assert.ok(['queued', 'loading'].includes(started), `the click must start the download, got ${started}`);
+
+    // Before the fix the repaint reset the row to 'idle' and the button stayed.
+    assert.equal(await waitRowState(w.bobPage, msgId, ['loaded', 'mismatch', 'error']), 'loaded',
+        'the download must survive the repaint and finish');
+    const link = await waitFor(async () => w.bobPage.$('#group-messages a.chat-attachment-download'), 15000, 100);
+    assert.ok(link, 'the loaded file is rendered into the repainted row');
 });

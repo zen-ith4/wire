@@ -252,7 +252,7 @@ test('2 a hostile relay swaps the stored blob: that row shows "Attachment unavai
     await openGroupUi(w.alicePage, w.gid);
     await w.alicePage.type('#group-input', 'just text');
     await w.alicePage.evaluate(() => window.sendGroupMessage());
-    await sleep(500);
+    await w.alicePage.waitForFunction(() => /just text/.test(document.getElementById('group-messages').innerText), { timeout: 30000 });
 
     await bobSees(w.bobPage, w.gid, '#group-messages .chat-attachment-image');
     assert.ok(await w.bobPage.$('#group-messages .chat-attachment-image'), 'the image renders before the swap');
@@ -339,17 +339,26 @@ test('4 no key / iv / hash / ciphertext material reaches the DOM, not even in a 
     const msgId = d3.prepare('SELECT id FROM group_messages WHERE group_id = ? AND attachment_path IS NOT NULL ORDER BY id DESC LIMIT 1').get(w.gid).id;
     d3.close();
     assert.ok(msgId, 'the message must have an id');
-    await w.alicePage.evaluate((id) => { window.replyToGroupMessage && window.replyToGroupMessage(id); }, msgId);
-    await sleep(300);
+    // STEP 3F follow-up 3.B: this used window.replyToGroupMessage, which does
+    // not exist (the group reply entry point is thread.js window.threadReply),
+    // so no quote was ever made and the check below passed on the original
+    // caption. threadReply() returns silently while the message is not in the
+    // thread cache, so it is retried until the reply preview is up.
+    const engaged = await waitFor(() => w.alicePage.evaluate((id) => {
+        window.threadReply('group', Number(id));
+        return !!document.querySelector('#group-reply-preview.active .reply-preview-body');
+    }, msgId), 20000, 200);
+    assert.ok(engaged, 'the composer must enter reply mode for the attachment message');
     await w.alicePage.type('#group-input', 'a reply');
     await w.alicePage.evaluate(() => window.sendGroupMessage());
-    await sleep(800);
+    const quoted = await waitFor(() => w.alicePage.$('#group-messages .reply-quote'), 30000, 200);
+    assert.ok(quoted, 'the reply must render a quote of the attachment message');
 
     const aliceHtml = await w.alicePage.evaluate(() => document.body.innerHTML);
     for (const secret of secrets) {
         assert.ok(!aliceHtml.includes(secret), 'the quote must not contain key material');
     }
-    const quoteText = await w.alicePage.$eval('#group-messages', (e) => e.innerText);
+    const quoteText = await w.alicePage.$eval('#group-messages .reply-quote', (e) => e.innerText);
     assert.match(quoteText, /photo\.png|a picture/, 'the quote shows the file name or the caption');
 });
 
@@ -517,10 +526,17 @@ test('9 a file over the auto-load limit waits for an explicit click', async (t) 
         'a file over the auto-load limit must not be fetched automatically'
     );
 
-    // The explicit click loads it.
+    // The explicit click loads it (the end state is polled; re-opening the
+    // group here would repaint the thread).
+    const bigId = (() => {
+        const d = db();
+        const r = d.prepare('SELECT id FROM group_messages WHERE group_id = ? AND attachment_path IS NOT NULL ORDER BY id DESC LIMIT 1').get(w.gid);
+        d.close();
+        return r.id;
+    })();
     await clickIn(w.bobPage, '#group-messages button.chat-attachment-download');
-    await sleep(3000);
-    const img = await bobSees(w.bobPage, w.gid, '#group-messages .chat-attachment-image');
+    assert.equal(await waitRowState(w.bobPage, bigId, ['loaded', 'mismatch', 'error'], 60000), 'loaded', 'the click must load the file');
+    const img = await w.bobPage.$('#group-messages .chat-attachment-image');
     assert.ok(img, 'the click must load the file');
 });
 

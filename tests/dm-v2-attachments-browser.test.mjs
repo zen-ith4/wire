@@ -1,7 +1,13 @@
 // tests/dm-v2-attachments-browser.test.mjs
 //
 // STEP 2B.1: DM attachment E2EE through REAL BROWSERS. One process per
-// account, reload + re-login, exact-postcondition polls, no fixed sleeps.
+// account, reload + re-login, exact-postcondition polls. STEP 3F follow-up
+// 3.B replaced the fixed sleeps that stood in for "the server stored the row",
+// "the parent is in the thread cache" and "the thread has rendered" with
+// polls on those exact postconditions (poll / newRow / replyTo /
+// threadSettled below). The sleeps left: the login settle, the last open of
+// test d (nothing is asserted after it) and the Windows file-lock pause in
+// the teardown.
 // NO production change: this file exercises the code shipped in 2A.
 //
 // Base: the reviewer's reference probe (tests/_reference/probe-attachment-v2.mjs).
@@ -38,7 +44,6 @@ async function stageAndSend(page, filePath, caption) {
   if (caption) await page.type('#dm-input', caption);
   await page.evaluate(() => window.sendDm());
   await page.waitForFunction((n) => document.querySelectorAll('#dm-thread .chat-msg').length > n, { timeout: 30000 }, before);
-  await sleep(300);
   return before;
 }
 
@@ -72,6 +77,43 @@ function tamper(dbPath, rowId, mutator) {
 
 function readDb(dbPath, sql, ...args) { const db = openDb(dbPath); const r = db.prepare(sql).get(...args); db.close(); return r; }
 
+/** Polls fn() until it returns a truthy value or the time is up; returns the last value. */
+async function poll(fn, timeout = 30000, step = 100) {
+  const end = Date.now() + timeout;
+  for (;;) {
+    const v = await fn();
+    if (v || Date.now() > end) return v;
+    await sleep(step);
+  }
+}
+
+/** The highest direct_messages id now (the fixture DB is not empty). */
+function maxDmId(dbPath) { return Number(readDb(dbPath, 'SELECT COALESCE(MAX(id), 0) AS m FROM direct_messages').m); }
+
+/** The newest row after `afterId` matching `where`, polled until the server has stored it. */
+async function newRow(dbPath, afterId, cols = 'id', where = '1=1') {
+  const row = await poll(() => readDb(dbPath, `SELECT ${cols} FROM direct_messages WHERE id > ? AND ${where} ORDER BY id DESC LIMIT 1`, afterId));
+  assert.ok(row, `the server must store a new direct_messages row (${where}) after id ${afterId}`);
+  return row;
+}
+
+/** replyToDmMessage() returns SILENTLY while the parent is not in the thread
+ *  cache (dmEntry.byId, public/js/chat/dm.js), so it is retried until the
+ *  composer's reply preview is active - an exact postcondition, not a timer. */
+async function replyTo(page, pid) {
+  const ok = await poll(() => page.evaluate((id) => {
+    if (window.replyToDmMessage) window.replyToDmMessage(id);
+    return !!document.querySelector('#dm-reply-preview.active .reply-preview-body');
+  }, pid), 30000, 200);
+  assert.ok(ok, `the composer must enter reply mode for message ${pid}`);
+}
+
+/** Polls the open DM thread until `pred` (run in the page) holds. Returns
+ *  whether it did; the assertions after it name the failure. */
+async function threadSettled(page, pred, timeout = 30000) {
+  return poll(() => page.evaluate(pred), timeout, 150);
+}
+
 // ---------------------------------------------------------------- a. file + caption to a v2 peer
 
 test('a. image + caption to a v2 peer: stored v2, bob sees caption and file name, blob not plaintext', { timeout: 120000 }, async () => {
@@ -87,20 +129,20 @@ test('a. image + caption to a v2 peer: stored v2, bob sees caption and file name
     await login(a.page, server.origin, 'alice', 'alice-legacy-pass');
     await login(b.page, server.origin, 'bob', 'bob-legacy-pass');
     await openDmUi(a.page, 3, 'bob');
+    const m0 = maxDmId(dbPath);
     await stageAndSend(a.page, file, 'caption-probe-text');
     // positive control: alice sees her own chip + caption
     const aliceText = await a.page.evaluate(() => document.getElementById('dm-thread').innerText);
     assert.match(aliceText, /caption-probe-text/);
 
-    const db = openDb(dbPath);
-    const row = db.prepare('SELECT id, content, attachment_meta, attachment_path FROM direct_messages WHERE attachment_meta IS NOT NULL ORDER BY id DESC LIMIT 1').get();
-    db.close();
+    const row = await newRow(dbPath, m0, 'id, content, attachment_meta, attachment_path', 'attachment_meta IS NOT NULL');
     assert.equal(JSON.parse(row.content).encryption.version, 2);
     assert.equal(JSON.parse(row.attachment_meta).encryption.version, 2);
     assert.ok(!row.attachment_meta.includes('photo.png'), 'the file name must not be in the clear meta');
 
     await openDmUi(b.page, 2, 'alice');
-    await sleep(2500);
+    await threadSettled(b.page, () => !!document.querySelector('[data-filename="photo.png"]')
+      || /Attachment unavailable/.test(document.getElementById('dm-thread').innerText));
     const view = await b.page.evaluate(() => ({
       bubbles: document.querySelectorAll('#dm-thread .chat-msg').length,
       hasFileName: !!document.querySelector('[data-filename="photo.png"]'),
@@ -135,18 +177,18 @@ test('b. recipient at default 1: stored meta and caption are v1, bob reads both'
     await login(a.page, server.origin, 'alice', 'alice-legacy-pass');
     await login(b.page, server.origin, 'bob', 'bob-legacy-pass');
     await openDmUi(a.page, 3, 'bob');
+    const m0 = maxDmId(dbPath);
     await stageAndSend(a.page, file, 'legacy caption');
 
-    const db = openDb(dbPath);
-    const row = db.prepare('SELECT content, attachment_meta FROM direct_messages WHERE attachment_meta IS NOT NULL ORDER BY id DESC LIMIT 1').get();
-    db.close();
+    const row = await newRow(dbPath, m0, 'content, attachment_meta', 'attachment_meta IS NOT NULL');
     assert.equal(JSON.parse(row.attachment_meta).encryption.version, 1);
     assert.equal(JSON.parse(row.content).encryption.version, 1);
     assert.equal(JSON.parse(row.attachment_meta).encryption.senderFp, undefined);
     assert.equal(JSON.parse(row.attachment_meta).encryption.msgId, undefined);
 
     await openDmUi(b.page, 2, 'alice');
-    await sleep(2500);
+    await threadSettled(b.page, () => [...document.querySelectorAll('.chat-attachment-name')].some((e) => e.textContent.trim() === 'legacy.bin')
+      || /Attachment unavailable/.test(document.getElementById('dm-thread').innerText));
     const view = await b.page.evaluate(() => ({
       names: [...document.querySelectorAll('.chat-attachment-name')].map((e) => e.textContent.trim()),
       caption: /legacy caption/.test(document.getElementById('dm-thread').innerText),
@@ -175,20 +217,21 @@ test('c1. an attachment sent AS a reply to a text message: stored reply_to_id eq
     await login(a.page, server.origin, 'alice', 'alice-legacy-pass');
     await login(b.page, server.origin, 'bob', 'bob-legacy-pass');
     await openDmUi(a.page, 3, 'bob');
+    // The parent is the first row AFTER m0, polled until the server stored it
+    // (the old ".chat-msg >= 1" wait could be true before the send landed).
+    const m0 = maxDmId(dbPath);
     await a.page.type('#dm-input', 'parent-text');
     await a.page.evaluate(() => window.sendDm());
-    await a.page.waitForFunction(() => document.querySelectorAll('#dm-thread .chat-msg').length >= 1, { timeout: 30000 });
-    await sleep(300);
-    const parentRow = readDb(dbPath, 'SELECT id FROM direct_messages ORDER BY id DESC LIMIT 1');
-    // reply to the parent through the real composer
-    await a.page.evaluate((pid) => { window.replyToDmMessage && window.replyToDmMessage(pid); }, parentRow.id);
-    await sleep(200);
+    const parentRow = await newRow(dbPath, m0);
+    // reply to the parent through the real composer (retried until the
+    // parent is in the thread cache and the reply preview is up)
+    await replyTo(a.page, parentRow.id);
     await stageAndSend(a.page, file, 'child-caption');
-    const row = readDb(dbPath, 'SELECT id, reply_to_id FROM direct_messages WHERE attachment_meta IS NOT NULL ORDER BY id DESC LIMIT 1');
+    const row = await newRow(dbPath, parentRow.id, 'id, reply_to_id', 'attachment_meta IS NOT NULL');
     assert.equal(Number(row.reply_to_id), Number(parentRow.id), 'the stored reply_to_id must equal the parent row id');
 
     await openDmUi(b.page, 2, 'alice');
-    await sleep(2500);
+    await threadSettled(b.page, () => !!document.querySelector('.reply-quote, [class*="reply-quote"], [class*="quote"]'));
     const quote = await b.page.evaluate(() => {
       const q = document.querySelector('.reply-quote, [class*="reply-quote"], [class*="quote"]');
       return q ? q.textContent.trim() : null;
@@ -215,29 +258,33 @@ test('c2. a text reply to an attachment message: the quote shows the parent atta
     await login(a.page, server.origin, 'alice', 'alice-legacy-pass');
     await login(b.page, server.origin, 'bob', 'bob-legacy-pass');
     await openDmUi(a.page, 3, 'bob');
+    const m0 = maxDmId(dbPath);
     await stageAndSend(a.page, file, 'parent attachment');
-    await sleep(300);
-    const attRow = readDb(dbPath, 'SELECT id FROM direct_messages WHERE attachment_meta IS NOT NULL ORDER BY id DESC LIMIT 1');
+    const attRow = await newRow(dbPath, m0, 'id', 'attachment_meta IS NOT NULL');
     const rowsBefore = Number(readDb(dbPath, 'SELECT COUNT(*) AS n FROM direct_messages').n);
 
+    // The error window must start AFTER bob's page has finished loading: the
+    // page load requests /api/me/avatar/<alice> (404 when she has none), and
+    // whether that 404 landed inside the window depended on timing (the old
+    // sleep(300) above hid it). Network idle (one request may stay open:
+    // the Socket.IO connection) is the postcondition.
+    await b.page.waitForNetworkIdle({ idleTime: 500, concurrency: 1, timeout: 30000 });
     const consoleErrors = [];
     b.page.on('console', (msg) => { if (msg.type() === 'error') consoleErrors.push(msg.text()); });
     b.page.on('pageerror', (err) => consoleErrors.push('PAGEERROR: ' + err.message));
 
     await openDmUi(b.page, 2, 'alice');
-    await sleep(2500);
+    // Precondition: the composer must actually be in reply mode before typing
+    // (replyTo retries until the parent is in the thread cache).
+    await replyTo(b.page, attRow.id);
     const msgsBefore = await b.page.$$eval('#dm-thread .chat-msg', (e) => e.length);
-
-    // Precondition: the composer must actually be in reply mode before typing.
-    await b.page.evaluate((pid) => { window.replyToDmMessage && window.replyToDmMessage(pid); }, attRow.id);
-    await sleep(300);
     const previewActive = await b.page.evaluate(() => !!document.querySelector('.reply-preview-bar.active'));
     assert.equal(previewActive, true, 'replying to an attachment must activate the composer reply preview');
 
     await b.page.type('#dm-input', 'text reply to attachment');
     await b.page.evaluate(() => window.sendDm());
     await b.page.waitForFunction((n) => document.querySelectorAll('#dm-thread .chat-msg').length > n, { timeout: 30000 }, msgsBefore);
-    await sleep(800);
+    await newRow(dbPath, attRow.id);
 
     // DB: exactly one new row, and it references the attachment as its parent.
     const dbAll = openDb(dbPath);
@@ -285,33 +332,36 @@ test("c2b. a text reply to a CAPTION-LESS attachment: the quote shows the parent
     await login(a.page, server.origin, 'alice', 'alice-legacy-pass');
     await login(b.page, server.origin, 'bob', 'bob-legacy-pass');
     await openDmUi(a.page, 3, 'bob');
+    const m0 = maxDmId(dbPath);
     await stageAndSend(a.page, file, '');          // NO caption
-    await sleep(300);
 
     // A caption-less attachment stores no caption envelope at all
     // (prepareDmAttachmentUpload only sets fields.content when caption is truthy),
     // so this row exercises the meta path alone.
-    const attRow = readDb(dbPath, 'SELECT id, content FROM direct_messages WHERE attachment_meta IS NOT NULL ORDER BY id DESC LIMIT 1');
+    const attRow = await newRow(dbPath, m0, 'id, content', 'attachment_meta IS NOT NULL');
     assert.ok(!attRow.content || String(attRow.content).trim() === '',
       `a caption-less attachment must store no caption envelope, got ${JSON.stringify(attRow.content).slice(0, 60)}`);
 
+    // The error window must start AFTER bob's page has finished loading: the
+    // page load requests /api/me/avatar/<alice> (404 when she has none), and
+    // whether that 404 landed inside the window depended on timing (the old
+    // sleep(300) above hid it). Network idle (one request may stay open:
+    // the Socket.IO connection) is the postcondition.
+    await b.page.waitForNetworkIdle({ idleTime: 500, concurrency: 1, timeout: 30000 });
     const consoleErrors = [];
     b.page.on('console', (msg) => { if (msg.type() === 'error') consoleErrors.push(msg.text()); });
     b.page.on('pageerror', (err) => consoleErrors.push('PAGEERROR: ' + err.message));
 
     await openDmUi(b.page, 2, 'alice');
-    await sleep(2500);
+    await replyTo(b.page, attRow.id);
     const msgsBefore = await b.page.$$eval('#dm-thread .chat-msg', (e) => e.length);
-
-    await b.page.evaluate((pid) => { window.replyToDmMessage && window.replyToDmMessage(pid); }, attRow.id);
-    await sleep(300);
     const previewActive = await b.page.evaluate(() => !!document.querySelector('.reply-preview-bar.active'));
     assert.equal(previewActive, true, 'replying to an attachment must activate the composer reply preview');
 
     await b.page.type('#dm-input', 'reply to a caption-less attachment');
     await b.page.evaluate(() => window.sendDm());
     await b.page.waitForFunction((n) => document.querySelectorAll('#dm-thread .chat-msg').length > n, { timeout: 30000 }, msgsBefore);
-    await sleep(800);
+    await newRow(dbPath, attRow.id);
 
     const info = await b.page.evaluate(() => [...document.querySelectorAll('.chat-msg')].map((m) => ({
       bubbleText: m.querySelector('.chat-bubble')?.textContent?.trim()?.slice(0, 120) || null,
@@ -373,12 +423,11 @@ test('d. a v1 attachment row from a peer pinned at 2 still opens, downgrade noti
     // alice sends a v1 attachment (she is min 1 -> v1)
     await openDmUi(a.page, 3, 'bob');
     await stageAndSend(a.page, file, 'v1 hist caption');
-    await sleep(300);
 
     // bob opens the DM: v1 from a peer pinned at 2 -> downgrade notice once.
     const toasts = await b.page.evaluate(() => { window.__toasts = []; return true; });
     await openDmUi(b.page, 2, 'alice');
-    await sleep(2500);
+    await threadSettled(b.page, () => /v1 hist caption/.test(document.getElementById('dm-thread').innerText));
     const first = await b.page.evaluate(() => document.getElementById('dm-thread').innerText);
     assert.match(first, /v1 hist caption/);
     // a second open in the same page load must not re-notify
@@ -414,14 +463,22 @@ async function tamperScenario(name, mutator, assertFn) {
     await openDmUi(a.page, 3, 'bob');
     await stageAndSend(a.page, f1, 'good-first');
     await stageAndSend(a.page, f2, 'to-tamper');
+    const m0 = maxDmId(dbPath);
     await stageAndSend(a.page, f3, 'good-last');
-    await sleep(300);
-    const row = readDb(dbPath, 'SELECT id, content, attachment_meta, reply_to_id FROM direct_messages WHERE attachment_meta IS NOT NULL ORDER BY id DESC LIMIT 1');
+    // The row read here is the newest one, stored after m0 (unchanged choice
+    // of row; only the wait for it changed).
+    const row = await newRow(dbPath, m0, 'id, content, attachment_meta, reply_to_id', 'attachment_meta IS NOT NULL');
     // tamper BEFORE bob opens the DM, so his first view is the tampered one
     // (the probe's order). The positive control is test (a) / (b).
     const tampered = tamper(dbPath, row.id, mutator);
     await openDmUi(b.page, 2, 'alice');
-    await sleep(2500);
+    // Settled: both captions rendered and the tampered row reached an end
+    // state (its file name, or a placeholder).
+    await threadSettled(b.page, () => {
+      const t = document.getElementById('dm-thread').innerText;
+      return /good-first/.test(t) && /good-last/.test(t)
+        && /Attachment unavailable|Unable to decrypt|good-last\.bin/.test(t);
+    });
     const after = await b.page.evaluate(() => ({
       bubbles: document.querySelectorAll('#dm-thread .chat-msg').length,
       unavailable: /Attachment unavailable/.test(document.getElementById('dm-thread').innerText),
@@ -478,15 +535,13 @@ test('e4. tamper: row reply_to_id changed -> the WHOLE row renders "Unable to de
     await login(b.page, server.origin, 'bob', 'bob-legacy-pass');
     await openDmUi(a.page, 3, 'bob');
     // parent text
+    const m0 = maxDmId(dbPath);
     await a.page.type('#dm-input', 'parent-for-reply');
     await a.page.evaluate(() => window.sendDm());
-    await a.page.waitForFunction(() => document.querySelectorAll('#dm-thread .chat-msg').length >= 1, { timeout: 30000 });
-    await sleep(300);
-    const parentRow = readDb(dbPath, 'SELECT id FROM direct_messages ORDER BY id DESC LIMIT 1');
-    await a.page.evaluate((pid) => { window.replyToDmMessage && window.replyToDmMessage(pid); }, parentRow.id);
-    await sleep(200);
+    const parentRow = await newRow(dbPath, m0);
+    await replyTo(a.page, parentRow.id);
     await stageAndSend(a.page, file, 'reply-tamper-caption');
-    const attRow = readDb(dbPath, 'SELECT id, reply_to_id FROM direct_messages WHERE attachment_meta IS NOT NULL ORDER BY id DESC LIMIT 1');
+    const attRow = await newRow(dbPath, parentRow.id, 'id, reply_to_id', 'attachment_meta IS NOT NULL');
     assert.equal(Number(attRow.reply_to_id), Number(parentRow.id));
     // tamper reply_to_id
     const db = openDb(dbPath);
@@ -494,7 +549,10 @@ test('e4. tamper: row reply_to_id changed -> the WHOLE row renders "Unable to de
     db.close();
     assert.equal(changes, 1);
     await openDmUi(b.page, 2, 'alice');
-    await sleep(2500);
+    await threadSettled(b.page, () => {
+      const t = document.getElementById('dm-thread').innerText;
+      return /parent-for-reply/.test(t) && /Unable to decrypt|Attachment unavailable|reply-tamper-caption/.test(t);
+    });
     const view = await b.page.evaluate(() => {
       const t = document.getElementById('dm-thread').innerText;
       return {
@@ -524,15 +582,18 @@ test('e4b. tamper: row reply_to_id changed on a CAPTION-LESS attachment -> "Atta
     await login(a.page, server.origin, 'alice', 'alice-legacy-pass');
     await login(b.page, server.origin, 'bob', 'bob-legacy-pass');
     await openDmUi(a.page, 3, 'bob');
+    const m0 = maxDmId(dbPath);
     await a.page.type('#dm-input', 'good-first');
     await a.page.evaluate(() => window.sendDm());
-    await sleep(400);
+    // stageAndSend counts the rows before it sends, so good-first must be in
+    // the thread first.
+    await a.page.waitForFunction(() => /good-first/.test(document.getElementById('dm-thread').innerText), { timeout: 30000 });
     await stageAndSend(a.page, file, '');          // NO caption: no caption envelope at all
     await a.page.type('#dm-input', 'good-last');
     await a.page.evaluate(() => window.sendDm());
-    await sleep(500);
+    await a.page.waitForFunction(() => /good-last/.test(document.getElementById('dm-thread').innerText), { timeout: 30000 });
 
-    const attRow = readDb(dbPath, 'SELECT id, content, reply_to_id FROM direct_messages WHERE attachment_meta IS NOT NULL ORDER BY id DESC LIMIT 1');
+    const attRow = await newRow(dbPath, m0, 'id, content, reply_to_id', 'attachment_meta IS NOT NULL');
     assert.ok(!attRow.content || String(attRow.content).trim() === '',
       `a caption-less attachment must store no caption envelope, got ${JSON.stringify(attRow.content).slice(0, 60)}`);
     assert.ok(attRow.reply_to_id == null, 'the parent attachment starts with no reply_to_id');
@@ -545,7 +606,11 @@ test('e4b. tamper: row reply_to_id changed on a CAPTION-LESS attachment -> "Atta
     assert.equal(changes, 1, 'the tamper UPDATE must affect exactly one row');
 
     await openDmUi(b.page, 2, 'alice');
-    await sleep(2500);
+    await threadSettled(b.page, () => {
+      const t = document.getElementById('dm-thread').innerText;
+      return /good-first/.test(t) && /good-last/.test(t)
+        && /Attachment unavailable|Unable to decrypt|nocaption-tamper\.bin/.test(t);
+    });
     const view = await b.page.evaluate(() => {
       const t = document.getElementById('dm-thread').innerText;
       return {
@@ -582,9 +647,10 @@ test('e5. tamper: attachment_meta swapped between two rows -> "Attachment unavai
     await login(a.page, server.origin, 'alice', 'alice-legacy-pass');
     await login(b.page, server.origin, 'bob', 'bob-legacy-pass');
     await openDmUi(a.page, 3, 'bob');
+    const m0 = maxDmId(dbPath);
     await stageAndSend(a.page, f1, 'swap-a');
     await stageAndSend(a.page, f2, 'swap-b');
-    await sleep(300);
+    await poll(() => Number(readDb(dbPath, 'SELECT COUNT(*) AS n FROM direct_messages WHERE id > ? AND attachment_meta IS NOT NULL', m0).n) >= 2);
     const db = openDb(dbPath);
     const rows = db.prepare('SELECT id, attachment_meta FROM direct_messages WHERE attachment_meta IS NOT NULL ORDER BY id ASC').all();
     db.close();
@@ -596,7 +662,10 @@ test('e5. tamper: attachment_meta swapped between two rows -> "Attachment unavai
     db2.close();
     assert.equal(c1, 1); assert.equal(c2, 1);
     await openDmUi(b.page, 2, 'alice');
-    await sleep(2500);
+    await threadSettled(b.page, () => {
+      const t = document.getElementById('dm-thread').innerText;
+      return (/swap-a/.test(t) || /swap-b/.test(t)) && /Attachment unavailable|Unable to decrypt|swap-[ab]\.bin/.test(t);
+    });
     const view = await b.page.evaluate(() => ({
       unavailable: /Attachment unavailable/.test(document.getElementById('dm-thread').innerText),
       otherRows: /swap-a/.test(document.getElementById('dm-thread').innerText) || /swap-b/.test(document.getElementById('dm-thread').innerText)
@@ -621,20 +690,23 @@ test('e6. tamper: a TEXT v2 envelope in the meta slot -> "Attachment unavailable
     await login(b.page, server.origin, 'bob', 'bob-legacy-pass');
     await openDmUi(a.page, 3, 'bob');
     // a text message first (v2), to harvest its envelope
+    const m0 = maxDmId(dbPath);
     await a.page.type('#dm-input', 'harvested text');
     await a.page.evaluate(() => window.sendDm());
-    await a.page.waitForFunction(() => document.querySelectorAll('#dm-thread .chat-msg').length >= 1, { timeout: 30000 });
-    await sleep(300);
-    const textRow = readDb(dbPath, 'SELECT id, content FROM direct_messages ORDER BY id DESC LIMIT 1');
+    const textRow = await newRow(dbPath, m0, 'id, content');
+    await a.page.waitForFunction(() => /harvested text/.test(document.getElementById('dm-thread').innerText), { timeout: 30000 });
     await stageAndSend(a.page, file, 'tc-caption');
-    const attRow = readDb(dbPath, 'SELECT id FROM direct_messages WHERE attachment_meta IS NOT NULL ORDER BY id DESC LIMIT 1');
+    const attRow = await newRow(dbPath, textRow.id, 'id', 'attachment_meta IS NOT NULL');
     // put the text envelope into the meta slot
     const db = openDb(dbPath);
     const changes = db.prepare('UPDATE direct_messages SET attachment_meta = ? WHERE id = ?').run(textRow.content, attRow.id).changes;
     db.close();
     assert.equal(changes, 1);
     await openDmUi(b.page, 2, 'alice');
-    await sleep(2500);
+    await threadSettled(b.page, () => {
+      const t = document.getElementById('dm-thread').innerText;
+      return /tc-caption/.test(t) && /Attachment unavailable|Unable to decrypt|tc\.bin/.test(t);
+    });
     const view = await b.page.evaluate(() => ({
       unavailable: /Attachment unavailable/.test(document.getElementById('dm-thread').innerText),
       caption: /tc-caption/.test(document.getElementById('dm-thread').innerText)
@@ -659,16 +731,16 @@ test('e7. tamper: the attachment meta envelope put into the content slot -> text
     await login(a.page, server.origin, 'alice', 'alice-legacy-pass');
     await login(b.page, server.origin, 'bob', 'bob-legacy-pass');
     await openDmUi(a.page, 3, 'bob');
+    const m0 = maxDmId(dbPath);
     await stageAndSend(a.page, file, 'slot-swap-caption');
-    await sleep(300);
-    const attRow = readDb(dbPath, 'SELECT id, attachment_meta, content FROM direct_messages WHERE attachment_meta IS NOT NULL ORDER BY id DESC LIMIT 1');
+    const attRow = await newRow(dbPath, m0, 'id, attachment_meta, content', 'attachment_meta IS NOT NULL');
     // put the meta envelope into the content slot
     const db = openDb(dbPath);
     const changes = db.prepare('UPDATE direct_messages SET content = ? WHERE id = ?').run(attRow.attachment_meta, attRow.id).changes;
     db.close();
     assert.equal(changes, 1);
     await openDmUi(b.page, 2, 'alice');
-    await sleep(2500);
+    await threadSettled(b.page, () => /Unable to decrypt|Attachment unavailable|slot-swap-caption/.test(document.getElementById('dm-thread').innerText));
     // the row must not leak the meta as text; the caption slot now holds a meta
     // envelope whose label is dm-att-v2, so decryptDmTextV2 refuses it.
     const text = await b.page.evaluate(() => document.getElementById('dm-thread').innerText);
@@ -698,9 +770,9 @@ test('f1. replay: copying an attachment row (meta + path) to a new row id -> the
     await login(a.page, server.origin, 'alice', 'alice-legacy-pass');
     await login(b.page, server.origin, 'bob', 'bob-legacy-pass');
     await openDmUi(a.page, 3, 'bob');
+    const m0 = maxDmId(dbPath);
     await stageAndSend(a.page, file, 'replay-caption');
-    await sleep(300);
-    const src = readDb(dbPath, 'SELECT * FROM direct_messages WHERE attachment_meta IS NOT NULL ORDER BY id DESC LIMIT 1');
+    const src = await newRow(dbPath, m0, '*', 'attachment_meta IS NOT NULL');
     // copy to a NEW row id, envelope untouched
     const db = openDb(dbPath);
     const cols = 'sender_id, recipient_id, content, created_at, reply_to_id, attachment_name, attachment_path, attachment_size, attachment_mime, attachment_meta, attachment_iv, is_voice_message';
@@ -709,7 +781,8 @@ test('f1. replay: copying an attachment row (meta + path) to a new row id -> the
     db.close();
     assert.ok(newId && newId !== src.id);
     await openDmUi(b.page, 2, 'alice');
-    await sleep(3000);
+    await threadSettled(b.page, () => [...document.querySelectorAll('.chat-attachment-name')].some((e) => e.textContent.trim() === 'replay.bin')
+      && /Attachment unavailable|Unable to decrypt/.test(document.getElementById('dm-thread').innerText));
     const view = await b.page.evaluate(() => ({
       unavailable: /Attachment unavailable/.test(document.getElementById('dm-thread').innerText),
       unable: /Unable to decrypt/.test(document.getElementById('dm-thread').innerText),
@@ -722,7 +795,7 @@ test('f1. replay: copying an attachment row (meta + path) to a new row id -> the
     // reading the original row twice is not a replay: reopen the DM
     await b.page.evaluate(() => { /* reopen */ });
     await openDmUi(b.page, 2, 'alice');
-    await sleep(2000);
+    await threadSettled(b.page, () => [...document.querySelectorAll('.chat-attachment-name')].some((e) => e.textContent.trim() === 'replay.bin'));
     const view2 = await b.page.evaluate(() => [...document.querySelectorAll('.chat-attachment-name')].map((e) => e.textContent.trim()));
     assert.ok(view2.includes('replay.bin'), 're-reading the original row must not be treated as a replay');
   } finally {
@@ -747,9 +820,9 @@ test('f1b. replay: copying a CAPTION-LESS attachment row to a new row id -> the 
     await login(a.page, server.origin, 'alice', 'alice-legacy-pass');
     await login(b.page, server.origin, 'bob', 'bob-legacy-pass');
     await openDmUi(a.page, 3, 'bob');
+    const m0 = maxDmId(dbPath);
     await stageAndSend(a.page, file, '');          // NO caption
-    await sleep(300);
-    const src = readDb(dbPath, 'SELECT id, content FROM direct_messages WHERE attachment_meta IS NOT NULL ORDER BY id DESC LIMIT 1');
+    const src = await newRow(dbPath, m0, 'id, content', 'attachment_meta IS NOT NULL');
     assert.ok(!src.content || String(src.content).trim() === '',
       `a caption-less attachment must store no caption envelope, got ${JSON.stringify(src.content).slice(0, 60)}`);
 
@@ -761,7 +834,8 @@ test('f1b. replay: copying a CAPTION-LESS attachment row to a new row id -> the 
     assert.ok(newId && Number(newId) !== Number(src.id), 'the copy must get its own row id');
 
     await openDmUi(b.page, 2, 'alice');
-    await sleep(3000);
+    await threadSettled(b.page, () => [...document.querySelectorAll('.chat-attachment-name')].some((e) => e.textContent.trim() === 'nocap-replay.bin')
+      && /Attachment unavailable|Unable to decrypt/.test(document.getElementById('dm-thread').innerText));
     const view = await b.page.evaluate(() => {
       const t = document.getElementById('dm-thread').innerText;
       return {
@@ -777,7 +851,7 @@ test('f1b. replay: copying a CAPTION-LESS attachment row to a new row id -> the 
 
     // Re-reading the ORIGINAL row in a fresh open is not a replay.
     await openDmUi(b.page, 2, 'alice');
-    await sleep(2000);
+    await threadSettled(b.page, () => [...document.querySelectorAll('.chat-attachment-name')].some((e) => e.textContent.trim() === 'nocap-replay.bin'));
     const view2 = await b.page.evaluate(() => [...document.querySelectorAll('.chat-attachment-name')].map((e) => e.textContent.trim()));
     assert.ok(view2.includes('nocap-replay.bin'), 're-reading the original row must not be treated as a replay');
   } finally {
@@ -801,9 +875,9 @@ test('f2. replay: copying with the clear msgId changed (iv untouched) -> the cop
     await login(a.page, server.origin, 'alice', 'alice-legacy-pass');
     await login(b.page, server.origin, 'bob', 'bob-legacy-pass');
     await openDmUi(a.page, 3, 'bob');
+    const m0 = maxDmId(dbPath);
     await stageAndSend(a.page, file, 'replay2-caption');
-    await sleep(300);
-    const src = readDb(dbPath, 'SELECT * FROM direct_messages WHERE attachment_meta IS NOT NULL ORDER BY id DESC LIMIT 1');
+    const src = await newRow(dbPath, m0, '*', 'attachment_meta IS NOT NULL');
     const meta = JSON.parse(src.attachment_meta);
     meta.encryption.msgId = 'fedcba9876543210';
     const db = openDb(dbPath);
@@ -817,13 +891,74 @@ test('f2. replay: copying with the clear msgId changed (iv untouched) -> the cop
     db.close();
     assert.ok(newId && newId !== src.id);
     await openDmUi(b.page, 2, 'alice');
-    await sleep(3000);
+    await threadSettled(b.page, () => [...document.querySelectorAll('.chat-attachment-name')].some((e) => e.textContent.trim() === 'replay2.bin')
+      && /Attachment unavailable|Unable to decrypt/.test(document.getElementById('dm-thread').innerText));
       const view = await b.page.evaluate(() => ({
         unavailable: /Attachment unavailable/.test(document.getElementById('dm-thread').innerText),
         unable: /Unable to decrypt/.test(document.getElementById('dm-thread').innerText),
         text: document.getElementById('dm-thread').innerText.slice(0, 400)
       }));
       assert.equal(view.unable, true, 'changing msgId must not bypass the replay check');
+  } finally {
+    await closeUserBrowsers(); await server.stop(); await sleep(800); try { cleanupTmp(); fs.rmSync(fx, { recursive: true, force: true }); } catch (e) { console.warn('cleanup (non-fatal on Windows):', e && e.code); }
+  }
+});
+
+// STEP 3F follow-up 3.E: the caption-less variant of f2. With a caption the
+// caption's replay check fires first (f2), so the attachment-meta path is
+// never what is asserted. Without a caption the copy - with its clear msgId
+// changed and the AAD-bound iv untouched - must be refused by the META replay
+// check: "Attachment unavailable", not "Unable to decrypt".
+test('f2b. replay: copying a CAPTION-LESS attachment row with the clear msgId changed -> the COPY renders "Attachment unavailable" (meta-level replay check, not bypassed by a msgId swap)', { timeout: 120000 }, async () => {
+  const dir = tmpDir(); const dbPath = path.join(dir, 'wire.db'); fs.copyFileSync(FIXTURE_DB, dbPath);
+  const { runMigrations } = await import('../database/migrations.js');
+  const d0 = new Database(dbPath); runMigrations(d0); d0.close();
+  spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'dm-e2ee-optin.mjs'), 'bob'], { cwd: ROOT, env: { ...process.env, DB_PATH: dbPath }, encoding: 'utf8' });
+  const server = await startRealServer({ work: dir, extraEnv: { DB_PATH: dbPath } });
+  const fx = fs.mkdtempSync(path.join(os.tmpdir(), 'attfx-'));
+  const file = makeFile(fx, 'nocap-replay2.bin', Buffer.from('nocap replay2 bytes'));
+  try {
+    const a = await newUserPage(); const b = await newUserPage();
+    await login(a.page, server.origin, 'alice', 'alice-legacy-pass');
+    await login(b.page, server.origin, 'bob', 'bob-legacy-pass');
+    await openDmUi(a.page, 3, 'bob');
+    const m0 = maxDmId(dbPath);
+    await stageAndSend(a.page, file, '');          // NO caption
+    const src = await newRow(dbPath, m0, '*', 'attachment_meta IS NOT NULL');
+    assert.ok(!src.content || String(src.content).trim() === '',
+      `a caption-less attachment must store no caption envelope, got ${JSON.stringify(src.content).slice(0, 60)}`);
+    const meta = JSON.parse(src.attachment_meta);
+    assert.ok(meta.encryption && meta.encryption.msgId, 'the v2 meta carries a clear msgId to change');
+    meta.encryption.msgId = 'fedcba9876543210';
+
+    const db = openDb(dbPath);
+    const cols = 'sender_id, recipient_id, content, created_at, reply_to_id, attachment_name, attachment_path, attachment_size, attachment_mime, attachment_meta, attachment_iv, is_voice_message';
+    const ins = db.prepare(`INSERT INTO direct_messages (${cols}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+      src.sender_id, src.recipient_id, src.content, src.created_at, src.reply_to_id,
+      src.attachment_name, src.attachment_path, src.attachment_size, src.attachment_mime,
+      JSON.stringify(meta), src.attachment_iv, src.is_voice_message
+    );
+    const newId = ins.lastInsertRowid;
+    const back = db.prepare('SELECT id, attachment_meta FROM direct_messages WHERE id = ?').get(newId);
+    db.close();
+    assert.ok(back && Number(back.id) !== Number(src.id), 'the copy must get its own row id');
+    assert.equal(JSON.parse(back.attachment_meta).encryption.msgId, 'fedcba9876543210', 'the copy carries the changed msgId');
+
+    await openDmUi(b.page, 2, 'alice');
+    await threadSettled(b.page, () => [...document.querySelectorAll('.chat-attachment-name')].some((e) => e.textContent.trim() === 'nocap-replay2.bin')
+      && /Attachment unavailable|Unable to decrypt/.test(document.getElementById('dm-thread').innerText));
+    const view = await b.page.evaluate(() => {
+      const t = document.getElementById('dm-thread').innerText;
+      return {
+        unavailable: /Attachment unavailable/.test(t),
+        unable: /Unable to decrypt/.test(t),
+        names: [...document.querySelectorAll('.chat-attachment-name')].map((e) => e.textContent.trim())
+      };
+    });
+    // positive control: the original row still opens
+    assert.ok(view.names.includes('nocap-replay2.bin'), `the original row must still open, got ${JSON.stringify(view.names)}`);
+    assert.equal(view.unavailable, true, 'the copy must render as "Attachment unavailable" (meta replay check)');
+    assert.equal(view.unable, false, 'no caption envelope exists, so no "Unable to decrypt" placeholder');
   } finally {
     await closeUserBrowsers(); await server.stop(); await sleep(800); try { cleanupTmp(); fs.rmSync(fx, { recursive: true, force: true }); } catch (e) { console.warn('cleanup (non-fatal on Windows):', e && e.code); }
   }

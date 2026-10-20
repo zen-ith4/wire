@@ -321,6 +321,17 @@ test('a. after BOTH users reload and re-login, each side still reads the v2 hist
     void an; void bn;
 });
 
+/** STEP 3F follow-up 3.B: replyToDmMessage() returns SILENTLY while the
+ *  parent is not in dmEntry.byId, and the send then carries no reply_to_id.
+ *  The call is retried until the composer's reply preview is active - the
+ *  exact postcondition - instead of trusting one call. */
+async function enterReplyMode(page, id, timeout = 30000) {
+    await page.waitForFunction((pid) => {
+        window.replyToDmMessage(pid);
+        return !!document.querySelector('#dm-reply-preview.active .reply-preview-body');
+    }, { timeout, polling: 200 }, id);
+}
+
 // ================================================================ (b) reply
 test('b. bob replies through the real composer; both render it and the quote shows the ORIGINAL text', { timeout: 240000 }, async () => {
     const { a, b, aid, bid, an, bn } = await freshPair();
@@ -334,7 +345,7 @@ test('b. bob replies through the real composer; both render it and the quote sho
     // dmEntry.byId and returns early when the conversation was never loaded.
     await openDmUi(b.page, aid, an);
     await waitDecrypted(b.page, 1, 'bob to render the parent before replying');
-    await b.page.evaluate((id) => window.replyToDmMessage(id), first.id);
+    await enterReplyMode(b.page, first.id);
     await sendOnce(b.page, 'reply-child');
 
     const rows = await recentRows(b.page, aid);
@@ -420,7 +431,7 @@ test('d. editing a v2 REPLY through the real UI rewrites the envelope with a new
     // (9/10 failed with "the reply must carry reply_to_id 2, got null").
     await openDmUi(b.page, aid, PAIR.an);
     await waitDecrypted(b.page, 1, 'bob to render the parent before replying');
-    await b.page.evaluate((id) => window.replyToDmMessage(id), parent.id);
+    await enterReplyMode(b.page, parent.id);
     await sendOnce(b.page, 'edit-reply');
 
     const before = await recentRows(a.page, bid);

@@ -123,6 +123,30 @@ async function sendFile(page, gid, filePath, caption) {
     await sleep(500);
 }
 
+/** Alice sends a file whose NAME is hostile but whose bytes are plain: the
+ *  File is built in the page via DataTransfer, so the test does not depend on
+ *  the OS carrying the bidi name through a file input (STEP 3F item 0). */
+async function sendFileWithHostileName(page, gid, filePath, hostileName, caption) {
+    await openGroupUi(page, gid);
+    const buf = fs.readFileSync(filePath);
+    const b64 = buf.toString('base64');
+    await page.evaluate(async ({ b64, hostileName }) => {
+        const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+        const file = new File([bytes], hostileName, { type: 'application/pdf' });
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        const input = document.getElementById('group-file-input');
+        input.files = dt.files;
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+    }, { b64, hostileName });
+    await page.waitForSelector('#group-staging-area .attach-chip', { timeout: 10000 });
+    if (caption) await page.type('#group-input', caption);
+    const before = await page.$$eval('#group-messages .chat-msg', (e) => e.length);
+    await page.evaluate(() => window.sendGroupMessage());
+    await page.waitForFunction((n0) => document.querySelectorAll('#group-messages .chat-msg').length > n0, { timeout: 30000 }, before);
+    await sleep(500);
+}
+
 /** Bob opens the group and waits until the attachment shows up. */
 async function bobSees(bobPage, gid, selector, timeout = 25000) {
     await openGroupUi(bobPage, gid);
@@ -316,9 +340,15 @@ test('6 the sanitised name is used for BOTH the visible text and the download at
 
     // A name with a leading dot and a bidi override: the receiver must strip
     // both (STEP 3D item 1).
+    //
+    // STEP 3F item 0: the name is carried by a File built IN THE PAGE (via
+    // DataTransfer), not by a file on disk. On Linux + @sparticuz/chromium the
+    // OS file input did not carry a name with a leading dot + a bidi override,
+    // so the staging step depended on the platform instead of on the receiver's
+    // sanitiser. The bytes are a plain PDF; only the NAME is hostile.
     const rawName = '.bashrc\u202Egnp.pdf';
-    const pdf = fixture(rawName, PDF);
-    await sendFile(w.alicePage, w.gid, pdf, 'a document');
+    const pdf = fixture('doc.pdf', PDF);
+    await sendFileWithHostileName(w.alicePage, w.gid, pdf, rawName, 'a document');
 
     const link = await bobSees(w.bobPage, w.gid, '#group-messages button.chat-attachment-download');
     assert.ok(link, 'a non-image must offer a download button');

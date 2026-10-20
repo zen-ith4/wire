@@ -1,22 +1,20 @@
 # Linux CI recipe for the Wire test suite
 #
 # Documentation only - this file is NOT under .github/ and is NOT activated.
-# Copy it to .github/workflows/linux-tests.yml to use it.
+# Copy it to .github/workflows/linux-tests.yml to use it (owner decision).
 #
-# WHY IT EXISTS
-# Every browser test in this repo has been Unverified-until-Linux: the Windows
-# Chromium build freezes the renderer in the long DM/group flows and there is no
-# Linux available on the machine that produced wire-final-24. This workflow is
-# the recipe to close that gap.
+# STATUS: NEVER EXECUTED. Written on Windows (STEP 3F follow-up 3.L); no GitHub
+# runner was used. Treat the first run as debugging.
 #
-# WHAT COULD NOT BE TESTED HERE
-# - The workflow itself has never been executed (no GitHub runner, and this file
-#   is documentation, not a live workflow).
-# - `npm ci` was never run from a clean checkout here.
-# - Every step below that touches a real Chromium (the `*browser*` tests) has
-#   never run on Linux from this tree.
-# - `@sparticuz/chromium` was never installed here; the Windows runs used a
-#   local shim at CHROMIUM_DIR instead.
+# What changed from the previous version (it could not have worked):
+# - it installed Chrome for Testing into ~/.cache/puppeteer but pointed
+#   CHROMIUM_DIR at $PWD/.chromium, which never existed. The harness resolves
+#   `puppeteer-core` AND `@sparticuz/chromium` from CHROMIUM_DIR
+#   (tests/_acceptance-harness.mjs:324-328), so every browser test found no
+#   Chromium. Now the pinned pair is installed into CHROMIUM_DIR.
+# - the suite runs in BOTH modes (DM_E2EE_DEFAULT_MIN_VERSION unset and =1),
+#   as a matrix, at --test-concurrency=4.
+# - Node 22 (npm 10): npm 11 refuses this package-lock (docs/RUN_BROWSER_TESTS_LINUX.md).
 
 name: linux-tests
 
@@ -26,8 +24,12 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        dm_min: ['', '1']
 
     steps:
       - uses: actions/checkout@v4
@@ -37,39 +39,54 @@ jobs:
           node-version-file: .node-version
           cache: npm
 
-      # Chrome for Testing, so the puppeteer-core launches have something to find.
-      - name: Install Chrome
-        run: |
-          npx puppeteer browsers install chrome
-          echo "CHROMIUM_DIR=$PWD/.chromium" >> "$GITHUB_ENV"
-
-      # node-gyp needs a toolchain for better-sqlite3.
-      - run: sudo apt-get update && sudo apt-get install -y build-essential python3
+      # node-gyp toolchain (better-sqlite3 falls back to a build when there is
+      # no prebuild) and the shared libraries Chromium needs.
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential python3 libnss3 libatk1.0-0 libatk-bridge2.0-0 \
+            libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 \
+            libpango-1.0-0 libcairo2 libasound2t64 fonts-liberation
 
       - name: Install dependencies
-        run: npm ci
+        run: |
+          npm ci
+          node -e "require('better-sqlite3')(':memory:')" || npm rebuild better-sqlite3
 
-      # The service worker manifest is a build artefact: public/sw-manifest.js
-      # must match the bytes actually shipped in public/, or clients install a
-      # stale worker and keep serving an old client.
+      # The browser pair the reviewer verified together (docs/RUN_BROWSER_TESTS_LINUX.md).
+      # `npm install`, never `npm ci <pkg>` (npm ci takes no package names).
+      - name: Install the project's Chromium where the harness looks for it
+        run: |
+          mkdir -p /tmp/browser-check
+          cd /tmp/browser-check
+          npm init -y >/dev/null
+          npm install --no-audit --no-fund puppeteer-core@25.14.0 @sparticuz/chromium@153.0.0
+          echo "CHROMIUM_DIR=/tmp/browser-check" >> "$GITHUB_ENV"
+
       - name: sw-manifest must be current
         run: node scripts/build-sw-manifest.mjs --check
 
-      - name: Full test suite
+      - name: Full suite (mode DM_E2EE_DEFAULT_MIN_VERSION=${{ matrix.dm_min || 'unset' }})
         env:
-          CHROMIUM_DIR: ${{ env.CHROMIUM_DIR }}
-        run: >
-          node --experimental-test-module-mocks
-          --env-file=tests/test.env
-          --test
-          --test-timeout=60000
-          --test-concurrency=2
-          $(find tests -name '*.test.mjs' | sort)
+          DM_E2EE_DEFAULT_MIN_VERSION: ${{ matrix.dm_min }}
+        run: |
+          # An empty value must mean UNSET (config/constants.js accepts only
+          # unset, "1" or "2").
+          set -o pipefail   # the default `bash -e` would let `| tee` hide a failing exit code
+          if [ -z "$DM_E2EE_DEFAULT_MIN_VERSION" ]; then unset DM_E2EE_DEFAULT_MIN_VERSION; fi
+          unset WIRE_TEST_ALLOW_SYSTEM_BROWSER
+          node --experimental-test-module-mocks \
+            --env-file=tests/test.env \
+            --test \
+            --test-timeout=600000 \
+            --test-concurrency=4 \
+            $(find tests -name '*.test.mjs' | sort) | tee tap.txt
+          # The TAP must name the project's own Chromium, never a fallback.
+          grep -q 'browser: chromium (@sparticuz/chromium)' tap.txt
 
       - name: Failure diagnosis protocol
         if: failure()
         run: |
-          # A hang here has always been CPU 0 with no output. Re-run the
-          # failing file ALONE, three times, and report whether it reproduces
-          # every time / sometimes / never. Do not lower concurrency and retry.
+          # Re-run the failing file ALONE, three times, and report whether it
+          # reproduces every time / sometimes / never. Do not lower the
+          # concurrency and retry as a "fix".
           echo "Re-run the failing file alone three times before concluding anything."

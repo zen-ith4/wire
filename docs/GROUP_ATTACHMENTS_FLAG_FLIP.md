@@ -219,3 +219,40 @@ is small and stays inside the same envelope:
 
 Nothing in this section is implemented, and nothing may be implemented before
 the checklist above is ticked.
+---
+
+## 7. The client hard ceiling (50 MB): options, not a decision
+
+STEP 3F clamps the server's reported cap to a client ceiling of 50 MB
+(`MAX_GROUP_ATTACHMENT_HARD_MAX_MB`, `public/js/chat/group-attachments.js:62`).
+A server configured above 50 MB produces files the server accepts and the
+receivers refuse. Three options; **no code changes in this step**.
+
+**(a) Keep 50 MB and refuse above it at the server too.** Cap
+`GROUP_UPLOAD_MAX_MB` at the ceiling in `config/constants.js` (one line):
+
+    // config/constants.js
+    GROUP_UPLOAD_MAX_MB: Math.min(process.env.GROUP_UPLOAD_MAX_MB || 50, 50),
+
+Cheapest, keeps the client simple, and makes the two sides agree. Cost: a
+deployment that wants bigger files must change the ceiling in both places.
+
+**(b) Raise the ceiling to a named number.** The loader holds ciphertext and
+plaintext at the same time (about 2x), and two downloads run concurrently:
+
+| ceiling | per download | two concurrent |
+|---|---|---|
+| 50 MB  | ~100 MB | ~200 MB |
+| 100 MB | ~200 MB | ~400 MB |
+| 200 MB | ~400 MB | ~800 MB |
+
+Pick (b) only with a measured memory budget on the target devices; on a
+phone, 200 MB of resident attachment memory is a crash risk.
+
+**(c) Stream-decrypt in chunks.** A protocol change (the ciphertext is read
+in pieces and the AEAD tag is verified at the end), out of scope for this
+step and for the flip.
+
+**Recommendation (one line):** keep (a) for the first release - it is the
+only option that needs no protocol change and no new memory budget, and it
+can be revisited once real usage shows a need for larger files.

@@ -183,6 +183,35 @@ test('3C-2e: the REAL encrypt path leaves only ciphertext on disk (acceptance-no
     assert.equal(r.attachment_size, plaintext.length + 16);
 });
 
+test('3C-3E-1: GET /api/groups/limits tells the client the configured cap (and needs a session and the group protocol header)', async () => {
+    // STEP 3E item 1: the DM equivalent is routes/dm.routes.js:31 ->
+    // controllers/dm.controller.js:326. The value is constants.GROUP_UPLOAD_MAX_MB
+    // (the test environment sets it to 1 MB).
+    const s = await scenario();
+    const { alice } = await groupWith(s, '3e-1');
+
+    const ok = await globalThis.__nodeFetch(`${s.server.origin}/api/groups/limits`, {
+        headers: { Authorization: `Bearer ${alice.ident.token}`, 'X-Wire-Group-Proto': '2' },
+    });
+    assert.equal(ok.status, 200, `the limits endpoint must answer: ${ok.status}`);
+    const body = await ok.json();
+    assert.equal(typeof body.upload_max_mb, 'number');
+    assert.equal(body.upload_max_mb, Number(process.env.GROUP_UPLOAD_MAX_MB), 'the value must be the configured cap');
+
+    // A session is required.
+    const noAuth = await globalThis.__nodeFetch(`${s.server.origin}/api/groups/limits`, {
+        headers: { 'X-Wire-Group-Proto': '2' },
+    });
+    assert.equal(noAuth.status, 401, 'the endpoint must need a session');
+
+    // The group protocol gate applies (the client always sends the header
+    // for /api/groups, public/js/core/api.js:55).
+    const noProto = await globalThis.__nodeFetch(`${s.server.origin}/api/groups/limits`, {
+        headers: { Authorization: `Bearer ${alice.ident.token}` },
+    });
+    assert.equal(noProto.status, 426, 'the group protocol gate must apply');
+});
+
 test('3C-3D-0: an oversize content is refused with 400 and leaves NO orphan file on disk', async () => {
     // STEP 3D item 0: the server refuses a `content` above 90,000 characters.
     // The multer file has already been written to disk when the handler runs,

@@ -119,6 +119,14 @@ function listGroupsHandler(req, res) {
   res.json(listGroupsForUser(req.user.id));
 }
 
+// STEP 3E item 1: lets the client learn the configured upload cap BEFORE it
+// encrypts a file - the same shape as DM's getUploadLimitsHandler
+// (controllers/dm.controller.js:326). It does not depend on a group, so it
+// needs no membership - only a session.
+function getUploadLimitsHandler(req, res) {
+  res.json({ upload_max_mb: constants.GROUP_UPLOAD_MAX_MB });
+}
+
 function getMembersHandler(req, res) {
   const groupId = parseGroupId(req);
   if (!groupId) return res.status(400).json({ error: 'Invalid group id' });
@@ -789,6 +797,7 @@ function getAttachmentHandler(req, res) {
 module.exports = {
   createGroupHandler,
   listGroupsHandler,
+  getUploadLimitsHandler,
   getMembersHandler,
   addMemberHandler,
   removeMemberHandler,

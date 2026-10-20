@@ -18,6 +18,7 @@
 // The whole feature is behind GROUP_ATTACHMENTS_UI_ENABLED (false).
 
 import { getToken } from '../core/auth.js';
+import { api } from '../core/api.js';
 import { resolveServerUrl } from '../core/server.js';
 import {
     encryptAttachmentForGroup,
@@ -67,6 +68,60 @@ export const MAX_GROUP_ATTACHMENT_HARD_MAX_MB = DEFAULT_GROUP_ATTACHMENT_UPLOAD_
  * by what the server chooses to send.
  */
 export const MAX_GROUP_ATTACHMENT_PLAINTEXT_BYTES = MAX_GROUP_ATTACHMENT_HARD_MAX_MB * 1024 * 1024;
+
+/* =========================================================
+ * The server's upload cap (STEP 3E item 1)
+ *
+ * The DM path learns it from `GET /api/dm/limits`
+ * (public/js/media/attachment-e2ee.js:288-303); the group path now uses
+ * `GET /api/groups/limits` (routes/groups.routes.js). The value is fetched
+ * ONCE per session and memoised, exactly like DM.
+ *
+ * The server value is only ever used when it is SMALLER than the compiled-in
+ * hard ceiling: a hostile server must not be able to raise the client's own
+ * memory bound. If the request fails, the named default is used and the
+ * server stays the authority (it rejects the upload anyway).
+ * ========================================================= */
+
+let uploadLimitPromise = null;
+
+/** Forgets the memoised cap (a new session, or a test). */
+export function resetGroupUploadLimitCache() {
+    uploadLimitPromise = null;
+}
+
+/**
+ * The cap the server reports, in MB - never above the hard ceiling.
+ * @returns {Promise<number>}
+ */
+export async function getGroupUploadLimitMb() {
+    if (!uploadLimitPromise) {
+        uploadLimitPromise = (async () => {
+            try {
+                const data = await api('/api/groups/limits');
+                const n = Number(data && data.upload_max_mb);
+                if (!Number.isFinite(n) || n <= 0) return DEFAULT_GROUP_ATTACHMENT_UPLOAD_MAX_MB;
+                // The hard ceiling: a server value above it is ignored.
+                return Math.min(n, MAX_GROUP_ATTACHMENT_HARD_MAX_MB);
+            } catch {
+                // Do not cache a failure: ask again next time.
+                uploadLimitPromise = null;
+                return DEFAULT_GROUP_ATTACHMENT_UPLOAD_MAX_MB;
+            }
+        })();
+    }
+    return uploadLimitPromise;
+}
+
+/**
+ * The largest file the client will download, in bytes: the cap the client
+ * believes (never above the hard ceiling) times 1 MB.
+ * @returns {Promise<number>}
+ */
+export async function groupAttachmentDownloadMaxBytes() {
+    const capMb = await getGroupUploadLimitMb();
+    return Math.min(MAX_GROUP_ATTACHMENT_PLAINTEXT_BYTES, Math.max(1, capMb) * 1024 * 1024);
+}
 
 /** The four types that may ever be rendered inline - and only after the
  *  DECRYPTED bytes were sniffed to match. SVG is never in this list. */
@@ -454,10 +509,16 @@ export class GroupAttachmentTooLargeError extends Error {
  *
  * @returns {Promise<{file: File, fields: Record<string,string>}>}
  */
-export async function prepareGroupAttachmentUpload({ file, caption = '', replyToId = 0, groupId, ensureKey, maxMb = DEFAULT_GROUP_ATTACHMENT_UPLOAD_MAX_MB }) {
+export async function prepareGroupAttachmentUpload({ file, caption = '', replyToId = 0, groupId, ensureKey, maxMb = null }) {
     if (!file || typeof file.size !== 'number') throw new Error('No file to encrypt');
     if (file.size <= 0) throw new Error('The file is empty');
-    if (file.size > maxMb * 1024 * 1024) throw new GroupAttachmentTooLargeError(maxMb);
+    // The cap: the server's, clamped to the client's hard ceiling. The
+    // fallback (the endpoint fails) is the compiled-in default, and the
+    // server stays the authority either way.
+    const cap = maxMb === null || maxMb === undefined
+        ? await getGroupUploadLimitMb()
+        : Math.min(Number(maxMb) || 0, MAX_GROUP_ATTACHMENT_HARD_MAX_MB);
+    if (file.size > cap * 1024 * 1024) throw new GroupAttachmentTooLargeError(cap);
     const captionText = String(caption || '');
     if (captionText.length > MAX_GROUP_ATTACHMENT_CAPTION) {
         throw new Error(
@@ -954,7 +1015,7 @@ async function runDownload(row) {
             messageId: row.raw.id,
             signal: row.controller?.signal,
             expectedBytes,
-            maxBytes: MAX_GROUP_ATTACHMENT_PLAINTEXT_BYTES,
+            maxBytes: await groupAttachmentDownloadMaxBytes(),
         });
         const bytes = await decryptGroupAttachmentBytes({
             groupId: row.groupId,

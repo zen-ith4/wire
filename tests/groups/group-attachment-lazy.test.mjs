@@ -45,6 +45,16 @@ mock.module(js('core/server.js'), {
     },
 });
 
+
+// The group limits endpoint (STEP 3E item 1): the loader asks for the cap
+// before it downloads, so it is stubbed here - otherwise the stubbed fetch
+// would see the limits request too.
+mock.module(js('core/api.js'), {
+    namedExports: {
+        api: async () => ({ upload_max_mb: 50 }),
+    },
+});
+
 const ga = await import(js('chat/group-attachments.js'));
 
 /** A row element and the message element that holds it. */

@@ -12,6 +12,7 @@ const { asyncHandler } = require('../middleware/asyncHandler');
 const {
   createGroupHandler,
   listGroupsHandler,
+  getUploadLimitsHandler,
   getMembersHandler,
   addMemberHandler,
   removeMemberHandler,
@@ -57,6 +58,14 @@ router.use((req, res, next) => {
 
 router.post('/', authenticate, createGroupHandler);
 router.get('/', authenticate, listGroupsHandler);
+
+// STEP 3E item 1: the configured upload cap, so the client can refuse an
+// oversized file before encrypting it (the DM equivalent is
+// routes/dm.routes.js:31). It does not depend on a group, so it needs no
+// membership; it does take the group protocol gate, like the other group
+// message routes, because the client always sends that header for
+// /api/groups (public/js/core/api.js:55).
+router.get('/limits', authenticate, requireGroupProtocol, getUploadLimitsHandler);
 
 router.get('/:groupId/members', authenticate, getMembersHandler);
 router.post('/:groupId/members', authenticate, addMemberHandler);

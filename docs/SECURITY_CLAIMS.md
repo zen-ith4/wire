@@ -24,6 +24,7 @@ server delivers, so nothing below holds against a server that changes it.
 | **DM attachments** | file bytes: confidentiality (STREAM format); meta (name, mime, per-file key) and caption: v2 envelope with AAD label `dm-att-v2` for a peer at >= 2 | `public/js/crypto/messages/attachment-stream.js`; `dm-v2.js:715`; the server stores an opaque name, `application/octet-stream`, voice flag 0 and the ciphertext size (`services/dm.service.js:270-277`) | `tests/dm-v2-attachments-browser.test.mjs` a, e1-e7, e4b, f1, f1b, f2, f2b; `tests/acceptance-no-plaintext.test.mjs` |
 | **DM key continuity** | a key substituted AFTER first contact is detected and HELD (no silent decrypt under the new key); safety number to compare out of band | TOFU pin + archive per device (`public/js/crypto/keys/peer-trust.js:30`); key-change alarm (`public/js/chat/dm-key-trust.js`) | `tests/peer-trust.test.mjs`, `tests/peer-trust-browser.test.mjs` |
 | **Group messages** | confidentiality (Sender Keys); per-message sender authentication (signature over group, senderKeyId, counter, iv, ciphertext, replyToId, attachment slot); KDM AAD binds group/from/to/epoch/version | `public/js/crypto/groups/signing.js:93-104`; `docs/GROUP_E2EE_MULTIDEVICE_DESIGN.md` 6 | `tests/groups/group-signing-adversarial.test.mjs` C4-1, C4-3, C4-4, C4-8 |
+| **Group KDM key continuity** | a group member's identity key substituted after first contact is detected: the KDM is neither produced nor unwrapped under the new key, and the member is shown as "not receiving" until accepted | the group path consults the SAME TOFU pin as DMs (`public/js/crypto/keys/peer-key-gate.js` called from `keys/session.js`); self-KDMs use the local identity key, never a server fetch; distributions skip only a changed member and are re-wrapped after accept | `tests/groups/group-kdm-key-pinning.test.mjs`, `tests/groups/group-signing-ensure.test.mjs` E-1b |
 | **Group attachments** | file bytes bound into the signature (iv, ciphertext hash, plaintext length); lazy download bounded by the SIGNED size; 20 MB auto-load budget per view; 2 concurrent downloads | `docs/GROUP_ATTACHMENTS_E2EE.md`; `public/js/chat/group-attachments.js:609`, `:669`, `:758` | `tests/groups/group-attachment-browser.test.mjs` 1-11 |
 
 **Feature state:** group attachment SENDING is off
@@ -48,10 +49,9 @@ v1 (`database/migrations.js:41` `DEFAULT 1`; the four INSERTs at
   and no per-message FS (`docs/GROUP_E2EE_MULTIDEVICE_DESIGN.md` 6).
 - **First contact (TOFU).** The first key a client learns comes from the
   server; only an out-of-band safety-number comparison closes that.
-- **Group key distribution is not pinned.** The group path derives the KDM key
-  from the server-supplied identity key without consulting the DM pin
-  (`public/js/crypto/keys/session.js:387`), so key substitution against a group
-  member is NOT detected (`docs/E2EE_TRIAGE_3I.md` R1).
+- **Key change before the user acts on the alarm.** A changed group member's
+  KDM is skipped/held and the member is shown as "not receiving", but a server
+  can still withhold the alarm itself, and first contact remains TOFU.
 - **Deletion, omission, reordering, availability.** The server can drop or
   withhold any message; there is no gap detection.
 - **Replay beyond the window.** Per device and FIFO: DM 2000 ivs per

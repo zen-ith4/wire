@@ -109,9 +109,14 @@ export function readEnvelopeSenderKeyId(envelopeJson) {
  *   callers pass the live member list from GET
  *   /api/groups/:groupId/members.
  * @param {number} epoch
+ * @param {{force?: boolean}} [options] force=true mints and distributes a
+ *   fresh Sender Key even when this device already has one for `epoch`. It is
+ *   used after a changed peer key is accepted: the previous distribution
+ *   skipped that member, so the only way to send them the current key without
+ *   exporting raw key material is a new rotation that includes them again.
  * @returns {Promise<boolean>} true if a rotation actually happened
  */
-export async function ensureSenderKeyForGroup(groupId, memberUserIds, epoch) {
+export async function ensureSenderKeyForGroup(groupId, memberUserIds, epoch, { force = false } = {}) {
     const identity = getGroupIdentity();
 
     // Cross-TAB mutual exclusion. Tabs of one browser profile share
@@ -123,7 +128,7 @@ export async function ensureSenderKeyForGroup(groupId, memberUserIds, epoch) {
     const run = async () => {
         const mine = await getMySenderKey(identity, groupId);
 
-        if (mine && mine.epoch === epoch) {
+        if (mine && mine.epoch === epoch && !force) {
             return false;
         }
 

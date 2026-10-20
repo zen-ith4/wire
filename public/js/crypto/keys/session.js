@@ -16,6 +16,12 @@ import {
     mayTryRetiredKey
 } from './peer-trust.js';
 
+import {
+    getOwnUserId,
+    getPeerTrustContext,
+    resolveGroupPeerKey
+} from './peer-key-gate.js';
+
 
 const sessionKeys = new Map();
 
@@ -173,7 +179,7 @@ export function removeSessionKey(userId) {
 
     sessionKeys.delete(id);
     pendingSessionKeys.delete(id);
-    kdmKeys.delete(id);
+    deleteKdmKeysForUser(id);
     pendingKdmKeys.delete(id);
     archivedSessionKeys.delete(id);
     pendingArchivedKeys.delete(id);
@@ -287,7 +293,7 @@ async function buildArchivedSessionKeys(id) {
             // (first contact). After a key-change alarm the attacker's
             // substituted key is current, and an unknown retired key arriving
             // with it must not become a second way in. See mayTryRetiredKey().
-            const trust = await trustCtx();
+            const trust = await getPeerTrustContext();
 
             if (trust) {
                 const verdict = await mayTryRetiredKey(id, publicKey, trust);
@@ -310,29 +316,6 @@ async function buildArchivedSessionKeys(id) {
     archivedSessionKeys.set(id, keys);
 
     return keys;
-}
-
-/**
- * The (origin, ownUserId) the pin store is keyed by, or null when there is no
- * logged-in user / no server configured — in which case the retired-key rule is
- * skipped and v15 behaviour applies unchanged.
- */
-async function trustCtx() {
-    try {
-        const { getServerEndpoint } = await import('../../core/server.js');
-        const { getCurrentUser } = await import('../../core/auth.js');
-        const origin = getServerEndpoint();
-        const user = getCurrentUser();
-        const ownUserId = Number(user?.id);
-
-        if (!origin || !Number.isInteger(ownUserId) || ownUserId <= 0) {
-            return null;
-        }
-
-        return { origin: String(origin), ownUserId };
-    } catch {
-        return null;
-    }
 }
 
 /**
@@ -377,6 +360,20 @@ function base64ToBytes(base64) {
  * Group KDM wrap key (F2)
  * ========================================================= */
 
+function kdmCacheKey(id, publicKey) {
+    return `${id}\u0000${publicKey}`;
+}
+
+function deleteKdmKeysForUser(id) {
+    const prefix = `${id}\u0000`;
+
+    for (const key of kdmKeys.keys()) {
+        if (key.startsWith(prefix)) {
+            kdmKeys.delete(key);
+        }
+    }
+}
+
 async function createGroupKdmKey(id) {
     const identity = getCurrentIdentity();
 
@@ -384,23 +381,47 @@ async function createGroupKdmKey(id) {
         throw new Error('Identity is not unlocked');
     }
 
-    const peerPublicKey = await getPeerPublicKey(id);
+    // R1: the pin is consulted on EVERY creation round, before any key is
+    // derived. The old code fetched the server key and cached the result for
+    // the page lifetime, so a substituted key was only a risk at first use and
+    // a real peer rotation was invisible until reload.
+    //
+    // resolveGroupPeerKey() returns the exact bytes it evaluated; we derive
+    // from those bytes rather than fetching again (2.8 T). For the sender's own
+    // user id it returns the LOCAL identity public key and never asks the
+    // server (self-KDM, 2.8 S).
+    const ownUserId = await getOwnUserId();
+    const evaluated = await resolveGroupPeerKey(
+        id,
+        ownUserId,
+        identity.publicKey
+    );
+
+    const cacheKey = kdmCacheKey(id, evaluated.publicKey);
+    const existing = kdmKeys.get(cacheKey);
+
+    if (existing) {
+        return existing;
+    }
+
+    const peerPublicKey = await importX25519(evaluated.publicKey);
     const key = await deriveSessionKeyFromPeer(
         identity.privateKey,
         peerPublicKey,
         GROUP_KDM_INFO
     );
 
-    kdmKeys.set(id, key);
+    kdmKeys.set(cacheKey, key);
     return key;
 }
 
 export async function getOrCreateGroupKdmKey(userId) {
     const id = normalizeUserId(userId);
 
-    const existing = kdmKeys.get(id);
-    if (existing) return existing;
-
+    // Deliberately no cache lookup here: the pin check must run even when a
+    // derived key is cached. createGroupKdmKey() reuses a derived key only
+    // AFTER the current public key has matched the pin, and keys the cache by
+    // the public key itself so a rotation cannot be served a stale entry.
     const pending = pendingKdmKeys.get(id);
     if (pending) return pending;
 

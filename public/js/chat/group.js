@@ -81,6 +81,7 @@ import {
     downloadGroupAttachment,
     revokeAllGroupAttachments,
     abortDetachedGroupAttachments,
+    resetGroupAttachmentAutoLoadBudget,
     sanitiseGroupFileName,
 } from './group-attachments.js';
 import { setActiveGroupIdGetter } from './reactions.js';
@@ -710,6 +711,9 @@ function renderActiveGroupShell(group) {
     // STEP 3D item 2: the rows of the group we are leaving are no longer in
     // the DOM, so their downloads are aborted and their blob URLs revoked.
     abortDetachedGroupAttachments();
+    // STEP 3E item 2: a new thread view gets a fresh auto-load budget, so a
+    // flooding group member cannot spend the budget of the next view.
+    resetGroupAttachmentAutoLoadBudget();
 
     if (groupComposer) groupComposer.destroy();
 

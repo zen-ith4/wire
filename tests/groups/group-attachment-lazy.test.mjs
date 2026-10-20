@@ -195,8 +195,9 @@ test('the placeholder shows the sanitised name, the signed size and the declared
     assert.ok(html.includes('Download (6.0 MB)'), `a file over the auto-load limit waits for a click: ${html}`);
     assert.ok(html.includes('data-group-attachment-id="7"'), 'the row carries its message id');
 
-    // A small image: the button does not promise a size.
+    // A small image: the button names the size too (STEP 3E item 2 - a row
+    // that the auto-load budget stopped must still say how big the file is).
     const small = ga.groupAttachmentPlaceholderHtml({ id: 8 }, { name: 'a.png', size: 1024, mime: 'image/png' });
-    assert.ok(small.includes('>Download</button>'), `the small image's button: ${small}`);
+    assert.ok(small.includes('Download (1 KB)'), `the small image's button: ${small}`);
     assert.ok(small.includes('1 KB'), `the size is still shown: ${small}`);
 });

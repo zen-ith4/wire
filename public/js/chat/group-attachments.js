@@ -747,6 +747,29 @@ export const GROUP_ATTACHMENT_AUTO_LOAD_MAX_BYTES = 5 * 1024 * 1024;
 /** How many downloads may be in flight at the same time. */
 export const GROUP_ATTACHMENT_MAX_CONCURRENT_DOWNLOADS = 2;
 
+/**
+ * How many bytes may be AUTO-LOADED per thread view.
+ *
+ * A flooding group member must not be able to make every other member's
+ * client download 5 MB for each of hundreds of messages: after this budget
+ * is used up, the remaining rows keep their "Download (X MB)" button and
+ * nothing is fetched until the user asks for it.
+ */
+export const GROUP_ATTACHMENT_AUTO_LOAD_BUDGET_BYTES = 20 * 1024 * 1024;
+
+/** The bytes auto-loaded in the current thread view. */
+let autoLoadBytes = 0;
+
+/** Resets the auto-load budget (a new thread view). */
+export function resetGroupAttachmentAutoLoadBudget() {
+    autoLoadBytes = 0;
+}
+
+/** The bytes auto-loaded in the current thread view. */
+export function groupAttachmentAutoLoadBytes() {
+    return autoLoadBytes;
+}
+
 /** The rows of this module: message id -> the row's state. */
 const rows = new Map();
 
@@ -808,8 +831,7 @@ export function groupAttachmentPlaceholderHtml(msg, { name, size, mime } = {}) {
     const shown = sanitiseGroupFileName(name);
     const bytes = Number(size) > 0 ? Number(size) : 0;
     const type = String(mime || '').slice(0, MAX_GROUP_ATTACHMENT_MIME);
-    const auto = isAutoLoadableGroupAttachment({ mime: type, size: bytes });
-    const label = auto ? 'Download' : `Download (${formatGroupAttachmentSize(bytes)})`;
+    const label = `Download (${formatGroupAttachmentSize(bytes)})`;
     const sizeText = escapeHtml(formatGroupAttachmentSize(bytes));
     const typeText = type ? escapeHtml(type) : '';
     return `<div class="chat-attachment chat-attachment-lazy" data-group-attachment-id="${id}">
@@ -895,15 +917,12 @@ export function registerGroupAttachmentRow(msg, node) {
 
     let row = rows.get(id);
     if (row && row.el && row.el !== el) {
-        // The row was re-rendered (the thread repaints). An in-flight
-        // download is aborted (its row is gone) and started again when the
-        // new row becomes visible; a LOADED row keeps its bytes and its blob
-        // URL - there is no second download.
-        if (row.state === 'loading' || row.state === 'queued') {
-            softAbortGroupAttachment(row);
-        } else {
-            row.el = el;
-        }
+        // The row was re-rendered (the thread repaints, or the same message
+        // arrives again through the live path and the history). The download
+        // is NOT restarted: the row keeps its state - and an in-flight
+        // download keeps running and renders into the new element. A row that
+        // really left the DOM is aborted by abortDetachedGroupAttachments().
+        row.el = el;
     }
     if (!row) {
         row = { id, state: 'idle', controller: null, blobUrl: null };
@@ -939,7 +958,12 @@ function ensureObserver() {
             if (!row) continue;
             observer.unobserve(entry.target);
             if (row.state === 'idle' && isAutoLoadableGroupAttachment({ mime: row.meta?.file?.mime, size: row.size })) {
-                enqueueGroupAttachment(row);
+                // The per-thread auto-load budget: past it, the row keeps its
+                // "Download (X MB)" button until the user asks for it.
+                const size = Number(row.size) || 0;
+                if (autoLoadBytes + size <= GROUP_ATTACHMENT_AUTO_LOAD_BUDGET_BYTES) {
+                    enqueueGroupAttachment(row, true);
+                }
             }
         }
     }, { rootMargin: '200px' });
@@ -964,9 +988,10 @@ export function downloadGroupAttachment(id) {
     return true;
 }
 
-function enqueueGroupAttachment(row) {
+function enqueueGroupAttachment(row, autoLoaded = false) {
     if (!row || row.state === 'queued' || row.state === 'loading') return;
     row.state = 'queued';
+    row.autoLoaded = autoLoaded;
     if (!queue.includes(row.id)) queue.push(row.id);
     pumpQueue();
 }
@@ -976,6 +1001,18 @@ function pumpQueue() {
         const id = queue.shift();
         const row = rows.get(String(id));
         if (!row || row.state !== 'queued') continue;
+        // The auto-load budget is checked when the download STARTS too: the
+        // queue may have been filled while the budget still had room.
+        if (row.autoLoaded) {
+            const size = Number(row.size) || 0;
+            if (autoLoadBytes + size > GROUP_ATTACHMENT_AUTO_LOAD_BUDGET_BYTES) {
+                // Past the budget: the row keeps its "Download (X MB)"
+                // button until the user asks for it.
+                row.state = 'idle';
+                row.autoLoaded = false;
+                continue;
+            }
+        }
         inFlight++;
         row.state = 'loading';
         row.controller = typeof AbortController === 'undefined' ? null : new AbortController();
@@ -1031,6 +1068,11 @@ async function runDownload(row) {
         row.inlineMime = inlineMime && INLINE_IMAGE_MIMES.includes(inlineMime) ? inlineMime : null;
         row.name = sanitiseGroupFileName(row.meta?.file?.name);
         row.state = 'loaded';
+        // The auto-load budget is spent by the bytes that were auto-loaded.
+        if (row.autoLoaded) {
+            autoLoadBytes += Number(row.size) || 0;
+            row.autoLoaded = false;
+        }
         renderRow(row);
     } catch (e) {
         if (row.state === 'aborted') return;
@@ -1039,9 +1081,9 @@ async function runDownload(row) {
             return;
         }
         const reason = String(e?.reason || e?.message || e);
-        if (e?.reason === 'attachment-mismatch') {
-            // The bytes do not match what the sender signed: permanent, no
-            // retry loop.
+        if (e?.reason === 'attachment-mismatch' || e?.name === 'ReplayedMessageError') {
+            // The bytes do not match what the sender signed, or the file's
+            // nonce was already claimed: permanent, no retry loop.
             row.state = 'mismatch';
         } else {
             row.state = 'error';

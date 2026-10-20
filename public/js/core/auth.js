@@ -11,8 +11,13 @@ import {
   restoreIdentity,
   restoreIdentityWithUnlockKey,
   migrateLegacyAccount,
-  prepareCredentialChange
+  prepareCredentialChange,
+  lockIdentity
 } from '../crypto/identity-service.js';
+
+import {
+  clearSessionKeys
+} from '../crypto/keys/session.js';
 
 import {
   deriveCredentials,
@@ -101,6 +106,19 @@ export function logout() {
   setToken(null);
   currentUser = null;
   pendingVerification = null;
+
+  /*
+   * R3: lock the in-memory identity and drop every derived session key NOW,
+   * synchronously, before any view gets the logout event. A 401-triggered
+   * logout does not reload the page, so without this the identity private key,
+   * DM session keys and cached group KDM keys stayed usable in memory.
+   *
+   * lockIdentity() also clears the group local-wrap and Sender Key caches.
+   * Nothing persisted is touched here: this is an in-memory lock, and the
+   * unlock-key removal below is the separate persisted step.
+   */
+  lockIdentity();
+  clearSessionKeys();
 
   /*
    * Views keep in-memory copies of the signed-in user's data (files,

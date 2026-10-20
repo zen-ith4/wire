@@ -57,6 +57,12 @@ mock.module(js('crypto/identity-service.js'), {
         restoreIdentityWithUnlockKey: async () => ({}),
         migrateLegacyAccount: async () => ({ migrated: true }),
         prepareCredentialChange: async () => ({}),
+        lockIdentity: () => {},
+    },
+});
+mock.module(js('crypto/keys/session.js'), {
+    namedExports: {
+        clearSessionKeys: () => {},
     },
 });
 mock.module(js('crypto/keys/unlock-key-store.js'), {

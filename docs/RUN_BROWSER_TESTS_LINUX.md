@@ -24,8 +24,11 @@ of `docs/GROUP_ATTACHMENTS_FLAG_FLIP.md`.
 | a few shared libraries | the Chromium binary | see the Docker route below |
 
 The versions that are known to work together with this tree:
-`puppeteer-core@25.14.0` and `@sparticuz/chromium@153.0.0` (the pair that is
-installed in the owner's `browser-check` directory).
+`puppeteer-core@25.14.0` and `@sparticuz/chromium@153.0.0` (the pair the reviewer
+installed and that launched). Observed engine line on that run:
+`HeadlessChrome/153.0.8010.0` (i.e. `chromium (@sparticuz/chromium)`).
+Versions are pinned in scripts/run-browser-tests-linux.sh via
+PUPPETEER_VERSION / CHROMIUM_VERSION.
 
 ---
 

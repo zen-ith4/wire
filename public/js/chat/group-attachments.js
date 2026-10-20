@@ -24,7 +24,7 @@ import {
     decryptAttachmentForGroup,
     computeImageDimensions,
 } from '../crypto/messages/attachment-crypto.js';
-import { encryptOutgoingGroupMessage, decryptIncomingGroupMessageDetailed } from '../crypto/messages/group-message-crypto.js';
+import { encryptOutgoingGroupMessage, decryptIncomingGroupMessageDetailed, UnverifiedMessageError } from '../crypto/messages/group-message-crypto.js';
 
 /* =========================================================
  * Limits (see docs/GROUP_ATTACHMENTS_E2EE.md, section "3C")
@@ -48,6 +48,25 @@ export const MAX_GROUP_ATTACHMENT_DIMENSION = 20000;
  * anything over its own cap (the client would then get a 400).
  */
 export const DEFAULT_GROUP_ATTACHMENT_UPLOAD_MAX_MB = 50;
+
+/**
+ * The compiled-in HARD CEILING on the cap the server reports, in MB.
+ *
+ * A hostile (or compromised) server must not be able to raise the client's
+ * own memory bound: the value the server reports is only ever used when it
+ * is SMALLER than this ceiling. The server stays the authority for the
+ * files it accepts, but the client never trusts a server value above its own
+ * ceiling.
+ */
+export const MAX_GROUP_ATTACHMENT_HARD_MAX_MB = DEFAULT_GROUP_ATTACHMENT_UPLOAD_MAX_MB;
+
+/**
+ * The largest file the client will ever DOWNLOAD, in bytes: the compiled-in
+ * cap times 1 MB. A signed `att_len` above this is refused BEFORE a request
+ * is sent (STEP 3E item 0): the download is bounded by the SIGNED size, not
+ * by what the server chooses to send.
+ */
+export const MAX_GROUP_ATTACHMENT_PLAINTEXT_BYTES = MAX_GROUP_ATTACHMENT_HARD_MAX_MB * 1024 * 1024;
 
 /** The four types that may ever be rendered inline - and only after the
  *  DECRYPTED bytes were sniffed to match. SVG is never in this list. */
@@ -508,20 +527,134 @@ function groupAttachmentUrl(groupId, messageId) {
 }
 
 /**
+ * Reads a response body with a HARD bound.
+ *
+ * The primary path streams the body (`Response.body.getReader()`) into a
+ * buffer of exactly `expectedBytes` bytes and cancels the stream the moment
+ * it delivers more than that - the body is never buffered beyond what was
+ * signed.
+ *
+ * The fallback (an environment without a streaming body) needs a declared
+ * `Content-Length`: without it there is no bound, so the download is refused
+ * instead of read. With it, the browser itself stops the body at the
+ * declared length, so the read is bounded by the same number that was
+ * signed.
+ *
+ * @param {Response} res
+ * @param {number} expectedBytes the exact ciphertext length (att_len + 16)
+ * @param {boolean} hasContentLength whether the response declared a length
+ * @returns {Promise<Uint8Array>}
+ */
+export async function readBoundedAttachmentBody(res, expectedBytes, hasContentLength) {
+    if (res.body && typeof res.body.getReader === 'function') {
+        const reader = res.body.getReader();
+        const out = new Uint8Array(expectedBytes);
+        let filled = 0;
+        try {
+            for (;;) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                if (!value || !value.length) continue;
+                if (filled + value.length > expectedBytes) {
+                    // More than was signed: stop reading NOW.
+                    await reader.cancel().catch(() => {});
+                    throw new UnverifiedMessageError('attachment-mismatch');
+                }
+                out.set(value, filled);
+                filled += value.length;
+            }
+        } catch (e) {
+            await reader.cancel().catch(() => {});
+            throw e;
+        }
+        if (filled !== expectedBytes) {
+            throw new UnverifiedMessageError('attachment-mismatch');
+        }
+        return out;
+    }
+
+    // No streaming body: only a declared length makes the read bounded.
+    if (!hasContentLength) {
+        throw new UnverifiedMessageError('attachment-mismatch');
+    }
+    const buf = await res.arrayBuffer();
+    if (buf.byteLength !== expectedBytes) {
+        throw new UnverifiedMessageError('attachment-mismatch');
+    }
+    return new Uint8Array(buf);
+}
+
+/**
  * Downloads the ciphertext of a group attachment (session header, never a
  * token in the URL). The signal aborts the download when the row leaves the
  * DOM.
+ *
+ * The download is BOUNDED (STEP 3E item 0):
+ *   - the signed size is known before the request: a file bigger than the
+ *     client's own maximum is refused WITHOUT sending a request;
+ *   - a `Content-Length` that is not exactly the signed length aborts the
+ *     request before the body is read;
+ *   - the body itself is read with a hard bound and cancelled the moment it
+ *     delivers more than was signed.
+ *
+ * @param {object} a
+ * @param {number} a.groupId
+ * @param {number} a.messageId
+ * @param {AbortSignal} [a.signal]
+ * @param {number} a.expectedBytes the exact ciphertext length (att_len + 16)
+ * @param {number} [a.maxBytes] the client's own maximum (never raised by a
+ *   server value)
  */
-export async function fetchGroupAttachmentCiphertext({ groupId, messageId, signal } = {}) {
+export async function fetchGroupAttachmentCiphertext({ groupId, messageId, signal, expectedBytes, maxBytes } = {}) {
     const token = getToken();
     if (!token) throw new Error('Authentication required');
-    const res = await fetch(groupAttachmentUrl(groupId, messageId), {
-        method: 'GET',
-        headers: { Authorization: `Bearer ${token}` },
-        signal,
-    });
+
+    const limit = Number.isFinite(Number(maxBytes)) && Number(maxBytes) > 0
+        ? Number(maxBytes)
+        : MAX_GROUP_ATTACHMENT_PLAINTEXT_BYTES;
+
+    // (1) The SIGNED size, before any request: a file that is bigger than
+    // the client's own maximum is refused without a request at all.
+    const expected = Number(expectedBytes);
+    if (!Number.isSafeInteger(expected) || expected < 0 || expected > limit) {
+        throw new UnverifiedMessageError('attachment-mismatch');
+    }
+
+    // The request is aborted through OUR controller, so a mismatch can stop
+    // it even when the caller's signal is not triggered.
+    const controller = new AbortController();
+    const forward = () => controller.abort();
+    if (signal) {
+        if (signal.aborted) controller.abort();
+        else signal.addEventListener('abort', forward, { once: true });
+    }
+
+    let res;
+    try {
+        res = await fetch(groupAttachmentUrl(groupId, messageId), {
+            method: 'GET',
+            headers: { Authorization: `Bearer ${token}` },
+            signal: controller.signal,
+        });
+    } finally {
+        if (signal) signal.removeEventListener('abort', forward);
+    }
     if (!res.ok) throw new Error(`Attachment download failed (${res.status})`);
-    return new Uint8Array(await res.arrayBuffer());
+
+    // (2) The declared length must be exactly what was signed.
+    const declared = res.headers && typeof res.headers.get === 'function'
+        ? res.headers.get('content-length')
+        : null;
+    const hasContentLength = declared !== null && declared !== undefined && declared !== '';
+    if (hasContentLength) {
+        if (!/^\d+$/.test(String(declared)) || Number(declared) !== expected) {
+            controller.abort();
+            throw new UnverifiedMessageError('attachment-mismatch');
+        }
+    }
+
+    // (3) The body, read with a hard bound.
+    return readBoundedAttachmentBody(res, expected, hasContentLength);
 }
 
 /**
@@ -812,10 +945,16 @@ export function groupAttachmentRowState(id) {
 
 async function runDownload(row) {
     try {
+        // STEP 3E item 0: the download is bounded by the SIGNED size (the
+        // verified att_len) and by the client's own maximum - never by what
+        // the server chooses to send.
+        const expectedBytes = (Number(row.size) || 0) + GCM_TAG_BYTES;
         const ciphertext = await fetchGroupAttachmentCiphertext({
             groupId: row.groupId,
             messageId: row.raw.id,
             signal: row.controller?.signal,
+            expectedBytes,
+            maxBytes: MAX_GROUP_ATTACHMENT_PLAINTEXT_BYTES,
         });
         const bytes = await decryptGroupAttachmentBytes({
             groupId: row.groupId,

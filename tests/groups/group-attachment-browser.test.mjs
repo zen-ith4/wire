@@ -427,8 +427,62 @@ test('8 the download queue never has more than 2 downloads in flight', async (t)
     assert.ok(conc.max <= 2, `at most 2 downloads may be in flight, saw ${conc.max}`);
 });
 
-test('9 a file over the auto-load limit waits for an explicit click', async (t) => {
+test('10 a hostile relay answers with a 100 MB body for a 1 KB file: the row shows "Attachment unavailable" and almost nothing is read', async (t) => {
     const w = await world();
+    await enableFlag(w.alicePage);
+    await enableFlag(w.bobPage);
+
+    // 1 KB of honest content.
+    const png = fixture('photo.png', PNG);
+    await sendFile(w.alicePage, w.gid, png, 'a picture');
+
+    // The relay replaces the stored bytes with a 100 MB body. The server
+    // serves it with its real Content-Length, so the client must see a
+    // length that is not the signed one and abort BEFORE reading the body.
+    const d = db();
+    const row = d.prepare('SELECT id, attachment_path FROM group_messages WHERE group_id = ? AND attachment_path IS NOT NULL ORDER BY id DESC LIMIT 1').get(w.gid);
+    d.close();
+    const stored = path.join(server.dirs.group, row.attachment_path);
+    const block = Buffer.alloc(1024 * 1024, 0x41);
+    const fd = fs.openSync(stored, 'w');
+    try {
+        for (let i = 0; i < 100; i++) fs.writeSync(fd, block);
+    } finally {
+        fs.closeSync(fd);
+    }
+
+    const bob2 = await freshRecipient(w);
+
+    // Count the bytes the client actually reads off the wire.
+    await bob2.evaluate(() => {
+        globalThis.__bytesRead = 0;
+        const orig = window.fetch;
+        window.fetch = async (...args) => {
+            const res = await orig(...args);
+            const url = String(args[0]);
+            if (!url.includes('/attachments/') || !res.body) return res;
+            const reader = res.body.getReader();
+            const counted = {
+                getReader: () => ({
+                    read: async () => {
+                        const r = await reader.read();
+                        if (r.value) globalThis.__bytesRead += r.value.length;
+                        return r;
+                    },
+                    cancel: () => reader.cancel(),
+                }),
+            };
+            return new Proxy(res, { get: (t, k) => (k === 'body' ? counted : t[k]) });
+        };
+    });
+    const placeholder = await bobSees(bob2, w.gid, '#group-messages .chat-attachment-unsupported');
+    assert.ok(placeholder, 'the row must show the placeholder');
+
+    const read = await bob2.evaluate(() => globalThis.__bytesRead);
+    assert.ok(read < 1024 * 1024, `the client must not read the 100 MB body, it read ${read} bytes`);
+});
+
+test('9 a file over the auto-load limit waits for an explicit click', async (t) => {    const w = await world();
     await enableFlag(w.alicePage);
     await enableFlag(w.bobPage);
 

@@ -269,16 +269,17 @@ user the server names as its author.
    **removed member's own old key** is attributed to **her** (never to anyone else, never as a member's message). The server is the
    membership gate. A message signed late by a superseded key whose signing handle was still in memory (an in-flight send) is
    accepted. Pinned by **C4-5** and **C4-7** (same file); proposal in 7.2.
-3. **No identity pinning, no fingerprints.** `keys/peer-keys.js` fetches peer identity public keys from the server with no pinning
-   or safety number. A malicious server can still substitute identity public keys (and so read and forge at the account level);
+3. **No identity pinning on the GROUP path.** (STEP 3F follow-up 3.I: DMs have had a TOFU pin, a key-change alarm and a safety
+   number since Phase 2, `public/js/crypto/keys/peer-trust.js`; the GROUP path does not consult them - the KDM wrap key is derived
+   from `getPeerPublicKey(id)`, `public/js/crypto/keys/session.js:387`, with no pin check.) `keys/peer-keys.js` fetches peer identity
+   public keys from the server and the group path uses them unchecked. A malicious server can still substitute identity public keys (and so read and forge at the account level);
    the signatures do not change that. Proposal in 7.4.
 4. **Leaked passwords leak the identity.** The identity key is wrapped under the password-derived key and stored server-side
    (login scheme 2); anyone with the password and the wrapped blob recovers the identity and can then act as the account. Accepted.
-5. **Group attachments are disabled and must bind their bytes into the signature before they are ever enabled.** The envelope
-   has a reserved, empty attachment slot in the signed bytes; an envelope carrying attachment fields is refused; the attachment
-   bytes themselves are only AEAD-protected under the Sender Key, so any member could forge a file "from" the key's owner. Pinned
-   by **C3-12** (`tests/groups/group-signing-messages.test.mjs`), which fails if any client module starts calling
-   `encryptAttachmentForGroup` and says what must be done first. The binding design is specified in
+5. **Group attachments: SENDING is disabled; the bytes ARE bound.** (STEP 3F follow-up 3.I: the first half of this item
+   described the tree before STEP 3B and was stale - the attachment slot is no longer empty, and the file's iv, ciphertext hash
+   and plaintext length are signed.) **C3-12** (`tests/groups/group-signing-messages.test.mjs`) now fails if any client module
+   OTHER than the one send module calls `encryptAttachmentForGroup`. The binding design is specified in
    `docs/GROUP_ATTACHMENTS_E2EE.md`. The binding is IMPLEMENTED (STEP 3B), the
    composer/upload/render are implemented (STEP 3C) and hardened (STEP 3D) - but
    they sit behind `GROUP_ATTACHMENTS_UI_ENABLED`, which ships FALSE: group

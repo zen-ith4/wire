@@ -3,6 +3,27 @@
 Group E2EE + CSP/XSS hardening were ported from a v1.0.0 tree onto v1.3.6.
 X's own code wins on every conflict. Deliberate deviations and limits:
 
+> **Correction (STEP 3F follow-up 3.I, re-checked against the code).** The two
+> sections below describe the tree at the time of the port and are STALE:
+>
+> - **DM attachments ARE end-to-end encrypted and wired.** The server takes the
+>   encrypted path by default (`DM_E2EE_ATTACHMENTS_ENFORCED` defaults to
+>   `'true'`, `controllers/dm.controller.js:175-179`; `sendEncryptedAttachment`,
+>   `:281`), and stores an opaque name, `application/octet-stream`, no voice flag
+>   and the ciphertext size only (`services/dm.service.js:270-277`). The client
+>   path is `public/js/media/attachment-e2ee.js` (imported by
+>   `public/js/chat/dm.js:40`) with the STREAM format
+>   (`public/js/crypto/messages/attachment-stream.js`) and, since STEP 2A, a v2
+>   meta envelope (`docs/DM_ATTACHMENTS_E2EE.md`). What IS still true: the DM
+>   functions of `attachment-crypto.js` (`encryptAttachmentForDm` /
+>   `decryptAttachmentForDm`) are dead code. A legacy PLAINTEXT path still exists
+>   behind `DM_E2EE_ATTACHMENTS_ENFORCED=false` (`dm.controller.js:505`).
+> - **The group attachment client IS wired** (STEP 3C-3F:
+>   `public/js/chat/group-attachments.js`), behind
+>   `GROUP_ATTACHMENTS_UI_ENABLED`, which ships `false`
+>   (`public/js/chat/group-attachments-flag.js:17`): receiving works, sending is
+>   unreachable from the UI. See `docs/GROUP_ATTACHMENTS_E2EE.md`.
+
 ## DM attachment encryption is NOT part of this port
 X encrypts DM *text* only; DM attachments are stored/served as before.
 `public/js/crypto/messages/attachment-crypto.js` is kept byte-identical to

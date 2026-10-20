@@ -1,8 +1,10 @@
 # DM E2EE hardening — design (Phase 0, no code)
 
-**Status:** design only. Nothing in this document has been implemented. No test
-was written for it. Every claim about current behaviour below cites the file and
-line it was read from, on `wire-final-8` at commit `b278c2b`.
+**Status:** this began as a design-only document (Phase 0) whose citations were
+read on `wire-final-8` at commit `b278c2b`; sections 1-2 and 10 still describe
+THAT tree. Phase 1 (v2 envelope) and Phase 2 (key continuity) have since shipped:
+the shipped state is in **3.5** and **8.0**, and those two sections win over
+anything else here. Phase 3 is design only (`docs/PHASE3_RFC.md`).
 
 **Scope:** 1:1 DM text and DM attachments. Group crypto is untouched — see
 §6 for exactly why, and for what would have to change if it ever did.
@@ -222,7 +224,8 @@ dmAttachmentAad({ version, fromUserId, toUserId, senderKeyFp, direction, iv, att
 ### 3.5 Status: what has shipped (wire-final-29)
 
 Facts only. No marketing. This is the Phase 1 + Part B status; Phase 3 (forward
-secrecy) is not started, and DM attachments are still v1 with no AAD.
+secrecy) is not started. DM attachments get the v2 envelope since STEP 2A (see
+the bullet below); for a peer still at `dm_e2ee_min_version` 1 they stay v1.
 
 **Shipped (v2 text envelope):**
 
@@ -531,10 +534,10 @@ is out of scope here and is flagged for a separate decision.
 |---|---|---|---|
 | **Passive server reading stored traffic** | No help — it holds no keys. | No help. | No help. |
 | **Active server reflecting / relabelling messages** | **Defeated** (directional key + AAD). | Inherited. | Inherited. |
-| **Active server swapping a peer's key *after* first contact** | **Detected** (AAD-bound `senderKeyFp`). | Defeated (signed prekeys + safety numbers). | Inherited. |
+| **Active server swapping a peer's key *after* first contact** | **Detected** (AAD-bound `senderKeyFp`). | Detected and HELD (TOFU pin + key-change alarm, 8.0); signed pre-keys were NOT shipped. | Inherited. |
 | **Active server swapping a peer's key *on first contact*** | **NOT defeated.** TOFU. | **NOT defeated**, unless the users compare a safety number out of band. | Inherited. |
 | **Server downgrade v2 → v1** | **Defeated on an established conversation** (§5.3); **not on a fresh one**. | Inherited. | Inherited. |
-| **Server replaying an old message** | Partially — `msgId` is per-device. | Inherited. | Inherited. |
+| **Server replaying an old message** | Partially — the replay store is keyed on the AAD-bound `iv` (since STEP 2A.1, not on `msgId`), per device and windowed (FIFO; 2000 per conversation, 50 conversations). | Inherited. | Inherited. |
 | **Server suppressing / reordering / deleting** | **Not defended, and not defensible.** | Same. | Same. |
 | **Forward secrecy (device seized today, history readable later)** | **No.** | **No.** | Only if Phase 3 ships. |
 
@@ -603,14 +606,14 @@ Proposed, all borrowed from the Signal protocol — not invented here:
 
 1. **Signed pre-keys (XEdDSA).** Each account publishes a batch of one-time
    pre-keys, each signed by the long-term identity key using XEdDSA
-   (Sign, 1), so a server cannot substitute its own pre-key for the user's
+   (Perrin, "The XEdDSA and VXEdDSA Signature Schemes", Signal, 2016), so a server cannot substitute its own pre-key for the user's
    without invalidating the signature. This closes the first-contact hole that
    Phase 1 explicitly cannot close, *except* for the case where the server also
    substitutes the long-term identity key — which is what the safety number is
    for.
 2. **Safety number.** A stable digest over both users' identity keys and their
    pre-key bundles, displayed and comparable, in the style of Signal's
-   (PuTTY, 2021, §9). This is the out-of-band check that makes first contact
+   safety numbers. This is the out-of-band check that makes first contact
    trustworthy.
 3. **Key-change alarm.** On a fingerprint mismatch for an established peer, block
    sending by default and require an explicit "I verified the new key" action —
@@ -673,9 +676,12 @@ long-term public key.
 
 ### (b) Signal-style Double Ratchet
 
-The full construction: X3DH initialisation (Pohlig-Hellman et al., 2018) plus
-the Double Ratchet (Pohlig-Hellman et al., 2018), as specified in the Signal
-Double Ratchet revision (Cohn-Gordon, Cremers, Jackson, Messenger, 2018).
+The full construction: X3DH initialisation (Marlinspike & Perrin, "The X3DH Key
+Agreement Protocol", Signal, 2016) plus the Double Ratchet (Perrin & Marlinspike,
+"The Double Ratchet Algorithm", Signal, 2016); a formal analysis is Cohn-Gordon,
+Cremers, Dowling, Garratt & Stebila, "A Formal Security Analysis of the Signal
+Messaging Protocol" (2017). (STEP 3F follow-up 3.I: the earlier citations named
+the wrong authors.)
 
 - **For:** the only option here giving **true** forward secrecy plus PCS — a
   compromised device does not expose *future* messages either, because keys are

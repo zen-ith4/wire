@@ -61,21 +61,23 @@ export const DM_V2_REPLAY_PER_CONV_MAX = 2000;
 export const DM_V2_REPLAY_MAX_CONVERSATIONS = 50;
 
 /**
- * The server truncates DM `content` to this many characters
- * (controllers/dm.controller.js sendMessage/editMessage: content.trim().slice(0, 2000)).
+ * The server rejects DM `content` above this many characters
+ * (config/dm-stream.js DM_MAX_CONTENT_CHARS, shared with the v2 client guard by
+ * tests/dm-attachments/dm-stream-constants.test.mjs).
  *
  * A v2 envelope is bigger than a v1 one (senderFp 44 base64 chars + msgId 16 +
  * two key names), so the plaintext budget is correspondingly smaller. Sending an
- * envelope that the server will truncate produces a row that cannot be decrypted
- * by anyone, ever - so the client refuses instead of sending one. This is a v1
- * bug too (a v1 message above ~1391 plaintext bytes already breaks); 1B does not
- * fix v1, it only stops v2 from creating a new instance of it.
+ * envelope that the server will reject produces a failed send, and the old
+ * truncation produced a row that cannot be decrypted by anyone, ever. Both the
+ * v2 builder and the v1 branch of encryptDmTextV2 now measure the REAL
+ * serialised envelope and refuse before the request.
  */
 export const DM_V2_MAX_CONTENT_CHARS = 2000;
 
 /**
- * Pure guard used by buildDmV2Content. Throws DmV2TooLargeError when the
- * serialised envelope would exceed the server's content cap.
+ * Pure guard used by buildDmV2Content and the v1 branch of encryptDmTextV2.
+ * Throws DmV2TooLargeError when the serialised envelope would exceed the
+ * server's content cap.
  */
 export function assertDmV2ContentFits(contentChars) {
     if (!Number.isInteger(Number(contentChars)) || Number(contentChars) < 0) {
@@ -121,7 +123,7 @@ export class DmDowngradeRefusedError extends Error {
 export class DmV2TooLargeError extends Error {
     constructor(length) {
         super(
-            `Message is too long for DM v2: the encrypted envelope is ${length} ` +
+            `Message is too long: the encrypted envelope is ${length} ` +
             `characters and the server stores at most ${DM_V2_MAX_CONTENT_CHARS}. ` +
             'Shorten the message.'
         );

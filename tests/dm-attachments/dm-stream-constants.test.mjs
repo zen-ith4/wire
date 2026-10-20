@@ -49,3 +49,28 @@ test('multer and the controller use the shared module, with no private copies', 
     assert.doesNotMatch(src, /Buffer\.from\('WAT1'/, 'no hand-copied magic');
   }
 });
+
+test('server and browser agree on the DM content cap', () => {
+  const root = new URL('../../', import.meta.url);
+  const wire = fs.readFileSync(new URL('public/js/crypto/messages/dm-v2-wire.js', root), 'utf8');
+  const match = wire.match(/export const DM_V2_MAX_CONTENT_CHARS\s*=\s*(\d+)\s*;/);
+  assert.ok(match, 'the browser cap must stay a single exported constant');
+  assert.equal(server.DM_MAX_CONTENT_CHARS, Number(match[1]));
+});
+
+test('the controller uses the shared content cap, rejects with 413, and never slices', () => {
+  const root = new URL('../../', import.meta.url);
+  const controller = fs.readFileSync(new URL('controllers/dm.controller.js', root), 'utf8');
+  assert.match(controller, /dmStream\.DM_MAX_CONTENT_CHARS/);
+  assert.match(controller, /status\(413\)/);
+  assert.match(controller, /DM_CONTENT_TOO_LONG/);
+  assert.doesNotMatch(controller, /\b2000\b/, 'no private copy of the content cap');
+  assert.doesNotMatch(controller, /\.slice\(\s*0\s*,\s*dmStream\.DM_MAX_CONTENT_CHARS\s*\)/, 'the server must reject, never truncate');
+});
+
+test('both the v1 and v2 send paths measure the serialised envelope', () => {
+  const root = new URL('../../', import.meta.url);
+  const source = fs.readFileSync(new URL('public/js/crypto/messages/message-crypto.js', root), 'utf8');
+  assert.match(source, /const content\s*=\s*JSON\.stringify\(payload\)/);
+  assert.match(source, /assertDmV2ContentFits\(\s*content\.length\s*\)/, 'v1 must check the exact stored value too');
+});

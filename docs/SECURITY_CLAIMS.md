@@ -68,9 +68,6 @@ v1 (`database/migrations.js:41` `DEFAULT 1`; the four INSERTs at
 - **Deniability, traffic analysis, an attacker holding the database file** (the
   `dm_e2ee_min_version` ratchet triggers in `database/migrations.js:127` stop
   the app from lowering the floor, not someone editing the file).
-- **Long DMs.** The server cuts `content` at 2000 characters
-  (`controllers/dm.controller.js:454`, `:928`), which corrupts a long envelope
-  instead of refusing it (`docs/E2EE_TRIAGE_3I.md` R2).
 
 ## 4. Verification status
 

@@ -101,6 +101,17 @@ function dmV2RuleViolation(content, recipientId) {
   return null;
 }
 
+// R2: the content cap is a REJECTION, never a truncation. 413 with a
+// machine-readable code, returned before dmV2RuleViolation so an over-length
+// envelope cannot be parsed, judged harmless (it is not valid JSON after a cut)
+// and stored broken.
+function dmContentTooLong(res) {
+  return res.status(413).json({
+    error: `Message is too long (max ${dmStream.DM_MAX_CONTENT_CHARS} characters)`,
+    code: 'DM_CONTENT_TOO_LONG',
+  });
+}
+
 // STEP 1B: additive enrichment. The reply_to object carries the replied-to
 // message's own content etc., but not its reply_to_id. v2 binds replyToId into
 // the AAD (docs/e2ee-dm-hardening.md 3.3), so the receiver needs it to open a
@@ -266,7 +277,7 @@ async function validateEncryptedUpload(req) {
     return 'Invalid attachment_iv';
   }
   const caption = typeof body.content === 'string' ? body.content.trim() : '';
-  if (caption && (caption.length > 2000 || !isEncryptedEnvelopeShape(caption))) {
+  if (caption && (caption.length > dmStream.DM_MAX_CONTENT_CHARS || !isEncryptedEnvelopeShape(caption))) {
     return 'Caption must be end-to-end encrypted';
   }
   if (!isValidStreamLength(req.file.size)) {
@@ -451,7 +462,10 @@ function sendMessage(req, res) {
     return res.status(404).json({ error: 'User not found' });
   }
 
-  const trimmed = content.trim().slice(0, 2000);
+  const trimmed = content.trim();
+  if (trimmed.length > dmStream.DM_MAX_CONTENT_CHARS) {
+    return dmContentTooLong(res);
+  }
   const v2Violation = dmV2RuleViolation(trimmed, Number(recipient_id));
   if (v2Violation) {
     return res.status(400).json({ error: v2Violation });
@@ -492,6 +506,12 @@ async function sendMessageWithAttachment(req, res) {
 
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
+  }
+
+  const captionForLimit = typeof req.body.content === 'string' ? req.body.content.trim() : '';
+  if (captionForLimit.length > dmStream.DM_MAX_CONTENT_CHARS) {
+    cleanup();
+    return dmContentTooLong(res);
   }
 
   const wantsEncrypted =
@@ -544,7 +564,7 @@ async function sendMessageWithAttachment(req, res) {
         ? extLabel
         : 'application/octet-stream';
   }
-  const caption = (req.body.content || '').trim().slice(0, 2000);
+  const caption = (req.body.content || '').trim();
   const replyToId = normalizeDmReplyToId(req.body?.reply_to_id, req.user.id, Number(recipient_id));
   const isVoiceMessage = isVoiceMessageFlag(req.body?.is_voice_message, mime);
   // Same reasoning as chat.controller.js's sendMessageWithAttachment:
@@ -925,7 +945,10 @@ function editMessage(req, res) {
     return res.status(400).json({ error: 'Attachment messages cannot be edited' });
   }
 
-  const trimmed = content.trim().slice(0, 2000);
+  const trimmed = content.trim();
+  if (trimmed.length > dmStream.DM_MAX_CONTENT_CHARS) {
+    return dmContentTooLong(res);
+  }
   const v2Violation = dmV2RuleViolation(trimmed, Number(msg.recipient_id));
   if (v2Violation) {
     return res.status(400).json({ error: v2Violation });

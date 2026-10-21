@@ -174,3 +174,12 @@ Commits: send-side gate, receive-side gate, UI, docs; each with tests; no wire c
 - **Linux evidence:** none yet.
 
 **STOP.** Waiting for D1 to D14 and the word `GO` for Item 1 (and for each Item 2 commit). Items 3 to 6 are not started.
+
+## Implementation status (appended)
+
+- Item 1 (group KDM pinning): `c7b8fa4`
+- Item 2 R3 (logout lock): `b6c6f6b`
+- Item 2 R2 (DM content cap): `f7c1555`
+- Item 2 R5 (admin/seed/first-admin DM v2 default): `<R5_COMMIT_HASH>`
+- Branch: `security-hardening`; commits are local only.
+- Known limitation: Chromium browser tests could not run in this environment.

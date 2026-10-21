@@ -29,12 +29,16 @@ server delivers, so nothing below holds against a server that changes it.
 
 **Feature state:** group attachment SENDING is off
 (`GROUP_ATTACHMENTS_UI_ENABLED = false`,
-`public/js/chat/group-attachments-flag.js:17`); receiving is on. Self-registered
-accounts start at DM v2 unless the operator sets `DM_E2EE_DEFAULT_MIN_VERSION=1`
-(`config/constants.js:7-18`, used at `services/auth.service.js:405`); admin-created, seeded and first-admin accounts start at
-v1 (`database/migrations.js:41` `DEFAULT 1`; the four INSERTs at
-`database/seed.js:55`, `utils/setupWizard.js:632`, `services/user.service.js:91`,
-`:290` do not set it) - see `docs/E2EE_TRIAGE_3I.md` R5.
+`public/js/chat/group-attachments-flag.js:17`); receiving is on. Self-registered, admin-created, seeded and first-admin accounts all start at the
+shared default `DM_E2EE_DEFAULT_MIN_VERSION` (default 2; env may set 1)
+(`config/constants.js:7-18`, used at `services/auth.service.js:405`,
+`database/seed.js:55`, `utils/setupWizard.js:632`,
+`services/user.service.js:91`, `:290`); the column `DEFAULT 1`
+(`database/migrations.js:41`) and the triggers (`database/migrations.js:127-140`)
+are unchanged, and existing rows are not migrated (triggers only raise; no
+backfill) - see `docs/E2EE_TRIAGE_3I.md` R5. First contact remains TOFU
+regardless of the floor, and the APK shipping an old `public/` is only a
+hypothesis (D13).
 
 ## 3. What is NOT protected
 

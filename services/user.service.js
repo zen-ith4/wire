@@ -92,13 +92,15 @@ async function createAdmin(username, password) {
       (
         username,
         password_hash,
-        is_admin
+        is_admin,
+        dm_e2ee_min_version
       )
-      VALUES (?, ?, 1)
+      VALUES (?, ?, 1, ?)
     `)
     .run(
       username,
-      hash
+      hash,
+      constants.DM_E2EE_DEFAULT_MIN_VERSION
     );
 }
 
@@ -296,9 +298,10 @@ async function createUser(username, email, creds, isAdmin) {
         auth_scheme,
         kdf_salt,
         kdf_iterations,
-        must_change_password
+        must_change_password,
+        dm_e2ee_min_version
       )
-      VALUES (?, ?, ?, ?, ?, 2, ?, ?, 1)
+      VALUES (?, ?, ?, ?, ?, 2, ?, ?, 1, ?)
     `).run(
       username,
       email,
@@ -306,7 +309,8 @@ async function createUser(username, email, creds, isAdmin) {
       emailVerified,
       isAdmin ? 1 : 0,
       creds.kdfSalt,
-      creds.kdfIterations
+      creds.kdfIterations,
+      constants.DM_E2EE_DEFAULT_MIN_VERSION
     );
 
     userId =

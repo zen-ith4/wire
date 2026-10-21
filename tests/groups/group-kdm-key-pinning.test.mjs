@@ -193,6 +193,27 @@ test('self-KDM uses the local identity key and never asks the server', async () 
     assert.equal(fetchCount, 0);
 });
 
+test('self-KDM ignores a hostile server key for the sender own id', async () => {
+    // D3: a malicious server can answer /identity-key/<own id> with a key it
+    // controls. The self branch must use the local identity public key and
+    // never even fetch that response. Setting the server key here is what makes
+    // this different from the "never asks the server" count check above: if the
+    // branch regresses, the substituted key is a valid, fetchable answer rather
+    // than a missing one.
+    const hostile = await makeIdentityPair();
+    serverPeerKeys.set(1, hostile.publicKey);
+    fetchCount = 0;
+
+    const resolved = await resolveGroupPeerKey(1, 1, own.publicKey);
+    assert.equal(resolved.publicKey, own.publicKey);
+    assert.notEqual(resolved.publicKey, hostile.publicKey);
+    assert.equal(fetchCount, 0);
+
+    const key = await session.getOrCreateGroupKdmKey(1);
+    assert.ok(key);
+    assert.equal(fetchCount, 0);
+});
+
 test('a missing signing context fails closed', async () => {
     const peerId = freshPeerId();
     serverPeerKeys.set(peerId, (await makeIdentityPair()).publicKey);

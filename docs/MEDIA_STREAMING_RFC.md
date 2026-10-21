@@ -89,10 +89,21 @@ What the user sees today for a large encrypted video:
 
 Proposed threshold: **8 MiB of plaintext** (128 × 64 KiB chunks) for encrypted `video/*` and `audio/*` only. Reason: below 8 MiB the existing full-download path finishes quickly enough that SW Range complexity, postMessage handshakes and per-stream state are not worth the risk; above it, time-to-first-frame and peak memory dominate. Images and voice notes stay on the Blob path regardless of size.
 
-Threshold vs. upload cap:
+Threshold vs. upload cap (D1):
 
-- The DM upload cap is configurable: `config/constants.js:107` reads `process.env.DM_UPLOAD_MAX_MB` with default 50; `controllers/dm.controller.js:337-339` exposes it through `/api/dm/limits` as `upload_max_mb`.
-- The streaming threshold therefore affects attachments from **8 MiB up to the configured cap (default 50 MB)**, i.e. a 42 MB window. It does not affect files below 8 MiB or files above the configured cap (which cannot be uploaded).
+- The DM upload cap is configurable through the `DM_UPLOAD_MAX_MB` environment variable (`config/constants.js:107`). Default: 50. Server code applies no clamp, min or max beyond reading the number (`config/constants.js:107`); a non-positive or non-finite value is not clamped on the server. The client falls back to 50 MB when `/api/dm/limits` returns a non-positive or non-finite value (`attachment-e2ee.js:288-303`). The server exposes the effective cap through `GET /api/dm/limits` (`controllers/dm.controller.js:337-339`), which requires authentication.
+- Single source of truth: the server. The client caches the first successful `/api/dm/limits` response in `uploadLimitPromise` (`attachment-e2ee.js:282-303`) and resets it on `resetUploadLimitCache()`. Tests: `tests/dm-attachments/dm-attachments-server-cap.test.mjs` and `tests/dm-attachments/dm-attachments-size-precheck.test.mjs`. The upload-cap is not part of `dm-stream-constants.test.mjs`, which only pins container-format constants.
+- The 8 MiB threshold affects only attachments from **8 MiB up to the configured cap**. At the default 50 MB cap that is a 42 MB window. If the cap is below 8 MiB, no DM attachment takes the new path.
+
+| Configured cap | Blob path (≤ 8 MiB) | New streaming path (8 MiB < size ≤ cap) |
+|---|---|---|
+| 10 MB | ≤ 8 MiB | 8 MiB – 10 MB |
+| 25 MB | ≤ 8 MiB | 8 MiB – 25 MB |
+| 50 MB (default) | ≤ 8 MiB | 8 MiB – 50 MB |
+| 100 MB (env-raised) | ≤ 8 MiB | 8 MiB – 100 MB |
+| Below 8 MiB | all attachments | none |
+
+- The 8 MiB threshold should be a **client-side named constant**, not a shared server/client constant, because the server is path-agnostic and never needs to know which path the client chose. If web and native clients share code, put it in their shared module and cover it with a unit test.
 
 ### Q2. Server Range behaviour
 
@@ -140,6 +151,9 @@ Token refresh (pull model, per D3):
 - If `UPDATE_TOKEN` arrives within 5 s, the SW uses it and completes the fetch. If not, the SW returns 401 for that request and moves the stream to `DEAD` only if playback cannot continue; the player's error path then retries.
 - Background tab: the browser may throttle the page, but the SW is still running. The page handles `TOKEN_NEEDED` when it is next scheduled. If the page is frozen, the SW's 5 s timeout fires and returns 401; playback pauses/buffers. When the page thaws, it checks token expiry and posts `UPDATE_TOKEN` before retrying.
 - The page also posts a proactive `UPDATE_TOKEN` on `visibilitychange` when `document.visibilityState === 'visible'` and the token expires within 10 s, so a tab returning to the foreground does not hit the 5 s timeout.
+- bfcache: on `pagehide`, if `event.persisted` is true, the page does **not** send `PURGE_CLIENT`. The SW keeps the stream under its idle TTL so a restored page can reattach. On `pageshow` with `persisted === true`, the page re-registers only if the SW reports the stream is gone.
+- Page frozen (Page Lifecycle `freeze`): the page cannot mint tokens. The SW's 5 s timeout fires and returns 401; playback pauses/buffers. When the page resumes, it checks expiry and posts `UPDATE_TOKEN` before retrying.
+- Page gone (tab closed or discarded): no purge message may arrive. The SW drops the stream after the 10-minute idle TTL. If the SW is terminated first, the stream is already gone and the page re-handshakes on restore.
 - The SW never mints or verifies tokens; it only forwards them.
 
 ### Q4. Key handling
@@ -308,16 +322,24 @@ if (url.pathname.startsWith('/__wire_media_stream/')) {
 
 Proposed numbers (to be validated in P5):
 
-- Read-ahead window: **4 chunks** (256 KiB plaintext) ahead of the playhead. This is roughly 2–4 seconds of 1080p video or several seconds of high-bitrate audio, enough to avoid stalls without large memory use.
-- In-memory plaintext cache per stream: **8 chunks** (512 KiB) LRU.
+- Read-ahead window: **8 chunks** (512 KiB plaintext) ahead of the playhead.
+- In-memory plaintext cache per stream: **16 chunks** (1 MiB) LRU.
 - Concurrent streams: **2**; a third request waits or is rejected with 503 and the player retries.
 - In-flight ciphertext fetches per stream: **2**.
 - Abort: every fetch uses `request.signal`; on element removal, navigation or logout the AbortController fires and the stream is unregistered.
 - Fast seeking: cancel in-flight fetches, drop cached chunks outside the new position, fetch the window at the new position. Do not retain chunks from the old position.
-- Two videos at once: allowed (up to the 2-stream limit); each keeps its own 512 KiB cache. Peak ~1–2 MB of plaintext plus ciphertext fetch buffers, not the file size.
+- Two videos at once: allowed (up to the 2-stream limit); each keeps its own 1 MiB cache. Peak ~2 MiB of plaintext plus ciphertext fetch buffers, not the file size.
 - Worst case for a DM attachment: the configured upload cap (default 50 MB plaintext) is the largest possible attachment. Memory stays O(window) because the SW never downloads the whole file; it fetches only the chunks for the current and read-ahead ranges. The size check uses metadata, not a full download. If the configured cap is raised later, the same windowed behaviour applies.
 
-Justification: the format is deliberately 64 KiB chunks so tampering is detected within one chunk and memory stays flat (`attachment-stream.js:33-39`). 512 KiB per stream is small compared with the 64 MiB decrypted-blob cache already tolerated for the Blob path (`attachment-e2ee.js:45`), while giving the media element enough buffered data for smooth playback.
+Read-ahead worked example (D5):
+
+- 64 KiB chunks (`STREAM_CHUNK_SIZE = 65536`, `attachment-stream.js:43`).
+- 1080p at a typical 4 Mbps = 500 KiB/s. Chunks per second = 500 / 64 = 7.81. An 8-chunk (512 KiB) read-ahead is therefore 512 / 500 = 1.02 s of playback. A 720p stream at 2.5 Mbps = 312.5 KiB/s is 1.64 s.
+- 128 kbps audio = 16 KiB/s. Chunks per second = 16 / 64 = 0.25. The same 8-chunk read-ahead is 32 s of audio.
+- Memory: 8 chunks read-ahead + 16 chunks cached = 1 MiB per stream. For 2 concurrent streams the hard cap is 2 MiB of plaintext cache, plus ciphertext fetch buffers.
+- Hard cap: **2 concurrent streams**, **16 cached chunks (1 MiB) per stream**, and **16 chunks (1 MiB) per 206 response** (`maxResponseChunks`). A third stream is rejected with 503 until one completes.
+
+Justification: the format is deliberately 64 KiB chunks so tampering is detected within one chunk and memory stays flat (`attachment-stream.js:33-39`). 1 MiB per stream is small compared with the 64 MiB decrypted-blob cache already tolerated for the Blob path (`attachment-e2ee.js:45`), while giving the media element enough buffered data for smooth playback.
 
 ### Q10. Interaction with lazy loading and out-of-scope items
 
@@ -445,7 +467,7 @@ See Q12. Summary: every structural failure fails closed (error surfaced, no sile
 2. **D2 — Voice notes.** Out of the streaming path initially.
 3. **D3 — Token.** Reuse the existing 90 s media token, but the SW pulls it on demand via `TOKEN_NEEDED` (no page timer). Background-tab and frozen-page behaviour are specified in Q3.
 4. **D4 — URL shape.** Accept `/__wire_media_stream/<id>`. CSP correction is in Q6: `media-src`/`default-src`, not `connect-src`.
-5. **D5 — Memory.** Provisional. Read-ahead is 4 chunks (~256 KiB), about 2–4 s of high-bitrate media. Response sizes are capped by `maxResponseChunks`.
+5. **D5 — Memory.** Provisional. Read-ahead is 8 chunks (~512 KiB), about 1.0 s at 4 Mbps. Response sizes are capped by `maxResponseChunks`.
 6. **D6 — Safari/iOS.** Supported-with-fallback, flag default OFF, enable only for browsers with a verified run.
 7. **D7 — Manifest.** No edit now. Commit `59df178` is OK if `--check` passes at HEAD (it does as of this RFC: version `e08eca9a87c6`, 179 files).
 8. **D8 — CSP sandbox.** Accept; verify in P5.

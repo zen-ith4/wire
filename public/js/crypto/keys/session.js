@@ -4,23 +4,8 @@ import {
 } from './key-derivation.js';
 
 import {
-    getPeerPublicKey,
-    getPeerKeyCandidates
-} from './peer-keys.js';
-
-import {
-    getCurrentIdentity
-} from '../identity-service.js';
-
-import {
     mayTryRetiredKey
 } from './peer-trust.js';
-
-import {
-    getOwnUserId,
-    getPeerTrustContext,
-    resolveGroupPeerKey
-} from './peer-key-gate.js';
 
 
 const sessionKeys = new Map();
@@ -98,6 +83,12 @@ export async function createSessionKey(userId) {
     const id =
         normalizeUserId(userId);
 
+    // Loaded lazily for the same acyclic-graph reason as peer-keys.js below:
+    // auth.js statically imports this module, and identity-service.js reaches
+    // account-kdf.js -> core/api.js -> core/auth.js. The import is awaited, so
+    // the key is derived only after the identity is actually available.
+    const { getCurrentIdentity } = await import('../identity-service.js');
+
     const identity =
         getCurrentIdentity();
 
@@ -110,6 +101,10 @@ export async function createSessionKey(userId) {
         );
     }
 
+    // Loaded lazily: peer-keys.js -> core/api.js -> core/auth.js, and auth.js
+    // statically imports this module for clearSessionKeys(). Keeping this edge
+    // dynamic avoids the auth -> session -> peer-keys -> api -> auth cycle.
+    const { getPeerPublicKey } = await import('./peer-keys.js');
     const peerPublicKey =
         await getPeerPublicKey(id);
 
@@ -275,6 +270,7 @@ async function loadArchivedSessionKeys(id) {
 }
 
 async function buildArchivedSessionKeys(id) {
+    const { getCurrentIdentity } = await import('../identity-service.js');
     const identity = getCurrentIdentity();
 
     if (!identity || !identity.privateKey) {
@@ -282,7 +278,15 @@ async function buildArchivedSessionKeys(id) {
         return [];
     }
 
+    // Same acyclic-graph reason as createSessionKey().
+    const { getPeerKeyCandidates } = await import('./peer-keys.js');
     const candidates = await getPeerKeyCandidates(id);
+
+    // Loaded lazily to keep the static graph acyclic: auth.js statically
+    // imports this module for clearSessionKeys(), and peer-key-gate.js reaches
+    // core/api.js -> core/auth.js. Awaiting the import here is deliberate;
+    // retired-key trust still fails closed below.
+    const { getPeerTrustContext } = await import('./peer-key-gate.js');
 
     const keys = [];
 
@@ -375,6 +379,7 @@ function deleteKdmKeysForUser(id) {
 }
 
 async function createGroupKdmKey(id) {
+    const { getCurrentIdentity } = await import('../identity-service.js');
     const identity = getCurrentIdentity();
 
     if (!identity || !identity.privateKey) {
@@ -390,6 +395,11 @@ async function createGroupKdmKey(id) {
     // from those bytes rather than fetching again (2.8 T). For the sender's own
     // user id it returns the LOCAL identity public key and never asks the
     // server (self-KDM, 2.8 S).
+    //
+    // Loaded lazily for the same acyclic-graph reason as buildArchivedSessionKeys()
+    // above. The await is required: no KDM may be derived before the gate has
+    // returned the bytes it evaluated.
+    const { getOwnUserId, resolveGroupPeerKey } = await import('./peer-key-gate.js');
     const ownUserId = await getOwnUserId();
     const evaluated = await resolveGroupPeerKey(
         id,

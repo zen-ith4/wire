@@ -1,0 +1,432 @@
+# MEDIA_STREAMING_RFC — Progressive encrypted DM audio/video via Service Worker + HTTP Range
+
+Status: Phase 0 (read-only design). No production, test, config, dependency or `public/sw-manifest.js` change is included in this commit.
+
+## 0. Environment and evidence
+
+### 0.1 Workstation and repository
+
+| Item | Value |
+|---|---|
+| OS | Microsoft Windows 11 Enterprise 10.0.26300 |
+| Node | v22.23.1 |
+| Git branch | `security-hardening` |
+| Git HEAD at start of Phase 0 | `0e9b0cb9416fa053f00ff16fceda6118ddac1ce1` (`test: cover group key trust in real Chromium`) |
+| Working tree at start | clean (`git status --short` empty) |
+| `public/sw-manifest.js` | not edited; `node scripts/build-sw-manifest.mjs --check` exits 0, version `e08eca9a87c6`, 179 files |
+
+### 0.2 Evidence actually used for this RFC
+
+- Source reading in the current tree: files and line numbers cited below.
+- Existing non-browser Range coverage: `tests/dm-attachments/dm-attachments-e2ee.test.mjs:298-312`.
+- Existing STREAM format coverage: `tests/dm-attachments/attachment-stream.test.mjs` and `tests/dm-attachments/dm-stream-constants.test.mjs`.
+- Existing service-worker manifest coverage: `tests/sw-manifest.test.mjs:59-146`.
+- Group browser test (unrelated feature, cited only as platform evidence that the Linux Chromium recipe works): `tests/groups/group-key-trust-browser.test.mjs`, full recipe `1 tests, 1 pass`, TAP engine line `# \# browser: chromium (@sparticuz/chromium) HeadlessChrome/153.0.8010.0`.
+
+### 0.3 What was not run
+
+- No media-streaming implementation exists yet, so no playback/seek test was run for this RFC.
+- No Safari, Firefox, iOS, Android-device, Electron-runtime or old-APK runtime test was run.
+- No mutation plant was run against this RFC; mutation checks apply to later code phases (P1–P5).
+
+## 1. Contradictions found while re-verifying line numbers
+
+Every line below is from the current tree (`HEAD 0e9b0cb`), not from the roadmap memory.
+
+| # | Where | What contradicts the roadmap memory / prompt |
+|---|---|---|
+| 1 | `config/dm-stream.js:12-15` and `public/js/crypto/messages/attachment-stream.js:43-50` | Chunk size is 64 KiB (`1 << 16`), tag 16 bytes, header 8 bytes. The roadmap's "8-byte `WAT1` header, 16-byte tag, 12-byte base IV" is correct, but the derived ciphertext step is **65552 bytes only for non-final chunks**. The last chunk is `plaintextRemainder + 16`, so the fixed-offset formula `8 + i × 65552` is true for chunks `0..N-2` and for the start of chunk `N-1`, but the last chunk's length varies. See Q5. |
+| 2 | `controllers/dm.controller.js:723-746` | The `?download=1` branch (the one E2EE clients actually use, `attachment-e2ee.js:209,235`) returns **200 with `Content-Length` and no `Accept-Ranges`**. The Range support at `:748-895` is only reached when `?download` is absent. This matters for Q2 and Q3. |
+| 3 | `controllers/dm.controller.js:780-782` | The Range regex is `/bytes=(\d*)-(\d*)/` and is **not anchored**. It silently accepts trailing garbage (`bytes=0-1foo`) and, for `bytes=0-1,5-6`, matches only the first range. Multi-range is not implemented. |
+| 4 | `controllers/dm.controller.js:784-792` and `:820-832` | 416 responses do **not** set `Accept-Ranges`. `Accept-Ranges: bytes` appears only in the no-Range branch (`:762-764`) and the 206 branch (`:848-851`). |
+| 5 | `public/sw.js:307-309` | The existing worker returns early for **any** request with a `Range` header before it ever looks at the URL. A streaming handler must be inserted **before** that early return, otherwise Range media requests bypass the worker entirely. |
+| 6 | `scripts/build-sw-manifest.mjs:27-28` | `public/sw.js` and `public/sw-manifest.js` are both in `EXCLUDE`. Editing `public/sw.js` alone therefore does **not** change `sw-manifest.js`; only listed assets (including any new module added under `public/`) do. The roadmap sentence "public/sw-manifest.js must be rebuilt" is only true if listed assets change. |
+| 7 | `public/js/media/video-player.js:291-314` | There is no spinner CSS for `.video-player.is-loading`; the class only disables the play button. The "what the user sees" answer is therefore weaker than a buffering spinner. |
+| 8 | `public/js/media/voice-message.js:2433-2455` | Voice notes are **not** lazy. They call `resolveMediaSrc()` eagerly during render and decrypt into a Blob before playback, unlike video/audio. |
+| 9 | `public/js/media/attachment-e2ee.js:45` | The decrypted-blob cache cap is 64 MiB (`DECRYPTED_CACHE_MAX_BYTES`), while the DM upload cap is 50 MB plaintext (`config/constants.js:107`). A single 50 MB file therefore cannot be cached after decryption. |
+| 10 | `public/js/core/pwa.js:111-119` | Service-worker registration requires `http:`/`https:` and is skipped for native apps. Electron (`app://`) and the Capacitor APK therefore never register a worker, even though `isNativeApp()` is false in Electron. |
+| 11 | `public/js/chat/group-attachments-flag.js:17` | `GROUP_ATTACHMENTS_UI_ENABLED` is `false`, but it is a client-side constant, not `config/constants.js`. The roadmap's "GROUP_ATTACHMENTS_UI_ENABLED is false" is accurate, but its home is `public/js/chat/group-attachments-flag.js`, not the server config. |
+
+## 2. Answers to the fourteen questions
+
+### Q1. Current client path
+
+Trace (DM, encrypted attachment):
+
+1. `public/js/chat/dm.js:2289` `buildDmMessageEl(msg, currentUser)` builds the message element.
+2. `public/js/chat/dm.js:2367` queues `loadChatImage(msg.id, 'dm')` for images.
+3. `public/js/chat/dm.js:2370` calls `mountAttachmentMedia(msg, div, 'dm')`.
+4. `public/js/media/attachments.js:801-865` `mountAttachmentMedia()` dispatches voice/audio/video.
+5. Encrypted audio/video render with **no `src`** and `preload="none"`:
+   - `public/js/media/video-player.js:116,118`
+   - `public/js/media/audio-player.js:289` (lazy path)
+6. `public/js/media/lazy-e2ee-media.js:54-89` `installLazySource()` wraps `play()`; the first play calls `ensureSource()` (`:58-84`), which calls `resolveMediaSrc(msg, scope)` (`:64`).
+7. `public/js/media/mediaToken.js:86-95` `resolveMediaSrc()` sees a registered secret and calls `fetchDecryptedAttachment(scope, id)` (`:90`), then `URL.createObjectURL(blob)` (`:91`).
+8. `public/js/media/attachment-e2ee.js:217-264` `fetchDecryptedAttachment()` authenticates with `Authorization: Bearer <session JWT>` (`:235-239`), streams `response.body` (`:249-251`) through `decryptAttachmentStream()` (`:253`), and caches the Blob (`:254`).
+9. `public/js/crypto/messages/attachment-stream.js:223-284` `decryptAttachmentStream()` authenticates every chunk and returns `new Blob(out, { type: mimeType })` at `:284`.
+
+What stays on the Blob path (no streaming):
+
+- Images: `public/js/media/attachments.js:1098-1122` (`fetchDecryptedAttachment` → `URL.createObjectURL`).
+- Voice notes: `public/js/media/voice-message.js:2433-2455` (eager `resolveMediaSrc` during render, then `audio.src = resolvedUrl` at `:2502`).
+- Explicit downloads: `public/js/media/attachments.js:2008-2030` (`fetchDecryptedAttachment` → `URL.createObjectURL` at `:2027`).
+- Legacy (non-E2EE) media: token URL path, unchanged.
+
+What the user sees today for a large encrypted video:
+
+- Before play: poster-less black `<video>` with `aria-label="Encrypted video - press play to load"` (`video-player.js:279-282`).
+- On first play: the play button is disabled and `.is-loading` is toggled (`video-player.js:291-297`), but there is **no spinner CSS** for `.video-player.is-loading` (only `.audio-player.loading` has styling, `audio-player.css:529-532`). Audio players dim to 0.7 opacity and disable pointer events.
+- After the whole file downloads and decrypts, `src` is assigned and playback starts. There is no byte progress indicator.
+- On failure: video shows a `.video-error-note` with text `Video could not be decrypted` (`video-player.js:298-310`); audio shows its error box.
+
+Proposed threshold: **8 MiB of plaintext** (128 × 64 KiB chunks) for encrypted `video/*` and `audio/*` only. Reason: below 8 MiB the existing full-download path finishes quickly enough that SW Range complexity, postMessage handshakes and per-stream state are not worth the risk; above it, time-to-first-frame and peak memory dominate. Images and voice notes stay on the Blob path regardless of size. The cap is well below the 50 MB upload limit (`config/constants.js:107`) and below the 64 MiB decrypted-blob cache (`attachment-e2ee.js:45`).
+
+### Q2. Server Range behaviour
+
+Controller: `controllers/dm.controller.js:637-895` `getAttachment()`.
+
+| Claim | Verified? | Evidence |
+|---|---|---|
+| Authentication enforced on every request | Yes | Route `routes/dm.routes.js:116-120` (`mediaAuth`); controller access check `controllers/dm.controller.js:654-662` (sender or recipient only). `mediaAuth` (`middleware/mediaAuth.js:119-154`) accepts either a session Bearer JWT or a scoped `?token=` media token, but the controller re-checks membership either way. |
+| `Accept-Ranges: bytes` | Partial | Set in no-Range branch `:762-764` and 206 branch `:848-851`. **Not** set in `?download` branch `:723-746` or on 416 responses `:784-792,820-832`. |
+| `Content-Range` | Yes on 206 | `:843-846` (`bytes start-end/fileSize`). Also on 416 (`:787-789,826-829` as `bytes */fileSize`). |
+| `Content-Length` | Yes | No-Range `:757-758`; `?download` `:725-726`; 206 `:853-855` (chunk size). |
+| HEAD | No explicit handler | No `req.method === 'HEAD'` anywhere in `getAttachment` (`:637-895`). Route is GET-only (`routes/dm.routes.js:116-120`). Express may answer HEAD generically, but Range semantics for HEAD are **UNVERIFIED**. |
+| Open-ended range `bytes=a-` | Yes | `end` defaults to `fileSize - 1` (`:798-800`); `:794-800`. |
+| Suffix range `bytes=-n` | Yes | Handled `:802-814` (`start = max(fileSize - n, 0)`, `end = fileSize - 1`). |
+| Multi-range `bytes=a-b,c-d` | No | Regex `:780-782` matches only the first range; the comma and second range are ignored. Not supported. |
+| 416 behaviour | Yes | No regex match `:784-792`; invalid `start/end` `:820-832` (`start < 0`, `end >= fileSize`, `start > end`). Response `bytes */fileSize`. |
+| 206 vs 200 when range is the whole file | 206 | No special case; `bytes=0-(fileSize-1)` passes validation and returns 206 (`:841-856`). |
+| ETag / If-Range / Last-Modified | Absent | No ETag, If-Range or Last-Modified handling anywhere in `getAttachment` (grep of `:637-895`). `res.sendFile`-style conditional responses are not used. |
+| Existing test coverage | Yes | `tests/dm-attachments/dm-attachments-e2ee.test.mjs:298-312` checks 206 slicing, `Content-Range`, and 416 for a DM attachment Range request. |
+
+Additional notes: `?download=1` is a full-body path with no Range and no `Accept-Ranges`; the streaming design must either stop using `?download=1` for large media or add Range support to that branch. The safer change is to use the normal attachment URL (no `?download`) for streamed ranges, because that branch already implements Range.
+
+### Q3. Authorization from the Service Worker
+
+Today:
+
+- Page session token is in `localStorage` (`public/js/core/auth.js:41,63-75`) and is sent as `Authorization: Bearer` (`attachment-e2ee.js:237`).
+- Media elements cannot send headers, so `mediaToken.js` mints a short-lived attachment-scoped token (`TOKEN_CACHE_TTL_MS = 60_000` client cache at `mediaToken.js:22`; server TTL 90 s at `utils/jwt.js:118`) and puts it in the URL (`mediaToken.js:59-70`). `mediaAuth` (`middleware/mediaAuth.js:119-154`) verifies it against `(resType, resId)`.
+- The Service Worker cannot read `localStorage` (correct; it has no access to the page's storage in this design).
+
+Options:
+
+| Option | What an XSS in the page can do | What a compromised SW can do | Token lifetime | Widens token exposure? |
+|---|---|---|---|---|
+| (a) Page passes a short-lived, per-stream, per-attachment token through `postMessage` | Same as today: the page already holds the session JWT and can mint media tokens. No new capability. | Can fetch ciphertext for the streams it has been given until expiry; cannot mint new tokens or read other attachments. | 90 s (existing media token) or a new stream TTL chosen by us | No, if the token is the existing media token. A longer-lived stream token **would** widen replay. |
+| (b) Cookie | Ambient authority: any same-origin request, including from injected script, carries it automatically. Worse than today. | Can fetch anything the cookie authorizes, including non-media endpoints. | Session cookie lifetime | Yes — introduces ambient authority and CSRF surface that does not exist today. |
+| (c) Existing `mediaToken.js` mechanism | Same as (a); this is the concrete implementation of (a) available today. | Same as (a). | 90 s server / 60 s client cache | No new widening beyond the existing media-token URL, which already appears in browser history/Referer. |
+
+Recommendation: use **(c)/(a)** — the page calls `.../media-token`, receives the existing 90 s media token, and posts it to the SW together with the 128-bit stream id. The SW fetches ciphertext with `?token=<mediaToken>` (the only form `mediaAuth` accepts for media tokens; the Bearer path requires a session JWT, `middleware/mediaAuth.js:123-132`). The page refreshes the token before expiry and posts an `UPDATE_TOKEN` message. Do not introduce a cookie. A new server-signed stream token is not needed for Phase 1; if added later, bind it to `(user, attachment, streamId)` and keep TTL ≤ 90 s so it does not widen replay.
+
+### Q4. Key handling
+
+- Keys live only in SW memory. They are handed over by `postMessage`, keyed by an unguessable 128-bit random stream id, and released when the media element is removed or the page unloads.
+- Page-side source of truth remains `secrets` in `attachment-e2ee.js:39,55-61`; the page can re-handshake because it still holds the key.
+
+Proposed message schema (page ↔ SW):
+
+- Page → SW `REGISTER_STREAM`: `{ type, streamId, attachmentId, scope, keyB64 (32 bytes), baseIvB64 (12 bytes), mime, plainSize }`
+- Page → SW `UNREGISTER_STREAM`: `{ type, streamId }`
+- Page → SW `UPDATE_TOKEN`: `{ type, streamId, token }`
+- Page → SW `PURGE_ALL`: `{ type }`
+- SW → page `STREAM_DEAD`: `{ type, streamId, reason }`
+- SW → page `KEY_NEEDED`: `{ type, streamId }`
+
+Sender authentication:
+
+- The SW checks `event.origin === self.location.origin` (`public/sw.js` is same-origin, `pwa.js:129-132`).
+- The SW records the `client.id` from `event.source` at registration and only accepts later messages for that stream from the same client id (verified via `self.clients.get(id)`).
+- The SW has no cryptographic way to authenticate the page beyond origin; the 128-bit stream id is the unguessable capability. This is acceptable because the page already holds the key.
+
+SW killed mid-playback:
+
+- The media element's next Range request fails (network error). The page's `error` handler detects the dead stream, re-posts `REGISTER_STREAM` with the same stream id and key (taken from `attachment-e2ee.js` secrets), and retries from `media.currentTime`.
+- If re-registration fails (e.g. user logged out), the page shows the player's normal load error and falls back to the Blob path, which performs the same full verification.
+
+How the page learns a stream id is dead:
+
+- SW posts `STREAM_DEAD` when it unregisters or detects an unrecoverable chunk failure.
+- Additionally, the page treats a `MediaError` / fetch failure on a stream URL as "stream dead" and triggers re-handshake or fallback.
+
+Persistence:
+
+- Plaintext and keys must never enter Cache Storage, IndexedDB, or any persisted store.
+- The SW must not call `caches.put` for stream responses; stream state is a `Map` in worker memory only.
+- Assertion in tests: enumerate `caches.keys()` and every cache entry after playback and assert that no cached response URL or body contains the plaintext marker or key material; also assert `Cache-Control: no-store` on every stream response (`utils/streamMedia.js:28` is the existing precedent).
+
+### Q5. Final-chunk flag and truncation
+
+Where the size comes from:
+
+- The authoritative plaintext size is `meta.size` from the decrypted attachment metadata (`attachment-stream.js:307`, `buildAttachmentMeta` at `:299-312`). The sender controls it, but it is inside the authenticated envelope.
+- The SW computes the expected ciphertext size with the existing `encryptedSizeFor(plainSize)` arithmetic (`attachment-stream.js:123-126`): `8 + plainSize + chunks × 16`, `chunks = max(1, ceil(plainSize / 65536))`.
+- On the first ranged response, the SW reads `Content-Range: bytes …/total` (or `Content-Length` on 200) and requires it to equal the computed expected ciphertext size. If the server reports a different total, the SW fails closed (no streaming for that stream) and surfaces an error. The Blob fallback still verifies the whole file.
+
+Byte arithmetic:
+
+- `STREAM_HEADER_BYTES = 8` (`attachment-stream.js:45`, `config/dm-stream.js:25`)
+- `STREAM_CHUNK_SIZE = 65536` (`attachment-stream.js:43`, `config/dm-stream.js:13`)
+- `STREAM_TAG_BYTES = 16` (`attachment-stream.js:44`, `config/dm-stream.js:14`)
+- `CT_CHUNK = 65552` (`attachment-stream.js:50`) for buffering in the full-stream decryptor
+- Chunk `i` (for `i < chunks - 1`) is exactly 65536 plaintext bytes + 16 tag = 65552 ciphertext bytes.
+- Chunk `i` starts at ciphertext offset `8 + i × 65552`.
+- The last chunk starts at `8 + (chunks - 1) × 65552` and has length `(plainSize mod 65536 || 65536) + 16`.
+- Total ciphertext size = `8 + plainSize + chunks × 16`.
+
+Mapping a plaintext byte range to chunks:
+
+- The media element issues Range requests over the **decrypted plaintext resource**, whose total length is `plainSize` (`meta.size`). The SW maps that to ciphertext chunks.
+- For a plaintext range `[a, b]` (inclusive, 0-based):
+  - first chunk index = `floor(a / 65536)`
+  - last chunk index = `floor(b / 65536)`
+  - SW fetches ciphertext bytes from `8 + firstChunk × 65552` to `8 + (lastChunk + 1) × 65552 - 1`, clamped to the last chunk's real end.
+  - After decrypting each full chunk, the SW trims the decrypted plaintext to `[a mod 65536, …]` for the first chunk and the corresponding tail for the last chunk, then returns exactly `b - a + 1` bytes.
+- Partial first/last chunk handling is therefore "fetch the whole containing chunk, decrypt it, slice the plaintext", never "decrypt a partial chunk" (GCM cannot authenticate a partial chunk).
+
+Final-chunk flag:
+
+- Chunk `i` is final iff `i === chunks - 1`. The SW knows `chunks` from `plainSize`, so it sets the per-chunk nonce's final flag (`attachment-stream.js:100-106`) correctly before calling `subtle().decrypt` with that chunk's bytes.
+- The server cannot be trusted to mark finality; the SW decides from the size it already validated.
+
+Truncation, reordering, duplication, tampering:
+
+- Each chunk is AES-256-GCM with per-chunk nonce `prefix(7) || index(4, big-endian) || final(1)` and AAD = the 8 header bytes (`attachment-stream.js:15-22,100-106,164,248`). Reordering changes `index`; truncation leaves a chunk shorter than its tag; duplication repeats an index; tampering fails the tag. All are detected per chunk (`attachment-stream.js:253-255` throws `AttachmentDecryptError`).
+- In streaming mode, a bad chunk fails only the ranges that touch it: ranges wholly contained in already-verified chunks can still be served from the SW's in-memory plaintext cache; a range that includes the bad chunk returns an error response and surfaces a player error. No partial plaintext is returned for that range.
+- An appended trailing chunk is not requested if the size check passed; if the size check failed, streaming is disabled for that stream.
+
+### Q6. The Service Worker as a new attack surface
+
+Required controls and what they do/do not block:
+
+| Control | Blocks | Does not block |
+|---|---|---|
+| Serve only registered stream ids (in-memory `Map` in the SW) | Arbitrary URL guessing / scanning of stream endpoints | A page that already knows a stream id (it created it) |
+| MIME allowlist to `video/*` and `audio/*`, additionally requiring `isInlineSafeMime` (`utils/inlineSafeMime.js:16-55`) | `text/html`, SVG, XML, PDF and other active/document types becoming an XSS vector via a mislabelled response | A hostile sender who claims `video/mp4` for bytes that are not actually video — playback simply fails |
+| Refuse requests whose `Sec-Fetch-Dest` is not `video` or `audio` | Direct `fetch()`/navigation/script reads of decrypted bytes; reduces exfiltration paths | A compromised renderer that instantiates a real `<video>`/`<audio>` element |
+| `X-Content-Type-Options: nosniff` | Browser MIME sniffing turning an octet stream into HTML | A response whose declared MIME is itself dangerous (hence the allowlist above) |
+| `Cache-Control: no-store` | HTTP cache / Cache Storage persistence of plaintext | In-memory buffers in the SW or page if we implement caching carelessly |
+| `Content-Security-Policy: sandbox` on the response | Script execution even if a dangerous MIME slips through | Media rendering itself; must be verified in P5 |
+
+MIME source: the encrypted metadata's `mime` field (`attachment-stream.js:306`), which the **sender** controls. `parseAttachmentMeta` (`attachment-stream.js:338-340`) only checks the regex shape and lowercases it; it does not restrict to safe types. Therefore the SW must enforce the allowlist at serve time, and the client must not trust `msg.attachment_mime` for stream serving. A hostile sender claiming `text/html` is rejected by the SW allowlist; if the client still tried to use it, the player would not receive a playable response.
+
+Hostile server: controls ciphertext, sizes and status codes. It can truncate or lie, but cannot bypass AES-GCM or the size check; it cannot execute script because of the MIME allowlist, `nosniff` and `sandbox`. It can cause denial of service (refuse to serve), which is acceptable and surfaces as a player error.
+
+Hostile sender: controls plaintext, name and MIME. It can send arbitrary bytes, but they are encrypted to the recipient; it cannot force script execution in the recipient's origin because the served MIME is restricted to media types and the response is sandboxed. It can send oversized files, but the 50 MB upload cap (`config/constants.js:107`) and client pre-check (`attachment-e2ee.js:326-329`) bound that.
+
+Existing SW conflict check (`public/sw.js`):
+
+- Scope is `/` (`pwa.js:129-132`); it precaches only manifest-listed shell files (`public/sw.js:345-352`).
+- It deliberately ignores `/api/`? No — it does not special-case `/api/`; it simply does not match shell files and returns to the network for same-origin paths (`:354-357`). But the Range early return at `:307-309` happens **before** URL parsing, so any Range request bypasses the worker today.
+- A streaming handler must be inserted before `:307-309`, scoped to a dedicated path (proposed: `/__wire_media_stream/<streamId>`), and call `event.respondWith()`. It must not touch the shell-cache path or the font path.
+- No conflict with precache/activation logic: stream responses are never cached.
+
+### Q7. Platform matrix
+
+| Platform | SW support | Range / 206 semantics needed | Fallback to Blob path and how the client detects the need |
+|---|---|---|---|
+| Chrome / Edge (desktop) | Supported in secure context | Media element requests byte ranges; expects 206 + `Content-Range` + `Content-Length`; 416 on bad range | Fallback if `!('serviceWorker' in navigator)`, registration rejects, `navigator.serviceWorker.controller === null`, SW killed, or a stream request returns an unsupported status. Detection: try registration; listen for `controllerchange`; on player `error`, fall back. |
+| Firefox | Supported in secure context | Same as above | Same detection as Chrome. |
+| Safari (macOS) | **UNVERIFIED** in this repo; Service Workers historically require a secure context and recent versions | **UNVERIFIED**; assumed to need 206 + `Content-Range` | Treat as supported-with-fallback. Detection: registration failure or `controller === null`. Mark any Safari-specific claim UNVERIFIED until a WebKit run exists. |
+| Safari (iOS) | **UNVERIFIED** in this repo | **UNVERIFIED**; iOS media elements are stricter about Range and may require the first request to be `bytes=0-` | Same fallback detection; strongly recommend a real-device test in P5 before enabling. |
+| Chrome (Android) | Supported in secure context (HTTPS) | Same as desktop Chrome | Same detection. |
+| Electron (`app://`) | Not available | N/A — no SW controls the page | Always Blob path. Detection: `pwa.js:111-119` rejects registration because `location.protocol` is not `http:`/`https:`; `isElectron` (`public/js/core/auth.js:223-228`) can also be used. |
+| Old APK (bundled `public/`) | Not available | N/A | Always Blob path. Detection: `isNativeApp()` true (`public/js/core/server.js:33-35`) causes `pwa.js:116` to skip registration. |
+| PWA install | Supported after first controlled load | Same as browser | First load before the SW controls the page uses Blob path; detection: `navigator.serviceWorker.controller === null` before `controllerchange`. |
+
+### Q8. `public/sw-manifest.js`
+
+What it is: a generated list of every application-shell file under `public/` (except `sw.js` and itself) with its SHA-256 content hash, plus a `version` that is the first 12 hex chars of `sha256(url:rev\n…)` (`scripts/build-sw-manifest.mjs:27-60`). `public/sw.js` imports it (`public/sw.js:49`) and precaches/verifies every listed file before activating.
+
+What changes when `public/sw.js` or any listed asset changes:
+
+- Editing `public/sw.js` alone changes **no** manifest entry, because `sw.js` is in `EXCLUDE` (`build-sw-manifest.mjs:28`). The browser still reinstalls the worker because `registration.update()` fetches `sw.js` with `updateViaCache: 'none'` (`pwa.js:129-132`).
+- Editing any listed asset (including client wiring files that Item 3 will touch, or a new module added under `public/`) changes that file's `rev` and therefore the `version`.
+- Current version: `e08eca9a87c6` (`public/sw-manifest.js:4`); `node scripts/build-sw-manifest.mjs --check` currently exits 0.
+
+Diff we would make (not applied in this commit): none yet, because no implementation file has changed. The exact hunk is produced by `node scripts/build-sw-manifest.mjs` after P3/P4 changes. The expected effect is a new `version` string and updated `rev` entries for every changed listed file. The exact new version is **UNVERIFIED** until those changes exist; do not fabricate it.
+
+Relationship to commit `59df178` (`chore: refresh service-worker manifest`):
+
+- `59df178` changed only `public/sw-manifest.js` (21 insertions, 13 deletions) to bring it current with an earlier asset change.
+- Item 3 will regenerate the same file on top of whatever HEAD is at implementation time. If `59df178` is accepted, Item 3's manifest diff is computed from `e08eca9a87c6`; if it is rejected, recompute from the prior version. There is no expected textual conflict because Item 3 does not hand-edit the manifest; it regenerates it. The manifest hunk must still be shown to the owner and approved before it is committed (P3).
+
+Proposed `public/sw.js` insertion point (code block only, not applied):
+
+```js
+// In public/sw.js, before the Range early-return at :307-309:
+if (url.pathname.startsWith('/__wire_media_stream/')) {
+  const streamId = url.pathname.split('/')[2];
+  event.respondWith(handleWireMediaStream(request, streamId));
+  return;
+}
+```
+
+### Q9. Memory bounds
+
+Proposed numbers (to be validated in P5):
+
+- Read-ahead window: **4 chunks** (256 KiB plaintext) ahead of the playhead.
+- In-memory plaintext cache per stream: **8 chunks** (512 KiB) LRU.
+- Concurrent streams: **2**; a third request waits or is rejected with 503 and the player retries.
+- In-flight ciphertext fetches per stream: **2**.
+- Abort: every fetch uses `request.signal`; on element removal, navigation or logout the AbortController fires and the stream is unregistered.
+- Fast seeking: cancel in-flight fetches, drop cached chunks outside the new position, fetch the window at the new position. Do not retain chunks from the old position.
+- Two videos at once: allowed (up to the 2-stream limit); each keeps its own 512 KiB cache. Peak ~1–2 MB of plaintext plus ciphertext fetch buffers, not the file size.
+- 2 GB file on a phone: memory stays O(window). The SW never downloads the whole file; it fetches only the chunks for the current and read-ahead ranges. The size check uses metadata, not a full download.
+
+Justification: the format is deliberately 64 KiB chunks so tampering is detected within one chunk and memory stays flat (`attachment-stream.js:33-39`). 512 KiB per stream is small compared with the 64 MiB decrypted-blob cache already tolerated for the Blob path (`attachment-e2ee.js:45`), while giving the media element enough buffered data for smooth playback.
+
+### Q10. Interaction with lazy loading and out-of-scope items
+
+- The click/intent gate stays: encrypted audio/video render with no `src` and `preload="none"` (`video-player.js:62-91`, `audio-player.js` lazy path, `lazy-e2ee-media.js:54-89`). The new path changes only what happens after the first `play()` for media above the threshold.
+- Group attachments are out of scope: `GROUP_ATTACHMENTS_UI_ENABLED` is `false` (`public/js/chat/group-attachments-flag.js:17`) and the group binding differs. Do not touch group attachment code in Item 3.
+- Voice notes: **out of the streaming path for the initial rollout**. They are short, are eagerly decrypted into a Blob during render (`voice-message.js:2433-2455`), and streaming would add latency and state for little gain. Revisit only if telemetry shows long voice notes. This is an owner decision (D8).
+- Blob-URL cleanup: `revokeMediaPlayerBlobUrls()` (`attachments.js:1312-1341`) revokes `data-blob-url` on removal/teardown and is covered by `tests/blob-url-cleanup.test.mjs` and `tests/dm-blob-url-cleanup.test.mjs`. The stream path has no blob URL; instead it must call `UNREGISTER_STREAM` on element removal. New tests must cover stream release separately.
+- Logout (R3): `public/js/core/auth.js:103-121` locks identity and clears session keys, then dispatches `wire:logout`. `public/js/chat/dm.js:129-140` clears DM caches. Item 3 must additionally:
+  - call `clearAllAttachmentSecrets()` (`attachment-e2ee.js:83-89`) and `clearMediaTokenCache()` (`mediaToken.js:97-99`);
+  - the page sends `PURGE_ALL` to the SW, which drops every stream key and aborts in-flight fetches;
+  - on `pagehide`/`beforeunload`, send `PURGE_ALL` as well, because the SW may outlive the page.
+- In-flight stream on logout: the page aborts its `AbortController`s; the SW stops fetching and returns an aborted response; the player is removed. No plaintext persists. After logout the page must not re-register streams, because `clearAllAttachmentSecrets()` removed the keys.
+
+### Q11. Check-then-use
+
+| Place | Risk | Binding in the design |
+|---|---|---|
+| Plaintext size (`meta.size`) vs server-reported total | Server could lie about length; final chunk could be misidentified | Compute expected ciphertext size from `meta.size`; require `Content-Range`/`Content-Length` total to match; fail closed otherwise |
+| MIME (`meta.mime`) vs served `Content-Type` | Sender-controlled MIME could become active content | SW allowlists to `video/*`/`audio/*` + `isInlineSafeMime` at serve time; page derives `attachment_mime` from decrypted meta but does not control the SW allowlist |
+| Key vs stream id | A stream could be served with the wrong key | `REGISTER_STREAM` binds `streamId ↔ attachmentId ↔ key`; SW keeps one entry per stream id; `UNREGISTER_STREAM` removes it |
+| Token vs attachment | A token for attachment A could be replayed for B | Existing media token is scoped to `(resType, resId)` (`utils/jwt.js:136-147`); SW uses one token per stream and refreshes via `UPDATE_TOKEN` |
+| Total ciphertext size vs range fetch | A range could be fetched against a stale/wrong total | Total is captured once per stream from the first response and reused for all ranges; mismatch aborts the stream |
+| Stream id in URL vs postMessage | A guessed URL could bypass registration | SW checks the in-memory `Map` before serving; unknown id returns 404 |
+
+### Q12. Fail-closed table
+
+| Structural check that can fail | User sees |
+|---|---|
+| Unknown / unregistered stream id | 404 from SW; player error; fallback to Blob path only if the page still holds the key |
+| Missing total size (no `Content-Range`/`Content-Length`) | Streaming disabled for that stream; player error; fallback to Blob path |
+| Size mismatch (server total ≠ computed expected) | Stream aborted; player error; no silent fallback to an unverified path. Fallback to Blob is allowed because the Blob path runs the same full AEAD verification, but it will fail if the ciphertext is actually truncated |
+| Authentication failure (401/403) | "Session expired" or access-denied message; no retry with a stale token; 401 triggers logout |
+| Bad or unsatisfiable Range (416) | Player error; no hang (the existing controller already returns `bytes */fileSize` at `controllers/dm.controller.js:825-831`) |
+| Tampered chunk (GCM failure) | Only ranges touching that chunk fail; player shows "Media could not be decrypted"; other ranges already verified remain usable |
+| MIME not in allowlist | SW returns 415/403; player error |
+| Invalid `Sec-Fetch-Dest` | SW returns 403 |
+| SW killed mid-playback | Buffering, then re-handshake; if that fails, player error + Blob fallback |
+| No controller / registration failure / first load before control | Blob path from the start; no error shown |
+| Logout | Stream aborted and purged; player removed; no fallback |
+
+### Q13. Wire format
+
+**Nothing changes.** The stored ciphertext format (`WAT1` header, 64 KiB chunks, 16-byte GCM tag, per-chunk nonce with final flag, header AAD), the `attachment_meta` envelope, the AAD, HKDF infos and the database schema are untouched. Item 3 is transport-layer only: the SW issues Range requests against the existing ciphertext file and maps plaintext byte ranges to existing chunks. `meta.size` already carries the plaintext size (`attachment-stream.js:307`). No new field is added to the envelope. If any later phase concludes that a field is needed, that phase must stop and write a separate proposal listing every field and byte before changing anything.
+
+### Q14. New dependency
+
+No. The design uses APIs already available in the target browsers and in the existing stack: Service Worker (`fetch`, `postMessage`, `clients`), Web Crypto (`subtle.decrypt`, already used by `attachment-stream.js`), `ReadableStream`, `AbortController`, and Express/Node streams (already used by `controllers/dm.controller.js`). No npm package is added. If a future phase believes one is needed, it must name the package, version, audit status and stop for approval.
+
+## 3. Proposed design
+
+### 3.1 Data flow
+
+1. Message renders; `mountAttachmentMedia()` renders the player with no `src` (`video-player.js:116`, `audio-player.js` lazy path).
+2. User presses play; `installLazySource()` calls `resolveMediaSrc()` (`lazy-e2ee-media.js:64`).
+3. For attachments above the threshold, instead of `fetchDecryptedAttachment()` (full download), the client registers a stream:
+   - generate `streamId = crypto.randomUUID()` (128 bits);
+   - read the secret from `attachment-e2ee.js`;
+   - post `REGISTER_STREAM` to the SW with key, base IV, MIME, `plainSize`;
+   - mint a media token via `mediaToken.js` and post `UPDATE_TOKEN`;
+   - set `media.src = /__wire_media_stream/<streamId>`.
+4. The browser's media engine issues Range requests against that URL.
+5. The SW validates the stream id, MIME, `Sec-Fetch-Dest`, size and token, maps the plaintext range to ciphertext chunks, fetches them from the origin (with `?token=`), decrypts each chunk, trims to the requested range, and returns 206 with `Content-Range` over `plainSize`.
+6. On element removal, `UNREGISTER_STREAM` is posted and the SW drops the key and aborts in-flight fetches.
+7. Attachments at or below the threshold keep the existing Blob path unchanged.
+
+### 3.2 Message protocol (page ↔ SW)
+
+See Q4 for the schema. Additional rules:
+
+- The SW never accepts a message whose `event.origin !== self.location.origin`.
+- Registration is idempotent by `streamId`: re-registering replaces the entry (used for re-handshake after SW restart).
+- Token refresh must arrive before the current token's 90 s expiry; otherwise the SW returns 401 and the page re-mints.
+- `PURGE_ALL` is fire-and-forget and idempotent.
+
+### 3.3 State machine (per stream, in SW memory)
+
+States: `REGISTERED` → `FETCHING` → `SERVING` → `DEAD` (also `PURGED`).
+
+- `REGISTERED`: key and size present; no fetch in flight.
+- `FETCHING`: at least one ciphertext Range fetch in flight.
+- `SERVING`: a verified plaintext response has been returned.
+- `DEAD`: an unrecoverable error (size mismatch, tampered chunk that blocks playback, auth failure) occurred; further requests return the stored error status until `UNREGISTER_STREAM`.
+- `PURGED`: key dropped; any request returns 404.
+
+Transitions:
+
+- `REGISTER_STREAM` → `REGISTERED`.
+- First Range request → `FETCHING`.
+- Successful verified response → `SERVING`.
+- Size mismatch / tampered chunk / auth failure → `DEAD`.
+- `UNREGISTER_STREAM` or `PURGE_ALL` → `PURGED`.
+- SW termination → all streams lost; page re-registers into `REGISTERED`.
+
+### 3.4 Proposed phases (plan only; not started)
+
+- **P1** Pure functions `rangeToChunks(range, totalSize)` and `decryptChunkRange(...)` with no SW and no DOM. Tests: property test against a full-decrypt oracle; boundaries (0, last byte, chunk boundary, one byte over, empty file, one chunk, partial final chunk); tamper (flip one bit in chunk k: only requests touching k fail); reorder; truncate; duplicate; wrong key.
+- **P2** Server tests for Range on DM attachments (new file), including auth, HEAD, suffix, open-ended and 416.
+- **P3** SW module and registration behind a flag defaulting OFF; fallback always works; show the `sw-manifest` hunk first and wait for OK.
+- **P4** Client wiring for video and audio above the threshold only.
+- **P5** Browser tests on Linux with the project Chromium recipe: playback starts before full download; seek works; tampered chunk shows a clear error and does not break the page; removing the element releases the stream; logout purges the stream; no plaintext in Cache Storage.
+- **P6** Docs: `SECURITY_CLAIMS.md` (new surface, what the SW can and cannot protect), manifest rebuild noted, every sentence cited.
+
+For each phase: one commit per concern, test-first, mutation plants with exact failing output line, full non-browser suite counts at the end (tests / pass / fail / cancelled / skipped / todo, base vs new, same test set, same exclusions), differential runs where relevant, and `git diff --stat` for `database/`, `routes/` and wire-format modules showing empty where applicable.
+
+## 4. Failure and fallback matrix
+
+See Q12. Summary: every structural failure fails closed (error surfaced, no silent unverified path). The Blob fallback is permitted only because it performs the same full download and the same AEAD verification; it is used when the SW is unavailable or killed, not when verification fails.
+
+## 5. Test plan (for P1–P5)
+
+- P1 property tests for `rangeToChunks` and `decryptChunkRange` against the existing full-stream decryptor oracle (`attachment-stream.js:223-284`).
+- P2 new server test file for DM Range (extend the pattern at `tests/dm-attachments/dm-attachments-e2ee.test.mjs:298-312`); include auth, HEAD, suffix, open-ended, multi-range rejection, and 416.
+- P3 SW install tests reusing `tests/_sw-install-harness.mjs` and `tests/sw-manifest.test.mjs` patterns; assert no stream URL enters any cache.
+- P4 unit tests for stream registration, token refresh and unregister on removal.
+- P5 browser tests on Linux with the full recipe (`--experimental-test-module-mocks --env-file=tests/test.env --test-timeout=900000`), printing the exact TAP engine line. Include: playback starts before full download; seek works; tampered chunk shows a clear error; element removal releases the stream; logout purges; no plaintext in Cache Storage.
+- Mutation plants for each new gate, with exact failing output lines, per the Batch A evidence rules.
+
+## 6. Decisions needed from the owner
+
+1. **D1 — Threshold.** Recommend **8 MiB** of plaintext for encrypted video/audio only (Q1). Alternatives: 4 MiB (more streaming, more complexity) or 16 MiB (fewer streams, less benefit).
+2. **D2 — Voice notes.** Recommend **out of the streaming path initially** (Q10). They are short and already eager-decrypt.
+3. **D3 — Token mechanism.** Recommend **reuse the existing 90 s media token via `postMessage`** (Q3, option (c)). Do not introduce a cookie. Decide whether a future stream-scoped token is worth a server change.
+4. **D4 — Stream URL shape.** Recommend a dedicated path `/__wire_media_stream/<streamId>` handled before the Range early-return in `public/sw.js` (Q6). Confirm this path is acceptable for CSP `connect-src 'self'` and routing.
+5. **D5 — Memory bounds.** Recommend 4-chunk read-ahead, 8-chunk (512 KiB) cache, 2 concurrent streams (Q9). Adjust if target devices are lower-end.
+6. **D6 — Safari / iOS.** Recommend treating Safari as **supported-with-fallback** and requiring a real WebKit/device run before flipping the flag ON (Q7). UNVERIFIED until then.
+7. **D7 — Manifest rebuild.** Recommend approving the regenerated `public/sw-manifest.js` only after P3/P4 changes are complete, and confirming whether commit `59df178` is accepted first (Q8). **GO required before editing it.**
+8. **D8 — CSP `sandbox` on stream responses.** Recommend applying `Content-Security-Policy: sandbox` as in `utils/streamMedia.js:29`, but verify in P5 that it does not break media playback in any target browser.
+9. **D9 — Fallback policy.** Recommend the Blob fallback remains mandatory and is used for unavailability, not for verification failure (Q12).
+
+## 7. Verified / unverified / not run
+
+### Verified by reading source in this tree
+
+- All `file:line` citations in sections 1–6.
+- Current Range implementation behaviour in `controllers/dm.controller.js:637-895`.
+- Existing SW behaviour and scope in `public/sw.js:294-389` and `pwa.js:111-132`.
+- Manifest generation and current version via `node scripts/build-sw-manifest.mjs --check` (exit 0, version `e08eca9a87c6`, 179 files).
+- Existing Range test at `tests/dm-attachments/dm-attachments-e2ee.test.mjs:298-312`.
+- Existing STREAM format tests and constants test (`tests/dm-attachments/attachment-stream.test.mjs`, `tests/dm-attachments/dm-stream-constants.test.mjs`).
+
+### Unverified (marked UNVERIFIED in the text)
+
+- HEAD handling for DM attachments (no explicit branch; Express generic behaviour not tested).
+- Multi-range, ETag and If-Range behaviour (not implemented; inferred from absence).
+- Safari macOS/iOS Service Worker support and media Range semantics.
+- Electron and old-APK runtime behaviour (inferred from registration guards, not run).
+- Exact new `sw-manifest.js` version after implementation (cannot compute without the changed files).
+- Whether `Content-Security-Policy: sandbox` breaks media playback in any browser.
+
+### Not run
+
+- No media-streaming code or tests exist yet; no playback, seek, tamper, logout or Cache-Storage assertion was run for this RFC.
+- No mutation plant was run against this RFC (it is documentation only).

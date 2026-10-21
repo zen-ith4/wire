@@ -180,6 +180,6 @@ Commits: send-side gate, receive-side gate, UI, docs; each with tests; no wire c
 - Item 1 (group KDM pinning): `c7b8fa4`
 - Item 2 R3 (logout lock): `b6c6f6b`
 - Item 2 R2 (DM content cap): `f7c1555`
-- Item 2 R5 (admin/seed/first-admin DM v2 default): `<R5_COMMIT_HASH>`
+- Item 2 R5 (admin/seed/first-admin DM v2 default): `56403d7`
 - Branch: `security-hardening`; commits are local only.
 - Known limitation: Chromium browser tests could not run in this environment.

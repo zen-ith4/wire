@@ -114,17 +114,41 @@ test('start greater than end: 416', async () => {
   assert.equal(res.headers.get('content-range'), `bytes */${full.length}`);
 });
 
-test('malformed Range: 416', async () => {
+test('current behavior, RFC 9110 says ignore + 200: malformed Range currently returns 416', async () => {
   const res = await url(`/api/dm/attachments/${sent.id}`, { Range: 'bytes=abc' });
   assert.equal(res.status, 416);
   assert.equal(res.headers.get('content-range'), `bytes */${full.length}`);
 });
 
-test('unit other than bytes: 416', async () => {
+test.todo('RFC 9110 correct behavior for a malformed Range: ignore the Range header and return 200 with the full body (controllers/dm.controller.js:780-782).');
+
+test('current behavior, RFC 9110 says ignore + 200: a unit other than bytes currently returns 416', async () => {
   const res = await url(`/api/dm/attachments/${sent.id}`, { Range: 'items=0-1' });
   assert.equal(res.status, 416);
   assert.equal(res.headers.get('content-range'), `bytes */${full.length}`);
 });
+
+test.todo('RFC 9110 correct behavior for a non-bytes Range unit: ignore the Range header and return 200 with the full body (controllers/dm.controller.js:780-782).');
+
+test('current behavior: the unanchored Range regex matches the first range (Found, not changed: controllers/dm.controller.js:780-782)', async () => {
+  for (const range of ['bytes=0-1abc', 'xbytes=0-1']) {
+    const res = await url(`/api/dm/attachments/${sent.id}`, { Range: range });
+    assert.equal(res.status, 206, range);
+    assert.equal(res.headers.get('content-range'), `bytes 0-1/${full.length}`, range);
+    assert.deepEqual(new Uint8Array(await res.arrayBuffer()), full.slice(0, 2), range);
+  }
+});
+
+test.todo('RFC-correct behavior for an unanchored or malformed Range header: ignore it and return 200 with the full body (controllers/dm.controller.js:780-782).');
+
+test('current behavior: multi-range serves only the first range (Found, not changed: controllers/dm.controller.js:780-782)', async () => {
+  const res = await url(`/api/dm/attachments/${sent.id}`, { Range: 'bytes=0-1,5-6' });
+  assert.equal(res.status, 206);
+  assert.equal(res.headers.get('content-range'), `bytes 0-1/${full.length}`);
+  assert.deepEqual(new Uint8Array(await res.arrayBuffer()), full.slice(0, 2));
+});
+
+test.todo('RFC-correct multi-range behavior: a multipart 206 response or a full 200 response; the current controller ignores the second range (controllers/dm.controller.js:780-782).');
 
 test('HEAD returns headers without a body', async () => {
   const res = await globalThis.__nodeFetch(`${server.origin}/api/dm/attachments/${sent.id}`, {

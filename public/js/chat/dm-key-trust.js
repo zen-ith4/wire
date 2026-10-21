@@ -326,8 +326,8 @@ export function unbindKeyTrustRelease() {
 
 let releaseBinding = null;
 
-export async function renderVerifyView(peerId, username) {
-    const panel = document.getElementById(IDS.verify);
+export async function renderVerifyView(peerId, username, { ids = IDS } = {}) {
+    const panel = document.getElementById(ids.verify);
     if (!panel) return null;
 
     const context = ctx();
@@ -345,9 +345,9 @@ export async function renderVerifyView(peerId, username) {
 
     const { fingerprint, number } = await computeSafetyNumber(identity.publicKey, publicKey);
 
-    const numberEl = document.getElementById(IDS.verifyNumber);
-    const whoEl = document.getElementById(IDS.verifyWho);
-    const markedEl = document.getElementById(IDS.verifyMarked);
+    const numberEl = document.getElementById(ids.verifyNumber);
+    const whoEl = document.getElementById(ids.verifyWho);
+    const markedEl = document.getElementById(ids.verifyMarked);
 
     // Digits and a username: textContent, never innerHTML.
     if (numberEl) numberEl.textContent = number;

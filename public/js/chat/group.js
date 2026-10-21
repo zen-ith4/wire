@@ -88,6 +88,9 @@ import { setActiveGroupIdGetter } from './reactions.js';
 import {
     renderGroupKeyTrustBanner,
     clearGroupKeyTrustBanner,
+    acceptGroupPeerKey,
+    renderGroupVerifyView,
+    GROUP_VERIFY_IDS,
 } from './group-key-trust.js';
 
 import {
@@ -624,24 +627,17 @@ function ensureSenderKeyReady(groupId, members = activeGroupMembers, { quiet = f
 }
 
 /**
- * Repaint the group key-change banner for the open group. `onAccepted` forces
- * one new rotation: the previous distribution necessarily skipped the changed
- * member, so a fresh Sender Key is the only way to include them again without
- * exporting raw key material.
+ * Repaint the group key-change banner for the open group.
+ *
+ * The accept action itself is in the delegated [data-action] handler below.
+ * After a key is accepted it forces one new rotation: the previous distribution
+ * necessarily skipped the changed member, so a fresh Sender Key is the only way
+ * to include them again without exporting raw key material.
  */
 function refreshGroupKeyTrustBanner(groupId = activeGroupId) {
     if (!groupId || groupId !== activeGroupId) return;
 
-    const paint = () => {
-        renderGroupKeyTrustBanner(activeGroupMembers, {
-            onAccepted: async () => {
-                await ensureSenderKeyReady(groupId, activeGroupMembers, { force: true });
-                if (groupId === activeGroupId) paint();
-            },
-        });
-    };
-
-    paint();
+    renderGroupKeyTrustBanner(activeGroupMembers);
 }
 
 export async function openGroup(groupId) {
@@ -749,6 +745,16 @@ function renderActiveGroupShell(group) {
         <div class="dm-key-trust-host" id="group-key-trust-host">
             <div class="dm-key-trust group-key-trust" id="group-key-trust-banner" role="alert"></div>
         </div>
+        <section class="dm-key-verify" id="group-key-verify" hidden>
+            <div class="dm-key-verify-head">Safety number</div>
+            <p class="dm-key-verify-help">
+                Compare these digits with <span id="group-key-verify-who"></span> over a channel the server
+                does not control. If they differ, someone may be intercepting this group member's key.
+            </p>
+            <div class="dm-key-verify-number" id="group-key-verify-number"></div>
+            <div class="dm-key-verify-state" id="group-key-verify-marked"></div>
+            <button type="button" class="btn btn-ghost" data-action="mark-verified">Mark as verified</button>
+        </section>
         <div class="chat-messages" id="group-messages">${loadingState()}</div>
         <div class="typing-indicator" id="group-typing-indicator"></div>
         <div class="composer-wrapper">
@@ -1047,7 +1053,7 @@ window.openCreateGroupDialog = async function () {
 // onclick="" attributes are silently dropped by the browser: "+ New",
 // Send, Emoji and Manage-group were all dead in a real browser (audit
 // CSP finding). Delegated instead, same as dm.js.
-if (typeof document !== 'undefined') document.addEventListener('click', (e) => {
+if (typeof document !== 'undefined') document.addEventListener('click', async (e) => {
     const btn = e.target.closest('[data-action^="group-"]');
     if (!btn) return;
 
@@ -1055,6 +1061,46 @@ if (typeof document !== 'undefined') document.addEventListener('click', (e) => {
         case 'group-new':
             window.openCreateGroupDialog();
             break;
+        case 'group-key-trust-verify': {
+            const peerId = Number(btn.dataset.peerId);
+            if (!Number.isInteger(peerId) || peerId <= 0) break;
+
+            const member = activeGroupMembers.find((m) => Number(m.user_id) === peerId);
+            const panel = document.getElementById(GROUP_VERIFY_IDS.verify);
+            if (!panel) break;
+
+            const opening = panel.hasAttribute('hidden');
+            if (opening) {
+                const rendered = await renderGroupVerifyView(
+                    peerId,
+                    member?.username || `User ${peerId}`
+                );
+                if (!rendered) break;
+            }
+            panel.toggleAttribute('hidden', !opening);
+            break;
+        }
+        case 'group-key-trust-accept': {
+            const peerId = Number(btn.dataset.peerId);
+            if (!Number.isInteger(peerId) || peerId <= 0) break;
+
+            btn.disabled = true;
+
+            try {
+                await acceptGroupPeerKey(peerId);
+
+                // A new Sender Key is the only way to include the member again
+                // without exporting raw key material; re-wrap after accepting.
+                if (activeGroupId) {
+                    await ensureSenderKeyReady(activeGroupId, activeGroupMembers, { force: true });
+                    refreshGroupKeyTrustBanner(activeGroupId);
+                }
+            } catch (err) {
+                console.error('[group] could not accept the new peer key:', err);
+                btn.disabled = false;
+            }
+            break;
+        }
         case 'group-back':
             document.querySelector('.dm-layout')?.classList.remove('showing-thread');
             break;

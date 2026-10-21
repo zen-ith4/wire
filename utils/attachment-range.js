@@ -22,6 +22,8 @@ import {
   STREAM_HEADER_BYTES,
   encryptedSizeFor,
   AttachmentDecryptError,
+  HEADER,
+  chunkNonce,
 } from '../public/js/crypto/messages/attachment-stream.js';
 
 export const ATTACHMENT_RANGE_READ_AHEAD_CHUNKS = 8;
@@ -32,10 +34,6 @@ const CHUNK_SIZE = STREAM_CHUNK_SIZE;
 const TAG_BYTES = STREAM_TAG_BYTES;
 const HEADER_BYTES = STREAM_HEADER_BYTES;
 const CT_CHUNK = CHUNK_SIZE + TAG_BYTES;
-
-// The 8-byte container header. Duplicated here because attachment-stream.js
-// does not export it; it is the same constant (WAT1 + chunk-size log2).
-const HEADER = new Uint8Array([0x57, 0x41, 0x54, 0x31, 0x10, 0x00, 0x00, 0x00]);
 
 export class RangeNotSatisfiableError extends Error {
   constructor(message = 'Range not satisfiable') {
@@ -191,19 +189,17 @@ export function inferPlainSizeFromCiphertext(ciphertextLength) {
   return null;
 }
 
+// Deliberately NOT the stream module's importKey(): that one imports the key
+// with ['encrypt','decrypt'] because the page also ENCRYPTS with it
+// (public/js/crypto/messages/attachment-stream.js:108-113, used at :152 and
+// :225). A Service Worker must hold a DECRYPT-ONLY key, so this copy keeps
+// the same 32-byte check and the same AttachmentDecryptError type, and
+// imports the key with ['decrypt'] only. Do not "unify" the two.
 async function importKey(rawKey) {
   if (!(rawKey instanceof Uint8Array) || rawKey.length !== 32) {
     throw new AttachmentDecryptError('Invalid attachment key');
   }
   return crypto.subtle.importKey('raw', rawKey, { name: 'AES-GCM' }, false, ['decrypt']);
-}
-
-function chunkNonce(baseIv, index, isLast) {
-  const nonce = new Uint8Array(12);
-  nonce.set(baseIv.subarray(0, 7), 0);
-  new DataView(nonce.buffer).setUint32(7, index, false);
-  nonce[11] = isLast ? 1 : 0;
-  return nonce;
 }
 
 function ciphertextChunkSlice(ciphertext, plainSize, index) {

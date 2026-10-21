@@ -61,8 +61,8 @@ test('group.js real round trip: Alice sends, Bob receives and decrypts via the r
 
     const alice = createBrowserActor('alice', server.origin);
     const bob = createBrowserActor('bob', server.origin);
-    t.after(() => alice.window.close());
-    t.after(() => bob.window.close());
+    t.after(() => alice.dispose());
+    t.after(() => bob.dispose());
 
     const aliceIdentity = await signUpAndUnlock(alice, {
         username: 'alice_rt',

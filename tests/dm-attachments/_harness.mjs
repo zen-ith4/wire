@@ -65,9 +65,26 @@ export async function startDmServer() {
 
 let seq = 0;
 
+// Every actor this harness created, so a test file can release their
+// private copies of public/js in its after() hook (see disposeActors).
+const actors = [];
+
+/**
+ * Disposes every actor this harness created. Each actor holds a private
+ * copy of public/js on disk; without this they stay in os.tmpdir().
+ * Errors are ignored on purpose: teardown must not mask a test failure.
+ */
+export async function disposeActors() {
+    while (actors.length) {
+        const actor = actors.pop();
+        try { await actor.dispose(); } catch { /* ignore */ }
+    }
+}
+
 export async function createUser(server, name) {
     const n = `${name}${seq++}`;
     const actor = createBrowserActor(n, server.origin);
+    actors.push(actor);
     const password = `pw-${n}-long-enough-passphrase`;
     const ident = await signUpAndUnlock(actor, { username: n, email: `${n}@example.test`, password });
     return { name, n, actor, ident, id: ident.id, token: ident.token };

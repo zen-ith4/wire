@@ -6,7 +6,7 @@ import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { startDmServer, createUser, prepareAsClient, postUpload, authGet, capturedLogs } from './_harness.mjs';
+import { startDmServer, createUser, prepareAsClient, postUpload, authGet, capturedLogs, disposeActors } from './_harness.mjs';
 
 const DM_DIR = process.env.DM_UPLOAD_DIR;
 let server;
@@ -38,6 +38,7 @@ before(async () => {
 });
 
 after(async () => {
+  await disposeActors();
   await server.stop();
   delete process.env.DM_E2EE_ATTACHMENTS_ENFORCED;
   fs.rmSync(TEST_ROOT, { recursive: true, force: true });

@@ -4,7 +4,7 @@ import { TEST_ROOT } from './_env.mjs';
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { startDmServer, createUser, prepareAsClient, postUpload, authGet } from './_harness.mjs';
+import { startDmServer, createUser, prepareAsClient, postUpload, authGet, disposeActors } from './_harness.mjs';
 
 const CS = 64 * 1024;
 const TAG = 16;
@@ -38,6 +38,7 @@ before(async () => {
 });
 
 after(async () => {
+  await disposeActors();
   await server.stop();
   fs.rmSync(TEST_ROOT, { recursive: true, force: true });
   setTimeout(() => process.exit(process.exitCode || 0), 50).unref();

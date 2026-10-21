@@ -113,6 +113,42 @@ test('a 401 from api() locks the identity and clears session keys synchronously'
     assert.equal(clearCalls, beforeClear + 1);
 });
 
+test('a 401 from fetchBlob() locks the identity and clears session keys synchronously', async () => {
+    signIn();
+
+    const beforeLock = lockCalls;
+    const beforeClear = clearCalls;
+
+    // api.js has a second 401 handler in fetchBlob(); it has its own
+    // isHandlingUnauthorized flag, so import a fresh module instance rather
+    // than inheriting the state the api() test above leaves set.
+    const freshApi = await import(`${js('core/api.js')}?fetch-blob-401=1`);
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => ({
+        status: 401,
+        text: async () => JSON.stringify({
+            code: 'TOKEN_EXPIRED',
+            error: 'Session expired',
+        }),
+    });
+
+    try {
+        await assert.rejects(
+            () => freshApi.fetchBlob('/api/files/1'),
+            /Session expired/
+        );
+    } finally {
+        globalThis.fetch = originalFetch;
+    }
+
+    assert.equal(auth.getToken(), null);
+    assert.equal(auth.getCurrentUser(), null);
+    assert.equal(locked, true);
+    assert.equal(lockCalls, beforeLock + 1);
+    assert.equal(clearCalls, beforeClear + 1);
+});
+
 test('a direct logout() (the sign-out button path) locks before wire:logout', () => {
     signIn();
 

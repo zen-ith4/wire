@@ -71,6 +71,20 @@ try {
   console.warn('[Wire SW] media bundle unavailable:', error);
 }
 
+/*
+ * MEDIA STREAM ROUTE (Item 3, phase 3C).
+ *
+ * OFF by default. Flipping this constant is the ONLY way to enable the route,
+ * and it is a one-line change in a tracked file: the feature can never be
+ * turned on by a server response, a query parameter or a stale bundle.
+ * public/sw.js is excluded from the manifest, so flipping it does NOT
+ * invalidate the shell cache - only the worker itself is replaced.
+ *
+ * The route itself is wired in C2; C1 adds the pure handler core and this
+ * flag only. The flag must never be baked into sw-media-bundle.js.
+ */
+const MEDIA_STREAM_ENABLED = false;
+
 const SHELL = self.WIRE_SHELL;
 
 if (!SHELL || !SHELL.version || !Array.isArray(SHELL.files)) {

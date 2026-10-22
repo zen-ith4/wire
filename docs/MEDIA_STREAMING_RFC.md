@@ -1,6 +1,6 @@
 # MEDIA_STREAMING_RFC — Progressive encrypted DM audio/video via Service Worker + HTTP Range
 
-Status: Phase 0, RFC v2 (docs-only revision). No production, test, config, dependency or `public/sw-manifest.js` change is included in this commit.
+Status: Phase 0, RFC v2 (historical design baseline). Implementation status is tracked in §10: C1 of phase 3C is committed at `13b27e2`; the feature flag is OFF, and the fetch handler, stream registry and client wiring are not implemented. The design text below originates at `0e61430`; later measurements and status are appended in §9.13 and §10.
 
 ## 0. Environment and evidence
 
@@ -437,7 +437,7 @@ Transitions:
 - `UNREGISTER_STREAM` or `PURGE_CLIENT` → `PURGED`.
 - SW termination → all streams lost; page re-registers into `REGISTERED`.
 
-### 3.4 Proposed phases (plan only; not started)
+### 3.4 Proposed phases (historical plan; see §10 for current status)
 
 - **P1** Pure functions `rangeToChunks(range, totalSize, { maxResponseChunks })` and `decryptChunkRange(...)` with no SW and no DOM. Tests: property test against a full-decrypt oracle; boundaries (0, last byte, chunk boundary, one byte over, empty file, one chunk, partial final chunk); tamper (flip one bit in chunk k: only requests touching k fail); reorder; truncate; duplicate; wrong key; bounded response size.
 - **P2** Server tests for Range on DM attachments (new file), including auth, HEAD, suffix, open-ended and 416.
@@ -774,7 +774,7 @@ The mechanism is the test's own polling tripping the app's general API limiter (
 
 ## 9. Phase 3C design note (docs only - no code, no client change)
 
-Phase 3C adds the **Service Worker media route**. This section is the implementation-level design: where the code goes, what each guard does, what fails closed and what is still unknown. It follows the decisions of sections 2-6 (Q3 token, Q4 keys, Q5 response policy, Q6 attack surface, Q12 fail-closed table) and adds the specifics. **Nothing here is implemented**: no fetch handler, no client change, no rate-limiter change.
+Phase 3C adds the **Service Worker media route**. This section is the implementation-level design: where the code goes, what each guard does, what fails closed and what is still unknown. It follows the decisions of sections 2-6 (Q3 token, Q4 keys, Q5 response policy, Q6 attack surface, Q12 fail-closed table) and adds the specifics. C1 — the pure handler core and bundle entry, with the flag OFF — is committed at `13b27e2`; the fetch handler, stream registry, client wiring and rate-limiter changes are **not** implemented. See §10.
 
 ### 9.1 What 3C is, and what it is not
 
@@ -1007,4 +1007,43 @@ Still UNVERIFIED (unchanged):
 11. Whether a `<video>` element accepts a `bytes=0-1` style partial response (Safari's behaviour) - not measured in Chromium.
 12. **What a media element does on 401/403/404/416 from the worker on the initial request** - MEASURED (Chromium 153): the element fails to load with `MediaError.code = 4` (`MEDIA_ERR_SRC_NOT_SUPPORTED`) and the message "Failed to load because no supported source was found." It does **not** retry; `play()` rejects with `NotSupportedError`. The seek is still applied to the element's state (`currentTime` moves) but the media never plays. The client must treat any of these statuses as "fall back to the Blob path", because the error code does not distinguish them.
 13. **Whether the 206 body may be stored in the HTTP/media cache despite `Cache-Control: no-store`** - UNVERIFIED. The spike measured the **HTTP cache only**: with the worker stopped, both `fetch(url, { cache: 'default' })` and `fetch(url, { cache: 'force-cache' })` reached the server (it returned 404 and the fetch got 404). That does **not** prove anything about the browser's **media cache**, the separate store that holds the demuxer's range data for a `<video>`/`<audio>` element. Whether the media stack can satisfy a fresh element load from that store after the worker is gone has not been measured.
-14. Nothing in this section is implemented: no fetch handler, no browser run for any of the still-UNVERIFIED items above.
+14. The full 3C route is not implemented: no fetch handler, no stream registry, no client wiring, and no browser run for the still-UNVERIFIED items above. C1 (the pure handler core and bundle entry) is committed; see §10.
+
+## 10. Implementation status (2026-10-22)
+
+- **Branch:** `security-hardening`
+- **C1 commit:** `13b27e2` — `feat: add the pure SW media handler core and keep the feature flag OFF (Item 3, C1)`
+- **Preceding commit:** `ffa29d2` — RFC 9.13 wording and fMP4 measurement note
+- **This section:** a docs-only commit on top of C1; it changes no code.
+
+### 10.1 C1 delivered
+
+| Item | State |
+|---|---|
+| `public/js/sw-media/handler-core.js` | committed; pure routing/response planner, 7,087 bytes, SHA-256 `93737f04d788fb26b3ac3683d3ae4e94c0d821251841208aa9d7bb43b37390c8` |
+| `public/js/sw-media/bundle-entry.js` | committed; preserves the existing range/decrypt API and adds the handler core |
+| `public/sw.js` | `const MEDIA_STREAM_ENABLED = false;`; **no fetch branch** |
+| `public/sw-media-bundle.js` | rebuilt; 20,953 bytes, SHA-256 `ccb02a43e161c8b8b47c0da1ced1a07b9b2b9d07978a6a7e030ba94423455634` |
+| `public/sw-manifest.js` | rebuilt; version `f9c10f936ecf`, 183 files |
+| `tests/crypto/sw-media-handler.test.mjs` | 25 tests; 25/25 pass (re-run 2026-10-22) |
+| Stream registry, fetch handler, client wiring, flag flip | **not implemented** (C2+) |
+
+### 10.2 Validation recorded at `13b27e2`
+
+- C1 unit tests: **25/25 pass**; related suite: **63/63 pass**.
+- Six mutation plants failed with the expected TAP lines; `handler-core.js` was restored byte-identically to the SHA-256 above.
+- Linux validation at `13b27e2`:
+  - non-browser split (clean clone): **101 files / 868 tests / 851 pass / 0 fail / 4 skipped / 13 todo**;
+  - browser split (isolated): **20 files / 93 tests / 90 pass / 0 fail / 0 cancelled / 1 skipped / 2 todo**;
+  - browser engine line: `# browser: chromium (@sparticuz/chromium) HeadlessChrome/153.0.8010.0`;
+  - `public/sw-media-bundle.js` and `node scripts/build-sw-manifest.mjs --check` both pass.
+- Remote Linux server: read-only Step 0 inspection complete. No `~/wire-work`, no clone, no server tests, no push.
+
+The current Linux baseline table is also recorded in `docs/test-baseline.md` §0. The `wire-final-12` tables in that file are historical and do not describe this tree.
+
+### 10.3 Not done / next
+
+- C2 stream registry and the fetch handler branch; client wiring; the flag flip.
+- No GitHub publication, no server clone, no server-side baseline, no push.
+- `MEDIA_STREAM_ENABLED` must stay `false` until C2+ and the browser/security validation in §9 are complete.
+- The next implementation step is C2, after owner acceptance of the Step 0 report and the current state.

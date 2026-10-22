@@ -24,7 +24,7 @@ import {
   AttachmentDecryptError,
   HEADER,
   chunkNonce,
-} from '../public/js/crypto/messages/attachment-stream.js';
+} from './attachment-stream.js';
 
 export const ATTACHMENT_RANGE_READ_AHEAD_CHUNKS = 8;
 export const ATTACHMENT_RANGE_CACHE_CHUNKS = 16;

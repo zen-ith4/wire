@@ -9,7 +9,7 @@ import {
   rangeToChunks,
   decryptChunkRange,
   inferPlainSizeFromCiphertext,
-} from '../../utils/attachment-range.js';
+} from '../../public/js/crypto/messages/attachment-range.js';
 import {
   encryptAttachmentStream,
   decryptAttachmentStream,

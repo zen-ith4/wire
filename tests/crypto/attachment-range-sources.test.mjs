@@ -9,7 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const RANGE_SRC = path.join(ROOT, 'utils/attachment-range.js');
+const RANGE_SRC = path.join(ROOT, 'public/js/crypto/messages/attachment-range.js');
 const STREAM_SRC = path.join(ROOT, 'public/js/crypto/messages/attachment-stream.js');
 
 const rangeSrc = fs.readFileSync(RANGE_SRC, 'utf8');

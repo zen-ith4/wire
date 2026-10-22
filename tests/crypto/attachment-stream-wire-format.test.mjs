@@ -26,7 +26,7 @@ import {
   HEADER,
   chunkNonce,
 } from '../../public/js/crypto/messages/attachment-stream.js';
-import { decryptChunkRange } from '../../utils/attachment-range.js';
+import { decryptChunkRange } from '../../public/js/crypto/messages/attachment-range.js';
 
 // ---------------------------------------------------------------------------
 // The format, written out literally in this test (NOT imported).

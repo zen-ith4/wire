@@ -87,7 +87,7 @@ test('HEAD without a Range: 200, the full length, Accept-Ranges, no body', async
   assert.equal((await res.arrayBuffer()).byteLength, 0);
 });
 
-test('HEAD with a Range: the range headers are computed, the body is empty', async () => {
+test('current behaviour: HEAD with a Range header answers 206 with the range headers and an empty body', async () => {
   const res = await raw(
     `/api/dm/attachments/${sent.id}`,
     { Authorization: `Bearer ${bob.token}`, Range: 'bytes=10-99' },
@@ -99,6 +99,8 @@ test('HEAD with a Range: the range headers are computed, the body is empty', asy
   assert.equal(res.headers.get('accept-ranges'), 'bytes');
   assert.equal((await res.arrayBuffer()).byteLength, 0);
 });
+
+test.todo('decide and document the correct behaviour for a HEAD request that carries a Range header (RFC 9110 section 9.3.2: a HEAD response SHOULD carry the same headers as the corresponding GET; the current answer is 206 with the range headers and an empty body).');
 
 // ---------------------------------------------------------------- suffix --
 
@@ -131,7 +133,7 @@ test('open-ended Range: 206 from the offset to the end of the file', async () =>
 
 // ------------------------------------------------------------------- 416 --
 
-test('416 for an unparsable Range: Content-Range but NO Accept-Ranges', async () => {
+test('current behaviour: an unparsable Range answers 416 with Content-Range and without Accept-Ranges', async () => {
   const res = await url(`/api/dm/attachments/${sent.id}`, { Range: 'bytes=abc' });
   assert.equal(res.status, 416);
   assert.equal(res.headers.get('content-range'), `bytes */${SIZE}`);
@@ -142,7 +144,9 @@ test('416 for an unparsable Range: Content-Range but NO Accept-Ranges', async ()
   );
 });
 
-test('416 for a start past the end: Content-Range but NO Accept-Ranges', async () => {
+test.todo('decide whether a 416 response should carry Accept-Ranges (RFC 9110 section 14.2 asks for it on 200 and 206 responses; the 416 branch sends Content-Range only).');
+
+test('current behaviour: a start past the end answers 416 with Content-Range and without Accept-Ranges', async () => {
   const res = await url(`/api/dm/attachments/${sent.id}`, { Range: `bytes=${SIZE + 5}-` });
   assert.equal(res.status, 416);
   assert.equal(res.headers.get('content-range'), `bytes */${SIZE}`);
@@ -153,12 +157,16 @@ test('416 for a start past the end: Content-Range but NO Accept-Ranges', async (
   );
 });
 
-test('416 for start > end: Content-Range but NO Accept-Ranges', async () => {
+test.todo('decide whether a 416 response should carry Accept-Ranges (RFC 9110 section 14.2 asks for it on 200 and 206 responses; the 416 branch sends Content-Range only).');
+
+test('current behaviour: start > end answers 416 with Content-Range and without Accept-Ranges', async () => {
   const res = await url(`/api/dm/attachments/${sent.id}`, { Range: 'bytes=5-3' });
   assert.equal(res.status, 416);
   assert.equal(res.headers.get('content-range'), `bytes */${SIZE}`);
   assert.equal(res.headers.get('accept-ranges'), null);
 });
+
+test.todo('decide whether a 416 response should carry Accept-Ranges (RFC 9110 section 14.2 asks for it on 200 and 206 responses; the 416 branch sends Content-Range only).');
 
 test('the successful responses DO send Accept-Ranges (200 and 206)', async () => {
   const whole = await url(`/api/dm/attachments/${sent.id}`);
@@ -172,7 +180,7 @@ test('the successful responses DO send Accept-Ranges (200 and 206)', async () =>
 
 // ----------------------------------------------------------- multi-range --
 
-test('multi-range: only the FIRST range is served (current behaviour)', async () => {
+test('current behaviour: a multi-range request serves only the FIRST range', async () => {
   const res = await url(`/api/dm/attachments/${sent.id}`, { Range: 'bytes=0-1,5-6' });
   assert.equal(res.status, 206);
   assert.equal(
@@ -189,9 +197,11 @@ test('multi-range: only the FIRST range is served (current behaviour)', async ()
   );
 });
 
+test.todo('RFC-correct multi-range behaviour: a multipart/byteranges 206 response or a full 200 response; the current controller ignores every range after the first (controllers/dm.controller.js:780-782).');
+
 // ------------------------------------------------------- unanchored regex --
 
-test('unanchored Range regex: "bytes=" is matched anywhere in the header', async () => {
+test('current behaviour: the unanchored Range regex matches "bytes=" anywhere in the header', async () => {
   for (const range of ['bytes=0-1abc', 'xbytes=0-1', 'junk bytes=0-1 junk']) {
     const res = await url(`/api/dm/attachments/${sent.id}`, { Range: range });
     assert.equal(res.status, 206, range);
@@ -200,12 +210,16 @@ test('unanchored Range regex: "bytes=" is matched anywhere in the header', async
   }
 });
 
-test('a Range unit other than bytes: 416 (current behaviour)', async () => {
+test.todo('RFC-correct behaviour for an unanchored or malformed Range header: ignore it and answer 200 with the full body (controllers/dm.controller.js:780-782).');
+
+test('current behaviour: a Range unit other than bytes answers 416', async () => {
   const res = await url(`/api/dm/attachments/${sent.id}`, { Range: 'items=0-1' });
   assert.equal(res.status, 416);
   assert.equal(res.headers.get('content-range'), `bytes */${SIZE}`);
   assert.equal(res.headers.get('accept-ranges'), null);
 });
+
+test.todo('RFC 9110 section 14.2: a Range header whose unit the origin does not understand MUST be ignored (200 with the full body); the current controller answers 416 (controllers/dm.controller.js:780-792).');
 
 // ------------------------------------------------------------------ auth --
 

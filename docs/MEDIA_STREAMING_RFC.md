@@ -518,6 +518,37 @@ All measurements were run in **headless Chromium 153.0.8010.0** (`@sparticuz/chr
 
 **Correction to the previous revision of this section.** The first version of this note concluded that "only the main script's bytes drive an update" and imposed the constraint that every bundle change must also change `public/sw.js`. **That conclusion was wrong.** The first measurement changed the imported bundle but left the manifest stale, so the new worker's `precache()` failed its hash check and the install was rejected — exactly as in the mismatch measurement. The "transient installing worker" was the browser detecting the change and starting an update, not an anomaly. The measurements below separate the two effects.
 
+#### Environment of every measurement in this section
+
+```
+ENGINE
+  os.platform      : linux
+  os.release       : 6.18.54.1-microsoft-standard-WSL2
+  os-release       : PRETTY_NAME="Ubuntu 26.04.1 LTS"
+  kernel           : Linux version 6.18.54.1-microsoft-standard-WSL2 (root@9b80f41eb17c) (gcc (GCC) 13.2.0, GNU ld (GNU Binutils) 2.41)
+  node             : v22.23.2   (/home/home/node-v22.23.2-linux-x64/bin/node)
+  chromium package : 153.0.0  (/home/home/browser-check/node_modules/@sparticuz/chromium)
+  puppeteer-core   : 25.14.0
+  chromium exe     : /tmp/chromium
+  CHROMIUM_DIR     : /home/home/browser-check
+  LD_LIBRARY_PATH  : /home/home/chromium-libs/usr/lib/x86_64-linux-gnu
+  script path      : /mnt/c/Users/HOME/AppData/Local/Temp/wire-work/sw-update-measure.mjs
+  command          : /home/home/node-v22.23.2-linux-x64/bin/node /mnt/c/Users/HOME/AppData/Local/Temp/wire-work/sw-update-measure.mjs /mnt/c/Users/HOME/AppData/Local/Temp/wire-work
+CHROMIUM=HeadlessChrome/153.0.8010.0
+```
+
+The measurement scripts are **stored** on a Windows path (`C:\Users\HOME\AppData\Local\Temp\wire-work`, mounted into WSL2 as `/mnt/c/...`) but they **ran inside WSL2 Ubuntu**: `os.platform` is `linux`, the kernel is `6.18.54.1-microsoft-standard-WSL2`, the userland is `Ubuntu 26.04.1 LTS` and the Node binary is `/home/home/node-v22.23.2-linux-x64/bin/node`. The browser is the project's pinned pair taken from `CHROMIUM_DIR` (`@sparticuz/chromium` 153.0.0 with `puppeteer-core` 25.14.0) and reports `HeadlessChrome/153.0.8010.0`. **No measurement in this section was produced on Windows, and none used a Chromium other than the project's.**
+
+Both measurement commands were launched from Windows as:
+
+```
+wsl.exe -d Ubuntu -- env PATH=/home/home/node-v22.23.2-linux-x64/bin:/usr/local/bin:/usr/bin:/bin \
+  CHROMIUM_DIR=/home/home/browser-check LD_LIBRARY_PATH=/home/home/chromium-libs/usr/lib/x86_64-linux-gnu \
+  /home/home/node-v22.23.2-linux-x64/bin/node /mnt/c/Users/HOME/AppData/Local/Temp/wire-work/<script>
+```
+
+The full output of both runs is kept outside the repository (`sw-update-measure.out.txt`, `sw-global-collision.out.txt`).
+
 #### Scenario matrix
 
 | # | Worker | Hash check | What changed | `updatefound` | New worker activated | Result |
@@ -611,6 +642,19 @@ AFTER
   index has marker  : false
 ```
 
+#### Global-name collision (same Linux environment, same engine line)
+
+A classic worker and an `importScripts()`'d classic script share one global scope. The generated bundle publishes itself with `var WireMedia = …`, so a worker that declares a **top-level `let`/`const` named `WireMedia`** collides with it:
+
+```
+A) worker declares `let WireMedia = null;` (top level) + bundle declares `var WireMedia`
+  {"ok":false,"error":"TypeError: Failed to register a ServiceWorker for scope ('http://127.0.0.1:40035/') with script ('http://127.0.0.1:40035/sw.js'): ServiceWorker script evaluation failed"}
+B) worker declares `let MEDIA_BUNDLE = null;` (top level) + bundle declares `var WireMedia`
+  {"ok":true,"body":"bundle-loaded","state":"activated"}
+```
+
+Consequence for 3B: `public/sw.js` must **not** declare a top-level binding named `WireMedia`; it reads the bundle through `self.WireMedia` instead. The whole worker script failing to evaluate would otherwise break the worker and not only the media route.
+
 #### Measured (Chromium 153, this environment)
 
 1. **A changed imported script starts an update even when `sw.js` is byte-identical.** The browser fetched the imports, found different bytes, created a new worker (`updatefound` fired) and installed it (C, D).
@@ -628,7 +672,60 @@ AFTER
 
 The rollout trigger is the **imported `public/sw-manifest.js`**, not the bytes of `public/sw.js`. With M1 the bundle is a manifest entry, so a bundle change changes the manifest (`scripts/build-sw-manifest.mjs:43-50`, version at `:57-60`), the imported `sw-manifest.js` changes, the browser starts an update, the new worker precaches and verifies the new bundle hash, and it activates with the new bundle. **No generated line inside `public/sw.js` is needed, and `public/sw.js` does not have to change for a bundle change to roll out.** The one deployment rule is the one the project already follows — regenerate the manifest whenever a shipped file changes ("Run it on every deploy", `scripts/build-sw-manifest.mjs:11`). If the manifest is not regenerated, the update is either never started (E2) or is rejected at install (D), and users keep the previous bundle.
 
-### 8.3 P-test plan (Linux browser test; no code yet)
+### 8.3 Bundle failure modes under M1 — the dependency is **not** soft
+
+**Corrected claim.** With M1 the bundle is a manifest entry, so it is **not** a soft dependency of the worker:
+
+- A **missing** bundle makes `precache()` fail: the fetch returns 404 and the worker throws `Wire SW: precache /sw-media-bundle.js: HTTP 404` (`public/sw.js:108-120`). The install is **rejected** and the previously active worker keeps serving.
+- A **mismatching** bundle makes the hash check fail: `Wire SW: precache /sw-media-bundle.js: content does not match manifest` (`public/sw.js:125-131`). The install is **rejected** and the previously active worker keeps serving.
+- The `try`/`catch` around `importScripts()` therefore covers exactly **one** case: the bundle **exists**, **matches its manifest hash**, and **throws while it is evaluated**. Then the worker script still evaluates, the precache succeeds, and the worker activates **without** the media bundle.
+
+| # | Bundle state | `importScripts()` | `precache()` | Install | Active worker | What the user sees |
+|---|---|---|---|---|---|---|
+| 1 | present, hash matches, evaluates | ok | ok | succeeds | the new worker, with the media route | the new app; media streaming works |
+| 2 | present, hash matches, throws at evaluation | throws, caught | ok | **succeeds** | the new worker **without** the media bundle | the new app; the media route is absent, so the client falls back to the Blob path (degraded, not broken) |
+| 3 | present, hash mismatch (tampered / partial deploy) | the served bytes may execute — they are verified only afterwards | **throws** (hash) | **rejected** | the old worker | the old app (old shell, old bundle); the old worker's behaviour applies |
+| 4 | missing (404) | throws, caught | **throws** (HTTP 404) | **rejected** | the old worker | the old app; no media route until the bundle is deployed |
+
+Rows 3 and 4 are the integrity guarantee M1 buys. Row 2 is the only case the `try`/`catch` in `public/sw.js` actually covers.
+
+The comment in `public/sw.js` must say the same thing — here is the corrected wording for the 3B hunk:
+
+```js
+/*
+ * Media bundle (Item 3, phase 3B).
+ *
+ * The bundle is generated by scripts/build-sw-media-bundle.mjs and is listed in
+ * sw-manifest.js, so it is NOT a soft dependency: a missing or altered bundle
+ * makes precache() fail, this worker's install is rejected, and the previously
+ * active worker keeps serving (see precache()).
+ *
+ * The try/catch below covers exactly one case: the bundle exists, matches its
+ * manifest hash and throws while it is evaluated. Then this worker activates
+ * without a media bundle and the client falls back to the Blob path.
+ *
+ * The generated bundle publishes itself as the global `WireMedia`. This script
+ * must therefore never declare a top-level `let`/`const` named `WireMedia`:
+ * that would collide with the bundle's `var WireMedia` and the whole worker
+ * script would fail to evaluate (measured, 8.2).
+ */
+```
+
+### 8.4 Where the manifest build runs (deploy / CI inventory)
+
+E2 shows the failure mode this inventory has to prevent: a shell file (or, with M1, the bundle) changes, the manifest is **not** regenerated, and the rollout stops **silently** — the browser does not even start an update (`updatefound` = 0, E2), so the old shell keeps being served.
+
+| Where | What it does | Live? |
+|---|---|---|
+| `scripts/build-sw-manifest.mjs:11` | the instruction "Run it on every deploy (before the files are uploaded/served)" | a comment. There is **no deploy script in this repository** (no Dockerfile, no deploy script, no workflow) — the deploy is manual |
+| `tests/sw-manifest.test.mjs:59-62` (SW-1) | runs `node scripts/build-sw-manifest.mjs --check` against `public/` and fails the suite when it is out of date | **live** — `scripts/run-tests.mjs:39-55` runs every `tests/**/*.test.mjs`, so any `npm test` fails on a stale manifest |
+| `tests/sw-manifest.test.mjs:65-96` (SW-2a-d) | `--check` really fails when a file changes, when line endings flip, and when the manifest is stale or missing | live |
+| `docs/ci/linux-tests.yml:65-66` | CI step "sw-manifest must be current": `node scripts/build-sw-manifest.mjs --check` | **not live** — the file states at `:3-7` that it is documentation only, is not under `.github/`, is not activated and has never executed; the repository contains **no `.github/` directory** |
+| `docs/ci/RUN_ON_LINUX.md:78`, `:97` | the same `--check`, as the first command of the manual Linux recipe and as step 3 of the documented workflow | manual recipe, run by hand |
+
+**Answer: does a missing rebuild fail CI?** There is **no activated CI** in this repository (no `.github/` directory; `docs/ci/linux-tests.yml` is documentation that has never run on a runner). The only automatic enforcement is the **test suite**: SW-1 (`tests/sw-manifest.test.mjs:59-62`) fails on a stale manifest, and the manual Linux recipe starts with the same `--check` (`docs/ci/RUN_ON_LINUX.md:78`). A rebuild that is forgotten **and** never reaches a test run reaches production silently, and then E2 applies: no update is started, the old shell keeps being served, and nothing complains. 3B therefore also ships a test that asserts the bundle is listed in `public/sw-manifest.js` with the SHA-256 of its bytes, so the manifest cannot drift away from the bundle unnoticed.
+
+### 8.5 P-test plan (Linux browser test; no code yet)
 
 File: a new `tests/*-sw-media-bundle-browser.test.mjs` (name decided when P5 starts), run with the project recipe (`CHROMIUM_DIR`, `unset WIRE_TEST_ALLOW_SYSTEM_BROWSER`, `node --experimental-test-module-mocks --env-file=tests/test.env --test --test-timeout=900000`).
 
@@ -642,7 +739,7 @@ File: a new `tests/*-sw-media-bundle-browser.test.mjs` (name decided when P5 sta
 4. **Roll-out (the positive counterpart of 2).** Change the bundle **and** regenerate `public/sw-manifest.js` consistently (the manifest lists the new hash and a new version), leave `public/sw.js` untouched, then call `registration.update()`. Assert: a new worker is created (`updatefound` fires), it reaches `activated`, it becomes the controller, the new versioned cache exists, and the active worker now uses the **new** bundle (the media route answers with the new bundle's behaviour). This is the property measured in A and E1 (8.2).
 5. **Integrity assertion.** Assert the bundle is listed in `public/sw-manifest.js` with a `rev` equal to the SHA-256 of its bytes, and that `node scripts/build-sw-manifest.mjs --check` passes.
 
-### 8.4 Exact claim for `docs/SECURITY_CLAIMS.md`
+### 8.6 Exact claim for `docs/SECURITY_CLAIMS.md`
 
 > **Service worker integrity.** The application shell is integrity-pinned by `public/sw-manifest.js`: `scripts/build-sw-manifest.mjs` hashes every shipped file under `public/` (`:43-50`) and derives a version from that list (`:57-60`), and the worker verifies each file's SHA-256 before storing it, refusing to install on any mismatch (`public/sw.js:88-137`, the throw at `:125-131`). This protects against **corruption** and **partial deployments** (assets and manifest out of step). It does **not** protect against a **malicious server**: the same server serves `public/sw.js` (excluded from the manifest, `scripts/build-sw-manifest.mjs:28`), `public/sw-manifest.js` (also excluded, `:28`) and every hashed asset, so a server that can serve JavaScript can serve a modified worker, a modified manifest and a modified asset consistently. A server that can serve JavaScript can serve a modified service worker. The service worker (and, with M1, the media bundle it imports) is therefore part of the trusted computing base, and the application must only be served over HTTPS from a server the user trusts.
 
@@ -652,7 +749,7 @@ Supporting notes for that paragraph:
 - The bundle is **executed before the precache hash verification** (`importScripts()` runs at worker evaluation time; the verification happens in the `install` handler). Why that is harmless: (a) at that moment the worker **holds no keys** — keys are only handed over by the page over `postMessage` after the worker is activated (RFC Q4), and a worker that never activates is never the page's controller, so it never receives those messages; (b) the worker that failed the verification is discarded and the previous worker keeps serving; (c) the only code that ran is the bundle itself, which the same server could have tampered with inside `public/sw.js` anyway — so M1 does not widen the trust boundary beyond the existing "the server serves JS" assumption, it only adds a *corruption/partial-deploy* check. A passive corruption normally fails to parse (nothing runs); a targeted corruption could execute briefly inside a worker that controls nothing and holds no keys.
 - **UNVERIFIED** (must be settled in P5 or stated as a limitation): (1) whether a non-activated worker can receive a `postMessage` from a page (not tested); (2) the browser's exact wording and delivery of the install-failure error (the page console was empty in the probe); (3) the update behaviour in browsers other than Chromium 153 (Firefox, Safari, Electron) was **not** measured — the measurements in 8.2 are Chromium-only.
 
-### 8.5 Rate-limiter inventory (read-only; no env file changed)
+### 8.7 Rate-limiter inventory (read-only; no env file changed)
 
 Grep of `tests/` for `rateLimit|RateLimit|429|Too many requests|LOADTEST_DISABLE_RATE_LIMITS`:
 
@@ -665,6 +762,6 @@ Grep of `tests/` for `rateLimit|RateLimit|429|Too many requests|LOADTEST_DISABLE
 
 Env state: `tests/dm-attachments/_env.mjs` sets `LOADTEST_DISABLE_RATE_LIMITS = 'true'`; **`tests/groups/_env.mjs` and `tests/groups/_env-3c.mjs` do not**. No env file was changed by this note.
 
-### 8.6 Labelling convention for the two `dm-v2-wire-browser-paths` failures
+### 8.8 Labelling convention for the two `dm-v2-wire-browser-paths` failures
 
 `e3. a stored row with recipientId rewritten is not readable` and `e4. changing the row reply_to_id breaks the AAD binding, so the row is not readable` are reported as **FAIL in the WSL2 environment** — deterministic (5/5 runs, both on base `daad142` and on HEAD `9767297`), pre-existing (identical on the base commit), and caused by the test's own polling tripping the app's general API limiter (`middleware/rateLimiter.js:402-415`, 300 requests / 60 s per user or IP). They are **not** described as flaky. They **passed on the Ubuntu 24.04 machine** used earlier in Batch A.

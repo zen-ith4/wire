@@ -764,4 +764,8 @@ Env state: `tests/dm-attachments/_env.mjs` sets `LOADTEST_DISABLE_RATE_LIMITS = 
 
 ### 8.8 Labelling convention for the two `dm-v2-wire-browser-paths` failures
 
-`e3. a stored row with recipientId rewritten is not readable` and `e4. changing the row reply_to_id breaks the AAD binding, so the row is not readable` are reported as **FAIL in the WSL2 environment** — deterministic (5/5 runs, both on base `daad142` and on HEAD `9767297`), pre-existing (identical on the base commit), and caused by the test's own polling tripping the app's general API limiter (`middleware/rateLimiter.js:402-415`, 300 requests / 60 s per user or IP). They are **not** described as flaky. They **passed on the Ubuntu 24.04 machine** used earlier in Batch A.
+`e3. a stored row with recipientId rewritten is not readable` and `e4. changing the row reply_to_id breaks the AAD binding, so the row is not readable`:
+
+> **fail deterministically when `dm-v2-wire-browser-paths` runs alone in WSL2 (5/5, base and HEAD); pass in the full-suite run; depends on shared limiter budget**
+
+The mechanism is the test's own polling tripping the app's general API limiter (`middleware/rateLimiter.js:402-415`, 300 requests / 60 s per user or IP): in an isolated run the file's requests exhaust the shared budget, in a full-suite run the budget is spread differently and both tests pass (observed: `ok 382` and `ok 383` in the full Linux suite of phase 3B). They are **not** described as flaky. They **passed on the Ubuntu 24.04 machine** used earlier in Batch A.

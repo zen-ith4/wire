@@ -897,7 +897,7 @@ The URL (D4): `/__wire_media_stream/<streamId>` - same origin, path prefix that 
 Destination checks (two signals, in this order):
 
 1. **`request.destination`** - the canonical Fetch-standard value. For a `<video>`/`<audio>` element it is `video`/`audio`. The worker accepts only `video` and `audio`; anything else (`empty` for `fetch()`, `document`, `iframe`, ...) is refused with 404. This blocks a script from reading the decrypted bytes with `fetch()`.
-2. **`Sec-Fetch-Dest`** - a secondary signal only. The header is not settable by page script, so it is a useful cross-check, but it is a header and the worker must not depend on it alone (and must not trust it over `request.destination`).
+2. **`Sec-Fetch-Dest`** - NOT sent by Chromium 153 for media-element requests (measured: absent from the header list in both spikes). It cannot be used as a signal at all in that browser. The worker relies on `request.destination` alone (measured: `"audio"` for `<audio>`, `"video"` for `<video>`), and fails closed on any other value. Whether other browsers send it is still UNVERIFIED.
 
 Both are checked; a mismatch is a 404. The worker does **not** parse the `Range` header of a non-media request (that stays untouched, `public/sw.js:307-309`).
 
@@ -906,7 +906,7 @@ Both are checked; a mismatch is a 404. The worker does **not** parse the `Range`
 - The worker records the client id from **`event.source.id`** at `REGISTER_STREAM` time - not from a page-supplied field. The page cannot choose its own client id that way; the browser tells the worker who is talking.
 - The stream entry keeps that `clientId`. A later fetch for that stream is served only when `event.clientId` (or `event.resultingClientId`) equals the stored value.
 - If `event.clientId` is empty, the worker **fails closed** with 404 rather than serving the stream. Rationale: an empty client id cannot be compared, and serving anyway would let a request that the browser could not attribute to a client read the plaintext.
-- **UNVERIFIED:** whether Chromium populates `event.clientId` for a media-element request. This is the single riskiest unknown in 3C: if it is empty, the route can never serve anything and the feature is unusable in that browser. It must be measured first (a P5 browser test that reads `event.clientId` in a fetch handler), and the fallback (the Blob path) must be the answer for every browser where it is empty.
+- **Measured (Chromium 153):** `event.clientId` IS populated for both `<audio>` and `<video>` element requests (a UUID, e.g. `f7e937a5-...`); `event.resultingClientId` is empty. The worker compares `event.clientId`, not `resultingClientId`. The client binding (9.5) is viable in Chromium 153. Whether other browsers populate it is still UNVERIFIED (item 1 of 9.13).
 
 ### 9.6 Per-client purge, not a global purge
 
@@ -957,7 +957,7 @@ The page's policy (`middleware/csp.js:38-52`) is `default-src 'self'; ...; media
   - `connect-src 'self'` allows the worker's ciphertext `fetch()` (same origin) and **forbids** it from fetching anything cross-origin - the worker has no use for that.
   - `worker-src 'self'` allows the registration (`public/js/core/pwa.js:129-132`).
   - No CSP change is required for 3C.
-- **UNVERIFIED:** whether `Content-Security-Policy: sandbox` on a media response breaks playback in any browser (D8). It must be measured in P5; if it breaks playback, the alternative is to drop `sandbox` and rely on the MIME allowlist plus `nosniff` - a decision that needs the owner.
+- **Measured (Chromium 153):** `Content-Security-Policy: sandbox` (together with `nosniff` and `no-store`) does NOT break playback. The element reaches `readyState` 4, reports the correct duration and advances `currentTime` on a seek, with no error. D8 is resolved for Chromium. Whether other browsers break on `sandbox` is still UNVERIFIED.
 
 ### 9.11 The plan for the `public/sw.js` header comment
 
@@ -986,14 +986,22 @@ The header (`public/sw.js:1-47`) currently states that the worker handles the sh
 | 12 | the MIME is not in the allowlist | 200/206 with `application/octet-stream`, `nosniff`, `sandbox` | playback fails (it is not a media type) | the Blob path |
 | 13 | the worker is terminated by the browser | the stream is gone; the page re-registers on the next attempt | the player errors once | the Blob path |
 
-### 9.13 UNVERIFIED for 3C
+### 9.13 Measured and UNVERIFIED for 3C
 
-1. Whether Chromium populates `event.clientId` for a **media-element** request (the whole route depends on it; 9.5).
-2. Whether `request.destination` is `video`/`audio` inside a fetch event in each target browser, and what `Sec-Fetch-Dest` carries there (9.4).
-3. Whether `Content-Security-Policy: sandbox` on a media response breaks playback (9.10, D8).
-4. Whether a media element accepts a **partial 206** (a `Content-Range` that covers less than the requested range) and then asks for the rest, in each browser (9.8). If a browser does not, the fallback is to answer the full range in several 206s, which needs a decision.
-5. How a `<video>` element reacts to a `401` mid-stream (does it retry, or does it stop?) in each browser.
-6. Safari/iOS: whether a service worker may serve a media element at all, and whether the media stack bypasses the service worker (Q7, D6).
-7. The behaviour of the browser's media cache with `Cache-Control: no-store` on a 206 response.
-8. Whether the browser keeps the connection open for a long 206 (the worker streams the decrypted bytes; a proxy timeout could cut it).
-9. Nothing in this section was measured: **no 3C code exists**, no browser run was made for any of the statements above.
+1. **`event.clientId` for a media-element request** - MEASURED: populated (a UUID) for both `<audio>` and `<video>`; `event.resultingClientId` is empty. The worker compares `event.clientId` and fails closed when it is empty. Viable in Chromium 153. Other browsers still UNVERIFIED.
+2. **`request.destination`** - MEASURED: `"audio"` for `<audio>`, `"video"` for `<video>`. The worker accepts only these two and fails closed on any other value. Other browsers still UNVERIFIED.
+3. **`Sec-Fetch-Dest`** - MEASURED: NOT sent by Chromium 153 for media-element requests (absent from the header list). It cannot be used as a signal in that browser. Other browsers still UNVERIFIED.
+4. **Partial 206 acceptance** - MEASURED: the media element accepts a 206 whose `Content-Range` covers less than the requested range and keeps requesting the rest (`bytes=20000-`, `bytes=40000-`, ...). A seek works with the `Content-Range` total set to the plaintext size. A partial 206 is safe to use.
+5. **`Content-Security-Policy: sandbox` on a media response** - MEASURED: playback is normal (readyState 4, correct duration, seek works, no error). D8 resolved for Chromium. Other browsers still UNVERIFIED.
+6. **The worker stopped mid-playback (CDP `stopAllWorkers`)** - MEASURED: playback continues from the already-buffered data; a subsequent seek restarts the worker (`runningStatus: stopped -> starting -> running`); the worker's in-memory state (stream registry, keys, tokens) is GONE after the restart. The page must re-handshake. This confirms the Q3/Q4 design.
+7. **A progressive MP4 with moov at the end** - MEASURED: the browser issues `bytes=0-` first, then `bytes=<tail>-` (the moov region, e.g. `bytes=4325376-` for a 4 372 373-byte file). The worker must be able to answer a tail Range before it has the rest.
+8. **Seek behaviour for a progressive MP4** - MEASURED: a seek issues new Range requests in the tail region. UNVERIFIED for a fragmented MP4 (no fragmented file was available).
+
+Still UNVERIFIED (unchanged):
+
+9. Firefox/Safari/iOS: whether a service worker may serve a media element at all, and whether the media stack bypasses the service worker (Q7, D6).
+10. Whether the browser keeps the connection open for a long 206 (the worker streams the decrypted bytes; a proxy timeout could cut it).
+11. Whether a `<video>` element accepts a `bytes=0-1` style partial response (Safari's behaviour) - not measured in Chromium.
+12. What a media element does on 401/403/404/416 from the worker mid-playback (error code, retry) - not measured.
+13. Whether the 206 body may be stored in the HTTP/media cache despite `Cache-Control: no-store` - not measured.
+14. Nothing in this section is implemented: no fetch handler, no browser run for any of the still-UNVERIFIED items above.

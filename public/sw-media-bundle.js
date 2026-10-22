@@ -92,11 +92,15 @@ var WireMedia = (() => {
     ATTACHMENT_RANGE_MAX_RESPONSE_CHUNKS: () => ATTACHMENT_RANGE_MAX_RESPONSE_CHUNKS,
     ATTACHMENT_RANGE_READ_AHEAD_CHUNKS: () => ATTACHMENT_RANGE_READ_AHEAD_CHUNKS,
     MEDIA_STREAM_FALLBACK_MIME: () => MEDIA_STREAM_FALLBACK_MIME,
+    MEDIA_STREAM_IDLE_TTL_MS: () => MEDIA_STREAM_IDLE_TTL_MS,
     MEDIA_STREAM_MAX_RESPONSE_CHUNKS: () => MEDIA_STREAM_MAX_RESPONSE_CHUNKS,
     MEDIA_STREAM_PATH_PREFIX: () => MEDIA_STREAM_PATH_PREFIX,
     RangeNotSatisfiableError: () => RangeNotSatisfiableError,
     ciphertextRangeFor: () => ciphertextRangeFor,
+    createMediaStreamRegistry: () => createMediaStreamRegistry,
     decryptChunkRange: () => decryptChunkRange,
+    decryptMediaCiphertextRange: () => decryptMediaCiphertextRange,
+    encryptedSizeFor: () => encryptedSizeFor,
     inferPlainSizeFromCiphertext: () => inferPlainSizeFromCiphertext,
     isMediaDestinationAllowed: () => isMediaDestinationAllowed,
     isMediaMethodAllowed: () => isMediaMethodAllowed,
@@ -528,6 +532,246 @@ var WireMedia = (() => {
       totalSize,
       ciphertextRange: ciphertextRangeFor({ totalSize, served: info.served })
     };
+  }
+
+  // public/js/sw-media/stream-registry.js
+  var MEDIA_STREAM_IDLE_TTL_MS = 10 * 60 * 1e3;
+  var STREAM_ID_RE2 = /^[A-Za-z0-9_-]{1,128}$/;
+  var SAFE_TRANSPORT_PATH_RE = /^\/api\/[A-Za-z0-9/_-]+$/;
+  function isUint8ArrayOfLength(value, length) {
+    return value instanceof Uint8Array && value.length === length;
+  }
+  function isTransportPath(value) {
+    return typeof value === "string" && value.length <= 512 && !value.includes("..") && !value.includes("//") && SAFE_TRANSPORT_PATH_RE.test(value);
+  }
+  function validateRegistration(input) {
+    if (!input || typeof input !== "object") throw new TypeError("Invalid stream registration");
+    if (typeof input.streamId !== "string" || !STREAM_ID_RE2.test(input.streamId)) {
+      throw new TypeError("Invalid stream id");
+    }
+    if (typeof input.clientId !== "string" || !input.clientId) {
+      throw new TypeError("Invalid client id");
+    }
+    if (!isUint8ArrayOfLength(input.rawKey, 32)) {
+      throw new TypeError("Invalid stream key");
+    }
+    if (!isUint8ArrayOfLength(input.baseIv, 12)) {
+      throw new TypeError("Invalid stream IV");
+    }
+    if (!Number.isInteger(input.plainSize) || input.plainSize < 0) {
+      throw new TypeError("Invalid stream size");
+    }
+    if (!isTransportPath(input.path)) {
+      throw new TypeError("Invalid stream path");
+    }
+    if (input.abortController != null && typeof input.abortController.abort !== "function") {
+      throw new TypeError("Invalid abort controller");
+    }
+  }
+  function abortEntry(entry) {
+    if (entry && entry.abortController) {
+      try {
+        entry.abortController.abort();
+      } catch {
+      }
+    }
+  }
+  function createMediaStreamRegistry({
+    now = () => Date.now(),
+    idleTtlMs = MEDIA_STREAM_IDLE_TTL_MS
+  } = {}) {
+    if (typeof now !== "function") throw new TypeError("now must be a function");
+    if (!Number.isFinite(idleTtlMs) || idleTtlMs <= 0) {
+      throw new TypeError("idleTtlMs must be positive");
+    }
+    const streams = /* @__PURE__ */ new Map();
+    function sweep(at = now()) {
+      for (const [streamId, entry] of streams) {
+        if (at - entry.lastAccessAt >= idleTtlMs) {
+          abortEntry(entry);
+          streams.delete(streamId);
+        }
+      }
+    }
+    function register(input) {
+      sweep();
+      validateRegistration(input);
+      const previous = streams.get(input.streamId);
+      if (previous && previous.clientId !== input.clientId) {
+        throw new TypeError("Stream id already belongs to another client");
+      }
+      if (previous) abortEntry(previous);
+      const at = now();
+      const entry = {
+        streamId: input.streamId,
+        clientId: input.clientId,
+        messageId: input.messageId,
+        scope: input.scope,
+        groupId: input.groupId,
+        path: input.path,
+        rawKey: input.rawKey,
+        baseIv: input.baseIv,
+        mime: typeof input.mime === "string" ? input.mime : "",
+        plainSize: input.plainSize,
+        token: null,
+        expiresAt: 0,
+        lastAccessAt: at,
+        deadStatus: null,
+        abortController: input.abortController ?? null
+      };
+      streams.set(entry.streamId, entry);
+      return entry;
+    }
+    function peek(streamId) {
+      return streams.get(streamId) || null;
+    }
+    function get(streamId) {
+      sweep();
+      const entry = streams.get(streamId);
+      if (!entry) return null;
+      entry.lastAccessAt = now();
+      return entry;
+    }
+    function updateToken(streamId, clientId, token, expiresAt) {
+      sweep();
+      if (typeof token !== "string" || !token) return false;
+      if (!Number.isFinite(expiresAt)) return false;
+      const entry = streams.get(streamId);
+      if (!entry || entry.clientId !== clientId) return false;
+      entry.token = token;
+      entry.expiresAt = expiresAt;
+      entry.lastAccessAt = now();
+      return true;
+    }
+    function unregister(streamId, clientId) {
+      const entry = streams.get(streamId);
+      if (!entry || entry.clientId !== clientId) return false;
+      abortEntry(entry);
+      streams.delete(streamId);
+      return true;
+    }
+    function purgeClient(clientId) {
+      if (typeof clientId !== "string" || !clientId) return [];
+      const removed = [];
+      for (const [streamId, entry] of streams) {
+        if (entry.clientId !== clientId) continue;
+        abortEntry(entry);
+        streams.delete(streamId);
+        removed.push(streamId);
+      }
+      return removed;
+    }
+    function markDead(streamId, status) {
+      if (!Number.isInteger(status) || status < 400 || status > 599) {
+        throw new TypeError("Invalid stream status");
+      }
+      const entry = streams.get(streamId);
+      if (!entry) return false;
+      entry.deadStatus = status;
+      return true;
+    }
+    return {
+      register,
+      peek,
+      get,
+      updateToken,
+      unregister,
+      purgeClient,
+      markDead,
+      sweep,
+      get size() {
+        sweep();
+        return streams.size;
+      }
+    };
+  }
+
+  // public/js/sw-media/media-ciphertext.js
+  var CT_CHUNK3 = STREAM_CHUNK_SIZE + STREAM_TAG_BYTES;
+  function fail() {
+    throw new AttachmentDecryptError();
+  }
+  function isByteRange(value) {
+    return value && Number.isInteger(value.start) && Number.isInteger(value.end) && value.start >= 0 && value.end >= value.start;
+  }
+  async function decryptMediaCiphertextRange({
+    ciphertext,
+    ciphertextRange,
+    served,
+    totalSize,
+    rawKey,
+    baseIv
+  } = {}) {
+    try {
+      if (!(ciphertext instanceof Uint8Array)) fail();
+      if (!(rawKey instanceof Uint8Array) || rawKey.length !== 32) fail();
+      if (!(baseIv instanceof Uint8Array) || baseIv.length !== 12) fail();
+      if (!Number.isInteger(totalSize) || totalSize < 0) fail();
+      if (totalSize === 0) {
+        if (!served || served.start !== 0 || served.end !== -1) fail();
+        if (ciphertextRange != null) fail();
+        if (ciphertext.length !== 0) fail();
+        return new Uint8Array(0);
+      }
+      if (!isByteRange(served)) fail();
+      if (!isByteRange(ciphertextRange)) fail();
+      if (served.start > served.end || served.end >= totalSize) fail();
+      const chunks = Math.max(1, Math.ceil(totalSize / STREAM_CHUNK_SIZE));
+      const firstChunk = Math.floor(served.start / STREAM_CHUNK_SIZE);
+      const lastChunk = Math.floor(served.end / STREAM_CHUNK_SIZE);
+      if (firstChunk < 0 || lastChunk >= chunks) fail();
+      const expectedStart = STREAM_HEADER_BYTES + firstChunk * CT_CHUNK3;
+      const expectedEnd = lastChunk === chunks - 1 ? encryptedSizeFor(totalSize) - 1 : STREAM_HEADER_BYTES + (lastChunk + 1) * CT_CHUNK3 - 1;
+      if (ciphertextRange.start !== expectedStart || ciphertextRange.end !== expectedEnd) {
+        fail();
+      }
+      if (ciphertext.length !== expectedEnd - expectedStart + 1) fail();
+      const key = await globalThis.crypto.subtle.importKey(
+        "raw",
+        rawKey,
+        { name: "AES-GCM" },
+        false,
+        ["decrypt"]
+      );
+      const output = new Uint8Array(served.end - served.start + 1);
+      for (let index = firstChunk; index <= lastChunk; index += 1) {
+        const isLast = index === chunks - 1;
+        const plainInChunk = isLast ? totalSize - index * STREAM_CHUNK_SIZE : STREAM_CHUNK_SIZE;
+        const cipherInChunk = plainInChunk + STREAM_TAG_BYTES;
+        const offset = STREAM_HEADER_BYTES + index * CT_CHUNK3 - expectedStart;
+        if (offset < 0 || offset + cipherInChunk > ciphertext.length) fail();
+        let plain;
+        try {
+          plain = new Uint8Array(await globalThis.crypto.subtle.decrypt(
+            {
+              name: "AES-GCM",
+              iv: chunkNonce(baseIv, index, isLast),
+              additionalData: HEADER,
+              tagLength: 128
+            },
+            key,
+            ciphertext.subarray(offset, offset + cipherInChunk)
+          ));
+        } catch {
+          fail();
+        }
+        if (plain.length !== plainInChunk) fail();
+        const chunkStart = index * STREAM_CHUNK_SIZE;
+        const copyStart = Math.max(served.start, chunkStart);
+        const copyEnd = Math.min(served.end + 1, chunkStart + plainInChunk);
+        if (copyEnd > copyStart) {
+          output.set(
+            plain.subarray(copyStart - chunkStart, copyEnd - chunkStart),
+            copyStart - served.start
+          );
+        }
+      }
+      if (output.length !== served.end - served.start + 1) fail();
+      return output;
+    } catch (error) {
+      if (error instanceof AttachmentDecryptError) throw error;
+      throw new AttachmentDecryptError();
+    }
   }
   return __toCommonJS(bundle_entry_exports);
 })();

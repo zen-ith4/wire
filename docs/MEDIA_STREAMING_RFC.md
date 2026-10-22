@@ -499,3 +499,102 @@ See Q12. Summary: every structural failure fails closed (error surfaced, no sile
 
 - No media-streaming code or tests exist yet; no playback, seek, tamper, logout or Cache-Storage assertion was run for this RFC.
 - No mutation plant was run against this RFC (it is documentation only).
+
+---
+
+## 8. 3B pre-implementation notes (owner decisions + measured SW update behaviour)
+
+This section supersedes section 6 for the decisions listed in 8.1. Docs-only: no code, no tests, no config, no `public/sw-manifest.js` change.
+
+### 8.1 Owner decisions (accepted)
+
+- **3B/3C direction: option (ii)** — the classic `public/sw.js` stays the ONE service worker and gains a single `importScripts()` of a generated esbuild bundle. M2 (bundle outside the manifest) and M3 (fail-soft precache) are **rejected**.
+- **M1: the bundle is INSIDE the manifest** — it is hashed by `scripts/build-sw-manifest.mjs` and precached + hash-verified by the worker at install time.
+- **History: no rewrite.** `6f2aa98` (the 3A export) is the only red commit on the branch: `SW-1`, `SW-2a` and `SW-4a` fail there because the manifest did not match the changed hashed asset. `git bisect` **must skip `6f2aa98`**; every other commit on `security-hardening` is green.
+
+### 8.2 Measured: when does a service worker actually update?
+
+All three measurements were run in **headless Chromium 153.0.8010.0** (`@sparticuz/chromium` 153.0.0, `puppeteer-core` 25.14.0) against a **throwaway service worker outside the repository** (`/tmp`, not in the repo, not in the WSL clone of it). The throwaway worker mirrors the real one: `importScripts('/sw-manifest.js')`, `importScripts('/sw-media-bundle.js')`, a `precache()` that fetches every manifest file, verifies its SHA-256 and **throws** on a mismatch (`public/sw.js:88-137`), then `skipWaiting()` + `clients.claim()`.
+
+**Measurement 1 — only an `importScripts`'d file changes (`sw.js` bytes identical).**
+
+```
+before:  active=activated  controller=…/sw.js  marker="v1"  shell="shell v1"
+change:  /sw-media-bundle.js  "self.BUNDLE_MARKER='v1'"  ->  "'v2'"   (sw.js + manifest unchanged)
+after registration.update():
+         marker="v1"      <-- the NEW bundle was NOT picked up
+         shell="shell v1"
+         controller=…/sw.js        finalInstalling=null  finalWaiting=null
+         the active worker object was the SAME object in all 30 polls
+         (a transient installing worker appeared, then went away)
+```
+
+**Measurement 1b — only a manifest-listed (precached) file changes.**
+
+```
+before:  active=activated  shell="shell v1"
+change:  /shell.txt  "shell v1" -> "shell v2"   (sw.js + manifest unchanged)
+after registration.update():
+         shell="shell v1"   <-- still the OLD precached copy
+         installing=null  waiting=null  active=activated
+```
+
+**Conclusion (measured, not assumed):** the browser's update is driven by the **main script's bytes** (`/sw.js`). Changing an `importScripts`'d file, or a precached asset, **does not roll out to the active worker** — the old worker keeps the old bundle and the old shell cache.
+
+**Consequence for 3B (design constraint):** with M1, a bundle change also changes the manifest version, but that alone does **not** update the worker. Therefore a bundle change **must be accompanied by a change in `public/sw.js`'s bytes** (e.g. a generated `// media bundle: <sha256>` line in `sw.js`, or bumping a media-feature version constant that `sw.js` embeds). Otherwise users keep the previous bundle AND the previous shell until `sw.js` itself changes. This must be part of the 3B build script and its test plan (8.3).
+
+**Measurement 2 (M1) — the served bundle's bytes mismatch the manifest.**
+
+```
+before:  active=activated  controller=…/sw.js  marker="v1"  shell="shell v1"
+change:  /sw-media-bundle.js  ->  "self.BUNDLE_MARKER='TAMPERED'"   (manifest still lists the old hash)
+after registration.update():
+         updateError=null          (update() resolves; the failure is inside the install)
+         marker="v1"  shell="shell v1"        <-- the OLD worker is still in control
+         controller=…/sw.js   sameActiveObject=true
+         finalInstalling=null  finalWaiting=null
+         (a transient installing worker appeared, then went redundant)
+```
+
+**Measured behaviour:** the new worker is **rejected at install** (its `precache()` throws on the hash mismatch, `public/sw.js:125-131`), it never activates, the **old worker stays active and keeps serving the shell** from its own cache, and the page's controller never changes. The install-failure message was **not** visible in the page console in this probe (UNVERIFIED: the browser's own wording and where it is surfaced).
+
+### 8.3 P-test plan (Linux browser test; no code yet)
+
+File: a new `tests/*-sw-media-bundle-browser.test.mjs` (name decided when P5 starts), run with the project recipe (`CHROMIUM_DIR`, `unset WIRE_TEST_ALLOW_SYSTEM_BROWSER`, `node --experimental-test-module-mocks --env-file=tests/test.env --test --test-timeout=900000`).
+
+1. **Install with a matching bundle.** Serve a real `public/sw.js` + `public/sw-manifest.js` + a bundle whose bytes hash to the manifest entry. Register, wait for `ready`. Assert: `registration.active.state === 'activated'`, `navigator.serviceWorker.controller` is set, and a shell asset (e.g. `/index.html`) is served **from the SW cache** (the SW answers it, not the network).
+2. **Break the bundle (M1 mismatch).** Re-serve the bundle with one byte changed, keeping `sw.js` and the manifest identical. Call `registration.update()`. Assert:
+   - the **old** worker is still `active` and is still the controller (same `scriptURL`);
+   - the shell asset is still served from the old worker's cache (old bytes);
+   - no new worker reaches `activated` (no `waiting` worker afterwards);
+   - the media route is NOT available (the old worker has no media bundle) -> the client falls back to the Blob path.
+3. **Restore the bundle and update again.** Assert the new worker installs and activates, and that the shell cache is refreshed to the new manifest version.
+4. **Rollout guard (from 8.2).** Change ONLY the bundle bytes (sw.js + manifest untouched), call `registration.update()`, and assert that the **active worker still uses the old bundle** — i.e. the test proves the "bundle change alone does not roll out" property, which the 3B build script must therefore handle by also changing `sw.js`'s bytes.
+5. **Integrity assertion.** Assert the bundle is listed in `public/sw-manifest.js` with a `rev` equal to the SHA-256 of its bytes, and that `node scripts/build-sw-manifest.mjs --check` passes.
+
+### 8.4 Exact claim for `docs/SECURITY_CLAIMS.md`
+
+> **Service worker integrity.** The application shell is integrity-pinned by `public/sw-manifest.js`: `scripts/build-sw-manifest.mjs` hashes every shipped file under `public/` (`:43-50`) and derives a version from that list (`:57-60`), and the worker verifies each file's SHA-256 before storing it, refusing to install on any mismatch (`public/sw.js:88-137`, the throw at `:125-131`). This protects against **corruption** and **partial deployments** (assets and manifest out of step). It does **not** protect against a **malicious server**: the same server serves `public/sw.js` (excluded from the manifest, `scripts/build-sw-manifest.mjs:28`), `public/sw-manifest.js` (also excluded, `:28`) and every hashed asset, so a server that can serve JavaScript can serve a modified worker, a modified manifest and a modified asset consistently. A server that can serve JavaScript can serve a modified service worker. The service worker (and, with M1, the media bundle it imports) is therefore part of the trusted computing base, and the application must only be served over HTTPS from a server the user trusts.
+
+Supporting notes for that paragraph:
+
+- With M1 the **media bundle is inside the manifest**: it is hashed by `scripts/build-sw-manifest.mjs:43-50` and verified by the worker before it is stored (`public/sw.js:88-137`). The bundle is therefore *more* protected than `public/sw.js` itself, which is excluded from the manifest (`scripts/build-sw-manifest.mjs:28`).
+- The bundle is **executed before the precache hash verification** (`importScripts()` runs at worker evaluation time; the verification happens in the `install` handler). Why that is harmless: (a) at that moment the worker **holds no keys** — keys are only handed over by the page over `postMessage` after the worker is activated (RFC Q4), and a worker that never activates is never the page's controller, so it never receives those messages; (b) the worker that failed the verification is discarded and the previous worker keeps serving; (c) the only code that ran is the bundle itself, which the same server could have tampered with inside `public/sw.js` anyway — so M1 does not widen the trust boundary beyond the existing "the server serves JS" assumption, it only adds a *corruption/partial-deploy* check. A passive corruption normally fails to parse (nothing runs); a targeted corruption could execute briefly inside a worker that controls nothing and holds no keys.
+- **UNVERIFIED** (must be settled in P5 or stated as a limitation): (1) whether a non-activated worker can receive a `postMessage` from a page (not tested); (2) the browser's exact wording and delivery of the install-failure error (the page console was empty in the probe); (3) whether Chrome/Edge/Safari differ in the transient "installing" worker observed in 8.2.
+
+### 8.5 Rate-limiter inventory (read-only; no env file changed)
+
+Grep of `tests/` for `rateLimit|RateLimit|429|Too many requests|LOADTEST_DISABLE_RATE_LIMITS`:
+
+| File:line | What it depends on |
+|---|---|
+| `tests/groups/group-hardening-f6-device-id.test.mjs:63-89` | **Asserts limiter behaviour**: a flood of new device ids must produce a 429 with `Retry-After` (`:84-85`). It therefore **requires the limiter to be ACTIVE** — it would fail if `LOADTEST_DISABLE_RATE_LIMITS=true` were set for `tests/groups/`. |
+| `tests/dm-v2-wire-browser-paths.test.mjs:19-30` | Documents (and depends on) the registration limiter's 5-attempts-per-15-minutes budget per process. |
+| `tests/dm-v2-wire-browser-paths.test.mjs:547-557` | `apiPoll()` uses a 500 ms step precisely so the poll "trips the app's own rate limiter" less often (comment: a 50 ms poll over 30 s is ~600 requests -> "Too many requests"). |
+| `tests/files-path-traversal.test.mjs:418`, `:467` | Documents the 10-request budget of the section and that exceeding it yields 429. |
+
+Env state: `tests/dm-attachments/_env.mjs` sets `LOADTEST_DISABLE_RATE_LIMITS = 'true'`; **`tests/groups/_env.mjs` and `tests/groups/_env-3c.mjs` do not**. No env file was changed by this note.
+
+### 8.6 Labelling convention for the two `dm-v2-wire-browser-paths` failures
+
+`e3. a stored row with recipientId rewritten is not readable` and `e4. changing the row reply_to_id breaks the AAD binding, so the row is not readable` are reported as **FAIL in the WSL2 environment** — deterministic (5/5 runs, both on base `daad142` and on HEAD `9767297`), pre-existing (identical on the base commit), and caused by the test's own polling tripping the app's general API limiter (`middleware/rateLimiter.js:402-415`, 300 requests / 60 s per user or IP). They are **not** described as flaky. They **passed on the Ubuntu 24.04 machine** used earlier in Batch A.

@@ -514,49 +514,119 @@ This section supersedes section 6 for the decisions listed in 8.1. Docs-only: no
 
 ### 8.2 Measured: when does a service worker actually update?
 
-All three measurements were run in **headless Chromium 153.0.8010.0** (`@sparticuz/chromium` 153.0.0, `puppeteer-core` 25.14.0) against a **throwaway service worker outside the repository** (`/tmp`, not in the repo, not in the WSL clone of it). The throwaway worker mirrors the real one: `importScripts('/sw-manifest.js')`, `importScripts('/sw-media-bundle.js')`, a `precache()` that fetches every manifest file, verifies its SHA-256 and **throws** on a mismatch (`public/sw.js:88-137`), then `skipWaiting()` + `clients.claim()`.
+All measurements were run in **headless Chromium 153.0.8010.0** (`@sparticuz/chromium` 153.0.0, `puppeteer-core` 25.14.0) against **throwaway workers outside the repository** (a scratch directory under the OS temp dir; nothing was written into the repository or into the WSL clone of it). Registration used `updateViaCache: 'none'`, matching the application (`public/js/core/pwa.js:129-132`).
 
-**Measurement 1 — only an `importScripts`'d file changes (`sw.js` bytes identical).**
+**Correction to the previous revision of this section.** The first version of this note concluded that "only the main script's bytes drive an update" and imposed the constraint that every bundle change must also change `public/sw.js`. **That conclusion was wrong.** The first measurement changed the imported bundle but left the manifest stale, so the new worker's `precache()` failed its hash check and the install was rejected — exactly as in the mismatch measurement. The "transient installing worker" was the browser detecting the change and starting an update, not an anomaly. The measurements below separate the two effects.
 
-```
-before:  active=activated  controller=…/sw.js  marker="v1"  shell="shell v1"
-change:  /sw-media-bundle.js  "self.BUNDLE_MARKER='v1'"  ->  "'v2'"   (sw.js + manifest unchanged)
-after registration.update():
-         marker="v1"      <-- the NEW bundle was NOT picked up
-         shell="shell v1"
-         controller=…/sw.js        finalInstalling=null  finalWaiting=null
-         the active worker object was the SAME object in all 30 polls
-         (a transient installing worker appeared, then went away)
-```
+#### Scenario matrix
 
-**Measurement 1b — only a manifest-listed (precached) file changes.**
+| # | Worker | Hash check | What changed | `updatefound` | New worker activated | Result |
+|---|---|---|---|---|---|---|
+| A | throwaway | yes | bundle **and** manifest regenerated | 1 | **yes** | new worker active, `marker="v2"`, second versioned cache |
+| B | throwaway | **no** | bundle **and** manifest regenerated | 1 | **yes** | `marker="v2"`, second versioned cache |
+| C | throwaway | **no** | bundle only (manifest stale) | 1 | **yes** | `marker="v2"`, same cache (manifest version unchanged) |
+| D | throwaway | yes | bundle only (manifest stale) — *the original, confounded measurement* | 1 | **no** | install rejected by the hash check; old worker stays, `marker="v1"` |
+| E1 | **the real `public/sw.js`** | yes | shell asset **and** manifest regenerated, `sw.js` untouched | 1 | **yes** | cache `wire-shell-b43145dc40b5` -> `wire-shell-8301e62c9115`; the served `index.html` contains the change |
+| E2 | **the real `public/sw.js`** | yes | shell asset only (manifest stale) | **0** | no | no update attempted at all; old cache, old `index.html` |
 
-```
-before:  active=activated  shell="shell v1"
-change:  /shell.txt  "shell v1" -> "shell v2"   (sw.js + manifest unchanged)
-after registration.update():
-         shell="shell v1"   <-- still the OLD precached copy
-         installing=null  waiting=null  active=activated
-```
-
-**Conclusion (measured, not assumed):** the browser's update is driven by the **main script's bytes** (`/sw.js`). Changing an `importScripts`'d file, or a precached asset, **does not roll out to the active worker** — the old worker keeps the old bundle and the old shell cache.
-
-**Consequence for 3B (design constraint):** with M1, a bundle change also changes the manifest version, but that alone does **not** update the worker. Therefore a bundle change **must be accompanied by a change in `public/sw.js`'s bytes** (e.g. a generated `// media bundle: <sha256>` line in `sw.js`, or bumping a media-feature version constant that `sw.js` embeds). Otherwise users keep the previous bundle AND the previous shell until `sw.js` itself changes. This must be part of the 3B build script and its test plan (8.3).
-
-**Measurement 2 (M1) — the served bundle's bytes mismatch the manifest.**
+#### A — hash check on, bundle changed, manifest regenerated consistently
 
 ```
-before:  active=activated  controller=…/sw.js  marker="v1"  shell="shell v1"
-change:  /sw-media-bundle.js  ->  "self.BUNDLE_MARKER='TAMPERED'"   (manifest still lists the old hash)
-after registration.update():
-         updateError=null          (update() resolves; the failure is inside the install)
-         marker="v1"  shell="shell v1"        <-- the OLD worker is still in control
-         controller=…/sw.js   sameActiveObject=true
-         finalInstalling=null  finalWaiting=null
-         (a transient installing worker appeared, then went redundant)
+BEFORE
+  active            : activated   http://127.0.0.1:39411/sw.js
+  controller        : http://127.0.0.1:39411/sw.js
+  caches            : ["wire-shell-122598f09289"]
+  marker            : "v1"
+UPDATE
+  update() error    : null
+  updatefound count : 1
+  active changed    : true
+  timeline          : 0-0ms  installing||activated|true
+  timeline          : 101-1005ms  ||activating|false
+  timeline          : 1105-7920ms  ||activated|false
+AFTER
+  active            : activated   http://127.0.0.1:39411/sw.js
+  controller        : http://127.0.0.1:39411/sw.js
+  caches            : ["wire-shell-122598f09289","wire-shell-638e0491521f"]
+  marker            : "v2"      <-- the NEW bundle is in use
 ```
 
-**Measured behaviour:** the new worker is **rejected at install** (its `precache()` throws on the hash mismatch, `public/sw.js:125-131`), it never activates, the **old worker stays active and keeps serving the shell** from its own cache, and the page's controller never changes. The install-failure message was **not** visible in the page console in this probe (UNVERIFIED: the browser's own wording and where it is surfaced).
+#### C — hash check OFF, bundle changed only (`sw.js` byte-identical, manifest stale)
+
+```
+BEFORE
+  caches            : ["wire-shell-122598f09289"]
+  marker            : "v1"
+UPDATE
+  updatefound count : 1
+  active changed    : true
+AFTER
+  caches            : ["wire-shell-122598f09289"]
+  marker            : "v2"      <-- the NEW import was fetched and is in use
+```
+
+#### D — hash check on, bundle changed only (the original, confounded measurement)
+
+```
+BEFORE
+  caches            : ["wire-shell-122598f09289"]
+  marker            : "v1"
+UPDATE
+  updatefound count : 1           <-- the browser DID detect the change
+  active changed    : false       <-- but the install was rejected
+  timeline          : 0-0ms  installing||activated|true
+  timeline          : 100-7918ms  ||activated|true
+AFTER
+  caches            : ["wire-shell-122598f09289"]
+  marker            : "v1"       <-- the OLD bundle, because the install never completed
+```
+
+#### E1 — the real project flow: shell asset changed, manifest regenerated, `sw.js` untouched
+
+```
+BEFORE
+  caches            : ["wire-shell-b43145dc40b5"]
+  index has marker  : false
+UPDATE
+  updatefound count : 1
+  active changed    : true
+  timeline          : 0-1002ms  installing||activated|true
+  timeline          : 1102-2004ms  ||activating|false
+  timeline          : 2104-11930ms  ||activated|false
+AFTER
+  caches            : ["wire-shell-8301e62c9115"]   <-- old cache deleted by the activate handler
+  index has marker  : true                          <-- the NEW shell is being served
+```
+
+#### E2 — control: shell asset changed, manifest NOT regenerated
+
+```
+BEFORE
+  caches            : ["wire-shell-b43145dc40b5"]
+UPDATE
+  updatefound count : 0            <-- no update was even started
+  active changed    : false
+AFTER
+  caches            : ["wire-shell-b43145dc40b5"]
+  index has marker  : false
+```
+
+#### Measured (Chromium 153, this environment)
+
+1. **A changed imported script starts an update even when `sw.js` is byte-identical.** The browser fetched the imports, found different bytes, created a new worker (`updatefound` fired) and installed it (C, D).
+2. **With the manifest regenerated consistently, the new worker activates, takes control and uses the new import** (`marker="v2"`, a second versioned cache) — measured in A and B.
+3. **With a stale manifest, the install is rejected by the hash check** (`public/sw.js:125-131`); the old worker stays active and keeps serving the old shell and the old bundle (D).
+4. **The real project flow already rolls out today.** A shell asset change plus a regenerated manifest plus an unchanged `public/sw.js` produced a new worker that installed, activated, took control and served the new shell (E1); the previous versioned cache was deleted by the activate handler (`public/sw.js:171-199`).
+5. **Without the manifest regeneration, no update is started at all** (E2: `updatefound` = 0). An asset change is invisible to the worker because the imported `public/sw-manifest.js` did not change.
+
+#### Inferred (not measured here)
+
+- That the browser compares the **imported** scripts byte-for-byte inside its update check is consistent with all six measurements, but the mechanism was not traced inside the browser; only Chromium 153 was tested. MDN documents that the update-check HTTP-cache policy covers "the service worker script and any scripts imported via `importScripts()`" (`ServiceWorkerRegistration.updateViaCache`), which is why the application registers with `updateViaCache: 'none'` (`public/js/core/pwa.js:129-132`); with the default `imports` policy the HTTP cache is consulted for imports.
+- Firefox, Safari, iOS and Electron behaviour is **not** measured.
+
+#### Consequence for 3B (corrected)
+
+The rollout trigger is the **imported `public/sw-manifest.js`**, not the bytes of `public/sw.js`. With M1 the bundle is a manifest entry, so a bundle change changes the manifest (`scripts/build-sw-manifest.mjs:43-50`, version at `:57-60`), the imported `sw-manifest.js` changes, the browser starts an update, the new worker precaches and verifies the new bundle hash, and it activates with the new bundle. **No generated line inside `public/sw.js` is needed, and `public/sw.js` does not have to change for a bundle change to roll out.** The one deployment rule is the one the project already follows — regenerate the manifest whenever a shipped file changes ("Run it on every deploy", `scripts/build-sw-manifest.mjs:11`). If the manifest is not regenerated, the update is either never started (E2) or is rejected at install (D), and users keep the previous bundle.
 
 ### 8.3 P-test plan (Linux browser test; no code yet)
 
@@ -569,7 +639,7 @@ File: a new `tests/*-sw-media-bundle-browser.test.mjs` (name decided when P5 sta
    - no new worker reaches `activated` (no `waiting` worker afterwards);
    - the media route is NOT available (the old worker has no media bundle) -> the client falls back to the Blob path.
 3. **Restore the bundle and update again.** Assert the new worker installs and activates, and that the shell cache is refreshed to the new manifest version.
-4. **Rollout guard (from 8.2).** Change ONLY the bundle bytes (sw.js + manifest untouched), call `registration.update()`, and assert that the **active worker still uses the old bundle** — i.e. the test proves the "bundle change alone does not roll out" property, which the 3B build script must therefore handle by also changing `sw.js`'s bytes.
+4. **Roll-out (the positive counterpart of 2).** Change the bundle **and** regenerate `public/sw-manifest.js` consistently (the manifest lists the new hash and a new version), leave `public/sw.js` untouched, then call `registration.update()`. Assert: a new worker is created (`updatefound` fires), it reaches `activated`, it becomes the controller, the new versioned cache exists, and the active worker now uses the **new** bundle (the media route answers with the new bundle's behaviour). This is the property measured in A and E1 (8.2).
 5. **Integrity assertion.** Assert the bundle is listed in `public/sw-manifest.js` with a `rev` equal to the SHA-256 of its bytes, and that `node scripts/build-sw-manifest.mjs --check` passes.
 
 ### 8.4 Exact claim for `docs/SECURITY_CLAIMS.md`
@@ -580,7 +650,7 @@ Supporting notes for that paragraph:
 
 - With M1 the **media bundle is inside the manifest**: it is hashed by `scripts/build-sw-manifest.mjs:43-50` and verified by the worker before it is stored (`public/sw.js:88-137`). The bundle is therefore *more* protected than `public/sw.js` itself, which is excluded from the manifest (`scripts/build-sw-manifest.mjs:28`).
 - The bundle is **executed before the precache hash verification** (`importScripts()` runs at worker evaluation time; the verification happens in the `install` handler). Why that is harmless: (a) at that moment the worker **holds no keys** — keys are only handed over by the page over `postMessage` after the worker is activated (RFC Q4), and a worker that never activates is never the page's controller, so it never receives those messages; (b) the worker that failed the verification is discarded and the previous worker keeps serving; (c) the only code that ran is the bundle itself, which the same server could have tampered with inside `public/sw.js` anyway — so M1 does not widen the trust boundary beyond the existing "the server serves JS" assumption, it only adds a *corruption/partial-deploy* check. A passive corruption normally fails to parse (nothing runs); a targeted corruption could execute briefly inside a worker that controls nothing and holds no keys.
-- **UNVERIFIED** (must be settled in P5 or stated as a limitation): (1) whether a non-activated worker can receive a `postMessage` from a page (not tested); (2) the browser's exact wording and delivery of the install-failure error (the page console was empty in the probe); (3) whether Chrome/Edge/Safari differ in the transient "installing" worker observed in 8.2.
+- **UNVERIFIED** (must be settled in P5 or stated as a limitation): (1) whether a non-activated worker can receive a `postMessage` from a page (not tested); (2) the browser's exact wording and delivery of the install-failure error (the page console was empty in the probe); (3) the update behaviour in browsers other than Chromium 153 (Firefox, Safari, Electron) was **not** measured — the measurements in 8.2 are Chromium-only.
 
 ### 8.5 Rate-limiter inventory (read-only; no env file changed)
 

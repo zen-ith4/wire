@@ -769,3 +769,231 @@ Env state: `tests/dm-attachments/_env.mjs` sets `LOADTEST_DISABLE_RATE_LIMITS = 
 > **fail deterministically when `dm-v2-wire-browser-paths` runs alone in WSL2 (5/5, base and HEAD); pass in the full-suite run; depends on shared limiter budget**
 
 The mechanism is the test's own polling tripping the app's general API limiter (`middleware/rateLimiter.js:402-415`, 300 requests / 60 s per user or IP): in an isolated run the file's requests exhaust the shared budget, in a full-suite run the budget is spread differently and both tests pass (observed: `ok 382` and `ok 383` in the full Linux suite of phase 3B). They are **not** described as flaky. They **passed on the Ubuntu 24.04 machine** used earlier in Batch A.
+
+---
+
+## 9. Phase 3C design note (docs only - no code, no client change)
+
+Phase 3C adds the **Service Worker media route**. This section is the implementation-level design: where the code goes, what each guard does, what fails closed and what is still unknown. It follows the decisions of sections 2-6 (Q3 token, Q4 keys, Q5 response policy, Q6 attack surface, Q12 fail-closed table) and adds the specifics. **Nothing here is implemented**: no fetch handler, no client change, no rate-limiter change.
+
+### 9.1 What 3C is, and what it is not
+
+| In 3C | Not in 3C |
+|---|---|
+| the SW media route in `public/sw.js` | any change to `controllers/dm.controller.js` (its Range behaviour is pinned by `tests/dm-attachments/dm-attachments-range-current.test.mjs`, commit `05e81fb`) |
+| the feature flag (default OFF) | enabling the flag in a shipped build |
+| the SW-side guards (destination, client binding, MIME, token, TTL) | the client-side player wiring (phase 4/P4) |
+| the failure table and the UNVERIFIED list | the browser end-to-end tests (P5) |
+
+### 9.2 The fetch handler: the media branch comes BEFORE the Range early return
+
+`public/sw.js:294-311` today:
+
+```js
+self.addEventListener('fetch', (event) => {
+  const request = event.request;
+
+  /*
+   * Only plain GET requests belong to this worker.
+   */
+  if (request.method !== 'GET') {
+    return;
+  }
+
+  /*
+   * Range requests are deliberately never intercepted.
+   */
+  if (request.headers.has('range')) {
+    return;
+  }
+
+  const url = new URL(request.url);
+```
+
+The media route **must** be evaluated before that early return, because the media route answers `Range` requests itself (it decrypts exactly the requested byte range) and would otherwise never be reached. Draft hunk (not applied):
+
+```js
+self.addEventListener('fetch', (event) => {
+  const request = event.request;
+
+  /*
+   * Only plain GET requests belong to this worker.
+   */
+  if (request.method !== 'GET') {
+    return;
+  }
+
+  const url = new URL(request.url);
+
+  /*
+   * MEDIA STREAM ROUTE (Item 3, phase 3C).
+   *
+   * This branch is deliberately BEFORE the "Range requests are never
+   * intercepted" rule below: the media route answers Range requests
+   * itself, so the general rule would skip it.
+   *
+   * The route is off unless MEDIA_STREAM_ENABLED says otherwise, so the
+   * default behaviour of this worker is unchanged.
+   */
+  if (
+    url.origin === self.location.origin &&
+    MEDIA_STREAM_PATH.test(url.pathname)
+  ) {
+    if (!MEDIA_STREAM_ENABLED) {
+      return;
+    }
+
+    event.respondWith(mediaStreamResponse(event, url));
+    return;
+  }
+
+  /*
+   * Range requests are deliberately never intercepted.
+   */
+  if (request.headers.has('range')) {
+    return;
+  }
+```
+
+The `const url = new URL(request.url);` line moves up by six lines; the rest of the handler is untouched. Everything else the media route needs (the token, the key, the stream registry) lives behind `mediaStreamResponse()`.
+
+### 9.3 The feature flag: default OFF, in `public/sw.js`
+
+The flag is a **top-level constant in `public/sw.js`** (not in the bundle, not on the server):
+
+```js
+/*
+ * MEDIA STREAM ROUTE (Item 3, phase 3C).
+ *
+ * OFF by default. Flipping this constant is the ONLY way to enable the
+ * route, and it is a one-line change in a tracked file: the feature can
+ * never be turned on by a server response, a query parameter or a stale
+ * bundle. public/sw.js is excluded from the manifest
+ * (scripts/build-sw-manifest.mjs:28), so flipping it does NOT invalidate
+ * the shell cache - only the worker itself is replaced.
+ */
+const MEDIA_STREAM_ENABLED = false;
+```
+
+Why not a server flag: the server cannot reach into the worker, and a runtime flag would have to be delivered through a response the worker reads at startup. A build-time constant is auditable, revertible in one commit, and cannot be flipped by a compromised server.
+
+How the page detects it (the page never guesses):
+
+1. The page asks the controlling worker: `postMessage({ type: 'MEDIA_STREAM_STATUS' }, controllerOrigin)` over a `MessageChannel`.
+2. The worker answers `{ type: 'MEDIA_STREAM_STATUS', enabled: MEDIA_STREAM_ENABLED, maxResponseChunks, readAheadChunks }`.
+3. The page waits at most **1000 ms** for the answer. No answer, no controller, or `enabled === false` -> the page uses the **existing Blob path** (no behaviour change at all).
+4. The answer is cached for the lifetime of the page. The page re-asks after a `controllerchange` (a new worker may have a different flag), and never on every media element.
+
+If the worker is replaced while a stream is playing, the old worker's `controllerchange` fires (`public/js/core/pwa.js:41-74`); the page drops its stream registrations and falls back to the Blob path.
+
+### 9.4 The stream URL shape, and `Sec-Fetch-Dest` vs `request.destination`
+
+The URL (D4): `/__wire_media_stream/<streamId>` - same origin, path prefix that no server route owns.
+
+- `<streamId>` is the 128-bit random id from Q4. It is the capability: an id that the SW does not know is answered **404**.
+- **No token in the URL.** The media token lives in the worker's memory for that stream and is refreshed on demand (9.7). A token in the URL would end up in the DOM, in the element's `src`, and in the `Referer` of any sub-request. The server's media token is still used - just not through the URL: the worker fetches the ciphertext with `?token=<mediaToken>`, which is the only form `mediaAuth` accepts for media tokens (`middleware/mediaAuth.js:134-144`).
+- The page sets `video.src = '/__wire_media_stream/' + streamId` after `REGISTER_STREAM` succeeded.
+
+Destination checks (two signals, in this order):
+
+1. **`request.destination`** - the canonical Fetch-standard value. For a `<video>`/`<audio>` element it is `video`/`audio`. The worker accepts only `video` and `audio`; anything else (`empty` for `fetch()`, `document`, `iframe`, ...) is refused with 404. This blocks a script from reading the decrypted bytes with `fetch()`.
+2. **`Sec-Fetch-Dest`** - a secondary signal only. The header is not settable by page script, so it is a useful cross-check, but it is a header and the worker must not depend on it alone (and must not trust it over `request.destination`).
+
+Both are checked; a mismatch is a 404. The worker does **not** parse the `Range` header of a non-media request (that stays untouched, `public/sw.js:307-309`).
+
+### 9.5 Client binding (`clientId`)
+
+- The worker records the client id from **`event.source.id`** at `REGISTER_STREAM` time - not from a page-supplied field. The page cannot choose its own client id that way; the browser tells the worker who is talking.
+- The stream entry keeps that `clientId`. A later fetch for that stream is served only when `event.clientId` (or `event.resultingClientId`) equals the stored value.
+- If `event.clientId` is empty, the worker **fails closed** with 404 rather than serving the stream. Rationale: an empty client id cannot be compared, and serving anyway would let a request that the browser could not attribute to a client read the plaintext.
+- **UNVERIFIED:** whether Chromium populates `event.clientId` for a media-element request. This is the single riskiest unknown in 3C: if it is empty, the route can never serve anything and the feature is unusable in that browser. It must be measured first (a P5 browser test that reads `event.clientId` in a fetch handler), and the fallback (the Blob path) must be the answer for every browser where it is empty.
+
+### 9.6 Per-client purge, not a global purge
+
+- `PURGE_CLIENT { clientId }` from the page -> the worker deletes **only** the streams whose stored `clientId` matches. There is deliberately **no `PURGE_ALL`**: a global purge would kill playback in every other tab of the same user, and a tab closing must never stop another tab's stream.
+- The page sends `PURGE_CLIENT` on logout and on `pagehide`/`beforeunload`.
+- bfcache: on `pagehide` with `event.persisted === true` the page does **not** purge - the stream stays under its idle TTL so a restored page can reattach (Q3).
+- The worker's idle TTL (10 minutes, Q9) is the backstop for a tab that dies without sending anything.
+- The worker also purges a stream when the client is gone (`clients.get(id)` no longer resolves) **and** the idle TTL has passed - never before, so a bfcache-restored tab still finds its stream.
+
+### 9.7 On-demand token refresh (pull model, no page timer)
+
+Per Q3/D3 the worker never mints a token and never runs a timer for one:
+
+1. The worker needs the ciphertext -> it looks up the stream's token and its `expiresAt`.
+2. No token, or `Date.now() >= expiresAt` -> the worker posts `TOKEN_NEEDED { streamId }` to the registering client and **holds the fetch pending for up to 5 s**.
+3. The page answers with `UPDATE_TOKEN { streamId, token, expiresAt }` (it mints it through the existing `.../media-token` route, `controllers/dm.controller.js:598-635`).
+4. The token arrives within 5 s -> the fetch continues. It does not -> the request ends with **401** and the stream moves to `DEAD`; the player's error path falls back to the Blob path.
+5. The page also sends a proactive `UPDATE_TOKEN` on `visibilitychange` when it becomes visible and the token expires within 10 s, so a returning tab does not hit the 5 s timeout.
+
+The worker treats the token as opaque: it stores it and the `expiresAt` the page supplies; it never verifies it. The 90 s server TTL (`utils/jwt.js:118`) is unchanged.
+
+### 9.8 Response policy for open-ended and very large ranges
+
+The range module caps a response (`public/js/crypto/messages/attachment-range.js`): `ATTACHMENT_RANGE_MAX_RESPONSE_CHUNKS = 16` and `ATTACHMENT_RANGE_READ_AHEAD_CHUNKS = 8`.
+
+- **A Range larger than the cap** (or an open-ended `bytes=N-`): the worker answers a **partial 206** - `Content-Range: bytes <served-start>-<served-end>/<total>` covers only the bytes it actually sent, and `Content-Length` is the served length. The media element asks for the rest. The worker never buffers the whole file.
+- **The ciphertext is fetched with a Range request**, not in full: the plaintext chunk *k* lives at the ciphertext offset `8 + k * (65536 + 16)` (8 header bytes, then 64 KiB + a 16-byte tag per chunk, `public/js/crypto/messages/attachment-stream.js:43-52`). The worker maps the plaintext range to the ciphertext range, asks the server for exactly that, and decrypts only the chunks it needs. This is why the server's Range support matters, and why it is now pinned by tests (`tests/dm-attachments/dm-attachments-range-current.test.mjs`).
+- **Backpressure**: the worker decrypts on demand, keeps at most the read-ahead (8 chunks ~ 512 KiB) in memory per stream, and never calls `caches.put` for a stream response. Plaintext never enters Cache Storage, IndexedDB or any persisted store (Q4).
+- **Status codes**: 206 for a served range, 200 only when the request had no `Range` header at all, 404 for an unknown stream / wrong client / wrong destination, 401 for a missing or expired token, 416 for a range the worker cannot satisfy (with `Content-Range: bytes * /<total>`).
+
+### 9.9 MIME allowlist, `nosniff`, sandbox
+
+The MIME comes from the encrypted metadata, which the **sender** controls (`public/js/crypto/messages/attachment-stream.js:306`); nothing else validates it. The worker therefore enforces it at serve time:
+
+- Serve the declared MIME only when it is `video/*` or `audio/*` **and** `isInlineSafeMime(mime)` is true (`utils/inlineSafeMime.js:16-55`). Otherwise serve `application/octet-stream`.
+- Always send `X-Content-Type-Options: nosniff`.
+- Always send `Content-Security-Policy: sandbox` on the media response, so even a mislabelled response cannot execute script.
+- Always send `Cache-Control: no-store`.
+
+### 9.10 CSP: the page's policy and the worker's own policy
+
+The page's policy (`middleware/csp.js:38-52`) is `default-src 'self'; ...; media-src 'self' blob:; connect-src 'self'; worker-src 'self'; ...`.
+
+- The media element loads a **same-origin** URL, so `media-src 'self'` already allows it. **No CSP change is needed for the stream route.** (This is the correction D4 refers to: the directive that matters is `media-src`, not `connect-src`.)
+- `blob:` stays in `media-src` for the existing Blob path.
+- The **worker's own CSP** is the header on the `public/sw.js` response - the same policy, because `csp()` runs on every response. It governs the worker:
+  - `script-src 'self'` allows the worker's `importScripts('/sw-media-bundle.js')` (same origin) - the bundle stays loadable.
+  - `connect-src 'self'` allows the worker's ciphertext `fetch()` (same origin) and **forbids** it from fetching anything cross-origin - the worker has no use for that.
+  - `worker-src 'self'` allows the registration (`public/js/core/pwa.js:129-132`).
+  - No CSP change is required for 3C.
+- **UNVERIFIED:** whether `Content-Security-Policy: sandbox` on a media response breaks playback in any browser (D8). It must be measured in P5; if it breaks playback, the alternative is to drop `sandbox` and rely on the MIME allowlist plus `nosniff` - a decision that needs the owner.
+
+### 9.11 The plan for the `public/sw.js` header comment
+
+The header (`public/sw.js:1-47`) currently states that the worker handles the shell and that it deliberately leaves untouched `/api/`, `uploads/downloads/media`, **all requests with a Range header** and everything else. In 3C exactly one of those statements becomes false, so the header must be updated **in the same commit as the fetch handler**:
+
+1. "Handles" gains a bullet: the encrypted DM media stream route (`/__wire_media_stream/<id>`), only for `video/*` and `audio/*`, only for streams the worker knows, only for the client that registered it.
+2. "Deliberately untouched" keeps `/api/`, `uploads/downloads/media` and the general Range rule, but the Range line gets the exception: "all requests with a Range header **except** the media stream route".
+3. The header must keep saying that the worker never stores user data - with the addition that the media route holds plaintext **only in worker memory**, never in Cache Storage or IndexedDB (Q4, Q9).
+4. The version paragraph gains: the media bundle is generated by `scripts/build-sw-media-bundle.mjs`, listed in `sw-manifest.js` and hash-verified at install time; the route is off unless `MEDIA_STREAM_ENABLED` says otherwise.
+
+### 9.12 Failure table (3C)
+
+| # | Situation | Worker | Client sees | Fallback |
+|---|---|---|---|---|
+| 1 | the flag is OFF (default) | the route is not installed; the request goes to the network and 404s at the server | the page never uses the stream URL (it asked, the answer was "off") | the Blob path (no change) |
+| 2 | no controller / the worker is gone | nothing answers | the status query times out after 1000 ms | the Blob path |
+| 3 | the worker was replaced (`controllerchange`) | the new worker has an empty stream registry | the page drops the registration and re-asks | the Blob path |
+| 4 | unknown stream id | 404 | the player errors | the Blob path |
+| 5 | the client id does not match (another tab, or an unattributable request) | 404 | the player errors | the Blob path |
+| 6 | `request.destination` is not `video`/`audio` | 404 | a `fetch()` of the stream URL gets nothing | not applicable (a script must not read it) |
+| 7 | the token is missing or expired and the page does not answer within 5 s | 401 | the player errors | the Blob path |
+| 8 | the ciphertext fetch fails (server error, truncated file) | 500, or 401 if the size check fails | the player errors | the Blob path, which verifies the whole file |
+| 9 | a chunk fails to authenticate (tampered ciphertext) | `AttachmentDecryptError` -> 500 | the player errors; **nothing is ever served unverified** | the Blob path (it verifies the whole file and fails too) |
+| 10 | the requested range is not satisfiable | 416 with `Content-Range: bytes */<total>` | the player errors | the Blob path |
+| 11 | the requested range is larger than the cap | a partial 206 with the served part only | the element asks for the rest | none needed |
+| 12 | the MIME is not in the allowlist | 200/206 with `application/octet-stream`, `nosniff`, `sandbox` | playback fails (it is not a media type) | the Blob path |
+| 13 | the worker is terminated by the browser | the stream is gone; the page re-registers on the next attempt | the player errors once | the Blob path |
+
+### 9.13 UNVERIFIED for 3C
+
+1. Whether Chromium populates `event.clientId` for a **media-element** request (the whole route depends on it; 9.5).
+2. Whether `request.destination` is `video`/`audio` inside a fetch event in each target browser, and what `Sec-Fetch-Dest` carries there (9.4).
+3. Whether `Content-Security-Policy: sandbox` on a media response breaks playback (9.10, D8).
+4. Whether a media element accepts a **partial 206** (a `Content-Range` that covers less than the requested range) and then asks for the rest, in each browser (9.8). If a browser does not, the fallback is to answer the full range in several 206s, which needs a decision.
+5. How a `<video>` element reacts to a `401` mid-stream (does it retry, or does it stop?) in each browser.
+6. Safari/iOS: whether a service worker may serve a media element at all, and whether the media stack bypasses the service worker (Q7, D6).
+7. The behaviour of the browser's media cache with `Cache-Control: no-store` on a 206 response.
+8. Whether the browser keeps the connection open for a long 206 (the worker streams the decrypted bytes; a proxy timeout could cut it).
+9. Nothing in this section was measured: **no 3C code exists**, no browser run was made for any of the statements above.

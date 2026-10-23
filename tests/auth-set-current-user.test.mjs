@@ -72,6 +72,21 @@ mock.module(js('crypto/keys/unlock-key-store.js'), {
         idbClearUnlockKey: async () => {},
     },
 });
+mock.module(js('media/attachment-e2ee.js'), {
+    namedExports: {
+        clearAllAttachmentSecrets: () => {},
+    },
+});
+mock.module(js('media/mediaToken.js'), {
+    namedExports: {
+        clearMediaTokenCache: () => {},
+    },
+});
+mock.module(js('media/lazy-e2ee-media.js'), {
+    namedExports: {
+        purgeMediaStreams: () => {},
+    },
+});
 
 const { setCurrentUser, getCurrentUser } = await import(
     js('core/auth.js')

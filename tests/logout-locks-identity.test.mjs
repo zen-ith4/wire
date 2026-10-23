@@ -57,6 +57,24 @@ mock.module(js('crypto/keys/session.js'), {
     },
 });
 
+mock.module(js('media/attachment-e2ee.js'), {
+    namedExports: {
+        clearAllAttachmentSecrets: () => {},
+    },
+});
+
+mock.module(js('media/mediaToken.js'), {
+    namedExports: {
+        clearMediaTokenCache: () => {},
+    },
+});
+
+mock.module(js('media/lazy-e2ee-media.js'), {
+    namedExports: {
+        purgeMediaStreams: () => {},
+    },
+});
+
 mock.module(js('crypto/keys/unlock-key-store.js'), {
     namedExports: {
         idbStoreUnlockKey: async () => {},

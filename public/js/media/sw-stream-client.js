@@ -379,6 +379,7 @@ export function createSwStreamClient({
       mintPromise: null,
       stopObserving: null,
       cleanup: null,
+      element: element || null,
       onFallback,
     };
 
@@ -429,6 +430,80 @@ export function createSwStreamClient({
     };
   }
 
+  function purge() {
+    // Logout / pagehide cleanup for THIS client only. The worker derives the
+    // client from event.source.id, so a bare PURGE_CLIENT with no clientId is
+    // both sufficient and safe: it can never name another tab.
+    let posted = false;
+    const controller = currentController();
+    try {
+      if (controller && typeof controller.postMessage === 'function') {
+        controller.postMessage({ type: 'PURGE_CLIENT' });
+        posted = true;
+      }
+    } catch {
+      posted = false;
+    }
+
+    for (const stream of [...streams.values()]) {
+      stream.active = false;
+
+      if (stream.element && typeof stream.element === 'object') {
+        try {
+          stream.element.src = '';
+        } catch {
+          /* best effort */
+        }
+        try {
+          if (typeof stream.element.removeAttribute === 'function') {
+            stream.element.removeAttribute('src');
+          }
+        } catch {
+          /* best effort */
+        }
+      }
+
+      if (stream.stopObserving) {
+        try {
+          stream.stopObserving();
+        } catch {
+          /* best effort */
+        }
+        stream.stopObserving = null;
+      }
+
+      if (stream.cleanup) {
+        try {
+          stream.cleanup();
+        } catch {
+          /* best effort */
+        }
+        stream.cleanup = null;
+      }
+    }
+
+    streams.clear();
+    invalidateStatus();
+
+    if (listening && serviceWorker) {
+      if (typeof serviceWorker.removeEventListener === 'function') {
+        try {
+          serviceWorker.removeEventListener('controllerchange', invalidateStatus);
+        } catch {
+          /* best effort */
+        }
+        try {
+          serviceWorker.removeEventListener('message', onWorkerMessage);
+        } catch {
+          /* best effort */
+        }
+      }
+      listening = false;
+    }
+
+    return posted;
+  }
+
   function dispose() {
     if (listening && serviceWorker) {
       if (typeof serviceWorker.removeEventListener === 'function') {
@@ -466,5 +541,7 @@ export function createSwStreamClient({
     probe,
     start,
     dispose,
+    purge,
+    purgeClient: purge,
   };
 }

@@ -44,7 +44,38 @@ function streamClientForPage() {
   return defaultStreamClient;
 }
 
-/** True when this message is an encrypted attachment (key registered). */
+/**
+ * Page-side teardown for C4: purge this client's streams in the worker and
+ * detach their elements. The worker derives the client from event.source.id,
+ * so no clientId is ever sent and another tab cannot be purged.
+ */
+export function purgeMediaStreams() {
+  try {
+    const client = streamClientForPage();
+    if (client && typeof client.purge === 'function') {
+      client.purge();
+    } else if (client && typeof client.purgeClient === 'function') {
+      client.purgeClient();
+    }
+  } catch {
+    /* fail closed: a purge error must not stop secret clearing */
+  }
+}
+
+if (
+  typeof window !== 'undefined' &&
+  typeof window.addEventListener === 'function'
+) {
+  window.addEventListener('pagehide', (event) => {
+    if (event && event.persisted === false) {
+      try {
+        purgeMediaStreams();
+      } catch {
+        /* best effort */
+      }
+    }
+  });
+}
 export function isLazyE2eeMedia(msg, scope) {
   return !!getAttachmentSecret(scope, msg && msg.id);
 }

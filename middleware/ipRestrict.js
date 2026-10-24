@@ -10,39 +10,75 @@ const constants = require('../config/constants');
 const [allowedRange, allowedBits] =
   ipaddr.parseCIDR(constants.ALLOWED_SUBNET);
 
-function ipRestrict(req, res, next) {
+function normalizeAddress(ip) {
+  return String(ip || '').replace(/^::ffff:/, '');
+}
 
+// The one ALLOWED_SUBNET decision. Used by the HTTP middleware below and by
+// the Socket.IO handshake (config/socket.js), so both apply the same rule.
+// Returns null when the address may connect, or the error to report.
+function checkClientAddress(ip) {
   try {
-
-    const ip = req.ip.replace(/^::ffff:/, '');
-
-    const addr = ipaddr.parse(ip);
-
+    const addr = ipaddr.parse(normalizeAddress(ip));
 
     if (addr.kind() !== allowedRange.kind()) {
-      return res.status(403).json({
-        error: 'IP family mismatch'
-      });
+      return 'IP family mismatch';
     }
 
-
-    if (addr.match([allowedRange, allowedBits])) {
-      return next();
-    }
-
-
-    return res.status(403).json({
-      error: 'Access denied'
-    });
-
+    return addr.match([allowedRange, allowedBits]) ? null : 'Access denied';
 
   } catch (e) {
 
-    return res.status(403).json({
-      error: 'Access denied'
-    });
+    return 'Access denied';
 
   }
+}
+
+function ipRestrict(req, res, next) {
+  // req.ip already resolves X-Forwarded-For according to trust proxy.
+  const error = checkClientAddress(req.ip);
+
+  if (error === null) {
+    return next();
+  }
+
+  return res.status(403).json({
+    error
+  });
+}
+
+// The client address for a raw Socket.IO handshake request, resolved the same
+// way Express resolves req.ip for an HTTP request. Socket.IO does not go
+// through Express, so this mirrors Express's 'loopback' rule: when the proxy
+// is trusted and the TCP peer is loopback, use the rightmost forwarded
+// address that is not loopback; otherwise use the TCP peer.
+function isLoopbackAddress(ip) {
+  try {
+    return ipaddr.parse(normalizeAddress(ip)).range() === 'loopback';
+  } catch (e) {
+    return false;
+  }
+}
+
+function clientAddressFromRequest(req, trustProxy = trustProxySetting()) {
+  const peer = normalizeAddress(req.socket && req.socket.remoteAddress);
+
+  if (trustProxy !== 'loopback' || !isLoopbackAddress(peer)) {
+    return peer;
+  }
+
+  const forwarded = String(req.headers['x-forwarded-for'] || '')
+    .split(',')
+    .map((part) => normalizeAddress(part.trim()))
+    .filter(Boolean);
+
+  for (let i = forwarded.length - 1; i >= 0; i--) {
+    if (!isLoopbackAddress(forwarded[i])) {
+      return forwarded[i];
+    }
+  }
+
+  return peer;
 }
 
 // Trust X-Forwarded-For only when Express binds to loopback, which is the
@@ -63,5 +99,7 @@ function trustProxySetting(host = constants.HOST) {
 
 module.exports = {
   ipRestrict,
+  checkClientAddress,
+  clientAddressFromRequest,
   trustProxySetting
 };

@@ -6,6 +6,7 @@ const { getDb } = require('./database');
 const { setupDmSocket } = require('../sockets/dm.socket');
 const { setupGroupSocket } = require('../sockets/group.socket');
 const { setIo } = require('../services/socket.service');
+const { checkClientAddress, clientAddressFromRequest } = require('../middleware/ipRestrict');
 const { markOnline, markOffline, getOnlineUserIds } = require('../services/presence.service');
 const {
   isShowLastSeenEnabled,
@@ -31,6 +32,15 @@ function setupSocketIO(server) {
     // are detected promptly and presence can be corrected.
     pingInterval: 25000,
     pingTimeout: 20000,
+
+    // Same ALLOWED_SUBNET rule as the HTTP middleware (middleware/ipRestrict.js),
+    // applied before any socket handshake. The Socket.IO handshake is a raw
+    // HTTP request that bypasses Express, so the client address comes from
+    // clientAddressFromRequest(), which honors X-Forwarded-For only under
+    // the same trust-proxy rule Express uses.
+    allowRequest: (req, callback) => {
+      callback(null, checkClientAddress(clientAddressFromRequest(req)) === null);
+    },
   });
 
   // ===== Authentication =====

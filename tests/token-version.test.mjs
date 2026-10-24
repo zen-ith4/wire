@@ -22,6 +22,9 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'wire-token-version-'));
 Object.assign(process.env, {
   NODE_ENV: 'development',
+  // Behind Caddy: the server binds loopback, so the handshake's client
+  // address comes from X-Forwarded-For (see config/socket.js allowRequest).
+  HOST: '127.0.0.1',
   DB_PATH: path.join(tmp, 'test.db'),
   USER_DATA_ROOT: path.join(tmp, 'user-data'),
   CHAT_UPLOAD_DIR: path.join(tmp, 'chat'),
@@ -117,7 +120,13 @@ function mediaPasses(token) {
 
 function socketConnects(token) {
   return new Promise((resolve) => {
-    const s = ioClient(url, { auth: { token }, transports: ['websocket'], reconnection: false, forceNew: true });
+    const s = ioClient(url, {
+      auth: { token },
+      transports: ['websocket'],
+      reconnection: false,
+      forceNew: true,
+      extraHeaders: { 'X-Forwarded-For': '10.10.0.5' },
+    });
     s.on('connect', () => { s.close(); resolve(true); });
     s.on('connect_error', () => { s.close(); resolve(false); });
   });

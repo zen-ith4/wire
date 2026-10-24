@@ -611,7 +611,8 @@ async function updatePassword(userId, newPassword) {
   return getDb()
     .prepare(`
       UPDATE users
-      SET password_hash = ?
+      SET password_hash = ?,
+          token_version = token_version + 1
       WHERE id = ?
     `)
     .run(
@@ -679,7 +680,8 @@ async function changeCredentialsV2(
             password_hash = ?,
             kdf_salt = ?,
             kdf_iterations = ?,
-            must_change_password = 0
+            must_change_password = 0,
+            token_version = token_version + 1
           WHERE id = ?
             AND auth_scheme = 2
             AND password_hash = ?
@@ -695,8 +697,14 @@ async function changeCredentialsV2(
         return { ok: false, reason: 'conflict' };
       }
 
+      // Every session token minted before this change is now revoked
+      // (see users.token_version). The caller gets the new value so it can
+      // hand the current device a fresh token.
+      const { token_version: tokenVersion } =
+        db.prepare('SELECT token_version FROM users WHERE id = ?').get(userId);
+
       if (!identity) {
-        return { ok: true };
+        return { ok: true, tokenVersion };
       }
 
       const i =
@@ -730,7 +738,7 @@ async function changeCredentialsV2(
         );
       }
 
-      return { ok: true };
+      return { ok: true, tokenVersion };
     });
 
   return transaction();

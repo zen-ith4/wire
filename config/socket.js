@@ -1,5 +1,5 @@
 const { Server } = require('socket.io');
-const { verifySessionToken } = require('../utils/jwt');
+const { verifySessionToken, tokenVersionMatches } = require('../utils/jwt');
 
 const { JWT_SECRET } = require('./constants');
 const { getDb } = require('./database');
@@ -51,11 +51,16 @@ function setupSocketIO(server) {
       }
 
       const account = getDb()
-        .prepare('SELECT id, is_active FROM users WHERE id = ?')
+        .prepare('SELECT id, is_active, token_version FROM users WHERE id = ?')
         .get(user.id);
 
       if (!account || account.is_active === 0) {
         return next(new Error('Account is inactive'));
+      }
+
+      // Revoked by a password change (see users.token_version).
+      if (!tokenVersionMatches(user, account)) {
+        return next(new Error('Invalid or expired token'));
       }
 
       socket.user = user;

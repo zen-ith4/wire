@@ -177,7 +177,7 @@ async function rotateInPage(page) {
 async function changePasswordInPage(page, newPassword) {
     return page.evaluate(async (pw) => {
         const { api } = await import('/js/core/api.js');
-        const { getToken } = await import('/js/core/auth.js');
+        const { getToken, setToken } = await import('/js/core/auth.js');
         const { prepareCredentialChange } = await import('/js/crypto/identity-service.js');
 
         let out = null;
@@ -189,6 +189,9 @@ async function changePasswordInPage(page, newPassword) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body),
             });
+            // P0-3: the change revokes every older session token, this page's too.
+            // The real UI (settings-security.js) adopts the token the server returns.
+            if (out && out.token) setToken(out.token);
         } catch (e) {
             thrown = String(e && e.message ? e.message : e);
         }

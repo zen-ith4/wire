@@ -97,11 +97,12 @@ export function regenerateCopyManifest(publicDir) {
  * `C5_PUBLIC_DIR` lets the plant runs reuse a copy they have already mutated;
  * the helper then only validates it and does not clean it up.
  *
- * @param {{ log?: (line: string) => void }} [options]
+ * @param {{ log?: (line: string) => void, fresh?: boolean }} [options]
+ *   fresh: ignore C5_PUBLIC_DIR and always build a new copy (test 10 mutates its copy).
  * @returns {{ dir: string, publicDir: string, diffLine: string, created: boolean, cleanup: () => void }}
  */
-export function createFlagOnPublicCopy({ log = (line) => console.log(`# ${line}`) } = {}) {
-    const supplied = process.env.C5_PUBLIC_DIR;
+export function createFlagOnPublicCopy({ log = (line) => console.log(`# ${line}`), fresh = false } = {}) {
+    const supplied = fresh ? null : process.env.C5_PUBLIC_DIR;
     if (supplied) {
         const publicDir = path.resolve(supplied);
         const swPath = path.join(publicDir, 'sw.js');

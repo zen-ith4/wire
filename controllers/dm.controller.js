@@ -23,7 +23,7 @@ const {
   deleteDmMessage,
   updateDmMessageContent,
 } = require('../services/dm.service');
-const { findUserById } = require('../services/user.service');
+const { findActiveUserById } = require('../services/user.service');
 const { toggleReaction, getReactionsForMessage, getReactionsForMessages } = require('../services/reaction.service');
 const {
   emitNewDirectMessage,
@@ -457,7 +457,7 @@ function sendMessage(req, res) {
     return res.status(400).json({ error: 'Message cannot be empty' });
   }
 
-  const target = findUserById(recipient_id);
+  const target = findActiveUserById(recipient_id);
   if (!target) {
     return res.status(404).json({ error: 'User not found' });
   }
@@ -498,7 +498,7 @@ async function sendMessageWithAttachment(req, res) {
     return res.status(400).json({ error: "You can't message yourself" });
   }
 
-  const target = findUserById(recipient_id);
+  const target = findActiveUserById(recipient_id);
   if (!target) {
     cleanup();
     return res.status(404).json({ error: 'User not found' });

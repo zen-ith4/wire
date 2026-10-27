@@ -41,6 +41,15 @@ function findUserByUsername(username) {
 }
 
 
+// Used to decide whether a user may RECEIVE new content. Deactivated accounts
+// (is_active = 0) cannot log in, so they must not be sent messages either.
+// Selects only id so is_active never leaks through profile endpoints.
+function findActiveUserById(id) {
+  return getDb()
+    .prepare('SELECT id FROM users WHERE id = ? AND is_active = 1')
+    .get(id);
+}
+
 function findUserById(id) {
   return getDb()
     .prepare(`
@@ -913,6 +922,7 @@ function listUsersExcept(userId) {
 module.exports = {
   findUserByUsername,
   findUserById,
+  findActiveUserById,
   findUserWithPassword,
 
   createAdmin,

@@ -73,7 +73,9 @@ async function statEntriesLimited(dirents, dirPath) {
       const i = cursor++;
       const dirent = dirents[i];
       const full = path.join(dirPath, dirent.name);
-      const stat = await fsp.stat(full);
+      let stat;
+      try { stat = await fsp.stat(full); }
+      catch (err) { if (err.code === 'ENOENT') continue; throw err; }
       results[i] = {
         name: dirent.name,
         type: dirent.isDirectory() ? 'dir' : 'file',
@@ -89,7 +91,9 @@ async function statEntriesLimited(dirents, dirPath) {
   );
   await Promise.all(workers);
 
-  return results;
+  // Entries removed between readdir and stat leave holes; drop them so
+  // the response never contains null. Order of the rest is preserved.
+  return results.filter(Boolean);
 }
 
 async function pathExists(p) {
@@ -472,6 +476,7 @@ async function streamFile(req, res) {
 }
 
 module.exports = {
+  statEntriesLimited,
   getFolders,
   listFiles,
   downloadFile,

@@ -7,12 +7,16 @@ CREATE TABLE IF NOT EXISTS groups (
 
   avatar_path TEXT,
 
-  created_by INTEGER NOT NULL,
+  -- Informational only (who first created the group). Nullable +
+  -- ON DELETE SET NULL so deleting the creator's account never takes
+  -- the group with it. Permissions NEVER read this column: the one
+  -- real owner is the group_members row with role = 'owner'.
+  created_by INTEGER,
 
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
   FOREIGN KEY (created_by)
     REFERENCES users(id)
-    ON DELETE CASCADE
+    ON DELETE SET NULL
 );
 `;

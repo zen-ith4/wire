@@ -195,6 +195,34 @@ function emitGroupUpdated(memberUserIds, payload) {
   emitToUsers(memberUserIds, 'group:updated', payload);
 }
 
+// After an account deletion handed owned groups on (see
+// groups.service.js prepareOwnedGroupsForUserDeletion): tell each
+// surviving group that the member is gone (clients rotate Sender Keys on
+// 'removed') and who the new owner is (clients refresh roles). A group that
+// was deleted outright has no one left to tell.
+function emitGroupChangesAfterUserDeletion(groupChanges, deletedUserId, byUserId) {
+  for (const change of groupChanges) {
+    if (change.groupDeleted) continue;
+
+    emitGroupMembershipChanged(change.groupId, {
+      type: 'removed',
+      user_id: deletedUserId,
+      by_user_id: byUserId,
+      self_initiated: false,
+    }, change.remaining);
+
+    if (change.successorId) {
+      emitGroupMembershipChanged(change.groupId, {
+        type: 'ownership_transferred',
+        old_owner_id: deletedUserId,
+        new_owner_id: change.successorId,
+        by_user_id: byUserId,
+        automatic: true,
+      }, change.remaining);
+    }
+  }
+}
+
 module.exports = {
   setIo,
   getIo,
@@ -213,4 +241,5 @@ module.exports = {
   removeUserFromGroupRoom,
   emitGroupKdmDelivered,
   emitGroupUpdated,
+  emitGroupChangesAfterUserDeletion,
 };

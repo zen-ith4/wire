@@ -1,10 +1,15 @@
 const tableDefinitions = require('./tables');
-const { runMigrations } = require('./migrations');
+const { runMigrations, migrateGroupsCreatedByNullable } = require('./migrations');
 const { createIndexes } = require('./indexes');
 
 
 function ensureSchema(db) {
   db.pragma('foreign_keys = ON');
+
+  // Rebuilds `groups` on databases created before created_by became
+  // nullable. Has to run outside the transaction below (it toggles the
+  // foreign_keys pragma) — see its comment in migrations.js.
+  migrateGroupsCreatedByNullable(db);
 
   const setup = db.transaction(() => {
     /*

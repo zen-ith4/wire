@@ -26,6 +26,13 @@ function createIndexes(db) {
 
     CREATE INDEX IF NOT EXISTS idx_email_verification_codes_user_id
     ON email_verification_codes(user_id);
+
+    -- At most one owner per group, enforced by the database. Role
+    -- changes that hand ownership over must demote/remove the old owner
+    -- first (services/groups.service.js does, inside a transaction).
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_group_members_one_owner
+    ON group_members(group_id)
+    WHERE role = 'owner';
   `);
 }
 

@@ -22,6 +22,8 @@ const {
   revokePermission,
 } = require('../services/share.service');
 
+const { emitGroupChangesAfterUserDeletion } = require('../services/socket.service');
+
 const credentialAdmin = require('../services/credentialAdmin.service');
 const { auditUsernames } = require('../services/usernameAudit.service');
 const { getDb } = require('../config/database');
@@ -263,7 +265,14 @@ function deleteUser(req, res) {
     });
   }
 
-  deleteUserService(userId);
+  const { groupChanges } = deleteUserService(userId);
+
+  // The account is already gone; a socket hiccup must not turn that into a 500.
+  try {
+    emitGroupChangesAfterUserDeletion(groupChanges, userId, req.user.id);
+  } catch (err) {
+    console.error('Failed to notify groups after user deletion:', err.message);
+  }
 
   res.json({
     success: true,

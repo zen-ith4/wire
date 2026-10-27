@@ -14,6 +14,10 @@ const {
   isValidIterations,
 } = require('../utils/credentials');
 const constants = require('../config/constants');
+const {
+  prepareOwnedGroupsForUserDeletion,
+  unlinkQuietly: unlinkGroupFileQuietly,
+} = require('./groups.service');
 
 // Same pattern registerUser() (auth.service.js) and the setup wizard
 // use to accept an email address.
@@ -862,13 +866,27 @@ function deleteUser(userId) {
       userId
     );
 
+  // Groups this user OWNS must not vanish or be left owner-less when the
+  // account goes: hand each one to its successor (oldest admin, else
+  // oldest member) and rotate keys for whoever stays, or delete it if they
+  // were the only member. Same transaction as the DELETE below so a failure
+  // can't leave a half-migrated state.
+  let groupChanges = [];
+
   const result =
-    getDb()
-      .prepare(`
-        DELETE FROM users
-        WHERE id = ?
-      `)
-      .run(userId);
+    getDb().transaction(() => {
+      groupChanges =
+        prepareOwnedGroupsForUserDeletion(
+          userId
+        );
+
+      return getDb()
+        .prepare(`
+          DELETE FROM users
+          WHERE id = ?
+        `)
+        .run(userId);
+    })();
 
   // Only clean up files once the row (and its cascade) actually
   // went through — if the DELETE affected nothing (e.g. a
@@ -878,9 +896,20 @@ function deleteUser(userId) {
     filesToRemove.forEach(
       unlinkQuietly
     );
+
+    for (const change of groupChanges) {
+      change.files.forEach(
+        unlinkGroupFileQuietly
+      );
+    }
   }
 
-  return result;
+  // Per-group outcomes, so the caller (admin.controller) can notify
+  // connected clients. Not part of the sqlite result shape.
+  return {
+    ...result,
+    groupChanges,
+  };
 }
 
 

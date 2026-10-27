@@ -95,9 +95,16 @@ function isElevated(role) {
   return role === 'owner' || role === 'admin';
 }
 
+// Accepts only canonical positive integers. parseInt would read "1abc" as 1
+// and "1.5" as 1, letting malformed ids reach the database as valid ones.
+function parseCanonicalId(raw) {
+  if (typeof raw !== 'string' || !/^[1-9]\d*$/.test(raw)) return null;
+  const id = Number(raw);
+  return Number.isSafeInteger(id) ? id : null;
+}
+
 function parseGroupId(req) {
-  const id = Number.parseInt(req.params.groupId, 10);
-  return Number.isInteger(id) && id > 0 ? id : null;
+  return parseCanonicalId(req.params.groupId);
 }
 
 // ---------------------------------------------------------------
@@ -203,7 +210,7 @@ function addMemberHandler(req, res) {
 // what I have" and self-heal if it misses the live socket event.
 function removeMemberHandler(req, res) {
   const groupId = parseGroupId(req);
-  const targetUserId = Number.parseInt(req.params.userId, 10);
+  const targetUserId = parseCanonicalId(req.params.userId);
 
   if (!groupId || !Number.isInteger(targetUserId)) {
     return res.status(400).json({ error: 'Invalid group or user id' });
@@ -413,7 +420,7 @@ function sendMessageHandler(req, res) {
 
 function deleteMessageHandler(req, res) {
   const groupId = parseGroupId(req);
-  const messageId = Number.parseInt(req.params.messageId, 10);
+  const messageId = parseCanonicalId(req.params.messageId);
 
   if (!groupId || !Number.isInteger(messageId)) {
     return res.status(400).json({ error: 'Invalid group or message id' });

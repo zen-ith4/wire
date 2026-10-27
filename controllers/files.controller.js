@@ -187,6 +187,12 @@ async function uploadFile(req, res) {
     return res.status(400).json({ error: 'Invalid file name' });
   }
 
+  // The filesystem limit is 255 bytes, not characters (multi-byte names hit it sooner).
+  if (Buffer.byteLength(name) > 255) {
+    cleanupTemp();
+    return res.status(400).json({ error: 'File name too long' });
+  }
+
   let finalPath = path.join(dir.fullPath, name);
   let count = 1;
   while (fs.existsSync(finalPath)) {
@@ -195,6 +201,12 @@ async function uploadFile(req, res) {
     name = `${base} (${count})${ext}`;
     finalPath = path.join(dir.fullPath, name);
     count++;
+  }
+
+  // The " (N)" suffix added above can push a valid name over the limit.
+  if (Buffer.byteLength(name) > 255) {
+    cleanupTemp();
+    return res.status(400).json({ error: 'File name too long' });
   }
 
   try {

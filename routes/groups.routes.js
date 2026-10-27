@@ -101,6 +101,7 @@ router.post(
 router.get(
   '/:groupId/attachments/:messageId/media-token',
   authenticate,
+  requireGroupProtocol,
   getAttachmentMediaTokenHandler
 );
 

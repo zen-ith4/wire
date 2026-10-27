@@ -235,7 +235,14 @@ before(async () => {
     runMigrations(db0);
     db0.close();
 
-    server = await startRealServer({ work: workDir, extraEnv: { DB_PATH: dbPath } });
+    // LOADTEST_DISABLE_RATE_LIMITS: this file reloads and unlocks one logged-in pair
+    // before every test, which exceeds apiLimiter (300 req/min per user) and turns
+    // later tests into 429s. Test-only switch (refused in production). It does NOT
+    // touch registerRateLimiter, so the 5-per-15-min registration budget stays active.
+    server = await startRealServer({
+        work: workDir,
+        extraEnv: { DB_PATH: dbPath, LOADTEST_DISABLE_RATE_LIMITS: 'true' }
+    });
 
     // The fixture's own DM row (user 2 -> user 3) is not ours, but it is
     // DELETED here rather than ignored: every count in this file is exact, and a
@@ -701,9 +708,10 @@ test('f. a recipient created with default 1 gets a real v1 message and no downgr
     db0.prepare('DELETE FROM direct_messages').run();
     db0.close();
 
+    // LOADTEST_DISABLE_RATE_LIMITS: same reason as the main fixture server (see above).
     const v1server = await startRealServer({
         work: dir,
-        extraEnv: { DB_PATH: p, DM_E2EE_DEFAULT_MIN_VERSION: '1' }
+        extraEnv: { DB_PATH: p, DM_E2EE_DEFAULT_MIN_VERSION: '1', LOADTEST_DISABLE_RATE_LIMITS: 'true' }
     });
 
     let a = null;
@@ -989,7 +997,8 @@ test('j. v1 parity: a v1 conversation with one flipped ciphertext byte shows a p
     runMigrations(db0);
     db0.prepare('DELETE FROM direct_messages').run();
     db0.close();
-    const v1server = await startRealServer({ work: dir, extraEnv: { DB_PATH: p, DM_E2EE_DEFAULT_MIN_VERSION: '1' } });
+    // LOADTEST_DISABLE_RATE_LIMITS: same reason as the main fixture server (see above).
+    const v1server = await startRealServer({ work: dir, extraEnv: { DB_PATH: p, DM_E2EE_DEFAULT_MIN_VERSION: '1', LOADTEST_DISABLE_RATE_LIMITS: 'true' } });
 
     let a = null;
     let b = null;

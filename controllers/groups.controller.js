@@ -659,7 +659,13 @@ async function sendMessageWithAttachmentHandler(req, res) {
   // never sniffed server-side.
   const attachmentIv = (req.body.attachment_iv || '').trim();
 
-  if (!attachmentIv || !/^[A-Za-z0-9+/]+=*$/.test(attachmentIv) || attachmentIv.length > 64) {
+  // The client always sends a 12-byte AES-GCM IV (IV_LENGTH = 12 in
+  // public/js/crypto/groups/*): 16 base64 chars with no padding.
+  if (
+    !attachmentIv ||
+    !/^[A-Za-z0-9+/]{16}$/.test(attachmentIv) ||
+    Buffer.from(attachmentIv, 'base64').length !== 12
+  ) {
     cleanup();
     return res.status(400).json({ error: 'attachment_iv (base64) is required' });
   }

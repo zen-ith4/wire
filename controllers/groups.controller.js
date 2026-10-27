@@ -436,11 +436,14 @@ function deleteMessageHandler(req, res) {
 
   if (msg.attachment_path) {
     const filePath = path.join(constants.GROUP_UPLOAD_DIR, msg.attachment_path);
-    fs.unlink(filePath, (err) => {
-      if (err && err.code !== 'ENOENT') {
+    // The 200 below means "gone": remove the file before responding, as the DM handler does.
+    try {
+      fs.unlinkSync(filePath);
+    } catch (err) {
+      if (err.code !== 'ENOENT') {
         console.error('Failed to delete group attachment:', err.message);
       }
-    });
+    }
   }
 
   deleteGroupMessage(messageId);

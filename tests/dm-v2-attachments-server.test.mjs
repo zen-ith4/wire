@@ -80,6 +80,21 @@ async function upload(peer, fields, extra = {}) {
     });
 }
 
+async function dmJson(user, method, path, body) {
+    const res = await globalThis.__nodeFetch(`${server.origin}${path}`, {
+        method,
+        headers: {
+            Authorization: `Bearer ${user.token}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+    });
+    const text = await res.text();
+    let parsed = null;
+    try { parsed = text ? JSON.parse(text) : null; } catch { parsed = text; }
+    return { status: res.status, body: parsed };
+}
+
 const rows = () => server.db.prepare('SELECT COUNT(*) AS c FROM direct_messages').get().c;
 const rowOf = (id) => server.db.prepare(
     'SELECT id, content, attachment_meta, attachment_iv, attachment_path FROM direct_messages WHERE id = ?'
@@ -214,4 +229,69 @@ test('2A.3: the recipient can read the row back through the normal history route
     const found = rowsOut.find((m) => m.id === res.body.id);
     assert.ok(found, 'the uploaded row must come back in history');
     assert.equal(found.attachment_meta, meta);
+});
+
+// ---------------------------------------------------------------- R2: content cap
+//
+// The cap rejects, it never truncates. Every 413 here uses the same shared
+// constant (config/dm-stream.js) and code. The v2-to-a-min-1-recipient case
+// proves the length check runs BEFORE dmV2RuleViolation: that rule would answer
+// 400, so a 413 can only mean the cap was checked first.
+
+test('R2: an over-cap text DM is refused with 413 before the v2 rule, nothing stored', async () => {
+    const before = rows();
+    // A well-formed v2 envelope, but addressed to bob (min 1): the v2 policy
+    // would refuse it with 400 if it ran first.
+    const content = v2Envelope(alice.id, bob.id, {
+        ciphertext: Buffer.alloc(1600, 9).toString('base64'),
+    });
+    assert.ok(content.length > 2000);
+
+    const res = await dmJson(alice, 'POST', '/api/dm/messages', {
+        recipient_id: bob.id,
+        content,
+    });
+
+    assert.equal(res.status, 413);
+    assert.equal(res.body.code, 'DM_CONTENT_TOO_LONG');
+    assert.match(res.body.error, /max 2000 characters/);
+    assert.equal(rows(), before, 'nothing may be stored');
+});
+
+test('R2: an over-cap edit is refused with 413 and leaves the stored row unchanged', async () => {
+    const sent = await dmJson(alice, 'POST', '/api/dm/messages', {
+        recipient_id: bob.id,
+        content: 'short v1 text',
+    });
+    assert.equal(sent.status, 200, JSON.stringify(sent.body));
+    const id = sent.body.id;
+    assert.ok(Number.isInteger(id));
+
+    const res = await dmJson(alice, 'PATCH', `/api/dm/messages/${id}`, {
+        content: 'x'.repeat(2001),
+    });
+
+    assert.equal(res.status, 413);
+    assert.equal(res.body.code, 'DM_CONTENT_TOO_LONG');
+    assert.equal(rowOf(id).content, 'short v1 text', 'the old row must not be truncated or partly overwritten');
+});
+
+test('R2: an over-cap encrypted-upload caption is refused with 413 and removes the upload', async () => {
+    const before = rows();
+    const filesBefore = fileCount();
+
+    const res = await upload(carol, {
+        attachment_meta: v2Envelope(alice.id, carol.id),
+        content: 'x'.repeat(2001),
+    });
+
+    assert.equal(res.status, 413);
+    assert.equal(res.body.code, 'DM_CONTENT_TOO_LONG');
+    assert.equal(rows(), before, 'nothing may be stored');
+
+    const deadline = Date.now() + 3000;
+    while (fileCount() !== filesBefore && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 25));
+    }
+    assert.equal(fileCount(), filesBefore, 'the refused upload must leave no file behind');
 });

@@ -57,6 +57,12 @@ mock.module(js('crypto/identity-service.js'), {
         restoreIdentityWithUnlockKey: async () => ({}),
         migrateLegacyAccount: async () => ({ migrated: true }),
         prepareCredentialChange: async () => ({}),
+        lockIdentity: () => {},
+    },
+});
+mock.module(js('crypto/keys/session.js'), {
+    namedExports: {
+        clearSessionKeys: () => {},
     },
 });
 mock.module(js('crypto/keys/unlock-key-store.js'), {
@@ -64,6 +70,21 @@ mock.module(js('crypto/keys/unlock-key-store.js'), {
         idbStoreUnlockKey: async () => {},
         idbGetUnlockKey: async () => null,
         idbClearUnlockKey: async () => {},
+    },
+});
+mock.module(js('media/attachment-e2ee.js'), {
+    namedExports: {
+        clearAllAttachmentSecrets: () => {},
+    },
+});
+mock.module(js('media/mediaToken.js'), {
+    namedExports: {
+        clearMediaTokenCache: () => {},
+    },
+});
+mock.module(js('media/lazy-e2ee-media.js'), {
+    namedExports: {
+        purgeMediaStreams: () => {},
     },
 });
 

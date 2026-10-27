@@ -19,9 +19,9 @@ import {
     noteDmV2Version,
     chooseDmVersion,
     assertDmVersionAllowed,
+    assertDmV2ContentFits,
     getPeerDmMinVersion,
-    DmDowngradeRefusedError,
-    DmV2TooLargeError
+    DmDowngradeRefusedError
 } from './dm-v2-wire.js';
 
 import { getCurrentUser } from '../../core/auth.js';
@@ -155,9 +155,17 @@ export async function encryptDmTextV2(plaintext, senderId, recipientId, replyToI
             Number(senderId),
             Number(recipientId)
         );
+        const content = JSON.stringify(payload);
+
+        // R2: v1 is subject to the same server cap. Measure the serialised
+        // envelope (the value the server stores), not the plaintext, so this is
+        // the exact boundary the server checks. Refuse instead of letting a cut
+        // envelope reach the row.
+        assertDmV2ContentFits(content.length);
+
         return {
             version: 1,
-            content: JSON.stringify(payload),
+            content,
             msgId: null,
             peerMinVersion
         };

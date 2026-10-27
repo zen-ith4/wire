@@ -20,7 +20,13 @@
 
 import { getCurrentUser } from '../core/auth.js';
 import { getServerEndpoint } from '../core/server.js';
-import { getPeerPublicKey, getPeerKeyCandidates } from '../crypto/keys/peer-keys.js';
+import {
+    getPeerPublicKey, getPeerKeyCandidates
+} from '../crypto/keys/peer-keys.js';
+
+import {
+    clearChangedGroupPeer
+} from '../crypto/keys/peer-key-gate.js';
 import { getCurrentIdentity } from '../crypto/identity-service.js';
 import {
     computeSafetyNumber,
@@ -133,6 +139,12 @@ export async function resolveTrust(peerId) {
     s.state = evaluated.state;
     s.pending = evaluated.pending;
 
+    // The pin is shared with the group gate. If this resolution sees a known
+    // or re-known key, any group "not receiving" marker for the peer is stale.
+    if (evaluated.state !== 'changed') {
+        clearChangedGroupPeer(peerId);
+    }
+
     return { state: evaluated.state, fingerprint: evaluated.fingerprint, pending: evaluated.pending };
 }
 
@@ -211,6 +223,10 @@ export async function acceptNewKey(peerId) {
     const s = slot(peerId);
     s.state = 'ok';
     s.pending = null;
+
+    // The group banner reads the same changed-peer list; clear it here so a DM
+    // accept and a group accept cannot leave different views disagreeing.
+    clearChangedGroupPeer(peerId);
 
     return pin;
 }
@@ -310,8 +326,8 @@ export function unbindKeyTrustRelease() {
 
 let releaseBinding = null;
 
-export async function renderVerifyView(peerId, username) {
-    const panel = document.getElementById(IDS.verify);
+export async function renderVerifyView(peerId, username, { ids = IDS } = {}) {
+    const panel = document.getElementById(ids.verify);
     if (!panel) return null;
 
     const context = ctx();
@@ -329,9 +345,9 @@ export async function renderVerifyView(peerId, username) {
 
     const { fingerprint, number } = await computeSafetyNumber(identity.publicKey, publicKey);
 
-    const numberEl = document.getElementById(IDS.verifyNumber);
-    const whoEl = document.getElementById(IDS.verifyWho);
-    const markedEl = document.getElementById(IDS.verifyMarked);
+    const numberEl = document.getElementById(ids.verifyNumber);
+    const whoEl = document.getElementById(ids.verifyWho);
+    const markedEl = document.getElementById(ids.verifyMarked);
 
     // Digits and a username: textContent, never innerHTML.
     if (numberEl) numberEl.textContent = number;

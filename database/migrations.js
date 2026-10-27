@@ -38,7 +38,11 @@ const VALID_COLUMNS = {
     // DM E2EE v2 floor (docs/e2ee-dm-hardening.md 5.1). Default 1 so every
     // existing row stays on v1 with no backfill. Raised only by
     // scripts/dm-e2ee-optin.mjs. 1C makes this a hard ratchet.
-    dm_e2ee_min_version: "dm_e2ee_min_version INTEGER NOT NULL DEFAULT 1"
+    dm_e2ee_min_version: "dm_e2ee_min_version INTEGER NOT NULL DEFAULT 1",
+
+    // Session revocation (utils/jwt.js). Bumped on password change; every
+    // session-token check compares the token's `tv` claim against it.
+    token_version: "token_version INTEGER NOT NULL DEFAULT 0"
   },
 
   folders: {

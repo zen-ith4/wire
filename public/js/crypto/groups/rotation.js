@@ -30,9 +30,14 @@ import { zero } from './codec.js';
  * @param {number[]} recipientUserIds current group membership,
  *   MUST include identity.userId (self-KDM — 2.1). Callers pass the
  *   group's live member list; this function doesn't second-guess it.
- * @returns {Promise<{senderKeyId: string, recipients: Array<{user_id: number, wrapped_key: string}>}>}
- *   `recipients` is exactly the `recipients` array
- *   POST /api/groups/:groupId/kdms expects, alongside `epoch`.
+ * @returns {Promise<{
+ *   senderKeyId: string,
+ *   recipients: Array<{user_id: number, wrapped_key: string}>,
+ *   skipped: Array<{user_id: number, reason: string}>
+ * }>} `recipients` is exactly the `recipients` array
+ *   POST /api/groups/:groupId/kdms expects, alongside `epoch`. `skipped`
+ *   lists members whose pinned identity key changed and who were therefore
+ *   not given this key (R1/D1b); they are re-wrapped after the user accepts.
  */
 export async function rotateSenderKey(identity, groupId, epoch, recipientUserIds, { deferPersist = false } = {}) {
     if (!recipientUserIds.map(Number).includes(Number(identity.userId))) {
@@ -48,17 +53,17 @@ export async function rotateSenderKey(identity, groupId, epoch, recipientUserIds
     const { senderKeyId, rawBytes } = generated;
 
     try {
-        const recipients = await distributeSenderKey(rawBytes, generated.signPub, recipientUserIds, {
+        const { recipients, skipped } = await distributeSenderKey(rawBytes, generated.signPub, recipientUserIds, {
             groupId,
             fromUserId: identity.userId,
             epoch,
         });
 
         if (deferPersist) {
-            return { senderKeyId, recipients, commit: generated.commit, discard: generated.discard };
+            return { senderKeyId, recipients, skipped, commit: generated.commit, discard: generated.discard };
         }
 
-        return { senderKeyId, recipients };
+        return { senderKeyId, recipients, skipped };
     } catch (e) {
         if (deferPersist) generated.discard();
         throw e;

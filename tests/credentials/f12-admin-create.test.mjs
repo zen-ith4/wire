@@ -17,7 +17,7 @@ const SECRET = 'x'.repeat(48);
 before(async () => {
     const c = copyLegacyFixture();
     dbPath = c.dbPath;
-    srv = await bootServer(dbPath, c.dir);
+    srv = await bootServer(dbPath, c.dir, { DM_E2EE_DEFAULT_MIN_VERSION: '2' });
     // an admin on the NEW scheme: register, then promote directly in the DB
     const salt = cred.newKdfSalt();
     const { authKey } = cred.deriveCredentialsNode('admin-account-password', salt);
@@ -45,8 +45,8 @@ test('admin create: new scheme, must_change_password, no raw password accepted, 
     const t = tempBody('newhire', 'temporary-password-1');
     const r = await srv.call('POST', '/api/admin/users', { token: adminToken, body: t.body });
     assert.equal(r.status, 201, JSON.stringify(r.body));
-    const u = row("SELECT auth_scheme, must_change_password, kdf_salt, kdf_iterations FROM users WHERE username = 'newhire'");
-    assert.deepEqual({ ...u }, { auth_scheme: 2, must_change_password: 1, kdf_salt: t.salt, kdf_iterations: cred.KDF_ITERATIONS });
+    const u = row("SELECT auth_scheme, must_change_password, kdf_salt, kdf_iterations, dm_e2ee_min_version FROM users WHERE username = 'newhire'");
+    assert.deepEqual({ ...u }, { auth_scheme: 2, must_change_password: 1, kdf_salt: t.salt, kdf_iterations: cred.KDF_ITERATIONS, dm_e2ee_min_version: 2 });
 
     const raw = await srv.call('POST', '/api/admin/users', { token: adminToken, body: { username: 'rawuser', email: 'r@x.invalid', password: 'temporary-password-2', is_admin: false } });
     assert.equal(raw.status, 400);

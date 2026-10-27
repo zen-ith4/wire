@@ -85,6 +85,13 @@ import {
     sanitiseGroupFileName,
 } from './group-attachments.js';
 import { setActiveGroupIdGetter } from './reactions.js';
+import {
+    renderGroupKeyTrustBanner,
+    clearGroupKeyTrustBanner,
+    acceptGroupPeerKey,
+    renderGroupVerifyView,
+    GROUP_VERIFY_IDS,
+} from './group-key-trust.js';
 
 import {
     encryptOutgoingGroupMessage,
@@ -138,6 +145,7 @@ window.addEventListener('wire:logout', () => {
     revokeAllGroupAttachments();
     membershipByGroupId.clear();
     groupTypingIndicator.clearAll();
+    clearGroupKeyTrustBanner();
 });
 
 setActiveGroupIdGetter(() => activeGroupId);
@@ -395,6 +403,7 @@ export async function decorateGroupMessages(groupId, rawMessages, { live = false
 async function drainAndRetry(groupId) {
     const consumed = await drainGroupKdms(groupId);
     if (consumed > 0) await groupThreads.get(groupId)?.retryPlaceholders();
+    if (groupId === activeGroupId) refreshGroupKeyTrustBanner(groupId);
     return consumed;
 }
 
@@ -553,11 +562,22 @@ async function loadMembers(groupId) {
 // ensureSenderKeyForGroup() (messages/group-message-crypto.js).
 const keyEnsureInflight = new Map();
 
-function ensureSenderKeyReady(groupId, members = activeGroupMembers, { quiet = false } = {}) {
+function ensureSenderKeyReady(groupId, members = activeGroupMembers, { quiet = false, force = false } = {}) {
     const existing = keyEnsureInflight.get(groupId);
-    if (existing) return existing;
+    if (existing && !force) return existing;
 
     const run = (async () => {
+        // A forced re-wrap (after accepting a changed peer key) must wait for
+        // any rotation already in flight, then run its own. Otherwise the
+        // forced call would silently reuse the old run and never re-wrap.
+        if (existing) {
+            try {
+                await existing;
+            } catch {
+                // The forced run below is independent of that failure.
+            }
+        }
+
         // The epoch lives on MY membership row, so without it there is
         // nothing to compare `mine.epoch` against and nothing to rotate
         // to. Returning silently here used to be the worst possible
@@ -588,15 +608,36 @@ function ensureSenderKeyReady(groupId, members = activeGroupMembers, { quiet = f
         const memberUserIds = members.map((m) => m.user_id);
 
         try {
-            await ensureSenderKeyForGroup(groupId, memberUserIds, membership.key_epoch);
+            await ensureSenderKeyForGroup(groupId, memberUserIds, membership.key_epoch, { force });
         } catch (e) {
             console.error('[group] failed to ensure Sender Key:', e);
             if (!quiet) showToast('Could not set up encryption for this group', 'error');
         }
-    })().finally(() => keyEnsureInflight.delete(groupId));
+    })().finally(() => {
+        // Only the run that currently owns the slot may clear it. A forced run
+        // installed while an older one was still pending must not be removed
+        // by that older run's finally block.
+        if (keyEnsureInflight.get(groupId) === run) {
+            keyEnsureInflight.delete(groupId);
+        }
+    });
 
     keyEnsureInflight.set(groupId, run);
     return run;
+}
+
+/**
+ * Repaint the group key-change banner for the open group.
+ *
+ * The accept action itself is in the delegated [data-action] handler below.
+ * After a key is accepted it forces one new rotation: the previous distribution
+ * necessarily skipped the changed member, so a fresh Sender Key is the only way
+ * to include them again without exporting raw key material.
+ */
+function refreshGroupKeyTrustBanner(groupId = activeGroupId) {
+    if (!groupId || groupId !== activeGroupId) return;
+
+    renderGroupKeyTrustBanner(activeGroupMembers);
 }
 
 export async function openGroup(groupId) {
@@ -662,6 +703,8 @@ export async function openGroup(groupId) {
     }
     if (activeGroupId !== groupId) return;
 
+    refreshGroupKeyTrustBanner(groupId);
+
     const thread = getOrCreateThread(groupId);
 
     try {
@@ -699,6 +742,19 @@ function renderActiveGroupShell(group) {
             </div>
             <button type="button" class="btn btn-ghost btn-icon" title="Manage group" data-action="group-settings" data-group-id="${Number(group?.id)}">${ICONS.settings || '⚙'}</button>
         </div>
+        <div class="dm-key-trust-host" id="group-key-trust-host">
+            <div class="dm-key-trust group-key-trust" id="group-key-trust-banner" role="alert"></div>
+        </div>
+        <section class="dm-key-verify" id="group-key-verify" hidden>
+            <div class="dm-key-verify-head">Safety number</div>
+            <p class="dm-key-verify-help">
+                Compare these digits with <span id="group-key-verify-who"></span> over a channel the server
+                does not control. If they differ, someone may be intercepting this group member's key.
+            </p>
+            <div class="dm-key-verify-number" id="group-key-verify-number"></div>
+            <div class="dm-key-verify-state" id="group-key-verify-marked"></div>
+            <button type="button" class="btn btn-ghost" data-action="mark-verified">Mark as verified</button>
+        </section>
         <div class="chat-messages" id="group-messages">${loadingState()}</div>
         <div class="typing-indicator" id="group-typing-indicator"></div>
         <div class="composer-wrapper">
@@ -776,6 +832,7 @@ function renderActiveGroupShell(group) {
             // single rotation, so calling this on every send costs nothing
             // once a usable key exists.
             await ensureSenderKeyReady(group.id);
+            refreshGroupKeyTrustBanner(group.id);
 
             return {
                 content: await encryptOutgoingGroupMessage(group.id, content, { replyToId: replyTo }),
@@ -996,7 +1053,7 @@ window.openCreateGroupDialog = async function () {
 // onclick="" attributes are silently dropped by the browser: "+ New",
 // Send, Emoji and Manage-group were all dead in a real browser (audit
 // CSP finding). Delegated instead, same as dm.js.
-if (typeof document !== 'undefined') document.addEventListener('click', (e) => {
+if (typeof document !== 'undefined') document.addEventListener('click', async (e) => {
     const btn = e.target.closest('[data-action^="group-"]');
     if (!btn) return;
 
@@ -1004,6 +1061,46 @@ if (typeof document !== 'undefined') document.addEventListener('click', (e) => {
         case 'group-new':
             window.openCreateGroupDialog();
             break;
+        case 'group-key-trust-verify': {
+            const peerId = Number(btn.dataset.peerId);
+            if (!Number.isInteger(peerId) || peerId <= 0) break;
+
+            const member = activeGroupMembers.find((m) => Number(m.user_id) === peerId);
+            const panel = document.getElementById(GROUP_VERIFY_IDS.verify);
+            if (!panel) break;
+
+            const opening = panel.hasAttribute('hidden');
+            if (opening) {
+                const rendered = await renderGroupVerifyView(
+                    peerId,
+                    member?.username || `User ${peerId}`
+                );
+                if (!rendered) break;
+            }
+            panel.toggleAttribute('hidden', !opening);
+            break;
+        }
+        case 'group-key-trust-accept': {
+            const peerId = Number(btn.dataset.peerId);
+            if (!Number.isInteger(peerId) || peerId <= 0) break;
+
+            btn.disabled = true;
+
+            try {
+                await acceptGroupPeerKey(peerId);
+
+                // A new Sender Key is the only way to include the member again
+                // without exporting raw key material; re-wrap after accepting.
+                if (activeGroupId) {
+                    await ensureSenderKeyReady(activeGroupId, activeGroupMembers, { force: true });
+                    refreshGroupKeyTrustBanner(activeGroupId);
+                }
+            } catch (err) {
+                console.error('[group] could not accept the new peer key:', err);
+                btn.disabled = false;
+            }
+            break;
+        }
         case 'group-back':
             document.querySelector('.dm-layout')?.classList.remove('showing-thread');
             break;
@@ -1215,6 +1312,7 @@ export async function handleGroupMembershipChanged(payload) {
     // not. ensureSenderKeyForGroup is a no-op if we're already current.
     if (type === 'removed' || type === 'added') {
         await ensureSenderKeyReady(group_id, members, { quiet: true });
+        if (group_id === activeGroupId) refreshGroupKeyTrustBanner(group_id);
     }
 }
 
@@ -1261,6 +1359,8 @@ export async function handleGroupSocketConnected() {
             await thread.retryPlaceholders();
             if (gid === activeGroupId) await thread.syncSince();
         }
+
+        if (activeGroupId) refreshGroupKeyTrustBanner(activeGroupId);
     } catch (e) {
         console.error('[group] resync after (re)connect failed:', e);
     }
@@ -1278,6 +1378,7 @@ export function handleGroupUpdated(payload) {
         // message list and composer; put the thread back afterwards.
         renderActiveGroupShell(group);
         renderMemberBar();
+        refreshGroupKeyTrustBanner(activeGroupId);
         groupThreads.get(activeGroupId)?.paintFromCache();
         abortDetachedGroupAttachments();
     }

@@ -2,6 +2,7 @@ const {
   verifySessionToken,
   verifyMediaToken,
   verifyFileMediaToken,
+  tokenVersionMatches,
 } = require('../utils/jwt');
 const { getDb } = require('../config/database');
 
@@ -37,13 +38,16 @@ function resourceTypeFromBaseUrl(baseUrl) {
   return null;
 }
 
-function loadUserAndContinue(userId, req, res, next) {
+// sessionPayload is passed only by the Bearer-token paths, so the session
+// token's version can be checked. Media-token paths pass nothing.
+function loadUserAndContinue(userId, req, res, next, sessionPayload = null) {
   const user = getDb()
     .prepare(`
       SELECT
         id,
         username,
-        is_admin
+        is_admin,
+        token_version
       FROM users
       WHERE id = ?
     `)
@@ -52,6 +56,12 @@ function loadUserAndContinue(userId, req, res, next) {
   if (!user) {
     return res.status(401).json({
       error: 'User not found'
+    });
+  }
+
+  if (sessionPayload && !tokenVersionMatches(sessionPayload, user)) {
+    return res.status(401).json({
+      error: 'Unauthorized'
     });
   }
 
@@ -94,7 +104,7 @@ function avatarMediaAuth(req, res, next) {
     if (header && header.startsWith('Bearer ')) {
       const token = header.slice(7).trim();
       const payload = verifySessionToken(token);
-      return loadUserAndContinue(payload.sub || payload.id, req, res, next);
+      return loadUserAndContinue(payload.sub || payload.id, req, res, next, payload);
     }
 
     if (typeof req.query.token === 'string' && req.query.token) {
@@ -128,7 +138,7 @@ function mediaAuth(req, res, next) {
       // middleware/authenticate.js: verifySessionToken() rejects
       // typ === 'media'.
       const payload = verifySessionToken(token);
-      return loadUserAndContinue(payload.sub || payload.id, req, res, next);
+      return loadUserAndContinue(payload.sub || payload.id, req, res, next, payload);
     }
 
     if (typeof req.query.token === 'string' && req.query.token) {
@@ -175,20 +185,26 @@ function mediaAuth(req, res, next) {
  * takes effect immediately, not when the token expires.
  */
 
-function loadActiveUser(userId) {
+// sessionPayload is passed only by the Bearer-token path (see folderFileMediaAuth).
+function loadActiveUser(userId, sessionPayload = null) {
   const user = getDb()
     .prepare(`
       SELECT
         id,
         username,
         is_admin,
-        is_active
+        is_active,
+        token_version
       FROM users
       WHERE id = ?
     `)
     .get(userId);
 
   if (!user || user.is_active === 0) {
+    return null;
+  }
+
+  if (sessionPayload && !tokenVersionMatches(sessionPayload, user)) {
     return null;
   }
 
@@ -211,7 +227,7 @@ function folderFileMediaAuth(req, res, next) {
 
     if (header && header.startsWith('Bearer ')) {
       const payload = verifySessionToken(header.slice(7).trim());
-      user = loadActiveUser(payload.sub || payload.id);
+      user = loadActiveUser(payload.sub || payload.id, payload);
 
     } else if (typeof req.query.token === 'string' && req.query.token) {
       const payload = verifyFileMediaToken(req.query.token.trim(), {

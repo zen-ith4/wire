@@ -1,6 +1,16 @@
 import { api } from './api.js';
 
 import {
+  clearAllAttachmentSecrets
+} from '../media/attachment-e2ee.js';
+import {
+  clearMediaTokenCache
+} from '../media/mediaToken.js';
+import {
+  purgeMediaStreams
+} from '../media/lazy-e2ee-media.js';
+
+import {
   getServerEndpoint,
   setServerEndpoint,
   isNativeApp
@@ -11,8 +21,13 @@ import {
   restoreIdentity,
   restoreIdentityWithUnlockKey,
   migrateLegacyAccount,
-  prepareCredentialChange
+  prepareCredentialChange,
+  lockIdentity
 } from '../crypto/identity-service.js';
+
+import {
+  clearSessionKeys
+} from '../crypto/keys/session.js';
 
 import {
   deriveCredentials,
@@ -98,9 +113,48 @@ export function setCurrentUser(user) {
 export function logout() {
   const signedOutUser = currentUser;
 
+  /*
+   * C4: purge this client's streams before the session keys are cleared
+   * and before the controller can be lost. The worker derives the client
+   * from event.source.id, so this can never purge another tab.
+   */
+  try {
+    purgeMediaStreams();
+  } catch {
+    /* fail closed: a purge error must not skip secret clearing */
+  }
+
   setToken(null);
   currentUser = null;
   pendingVerification = null;
+
+  /*
+   * R3: lock the in-memory identity and drop every derived session key NOW,
+   * synchronously, before any view gets the logout event. A 401-triggered
+   * logout does not reload the page, so without this the identity private key,
+   * DM session keys and cached group KDM keys stayed usable in memory.
+   *
+   * lockIdentity() also clears the group local-wrap and Sender Key caches.
+   * Nothing persisted is touched here: this is an in-memory lock, and the
+   * unlock-key removal below is the separate persisted step.
+   */
+  lockIdentity();
+  clearSessionKeys();
+
+  /*
+   * Item 3 / C4: drop every cached attachment secret and media token so a
+   * later session on this page cannot reuse them.
+   */
+  try {
+    clearAllAttachmentSecrets();
+  } catch {
+    /* best effort: never skip the rest of logout */
+  }
+  try {
+    clearMediaTokenCache();
+  } catch {
+    /* best effort: never skip the rest of logout */
+  }
 
   /*
    * Views keep in-memory copies of the signed-in user's data (files,

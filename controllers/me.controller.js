@@ -23,6 +23,7 @@ const {
 const { isOnline } = require('../services/presence.service');
 
 const { comparePassword } = require('../utils/password');
+const { signToken } = require('../utils/jwt');
 const {
   isValidAuthKey,
   isValidKdfSalt,
@@ -285,8 +286,24 @@ async function changePassword(req, res) {
     });
   }
 
+  // The change revoked every existing session, this device's included.
+  // Hand back a token for the new version so this device stays signed in.
+  // A password-change token is never upgraded to a session here: that
+  // account still signs in normally after the forced change.
+  if (req.viaPasswordChangeToken) {
+    return res.json({
+      success: true
+    });
+  }
+
   return res.json({
-    success: true
+    success: true,
+    token: signToken({
+      id: req.user.id,
+      username: req.user.username,
+      is_admin: req.user.is_admin,
+      token_version: result.tokenVersion
+    })
   });
 }
 

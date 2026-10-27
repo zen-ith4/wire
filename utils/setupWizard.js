@@ -637,9 +637,10 @@ class SetupWizard {
                     is_admin,
                     auth_scheme,
                     kdf_salt,
-                    kdf_iterations
+                    kdf_iterations,
+                    dm_e2ee_min_version
                 )
-                VALUES (?, ?, ?, ?, 1, 2, ?, ?)
+                VALUES (?, ?, ?, ?, 1, 2, ?, ?, ?)
             `);
 
             const result = stmt.run(
@@ -648,7 +649,8 @@ class SetupWizard {
                 hashedPassword,
                 emailVerified,
                 kdfSalt,
-                KDF_ITERATIONS
+                KDF_ITERATIONS,
+                constants.DM_E2EE_DEFAULT_MIN_VERSION
             );
 
             const userId =

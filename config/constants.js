@@ -23,8 +23,41 @@ function getDmE2eeDefaultMinVersion() {
   process.exit(1);
 }
 
+// Example secrets that shipped in .env.example. They are public (they are in
+// the repository history), so a deployment that still uses one is not secret.
+const EXAMPLE_SECRETS = new Set([
+  'a7f3c9e2d1b80456fe2a8c91d4b673e5f01a9c8d7e3b2456a0c7d8e9f1b2c3d4',
+  'z6cfcf37ecf2f3956197d01ef9cb1138f020af4b8760f959ddd310df5d0529be7',
+]);
+
+const MIN_SECRET_LENGTH = 32;
+
+// Returns why a configured secret is unusable, or null if it is acceptable.
+function secretProblem(value) {
+  if (EXAMPLE_SECRETS.has(value)) {
+    return 'it is the example value from .env.example';
+  }
+
+  if (value.length < MIN_SECRET_LENGTH) {
+    return `it must be at least ${MIN_SECRET_LENGTH} characters`;
+  }
+
+  return null;
+}
+
+function fatal(message) {
+  console.error('❌ FATAL: ' + message);
+  process.exit(1);
+}
+
 function getJwtSecret() {
   if (process.env.JWT_SECRET) {
+    const problem = secretProblem(process.env.JWT_SECRET);
+
+    if (problem) {
+      fatal(`JWT_SECRET is unsafe: ${problem}.`);
+    }
+
     return process.env.JWT_SECRET;
   }
 
@@ -41,6 +74,29 @@ function getJwtSecret() {
 
   return secret;
 }
+
+// EMAIL_VERIFICATION_SECRET keys the HMAC of email OTP codes
+// (services/emailVerification.service.js). Checked here so a bad value stops
+// the server at startup instead of failing on the first verification email.
+function checkEmailVerificationSecret() {
+  const secret = process.env.EMAIL_VERIFICATION_SECRET;
+
+  if (!secret) {
+    if (isProduction) {
+      fatal('EMAIL_VERIFICATION_SECRET is required in production.');
+    }
+
+    return;
+  }
+
+  const problem = secretProblem(secret);
+
+  if (problem) {
+    fatal(`EMAIL_VERIFICATION_SECRET is unsafe: ${problem}.`);
+  }
+}
+
+checkEmailVerificationSecret();
 
 const constants = {
   // ======================================================

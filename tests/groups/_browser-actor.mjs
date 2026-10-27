@@ -41,6 +41,22 @@ const REAL_PUBLIC_JS = path.join(__dirname, '..', '..', 'public', 'js');
 
 let copyCounter = 0;
 
+// Every private copy this PROCESS created. The exit handler below removes
+// exactly these - never a glob over the `wire-actor-` prefix, which could
+// delete the directories of another (concurrent) test run.
+const ACTOR_DIRS = new Set();
+
+// Safety net: a test file that dies without disposing its actors would
+// otherwise leave a full copy of public/js in os.tmpdir() behind. The exit
+// handler is synchronous (rmSync) and only touches the dirs registered by
+// THIS process.
+process.on('exit', () => {
+    for (const dir of ACTOR_DIRS) {
+        try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
+    }
+    ACTOR_DIRS.clear();
+});
+
 /**
  * Copies the real public/js tree to a private scratch directory so
  * this actor gets its own module graph. Same source files, unmodified
@@ -52,6 +68,7 @@ function makeIsolatedCopy(label, actorKey) {
         path.join(os.tmpdir(), `wire-actor-${label}-${copyCounter++}-`)
     );
     fs.cpSync(REAL_PUBLIC_JS, dir, { recursive: true });
+    ACTOR_DIRS.add(dir);
 
     // Two actors share one Node process, and `use()` can only make ONE
     // actor's `document`/`fetch`/... the global at a time. A Socket.IO
@@ -274,5 +291,25 @@ export function createBrowserActor(label, serverOrigin, { profileOf = null, fres
         faults.push({ method: method.toUpperCase(), match, dropResponse: true });
     }
 
-    return { label, jsDir, window, use, importModule, fetchLog, failNext, delayNext, hangNext, dropResponseNext, idbFactory, locks };
+    let disposed = false;
+
+    /**
+     * Releases this actor: closes its jsdom window and DELETES the private
+     * copy of public/js it was given (a full copy, ~2 MB, per actor).
+     *
+     * Idempotent, and it never throws: a teardown error must not mask the
+     * test's own failure. ENOENT is ignored (force: true), so calling it
+     * twice - or after the exit handler already cleaned up - is fine.
+     */
+    async function dispose() {
+        if (disposed) return;
+        disposed = true;
+        try { window.close(); } catch { /* ignore */ }
+        try {
+            await fs.promises.rm(jsDir, { recursive: true, force: true });
+        } catch { /* ignore - ENOENT or any teardown error */ }
+        ACTOR_DIRS.delete(jsDir);
+    }
+
+    return { label, jsDir, window, use, importModule, fetchLog, failNext, delayNext, hangNext, dropResponseNext, idbFactory, locks, dispose };
 }

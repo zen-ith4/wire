@@ -1,7 +1,8 @@
 const { getDb } = require('../config/database');
 const {
   verifySessionToken,
-  verifySessionOrPasswordChangeToken
+  verifySessionOrPasswordChangeToken,
+  tokenVersionMatches
 } = require('../utils/jwt');
 
 
@@ -43,7 +44,8 @@ function authenticate(req, res, next) {
           is_admin,
           is_active,
           bio,
-          avatar_path
+          avatar_path,
+          token_version
         FROM users
         WHERE id = ?
       `)
@@ -51,6 +53,13 @@ function authenticate(req, res, next) {
 
 
     if (!user || user.is_active === 0) {
+      return res.status(401).json({
+        error: 'Unauthorized'
+      });
+    }
+
+    // Revoked by a password change (see users.token_version).
+    if (!tokenVersionMatches(payload, user)) {
       return res.status(401).json({
         error: 'Unauthorized'
       });
@@ -103,13 +112,19 @@ function authenticatePasswordChange(req, res, next) {
 
     const user = getDb()
       .prepare(`
-        SELECT id, username, is_admin, is_active, must_change_password
+        SELECT id, username, is_admin, is_active, must_change_password, token_version
         FROM users
         WHERE id = ?
       `)
       .get(payload.sub || payload.id);
 
     if (!user || user.is_active === 0) {
+      return res.status(401).json({
+        error: 'Unauthorized'
+      });
+    }
+
+    if (!tokenVersionMatches(payload, user)) {
       return res.status(401).json({
         error: 'Unauthorized'
       });

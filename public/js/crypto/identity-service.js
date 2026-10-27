@@ -27,6 +27,14 @@ import {
     buildMigrationPayload
 } from "./credential-migration.js";
 
+import {
+    clearLocalWrapKeyCache
+} from "./groups/local-wrap-key.js";
+
+import {
+    clearSenderKeyCache
+} from "./groups/sender-key.js";
+
 const IDENTITY_ENDPOINT =
     "/api/me/identity-key";
 
@@ -856,10 +864,14 @@ export function lockIdentity() {
     // memory, both derived from this identity (groups/local-wrap-key.js,
     // groups/sender-key.js). Clear them here rather than leaving them
     // reachable after the identity they were derived from is gone.
-    // Dynamic import: no static dependency from this DM/identity module
-    // onto the group crypto module when groups are never used.
-    import('./groups/local-wrap-key.js').then((m) => m.clearLocalWrapKeyCache());
-    import('./groups/sender-key.js').then((m) => m.clearSenderKeyCache());
+    //
+    // R3/D8: these are static imports, not import().then(). Logout must drop
+    // the in-memory material synchronously, before any view sees
+    // wire:logout, and a test must be able to assert the cleared state
+    // immediately. The group modules do not import this module, so this adds
+    // no cycle.
+    clearLocalWrapKeyCache();
+    clearSenderKeyCache();
 }
 
 export function isIdentityUnlocked() {

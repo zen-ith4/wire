@@ -122,7 +122,10 @@ function certFingerprint(pemCert) {
 function writeCaddyfileForDomain(domain, upstreamPort) {
   const content =
     `${domain} {\n` +
-    `\treverse_proxy localhost:${upstreamPort}\n` +
+    `\treverse_proxy localhost:${upstreamPort} {\n` +
+    `\t\t# Overwrite, never append: the app trusts X-Forwarded-For only from loopback.\n` +
+    `\t\theader_up X-Forwarded-For {remote_host}\n` +
+    `\t}\n` +
     `}\n`;
 
   fs.writeFileSync(CADDYFILE_PATH, content);
@@ -134,7 +137,10 @@ function writeCaddyfileForSelfSigned(ip, upstreamPort, certPath, keyPath) {
   const content =
     `https://${ip} {\n` +
     `\ttls ${certPath} ${keyPath}\n` +
-    `\treverse_proxy localhost:${upstreamPort}\n` +
+    `\treverse_proxy localhost:${upstreamPort} {\n` +
+    `\t\t# Overwrite, never append: the app trusts X-Forwarded-For only from loopback.\n` +
+    `\t\theader_up X-Forwarded-For {remote_host}\n` +
+    `\t}\n` +
     `}\n`;
 
   fs.writeFileSync(CADDYFILE_PATH, content);

@@ -118,12 +118,22 @@ export async function wrapSenderKeyForRecipient(rawSenderKeyBytes, signPub, reci
  * since each is an independent pairwise ECDH + AES-GCM operation
  * with no shared state.
  *
+ * R1 send-side policy (D1b): a recipient whose identity key no longer matches
+ * this device's pin is SKIPPED, not allowed to fail the whole distribution and
+ * not given a KDM. The group keeps working for everyone else, including the
+ * removal-rotation path. The changed peer is recorded by peer-key-gate.js and
+ * shown as "not receiving"; after the user accepts the new key the caller
+ * performs a forced rotation (group-message-crypto.js) which wraps to them
+ * again. Any other failure is still fatal: it is not a trust decision.
+ *
  * @param {Uint8Array} rawSenderKeyBytes
  * @param {Uint8Array} signPub
  * @param {number[]} recipientUserIds
  * @param {{groupId: number, fromUserId: number, epoch: number}} context
- * @returns {Promise<Array<{user_id: number, wrapped_key: string}>>}
- *   Ready to POST as the `recipients` array to
+ * @returns {Promise<{
+ *   recipients: Array<{user_id: number, wrapped_key: string}>,
+ *   skipped: Array<{user_id: number, reason: string}>
+ * }>} `recipients` is ready to POST as the `recipients` array to
  *   POST /api/groups/:groupId/kdms.
  */
 export async function distributeSenderKey(rawSenderKeyBytes, signPub, recipientUserIds, context) {
@@ -133,12 +143,40 @@ export async function distributeSenderKey(rawSenderKeyBytes, signPub, recipientU
 
     const uniqueIds = [...new Set(recipientUserIds.map(Number))];
 
-    return Promise.all(
-        uniqueIds.map(async (userId) => ({
-            user_id: userId,
-            wrapped_key: await wrapSenderKeyForRecipient(rawSenderKeyBytes, signPub, userId, context),
-        }))
+    const results = await Promise.all(
+        uniqueIds.map(async (userId) => {
+            try {
+                return {
+                    ok: true,
+                    recipient: {
+                        user_id: userId,
+                        wrapped_key: await wrapSenderKeyForRecipient(rawSenderKeyBytes, signPub, userId, context),
+                    },
+                };
+            } catch (e) {
+                if (e?.code === 'GROUP_PEER_KEY_CHANGED') {
+                    return {
+                        ok: false,
+                        skipped: {
+                            user_id: userId,
+                            reason: 'peer-key-changed',
+                        },
+                    };
+                }
+                throw e;
+            }
+        })
     );
+
+    const recipients = [];
+    const skipped = [];
+
+    for (const result of results) {
+        if (result.ok) recipients.push(result.recipient);
+        else skipped.push(result.skipped);
+    }
+
+    return { recipients, skipped };
 }
 
 /**

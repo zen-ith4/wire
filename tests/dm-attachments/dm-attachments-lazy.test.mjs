@@ -8,7 +8,7 @@ import test, { before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { startDmServer, createUser, prepareAsClient, postUpload, authGet } from './_harness.mjs';
+import { startDmServer, createUser, prepareAsClient, postUpload, authGet, disposeActors } from './_harness.mjs';
 
 let server; let alice; let bob;
 const CS = 64 * 1024;
@@ -19,6 +19,7 @@ before(async () => {
   bob = await createUser(server, 'bob');
 });
 after(async () => {
+  await disposeActors();
   await server.stop();
   fs.rmSync(TEST_ROOT, { recursive: true, force: true });
   setTimeout(() => process.exit(process.exitCode || 0), 50).unref();

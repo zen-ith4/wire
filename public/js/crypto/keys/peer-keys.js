@@ -85,7 +85,20 @@ async function importPeerPublicKey(publicKey) {
  * Fetch peer public key
  * ========================================================= */
 
-export async function getPeerPublicKey(
+/**
+ * The peer's current identity public key, base64, exactly as the server
+ * returned it.
+ *
+ * This is the raw value getPeerPublicKey() imports. It exists separately
+ * because the trust gate has to hash and compare the SAME bytes it later
+ * derives from — importing first and exporting back is impossible (the
+ * CryptoKey is non-extractable), and a second fetch would reopen the
+ * check-then-use race the gate exists to close.
+ *
+ * @param {number|string} userId
+ * @returns {Promise<string>}
+ */
+export async function getPeerPublicKeyBase64(
     userId
 ) {
 
@@ -117,8 +130,18 @@ export async function getPeerPublicKey(
     }
 
 
+    return data.publicKey;
+}
+
+
+export async function getPeerPublicKey(
+    userId
+) {
+    const publicKey =
+        await getPeerPublicKeyBase64(userId);
+
     return importPeerPublicKey(
-        data.publicKey
+        publicKey
     );
 }
 

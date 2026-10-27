@@ -95,16 +95,9 @@ function isElevated(role) {
   return role === 'owner' || role === 'admin';
 }
 
-// Accepts only canonical positive integers. parseInt would read "1abc" as 1
-// and "1.5" as 1, letting malformed ids reach the database as valid ones.
-function parseCanonicalId(raw) {
-  if (typeof raw !== 'string' || !/^[1-9]\d*$/.test(raw)) return null;
-  const id = Number(raw);
-  return Number.isSafeInteger(id) ? id : null;
-}
-
 function parseGroupId(req) {
-  return parseCanonicalId(req.params.groupId);
+  const id = Number.parseInt(req.params.groupId, 10);
+  return Number.isInteger(id) && id > 0 ? id : null;
 }
 
 // ---------------------------------------------------------------
@@ -210,7 +203,7 @@ function addMemberHandler(req, res) {
 // what I have" and self-heal if it misses the live socket event.
 function removeMemberHandler(req, res) {
   const groupId = parseGroupId(req);
-  const targetUserId = parseCanonicalId(req.params.userId);
+  const targetUserId = Number.parseInt(req.params.userId, 10);
 
   if (!groupId || !Number.isInteger(targetUserId)) {
     return res.status(400).json({ error: 'Invalid group or user id' });
@@ -420,7 +413,7 @@ function sendMessageHandler(req, res) {
 
 function deleteMessageHandler(req, res) {
   const groupId = parseGroupId(req);
-  const messageId = parseCanonicalId(req.params.messageId);
+  const messageId = Number.parseInt(req.params.messageId, 10);
 
   if (!groupId || !Number.isInteger(messageId)) {
     return res.status(400).json({ error: 'Invalid group or message id' });
@@ -443,14 +436,11 @@ function deleteMessageHandler(req, res) {
 
   if (msg.attachment_path) {
     const filePath = path.join(constants.GROUP_UPLOAD_DIR, msg.attachment_path);
-    // The 200 below means "gone": remove the file before responding, as the DM handler does.
-    try {
-      fs.unlinkSync(filePath);
-    } catch (err) {
-      if (err.code !== 'ENOENT') {
+    fs.unlink(filePath, (err) => {
+      if (err && err.code !== 'ENOENT') {
         console.error('Failed to delete group attachment:', err.message);
       }
-    }
+    });
   }
 
   deleteGroupMessage(messageId);
@@ -584,7 +574,7 @@ function ackKdmsHandler(req, res) {
 // the sender or an elevated role.
 function toggleGroupReactionHandler(req, res) {
   const groupId = parseGroupId(req);
-  const messageId = Number.parseInt(req.params.messageId, 10);
+  const messageId = parseCanonicalId(req.params.messageId);
 
   if (!groupId || !Number.isInteger(messageId)) {
     return res.status(400).json({ error: 'Invalid group or message id' });
@@ -659,13 +649,7 @@ async function sendMessageWithAttachmentHandler(req, res) {
   // never sniffed server-side.
   const attachmentIv = (req.body.attachment_iv || '').trim();
 
-  // The client always sends a 12-byte AES-GCM IV (IV_LENGTH = 12 in
-  // public/js/crypto/groups/*): 16 base64 chars with no padding.
-  if (
-    !attachmentIv ||
-    !/^[A-Za-z0-9+/]{16}$/.test(attachmentIv) ||
-    Buffer.from(attachmentIv, 'base64').length !== 12
-  ) {
+  if (!attachmentIv || !/^[A-Za-z0-9+/]+=*$/.test(attachmentIv) || attachmentIv.length > 64) {
     cleanup();
     return res.status(400).json({ error: 'attachment_iv (base64) is required' });
   }

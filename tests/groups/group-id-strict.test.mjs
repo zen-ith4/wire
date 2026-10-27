@@ -70,3 +70,14 @@ test('a canonical but unknown message id is still a 404 (valid id, not malformed
     assert.equal(res.status, 404, JSON.stringify(res.body));
     assert.equal(res.body.error, 'Message not found');
 });
+
+test('malformed message ids are rejected with 400 on the reactions route', async () => {
+    for (const bad of ['1abc', '1.5', '0', '01', '-1']) {
+        const res = await owner.api(`/api/groups/${groupId}/messages/${encodeURIComponent(bad)}/reactions`, {
+            method: 'POST',
+            body: JSON.stringify({ emoji: '👍' }),
+        });
+        assert.equal(res.status, 400, `messageId "${bad}" must be 400, got ${res.status} ${JSON.stringify(res.body)}`);
+        assert.equal(res.body.error, 'Invalid group or message id');
+    }
+});

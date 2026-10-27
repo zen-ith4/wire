@@ -25,12 +25,14 @@ function normalizeUsername(username) {
 }
 
 
+// Intentionally selects only non-credential columns: this row is handed to
+// callers that must never see password_hash, kdf_salt, token_version, etc.
 function findUserByUsername(username) {
   username = normalizeUsername(username);
 
   return getDb()
     .prepare(`
-      SELECT * FROM users
+      SELECT id, username, is_admin, is_active FROM users
       WHERE username = ? COLLATE NOCASE
       ORDER BY (username = ?) DESC, id
       LIMIT 1

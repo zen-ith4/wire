@@ -358,6 +358,7 @@ async function verifyEmail(req, res) {
         is_admin,
         is_active,
         accent_color,
+        token_version,
         must_change_password
       FROM users
       WHERE id = ?
@@ -569,6 +570,7 @@ async function verifyTwoFactor(req, res) {
         accent_color,
         auth_scheme,
         legacy_login_closed,
+        token_version,
         must_change_password
       FROM users
       WHERE id = ?

@@ -11,42 +11,12 @@
        the JS fallback/refinement for the ones that resize the layout
        viewport instead (older Android WebViews, some in-app browsers)
        so the composer never ends up hidden behind the keyboard or a
-       phantom scrollbar appears from a stale 100vh. Kept inline (runs
-       before first paint) rather than in app.js so there's no flash
+       phantom scrollbar appears from a stale 100vh. Kept as a classic script (js/core/viewport-fix.js) so it runs
+       before first paint, not in app.js so there's no flash
        of the wrong height while the module script loads. -->
   <link rel="icon" type="image/x-icon" href="/favicon.ico" />
 
-  <script>
-    (function () {
-      function setVh() {
-        var vv = window.visualViewport;
-        var h = (vv && vv.height) || window.innerHeight;
-        document.documentElement.style.setProperty(
-          '--vh',
-          (h * 0.01) + 'px'
-        );
-      }
-
-      setVh();
-
-      window.addEventListener(
-        'resize',
-        setVh
-      );
-
-      window.addEventListener(
-        'orientationchange',
-        setVh
-      );
-
-      if (window.visualViewport) {
-        window.visualViewport.addEventListener(
-          'resize',
-          setVh
-        );
-      }
-    })();
-  </script>
+  <script src="/js/core/viewport-fix.js"></script>
 
   <title>Wire — Private Drive</title>
 
@@ -89,7 +59,7 @@
   <div
     class="app"
     id="app"
-    style="display:none;"
+    hidden
   >
 
     <!-- Sidebar (desktop navigation; hidden on phones, where the bottom
@@ -208,12 +178,12 @@
   <div
     class="image-viewer"
     id="image-viewer"
-    onclick="window.closeImageViewer()"
+    data-action="image-viewer-backdrop"
   >
 
     <div
       class="image-viewer-bar"
-      onclick="event.stopPropagation()"
+      data-stop
     >
 
       <div class="image-viewer-sender">
@@ -238,7 +208,7 @@
           class="icon-btn"
           id="image-viewer-zoom"
           title="Zoom"
-          onclick="window.toggleImageViewerZoom()"
+          data-action="image-viewer-zoom"
         >
           <svg
             width="15"
@@ -282,7 +252,7 @@
           type="button"
           class="icon-btn"
           title="Download"
-          onclick="window.downloadImageViewerImage()"
+          data-action="image-viewer-download"
         >
           <svg
             width="15"
@@ -308,7 +278,7 @@
           type="button"
           class="icon-btn image-viewer-close"
           title="Close"
-          onclick="window.closeImageViewer()"
+          data-action="image-viewer-close"
         >
           <svg
             width="16"
@@ -345,8 +315,7 @@
         src=""
         alt=""
         draggable="false"
-        ondragstart="return false;"
-        onclick="event.stopPropagation()"
+        data-stop
       />
 
     </div>
@@ -399,16 +368,16 @@
   <div
     class="modal"
     id="profile-card-modal"
-    onclick="window.closeProfileCard()"
+    data-action="profile-card-backdrop"
   >
 
     <div
       class="modal-content profile-card-content"
-      onclick="event.stopPropagation()"
+      data-stop
     >
 
       <button
-        onclick="window.closeProfileCard()"
+        data-action="profile-card-close"
         class="btn btn-icon modal-close"
       >
         <svg

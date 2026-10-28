@@ -57,6 +57,7 @@ import {
   isIdentityUnlocked
 } from '../crypto/identity-service.js';
 
+import '../ui/actions.js';
 import '../ui/profile-card.js';
 import '../media/image-viewer.js';
 
@@ -339,8 +340,7 @@ function showApp(user) {
 
   if (app) {
 
-    app.style.display =
-      'flex';
+    app.hidden = false;
   }
 
 
@@ -378,8 +378,7 @@ function hideApp() {
 
   if (app) {
 
-    app.style.display =
-      'none';
+    app.hidden = true;
   }
 
 

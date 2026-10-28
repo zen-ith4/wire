@@ -10,6 +10,7 @@
 
 import { api } from '../core/api.js';
 import { escapeHtml, escapeAttr, loadingState, formatBytes } from '../core/utils.js';
+import { registerActions } from './actions.js';
 import { avatarHtml, bannerHtml } from './avatar.js';
 import { isUserOnline, setUserOnline, setLastSeenAt, onPresenceChange, getPresenceStatusText } from '../chat/presence.js';
 import { getCurrentUser } from '../core/auth.js';
@@ -139,6 +140,15 @@ window.closeProfileCard = function() {
 };
 
 window.openProfileCard = openProfileCard;
+
+// Markup in index.html carries data-action names (see ui/actions.js).
+// Backdrop closes unless the click is inside [data-stop] (the card itself).
+registerActions({
+  'profile-card-close': () => window.closeProfileCard(),
+  'profile-card-backdrop': (el, e) => {
+    if (!e.target.closest('[data-stop]')) window.closeProfileCard();
+  },
+});
 
 // Escape-to-close. Registered once (not per-open) and simply checks
 // whether the modal is currently active, same pattern used for the

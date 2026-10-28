@@ -12,6 +12,7 @@
 import { downloadAttachment } from './attachments.js';
 import { avatarHtml } from '../ui/avatar.js';
 import { pushOverlay, closeOverlay } from '../core/navigation.js';
+import { registerActions } from '../ui/actions.js';
 
 // Cycle through a few sensible zoom levels for the toolbar
 // button/double-tap (keeps those predictable and easy to reset);
@@ -163,12 +164,21 @@ export function downloadImageViewerImage() {
   downloadAttachment(current.msgId, current.filename, current.scope);
 }
 
-// Exposed for inline onclick handlers, same convention used
-// throughout the app (window.downloadAttachment, window.closePreview, etc.)
+// Exposed for attachments.js (its inline onclick calls it), same convention
+// used throughout the app (window.downloadAttachment, window.closePreview, etc.)
 window.openImageViewer = openImageViewer;
-window.closeImageViewer = closeImageViewer;
-window.toggleImageViewerZoom = toggleImageViewerZoom;
-window.downloadImageViewerImage = downloadImageViewerImage;
+
+// Markup in index.html carries data-action names (see ui/actions.js).
+// The backdrop closes on any click outside [data-stop] (the bar and the
+// image), which is what the old inline stopPropagation() gave us.
+registerActions({
+  'image-viewer-close': () => closeImageViewer(),
+  'image-viewer-zoom': () => toggleImageViewerZoom(),
+  'image-viewer-download': () => downloadImageViewerImage(),
+  'image-viewer-backdrop': (el, e) => {
+    if (!e.target.closest('[data-stop]')) closeImageViewer();
+  },
+});
 
 // ---------------------------------------------------------------
 // Pinch-to-zoom, drag-to-pan, and double-tap — all via Pointer
@@ -183,6 +193,9 @@ window.downloadImageViewerImage = downloadImageViewerImage;
   const img = document.getElementById('image-viewer-img');
   const stage = document.querySelector('.image-viewer-stage');
   if (!img || !stage) return;
+
+  // Was an inline ondragstart="return false;" in index.html.
+  img.addEventListener('dragstart', (e) => e.preventDefault());
 
   const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 

@@ -24,6 +24,10 @@ export function registerActions(map) {
   for (const [name, fn] of Object.entries(map)) handlers.set(name, fn);
 }
 
+// Capture phase on purpose: this runs before any bubble-phase listener, so
+// an element that calls stopPropagation() (the viewer bar, the image, the
+// profile card content) still dispatches its actions, while keeping its
+// clicks away from the document-level listeners in other modules.
 if (typeof document !== 'undefined') {
   document.addEventListener('click', (e) => {
     if (!(e.target instanceof Element)) return;
@@ -31,5 +35,5 @@ if (typeof document !== 'undefined') {
     if (!el) return;
     const fn = handlers.get(el.dataset.action);
     if (fn) fn(el, e);
-  });
+  }, true);
 }

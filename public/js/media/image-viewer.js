@@ -171,6 +171,13 @@ window.openImageViewer = openImageViewer;
 // Markup in index.html carries data-action names (see ui/actions.js).
 // The backdrop closes on any click outside [data-stop] (the bar and the
 // image), which is what the old inline stopPropagation() gave us.
+// Clicks on the bar and the image must not reach document-level listeners
+// (the old inline stopPropagation did this). Stopping only on [data-stop]
+// keeps clicks on the stage and the backdrop bubbling, as before.
+document.querySelectorAll('#image-viewer [data-stop]').forEach((el) => {
+  el.addEventListener('click', (e) => e.stopPropagation());
+});
+
 registerActions({
   'image-viewer-close': () => closeImageViewer(),
   'image-viewer-zoom': () => toggleImageViewerZoom(),

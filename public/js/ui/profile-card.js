@@ -143,6 +143,11 @@ window.openProfileCard = openProfileCard;
 
 // Markup in index.html carries data-action names (see ui/actions.js).
 // Backdrop closes unless the click is inside [data-stop] (the card itself).
+// Same as the image viewer: clicks on the card content stop here.
+document.querySelectorAll('#profile-card-modal [data-stop]').forEach((el) => {
+  el.addEventListener('click', (e) => e.stopPropagation());
+});
+
 registerActions({
   'profile-card-close': () => window.closeProfileCard(),
   'profile-card-backdrop': (el, e) => {

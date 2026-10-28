@@ -626,7 +626,9 @@ function deleteMessageHandler(req, res) {
   }
 
   const isOwnMessage = msg.sender_id === req.user.id;
-  const canModerate = isElevated(membership.role) || req.user.is_admin;
+  // Group moderation comes from the group role only. The site admin has no
+  // power over message content.
+  const canModerate = isElevated(membership.role);
 
   if (!isOwnMessage && !canModerate) {
     return res.status(403).json({ error: 'You can only delete your own messages' });

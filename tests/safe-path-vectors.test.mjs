@@ -26,6 +26,11 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
+
+// resolve* now re-check the sharing policy on every read, so the temp dirs
+// these vectors build must count as an allowed root. Set before first require.
+process.env.ALLOWED_FOLDER_ROOTS = os.tmpdir();
+
 const {
     safeSubPath,
     resolveRegularFile,

@@ -97,6 +97,33 @@ const VALID_COLUMNS = {
 };
 
 
+/*
+ * The site has exactly one admin (users.is_admin = 1). Older databases may
+ * have several. Keep the oldest admin and demote the rest to normal users, so
+ * the unique index in indexes.js can be created. This is logged loudly
+ * because it changes who holds the role.
+ */
+function enforceSingleAdmin(db) {
+  const admins = db
+    .prepare('SELECT id, username FROM users WHERE is_admin = 1 ORDER BY id')
+    .all();
+
+  if (admins.length <= 1) {
+    return;
+  }
+
+  const [keep, ...demoted] = admins;
+
+  db.prepare('UPDATE users SET is_admin = 0 WHERE is_admin = 1 AND id <> ?')
+    .run(keep.id);
+
+  console.warn(
+    `⚠️  Found ${admins.length} admin accounts; the site allows exactly one. ` +
+      `Kept "${keep.username}" (id ${keep.id}) as admin. ` +
+      `Demoted to normal users: ${demoted.map(a => `"${a.username}" (id ${a.id})`).join(', ')}.`
+  );
+}
+
 function runMigrations(db) {
   for (const [table, columns] of Object.entries(VALID_COLUMNS)) {
     const existing = new Set(
@@ -128,6 +155,9 @@ function runMigrations(db) {
   `);
 
   migrateMessageReactionsToAllowGroup(db);
+
+  // Must run before createIndexes(), which adds the one-admin unique index.
+  enforceSingleAdmin(db);
 
   ensureCredentialSchema(db);
 

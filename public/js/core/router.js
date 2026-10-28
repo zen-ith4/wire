@@ -21,6 +21,7 @@ import {
   renderAdminUsers,
   renderAdminFolders,
   renderAdminPermissions,
+  renderAdminAudit,
 } from '../settings/admin.js';
 
 import { renderWireguard } from '../wireguard/wireguard.js';
@@ -84,6 +85,11 @@ const routes = {
   'admin-permissions': {
     title: 'Permissions',
     render: renderAdminPermissions,
+  },
+
+  'admin-audit': {
+    title: 'Audit log',
+    render: renderAdminAudit,
   },
 
   'admin-wireguard': {

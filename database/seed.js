@@ -34,6 +34,14 @@ function createDefaultAdmin(db) {
     return existing.id;
   }
 
+  // The site has exactly one admin. If one exists under another name, do not
+  // create a second one (the unique index would refuse it anyway).
+  const anyAdmin = db.prepare('SELECT id FROM users WHERE is_admin = 1').get();
+
+  if (anyAdmin) {
+    return anyAdmin.id;
+  }
+
   // F12: the seed is the one place where the SERVER HOST is handed a plaintext
   // password (by its operator, via the environment). It derives exactly what a
   // browser would (PBKDF2 + HKDF with a fresh salt) and stores bcrypt(authKey),

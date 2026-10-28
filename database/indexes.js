@@ -33,6 +33,13 @@ function createIndexes(db) {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_group_members_one_owner
     ON group_members(group_id)
     WHERE role = 'owner';
+
+    -- Exactly one site admin, enforced by the database. Handing the role
+    -- over (services/user.service.js transferAdmin) demotes the old admin
+    -- first, inside one transaction.
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_users_one_admin
+    ON users(is_admin)
+    WHERE is_admin = 1;
   `);
 }
 

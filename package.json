@@ -9,6 +9,7 @@
     "test:groups": "node scripts/run-tests.mjs tests/groups",
     "test:crypto": "node scripts/run-tests.mjs tests/crypto",
     "test:excluded": "node scripts/run-tests.mjs --excluded",
+    "admin": "node scripts/admin-cli.mjs",
     "dev": "nodemon server.js",
     "dev:watch": "nodemon"
   },

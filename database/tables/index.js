@@ -11,5 +11,6 @@ module.exports = [
   require('./groups.tabels'),
   require('./groupMembers.tabels'),
   require('./groupMessages.tabels'),
-  require('./groupKeyDistributions.tabels')
+  require('./groupKeyDistributions.tabels'),
+  require('./adminAuditLog.tabels')
 ];

@@ -279,7 +279,7 @@ test('admin-created account: first login in the browser shows the forced-change 
     const aSalt = cred.newKdfSalt();
     const { authKey: aKey } = cred.deriveCredentialsNode('the admin account password', aSalt);
     await srv.call('POST', '/api/auth/register', { body: { username: 'bossman', email: 'boss@x.invalid', auth_key: aKey, kdf_salt: aSalt, kdf_iterations: cred.KDF_ITERATIONS } });
-    const w = new Database(dbPath); w.prepare("UPDATE users SET is_admin = 1 WHERE username = 'bossman'").run(); w.close();
+    const w = new Database(dbPath); w.prepare("UPDATE users SET is_admin = CASE WHEN username = 'bossman' THEN 1 ELSE 0 END").run(); w.close();
     const adminTok = (await srv.call('POST', '/api/auth/login', { body: { username: 'bossman', auth_key: aKey } })).body.token;
 
     const tempPw = 'temporary password 1';

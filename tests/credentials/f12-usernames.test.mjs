@@ -50,7 +50,7 @@ before(async () => {
     const c = copyLegacyFixture();
     dbPath = c.dbPath; dir = c.dir;
     srv = await bootServer(dbPath, c.dir);
-    const d = new Database(dbPath); d.prepare("UPDATE users SET is_admin = 1 WHERE username = 'alice'").run(); d.close();
+    const d = new Database(dbPath); d.prepare("UPDATE users SET is_admin = CASE WHEN username = 'alice' THEN 1 ELSE 0 END").run(); d.close();
     adminToken = (await login('alice', META.passwords.alice)).body.token;
 });
 after(async () => { await srv?.stop(); cleanupTmp(); assertFixtureUntouched(); });

@@ -976,10 +976,12 @@ function deleteMessage(req, res) {
     return res.status(404).json({ error: 'Message not found' });
   }
 
+  // Only the sender may delete a DM. The site admin has no power over
+  // message content. Being the sender already implies being a participant,
+  // so no separate participant check is needed.
   const isOwner = msg.sender_id === req.user.id;
-  const isAdmin = !!req.user.is_admin;
 
-  if (!isOwner && !isAdmin) {
+  if (!isOwner) {
     return res.status(403).json({ error: 'You can only delete your own messages' });
   }
 

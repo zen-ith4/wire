@@ -22,7 +22,7 @@ before(async () => {
     const salt = cred.newKdfSalt();
     const { authKey } = cred.deriveCredentialsNode('admin-account-password', salt);
     await srv.call('POST', '/api/auth/register', { body: { username: 'boss', email: 'boss@x.invalid', auth_key: authKey, kdf_salt: salt, kdf_iterations: cred.KDF_ITERATIONS } });
-    const d = new Database(dbPath); d.prepare("UPDATE users SET is_admin = 1 WHERE username = 'boss'").run(); d.close();
+    const d = new Database(dbPath); d.prepare("UPDATE users SET is_admin = CASE WHEN username = 'boss' THEN 1 ELSE 0 END").run(); d.close();
     adminToken = (await srv.call('POST', '/api/auth/login', { body: { username: 'boss', auth_key: authKey } })).body.token;
 });
 after(async () => { await srv?.stop(); cleanupTmp(); assertFixtureUntouched(); });

@@ -1,13 +1,21 @@
-const fs = require('fs');
 const path = require('path');
+
+const { validateNewFolderPath } = require('../utils/folderPolicy');
 
 const {
   listUsers,
   findUserById,
+  findActiveUserById,
+  findUserWithPassword,
   createUser: createUserService,
-  setUserAdmin: setUserAdminService,
+  transferAdmin,
   deleteUser: deleteUserService,
 } = require('../services/user.service');
+
+const { comparePassword } = require('../utils/password');
+const { recordAdminAction, listAdminAudit } = require('../services/adminAudit.service');
+const { isValidAuthKey } = require('../utils/credentials');
+const asyncHandler = require('../middleware/asyncHandler').asyncHandler;
 
 const {
   listAllFolders,
@@ -109,6 +117,13 @@ function setLegacyLogin(req, res) {
 }
 
 
+// GET /api/admin/audit?limit=50&before=<id>   (read-only)
+function auditLog(req, res) {
+  const limit = Number(req.query?.limit) || 50;
+  const beforeId = Number(req.query?.before) || null;
+  return res.json(listAdminAudit({ limit, beforeId }));
+}
+
 function listUsersHandler(req, res) {
   res.json(listUsers());
 }
@@ -129,13 +144,14 @@ const CREATE_USER_ERROR_STATUS = new Map([
 async function createUser(req, res) {
 
   // Field validation and normalization live in createUser() itself.
+  // is_admin is not read: every account created here is a normal user.
+  // The admin role changes hands only through POST /admin/transfer or the CLI.
   const {
     username,
     email,
     auth_key,
     kdf_salt,
     kdf_iterations,
-    is_admin,
   } = req.body || {};
 
   // F12: the temporary password is turned into credentials in the admin's
@@ -160,8 +176,16 @@ async function createUser(req, res) {
           kdfSalt: kdf_salt,
           kdfIterations: kdf_iterations,
         },
-        is_admin
+        false
       );
+
+    recordAdminAction({
+      adminId: req.user.id,
+      action: 'create_user',
+      targetType: 'user',
+      targetId: user.id,
+      details: { username: user.username },
+    });
 
     return res.status(201).json(user);
 
@@ -186,62 +210,120 @@ async function createUser(req, res) {
 
 }
 
-function setUserAdmin(req, res) {
+// Proves the caller knows their password, the same way the account settings
+// do. The browser derives current_auth_key from the password (the server never
+// sees it), and the server checks it against the stored hash. A stolen session
+// token alone cannot do dangerous admin actions.
+// Returns true when the password matches; otherwise it has already sent a response.
+async function callerPasswordMatches(req, res) {
 
-  // Strict positive-integer id: Number() alone would also accept
-  // things like "0x10", "1e2" or " 5 ".
-  if (!/^[1-9]\d*$/.test(req.params.id)) {
+  const { current_auth_key } = req.body || {};
+
+  if (!isValidAuthKey(current_auth_key)) {
+    res.status(400).json({
+      error: 'Password is required to confirm this action',
+      code: 'password_required',
+    });
+    return false;
+  }
+
+  const caller = findUserWithPassword(req.user.id);
+
+  if (!caller) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return false;
+  }
+
+  if (caller.auth_scheme !== 2) {
+    res.status(409).json({
+      error: 'Log in again to upgrade this account first',
+      code: 'migrate_first',
+    });
+    return false;
+  }
+
+  const valid = await comparePassword(current_auth_key, caller.password_hash);
+
+  if (!valid) {
+    res.status(403).json({ error: 'Password is incorrect' });
+    return false;
+  }
+
+  return true;
+}
+
+// POST /api/admin/transfer  { userId, current_auth_key }
+// Hands the admin role to another active user. The caller becomes a normal user.
+async function transferAdminHandler(req, res) {
+
+  const userId = Number(req.body?.userId);
+
+  if (!Number.isSafeInteger(userId) || userId <= 0) {
     return res.status(400).json({
       error: 'Invalid user id',
     });
   }
 
-  const userId = Number(req.params.id);
-
-  if (!Number.isSafeInteger(userId)) {
+  if (userId === req.user.id) {
     return res.status(400).json({
-      error: 'Invalid user id',
+      error: 'You are already the admin',
     });
   }
 
-  const { is_admin } = req.body || {};
-
-  // Strictly a boolean: "true", 1, "yes", null, etc. are rejected
-  // so a malformed client can never flip a role by accident.
-  if (typeof is_admin !== 'boolean') {
-    return res.status(400).json({
-      error: 'is_admin must be a boolean',
-    });
+  if (!(await callerPasswordMatches(req, res))) {
+    return;
   }
 
-  // An admin can never remove their own admin rights. Combined with
-  // the fact that this route is only reachable by an admin, this
-  // guarantees at least one admin (the caller) always remains.
-  if (userId === req.user.id && !is_admin) {
-    return res.status(400).json({
-      error: "You can't remove your own admin privileges",
-    });
-  }
+  const target = findActiveUserById(userId);
 
-  const user = findUserById(userId);
-
-  if (!user) {
+  if (!target) {
     return res.status(404).json({
-      error: 'User not found',
+      error: 'User not found or inactive',
     });
   }
 
-  setUserAdminService(userId, is_admin);
+  const targetUsername = findUserById(userId)?.username ?? null;
+
+  try {
+
+    getDb().transaction(() => {
+      transferAdmin(req.user.id, userId);
+      recordAdminAction({
+        adminId: req.user.id,
+        action: 'transfer_admin',
+        targetType: 'user',
+        targetId: userId,
+        details: { from: req.user.username, to: targetUsername },
+      });
+    })();
+
+  } catch (err) {
+
+    if (err.code === 'NOT_ADMIN') {
+      return res.status(409).json({ error: err.message });
+    }
+
+    if (err.code === 'INVALID_TARGET') {
+      return res.status(400).json({ error: err.message });
+    }
+
+    throw err;
+  }
+
+  console.log(
+    `[admin] ${req.user.username} transferred the admin role to user id ${userId}`
+  );
 
   res.json({
     success: true,
-    id: userId,
-    is_admin,
+    from: req.user.id,
+    to: userId,
   });
 
 }
 
-function deleteUser(req, res) {
+// DELETE /api/admin/users/:id  { current_auth_key }
+async function deleteUser(req, res) {
 
   const userId = Number(req.params.id);
 
@@ -253,7 +335,7 @@ function deleteUser(req, res) {
 
   if (userId === req.user.id) {
     return res.status(400).json({
-      error: "You can't delete your own account",
+      error: "You can't delete your own account. Transfer the admin role first.",
     });
   }
 
@@ -265,7 +347,36 @@ function deleteUser(req, res) {
     });
   }
 
-  const { groupChanges } = deleteUserService(userId);
+  // Defense in depth. The caller is the only admin, so this can't match
+  // while the caller is an admin, but it keeps the rule explicit.
+  if (user.is_admin) {
+    return res.status(400).json({
+      error: 'Transfer the admin role before deleting this account',
+    });
+  }
+
+  if (!(await callerPasswordMatches(req, res))) {
+    return;
+  }
+
+  const { groupChanges } = getDb().transaction(() => {
+    const result = deleteUserService(userId);
+    recordAdminAction({
+      adminId: req.user.id,
+      action: 'delete_user',
+      targetType: 'user',
+      targetId: userId,
+      details: {
+        username: user.username,
+        groups_changed: result.groupChanges.map(g => ({
+          group_id: g.groupId,
+          group_deleted: g.groupDeleted,
+          successor_id: g.successorId,
+        })),
+      },
+    });
+    return result;
+  })();
 
   // The account is already gone; a socket hiccup must not turn that into a 500.
   try {
@@ -297,28 +408,36 @@ function createFolder(req, res) {
     });
   }
 
+  // Resolves symlinks and enforces the allowed-roots policy
+  // (utils/folderPolicy.js). The stored path is the REAL path.
+  const checked =
+    validateNewFolderPath(folderPath);
+
+  if (!checked.ok) {
+    return res.status(400).json({
+      error: checked.message,
+    });
+  }
+
   const absolutePath =
-    path.resolve(folderPath);
-
-  if (!fs.existsSync(absolutePath)) {
-    return res.status(400).json({
-      error: 'Folder does not exist',
-    });
-  }
-
-  if (!fs.statSync(absolutePath).isDirectory()) {
-    return res.status(400).json({
-      error: 'Not a directory',
-    });
-  }
+    checked.realPath;
 
   try {
 
-    const info =
-      createFolderService(
+    const info = getDb().transaction(() => {
+      const created = createFolderService(
         absolutePath,
         display_name || path.basename(absolutePath)
       );
+      recordAdminAction({
+        adminId: req.user.id,
+        action: 'create_folder',
+        targetType: 'folder',
+        targetId: Number(created.lastInsertRowid),
+        details: { path: absolutePath, display_name: display_name || path.basename(absolutePath) },
+      });
+      return created;
+    })();
 
     res.json({
       id: info.lastInsertRowid,
@@ -368,7 +487,16 @@ function deleteFolder(req, res) {
     });
   }
 
-  deleteFolderService(folderId);
+  getDb().transaction(() => {
+    deleteFolderService(folderId);
+    recordAdminAction({
+      adminId: req.user.id,
+      action: 'delete_folder',
+      targetType: 'folder',
+      targetId: folderId,
+      details: { path: folder.path },
+    });
+  })();
 
   res.json({
     success: true,
@@ -414,11 +542,16 @@ function grantPermissionHandler(req, res) {
     });
   }
 
-  grantPermission(
-    userId,
-    folderId,
-    canWrite
-  );
+  getDb().transaction(() => {
+    grantPermission(userId, folderId, canWrite);
+    recordAdminAction({
+      adminId: req.user.id,
+      action: 'grant_permission',
+      targetType: 'user',
+      targetId: userId,
+      details: { folder_id: folderId, can_write: canWrite },
+    });
+  })();
 
   res.json({
     success: true,
@@ -443,10 +576,16 @@ function revokePermissionHandler(req, res) {
     });
   }
 
-  revokePermission(
-    userId,
-    folderId
-  );
+  getDb().transaction(() => {
+    revokePermission(userId, folderId);
+    recordAdminAction({
+      adminId: req.user.id,
+      action: 'revoke_permission',
+      targetType: 'user',
+      targetId: userId,
+      details: { folder_id: folderId },
+    });
+  })();
 
   res.json({
     success: true,
@@ -456,14 +595,15 @@ function revokePermissionHandler(req, res) {
 
 module.exports = {
   listUsers: listUsersHandler,
+  transferAdmin: asyncHandler(transferAdminHandler),
   usernameAudit,
+  auditLog,
   credentialStatus,
   previewInactiveLegacy,
   closeInactiveLegacy,
   setLegacyLogin,
   createUser,
-  setUserAdmin,
-  deleteUser,
+  deleteUser: asyncHandler(deleteUser),
   listFolders,
   createFolder,
   deleteFolder,

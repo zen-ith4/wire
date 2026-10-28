@@ -136,6 +136,13 @@ const ADMIN_NAV_ITEMS = [
   },
 
   {
+    view: 'admin-audit',
+    label: 'Audit log',
+    icon: ICONS.key,
+    group: 'Server'
+  },
+
+  {
     view: 'admin-wireguard',
     label: 'WireGuard',
     icon: ICONS.shield,

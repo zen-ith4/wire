@@ -1,6 +1,8 @@
 const fsp = require('fs/promises');
 const path = require('path');
 
+const { isStoredFolderAllowed } = require('./folderPolicy');
+
 function safeSubPath(basePath, subPath = '') {
   const base = path.resolve(basePath);
   const target = path.resolve(base, subPath);
@@ -47,6 +49,8 @@ const NOT_FOUND = Object.freeze({ ok: false });
 async function resolveRegularFile(basePath, subpath, file) {
   try {
     if (typeof basePath !== 'string' || !basePath) return NOT_FOUND;
+    // The folder itself must still pass the sharing policy on every read.
+    if (!isStoredFolderAllowed(basePath)) return NOT_FOUND;
 
     const sub = typeof subpath === 'string' ? subpath : '';
 
@@ -131,6 +135,8 @@ async function resolveRegularFile(basePath, subpath, file) {
 async function resolveDeletableEntry(basePath, subpath, name) {
   try {
     if (typeof basePath !== 'string' || !basePath) return NOT_FOUND;
+    // The folder itself must still pass the sharing policy on every read.
+    if (!isStoredFolderAllowed(basePath)) return NOT_FOUND;
 
     const sub = typeof subpath === 'string' ? subpath : '';
 
@@ -220,6 +226,8 @@ function hasDotSegment(value) {
 async function resolveRegularDirectory(basePath, subpath) {
   try {
     if (typeof basePath !== 'string' || !basePath) return NOT_FOUND;
+    // The folder itself must still pass the sharing policy on every read.
+    if (!isStoredFolderAllowed(basePath)) return NOT_FOUND;
 
     const sub = typeof subpath === 'string' ? subpath : '';
 

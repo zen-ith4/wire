@@ -172,6 +172,19 @@ const constants = {
     process.env.USER_DATA_ROOT ||
     path.join(__dirname, '..', 'user-data'),
 
+  // Folders an admin may share must sit inside one of these directories.
+  // Comma-separated. Defaults to USER_DATA_ROOT only. See utils/folderPolicy.js.
+  ALLOWED_FOLDER_ROOTS:
+    (process.env.ALLOWED_FOLDER_ROOTS || '')
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean)
+      .concat(
+        process.env.ALLOWED_FOLDER_ROOTS
+          ? []
+          : [process.env.USER_DATA_ROOT || path.join(__dirname, '..', 'user-data')]
+      ),
+
   CHAT_UPLOAD_DIR:
     process.env.CHAT_UPLOAD_DIR ||
     path.join(__dirname, '..', 'chat-uploads'),

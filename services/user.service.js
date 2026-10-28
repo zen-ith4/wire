@@ -193,6 +193,9 @@ function findDuplicateUserError(db, username, email) {
 // no verification email — the account belongs to someone else.
 //
 // Resolves to the created user's safe fields (never password_hash).
+// Accounts are always created as normal users. The admin role changes
+// hands only through transferAdmin() or the CLI. The `isAdmin` argument is
+// accepted for call-site compatibility and deliberately ignored.
 // F12: the admin's browser derives the NEW account's credentials from the
 // temporary password it was given (fresh salt, PBKDF2+HKDF) and sends only
 //   creds = { authKey, kdfSalt, kdfIterations }
@@ -266,15 +269,6 @@ async function createUser(username, email, creds, isAdmin) {
     );
   }
 
-  // Strictly a boolean: "true", 1, null, undefined, etc. are rejected
-  // so a malformed caller can never grant admin rights by accident.
-  if (typeof isAdmin !== 'boolean') {
-    throw createUserError(
-      'INVALID_IS_ADMIN',
-      'is_admin must be a boolean'
-    );
-  }
-
 
   // Cheap duplicate check first, so an obvious duplicate doesn't pay
   // for a bcrypt hash.
@@ -322,7 +316,7 @@ async function createUser(username, email, creds, isAdmin) {
       email,
       passwordHash,
       emailVerified,
-      isAdmin ? 1 : 0,
+      0,
       creds.kdfSalt,
       creds.kdfIterations,
       constants.DM_E2EE_DEFAULT_MIN_VERSION
@@ -381,20 +375,41 @@ async function createUser(username, email, creds, isAdmin) {
 }
 
 
-// Changes ONLY the is_admin flag of one user. Callers are responsible
-// for authorization and for validating that isAdmin is a boolean.
-function setUserAdmin(userId, isAdmin) {
+// Hands the site-admin role from fromId to toId in ONE transaction.
+// The old admin is demoted first, so the one-admin unique index
+// (idx_users_one_admin) is never violated. Callers must have verified
+// the caller's password. Throws NOT_ADMIN if fromId is not the admin
+// at commit time, and INVALID_TARGET if toId is not an active account.
+function transferAdmin(fromId, toId) {
 
-  return getDb()
-    .prepare(`
-      UPDATE users
-      SET is_admin = ?
-      WHERE id = ?
-    `)
-    .run(
-      isAdmin ? 1 : 0,
-      userId
-    );
+  const db = getDb();
+
+  return db.transaction(() => {
+
+    const demoted = db
+      .prepare('UPDATE users SET is_admin = 0 WHERE id = ? AND is_admin = 1')
+      .run(fromId);
+
+    if (demoted.changes !== 1) {
+      throw createUserError(
+        'NOT_ADMIN',
+        'Only the current admin can transfer the admin role'
+      );
+    }
+
+    const promoted = db
+      .prepare('UPDATE users SET is_admin = 1 WHERE id = ? AND is_active = 1')
+      .run(toId);
+
+    if (promoted.changes !== 1) {
+      throw createUserError(
+        'INVALID_TARGET',
+        'The new admin must be an active account'
+      );
+    }
+
+    return { fromId, toId };
+  })();
 }
 
 
@@ -957,7 +972,7 @@ module.exports = {
   createAdmin,
   createUser,
 
-  setUserAdmin,
+  transferAdmin,
   updateBio,
   updateAccentColor,
 

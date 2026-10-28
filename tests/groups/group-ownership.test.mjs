@@ -36,6 +36,8 @@ const { setupSocketIO } = require(path.join(ROOT, 'config', 'socket.js'));
 const groupsController = require(path.join(ROOT, 'controllers', 'groups.controller.js'));
 const adminController = require(path.join(ROOT, 'controllers', 'admin.controller.js'));
 const { ensureSchema } = require(path.join(ROOT, 'database', 'schema.js'));
+const { hashPassword } = require(path.join(ROOT, 'utils', 'password.js'));
+const { deriveCredentialsNode, newKdfSalt, KDF_ITERATIONS } = require(path.join(ROOT, 'utils', 'credentials.js'));
 
 const {
   removeMemberHandler,
@@ -53,9 +55,20 @@ let httpServer;
 let io;
 let emitted = [];
 let userCounter = 0;
+// The site has exactly ONE admin (unique index idx_users_one_admin), so it is
+// created once here. Admin-only endpoints that need a password get a real one.
+let siteAdmin;
+let siteAdminAuthKey;
 
 before(async () => {
   initDatabase();
+
+  const adminSalt = newKdfSalt();
+  siteAdminAuthKey = deriveCredentialsNode('site-admin-password-1', adminSalt, KDF_ITERATIONS).authKey;
+  siteAdmin = Number(getDb().prepare(`
+    INSERT INTO users (username, email, password_hash, auth_scheme, kdf_salt, kdf_iterations, is_admin, is_active, email_verified)
+    VALUES ('own_site_admin', 'own_site_admin@example.test', ?, 2, ?, ?, 1, 1, 1)
+  `).run(await hashPassword(siteAdminAuthKey), adminSalt, KDF_ITERATIONS).lastInsertRowid);
 
   httpServer = http.createServer();
   io = setupSocketIO(httpServer);
@@ -403,18 +416,24 @@ test('delete group: owner only; removes dependent rows and tells every member', 
 
 // ---------- account deletion ----------
 
-function adminDeleteUser(adminId, userId) {
-  let status = 200;
-  const res = {
-    status(c) { status = c; return this; },
-    json() { return this; },
-  };
-  adminController.deleteUser({ user: { id: adminId }, params: { id: String(userId) } }, res);
-  return status;
+// DELETE /admin/users/:id is async and needs the admin's password proof
+// (current_auth_key). Resolves with the HTTP status once the handler answers.
+function adminDeleteUser(adminId, userId, { authKey = siteAdminAuthKey } = {}) {
+  return new Promise((resolve, reject) => {
+    let status = 200;
+    const res = {
+      status(c) { status = c; return this; },
+      json() { resolve(status); return this; },
+    };
+    adminController.deleteUser(
+      { user: { id: adminId }, params: { id: String(userId) }, body: { current_auth_key: authKey } },
+      res,
+      reject
+    );
+  });
 }
 
-test('deleting an owner account hands the group on (oldest admin, else oldest member)', () => {
-  const siteAdmin = makeUser(1);
+test('deleting an owner account hands the group on (oldest admin, else oldest member)', async () => {
   const owner = makeUser(), admin = makeUser(), member = makeUser();
   const withAdmin = makeGroup([
     { id: owner, role: 'owner', joined: T(1) },
@@ -430,7 +449,7 @@ test('deleting an owner account hands the group on (oldest admin, else oldest me
   const solo = makeGroup([{ id: owner, role: 'owner', joined: T(1) }]);
 
   emitted = [];
-  assert.equal(adminDeleteUser(siteAdmin, owner), 200);
+  assert.equal(await adminDeleteUser(siteAdmin, owner), 200);
 
   assert.equal(groupExists(withAdmin), true);
   assert.deepEqual(roles(withAdmin), { [member]: 'member', [admin]: 'owner' });
@@ -446,8 +465,7 @@ test('deleting an owner account hands the group on (oldest admin, else oldest me
   assert.ok(transfers.some((e) => e.payload.group_id === withAdmin && e.payload.new_owner_id === admin));
 });
 
-test("deleting the original creator's account keeps groups they no longer own", () => {
-  const siteAdmin = makeUser(1);
+test("deleting the original creator's account keeps groups they no longer own", async () => {
   const creator = makeUser(), newOwner = makeUser(), member = makeUser();
   const g = makeGroup([
     { id: creator, role: 'owner', joined: T(1) },
@@ -458,15 +476,14 @@ test("deleting the original creator's account keeps groups they no longer own", 
   const t = call(transferOwnershipHandler, { as: creator, params: { groupId: String(g) }, body: { userId: newOwner } });
   assert.equal(t.status, 200);
 
-  assert.equal(adminDeleteUser(siteAdmin, creator), 200);
+  assert.equal(await adminDeleteUser(siteAdmin, creator), 200);
 
   assert.equal(groupExists(g), true, 'group survives its creator');
   assert.deepEqual(roles(g), { [newOwner]: 'owner', [member]: 'member' });
   assert.equal(getDb().prepare('SELECT created_by FROM groups WHERE id = ?').get(g).created_by, null);
 });
 
-test("deleting a plain member's account bumps key_epoch for the remaining members and emits removed", () => {
-  const siteAdmin = makeUser(1);
+test("deleting a plain member's account bumps key_epoch for the remaining members and emits removed", async () => {
   const owner = makeUser(), member = makeUser(), other = makeUser();
   const g = makeGroup([
     { id: owner, role: 'owner', joined: T(1) },
@@ -477,7 +494,7 @@ test("deleting a plain member's account bumps key_epoch for the remaining member
   assert.deepEqual(epochs(g), [0, 0, 0]);
 
   emitted = [];
-  assert.equal(adminDeleteUser(siteAdmin, member), 200);
+  assert.equal(await adminDeleteUser(siteAdmin, member), 200);
 
   assert.equal(groupExists(g), true, 'group survives the member deletion');
   assert.deepEqual(roles(g), { [owner]: 'owner', [other]: 'member' });
@@ -489,8 +506,20 @@ test("deleting a plain member's account bumps key_epoch for the remaining member
   assert.ok(removed.some((e) => e.payload.user_id === member), 'removed names the deleted member');
 });
 
+test('admin delete with a wrong password is refused and removes nothing', async () => {
+  const owner = makeUser(), member = makeUser();
+  const g = makeGroup([
+    { id: owner, role: 'owner', joined: T(1) },
+    { id: member, role: 'member', joined: T(2) },
+  ]);
+  const wrong = deriveCredentialsNode('not-the-password', newKdfSalt(), KDF_ITERATIONS).authKey;
+
+  assert.equal(await adminDeleteUser(siteAdmin, member, { authKey: wrong }), 403);
+  assert.ok(getDb().prepare('SELECT 1 FROM users WHERE id = ?').get(member), 'account must still exist');
+  assert.deepEqual(roles(g), { [owner]: 'owner', [member]: 'member' });
+});
+
 test('permissions never read groups.created_by', () => {
-  const siteAdmin = makeUser(1);
   const creator = makeUser(), owner = makeUser(), member = makeUser();
   // creator created it but is NOT the owner; owner row is someone else
   const g = makeGroup([
@@ -499,7 +528,6 @@ test('permissions never read groups.created_by', () => {
   ], creator);
   assert.equal(call(deleteGroupHandler, { as: member, params: { groupId: String(g) } }).status, 403);
   assert.equal(call(promoteAdminHandler, { as: owner, params: { groupId: String(g), userId: String(member) } }).status, 200);
-  void siteAdmin;
 });
 
 // ---------- migration of an existing database ----------

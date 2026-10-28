@@ -628,6 +628,26 @@ class SetupWizard {
             const emailVerified =
                 emailEnabled ? 0 : 1;
 
+            // The site has exactly one admin. The wizard only creates the
+            // first one; never a second (the unique index would refuse it).
+            const existingAdmin = db
+                .prepare('SELECT username FROM users WHERE is_admin = 1')
+                .get();
+
+            if (existingAdmin) {
+                console.log(
+                    '\nAn admin account already exists. The setup wizard will not create another one.'
+                );
+                console.log(
+                    'To change the admin, run: npm run admin -- set-admin <username>'
+                );
+
+                db.close();
+                db = null;
+
+                process.exit(1);
+            }
+
             const stmt = db.prepare(`
                 INSERT INTO users (
                     username,

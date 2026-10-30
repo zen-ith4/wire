@@ -36,7 +36,6 @@ const LEGACY_CAPS = {
     'js/chat/dm.js': 9,
     'js/settings/settings-render.js': 8,
     'js/settings/admin.js': 5,
-    'js/chat/composer.js': 4,
   },
   styles: {
     'js/core/auth.js': 21,

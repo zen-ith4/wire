@@ -29,7 +29,7 @@ not listed has cap 0. Caps may only go down: when legacy code is converted, lowe
 or delete its entry in the test and its row here. `tests/groups/group-csp-browser.test.mjs`
 runs the group UI in real Chromium with `CSP_ENFORCE=true` and requires zero violations.
 
-Totals in the merged tree, measured with the same regexes the test uses: **30 inline
+Totals in the merged tree, measured with the same regexes the test uses: **29 inline
 event-handler attributes**, **58 inline `style=\"\"` attributes**, **0 `escapeHtml()` inside a
 quoted attribute** (was 20; all converted to `escapeHtmlAttr()`).
 
@@ -40,7 +40,6 @@ quoted attribute** (was 20; all converted to `escapeHtmlAttr()`).
 | `public/js/settings/admin.js` | 5 | 3 |
 | `public/js/chat/composer.js` | 4 | 1 |
 | `public/js/media/attachments.js` | 3 | 1 |
-| `public/js/wireguard/wireguard.js` | 1 | 1 |
 | `public/js/core/auth.js` | 0 | 21 |
 | `public/js/settings/settings-appearance-custom.js` | 0 | 3 |
 | `public/js/media/video-player.js` | 0 | 2 |

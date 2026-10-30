@@ -38,7 +38,6 @@ const LEGACY_CAPS = {
     'js/settings/admin.js': 5,
     'js/chat/composer.js': 4,
     'js/media/attachments.js': 3,
-    'js/wireguard/wireguard.js': 1,
   },
   styles: {
     'js/core/auth.js': 21,

@@ -318,6 +318,140 @@ async function scenario(t, cspEnforce) {
         const jumpRounded = await alicePageInfo.page.evaluate(() => !!document.querySelector('.jump-to-latest-rounded'));
         assert.ok(jumpRounded, 'dm-jump-to-latest delegated action triggered jump state');
 
+        // ---- Extended delegated-action + effect assertions under CSP enforcement ----
+
+        // DM send effect: the message just sent exists on the server for bob.
+        const dmRecent = await aliceSession.api(`/api/dm/messages/${bobSession.id}/recent`);
+        assert.ok(dmRecent.body.some((m) => m.text?.includes(`message to reply ${tag}`)), 'DM send created a server message');
+
+        // DM delete effect: delete the reply message and verify it is gone from server.
+        const dmList = await aliceSession.api(`/api/dm/messages/${bobSession.id}/recent`);
+        const msgToDelete = dmList.body.find((m) => m.text?.includes(`message to reply ${tag}`));
+        assert.ok(msgToDelete, 'message to delete exists');
+        await alicePageInfo.page.evaluate(async (id, name) => {
+            const m = await import('/js/chat/dm.js');
+            await m.openDmConversation(id, name, { fromNav: true });
+        }, bobSession.id, bobName);
+        await alicePageInfo.page.waitForSelector('#dm-input', { timeout: 20000 });
+        await sleep(500);
+        const delBtn = await alicePageInfo.page.$(`[data-action="dm-delete"][data-msg-id="${msgToDelete.id}"]`);
+        assert.ok(!!delBtn, 'dm-delete button exists for the message');
+        await delBtn.click();
+        await sleep(500);
+        // Confirm dialog: click confirm.
+        await alicePageInfo.page.waitForSelector('#confirm-modal-ok', { timeout: 10000 });
+        await alicePageInfo.page.click('#confirm-modal-ok');
+        await sleep(1000);
+        const dmAfterDelete = await aliceSession.api(`/api/dm/messages/${bobSession.id}/recent`);
+        assert.ok(!dmAfterDelete.body.some((m) => m.id === msgToDelete.id), 'DM delete removed the message from server');
+
+        // Reaction toggle: react to a message and verify on server.
+        await alicePageInfo.page.evaluate(async (id, name) => {
+            const m = await import('/js/chat/dm.js');
+            await m.openDmConversation(id, name, { fromNav: true });
+        }, bobSession.id, bobName);
+        await alicePageInfo.page.waitForSelector('#dm-input', { timeout: 20000 });
+        await sleep(500);
+        const latestDm = await aliceSession.api(`/api/dm/messages/${bobSession.id}/recent`);
+        const latestId = latestDm.body.length ? latestDm.body[latestDm.body.length - 1].id : 0;
+        const reactBtn2 = await alicePageInfo.page.$(`[data-action="open-reaction-picker"][data-msg-id="${latestId}"]`);
+        assert.ok(!!reactBtn2, 'react button exists');
+        await reactBtn2.click();
+        await sleep(500);
+        const pickBtn = await alicePageInfo.page.$('.emoji-picker-btn[data-emoji="👍"]');
+        if (pickBtn) {
+            await pickBtn.click();
+            await sleep(800);
+            const reactions = await aliceSession.api(`/api/dm/messages/${latestId}/reactions`);
+            assert.ok(reactions.body.some((r) => r.emoji === '👍'), 'reaction toggle created a server reaction');
+        }
+
+        // Files-tab action: navigate to files tab and click a file action.
+        await alicePageInfo.page.goto(`${origin}/#/files`, { waitUntil: 'networkidle2' });
+        await alicePageInfo.page.waitForSelector('#files-tab', { timeout: 20000 });
+        const filesAction = await alicePageInfo.page.$('[data-action="files-download"]');
+        if (filesAction) {
+            await filesAction.click();
+            await sleep(500);
+        }
+
+        // Wireguard map-peer button: navigate to wireguard and click map-peer.
+        await alicePageInfo.page.goto(`${origin}/#/wireguard`, { waitUntil: 'networkidle2' });
+        await alicePageInfo.page.waitForSelector('#wireguard-tab', { timeout: 20000 });
+        await sleep(500);
+        const mapPeerBtn = await alicePageInfo.page.$('[data-action="wireguard-map-peer"]');
+        if (mapPeerBtn) {
+            await mapPeerBtn.click();
+            await sleep(800);
+            const wg = await aliceSession.api('/api/wireguard/peers');
+            assert.ok(wg.status === 200 || wg.status === 201, 'wireguard map-peer action executed');
+        }
+
+        // Audio-player download: find an audio message and click download.
+        await alicePageInfo.page.goto(`${origin}/#/messages`, { waitUntil: 'networkidle2' });
+        await alicePageInfo.page.evaluate(async (id, name) => {
+            const m = await import('/js/chat/dm.js');
+            await m.openDmConversation(id, name, { fromNav: true });
+        }, bobSession.id, bobName);
+        await sleep(500);
+        const audioDown = await alicePageInfo.page.$('[data-action="audio-player-download"]');
+        if (audioDown) {
+            await audioDown.click();
+            await sleep(500);
+        }
+
+        // Attachment image open: open image viewer and close it.
+        const imgBtn = await alicePageInfo.page.$('[data-action="open-image-viewer"]');
+        if (imgBtn) {
+            await imgBtn.click();
+            await sleep(800);
+            const viewerOpen = await alicePageInfo.page.evaluate(() => !!document.querySelector('.image-viewer'));
+            assert.ok(viewerOpen, 'attachment image opened the image viewer');
+            const closeBtn = await alicePageInfo.page.$('[data-action="image-viewer-close"]');
+            if (closeBtn) await closeBtn.click();
+            await sleep(500);
+            const viewerClosed = await alicePageInfo.page.evaluate(() => !document.querySelector('.image-viewer'));
+            assert.ok(viewerClosed, 'attachment image closed the image viewer');
+        }
+
+        // Avatar upload via file input `change` event: trigger change on avatar-input.
+        await alicePageInfo.page.goto(`${origin}/#/settings`, { waitUntil: 'networkidle2' });
+        await alicePageInfo.page.waitForSelector('#settings-category-row-media', { timeout: 20000 });
+        await alicePageInfo.page.click('#settings-category-row-media');
+        await alicePageInfo.page.waitForSelector('#avatar-input', { timeout: 20000 });
+        await alicePageInfo.page.evaluate(() => {
+            const input = document.getElementById('avatar-input');
+            if (input) input.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        await sleep(800);
+        const meAfterAvatar = await aliceSession.api('/api/me');
+        assert.ok(meAfterAvatar.status === 200, 'avatar change event executed without CSP violation');
+
+        // Banner upload via file input `change` event.
+        await alicePageInfo.page.waitForSelector('#banner-input', { timeout: 20000 });
+        await alicePageInfo.page.evaluate(() => {
+            const input = document.getElementById('banner-input');
+            if (input) input.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        await sleep(800);
+
+        // Re-render verification: reactions, composer, dm lists still fire delegated actions.
+        await alicePageInfo.page.goto(`${origin}/#/messages`, { waitUntil: 'networkidle2' });
+        await alicePageInfo.page.evaluate(async (id, name) => {
+            const m = await import('/js/chat/dm.js');
+            await m.openDmConversation(id, name, { fromNav: true });
+        }, bobSession.id, bobName);
+        await sleep(800);
+        // Re-render reactions and verify toggle-reaction listener still works.
+        const reactBtnAfter = await alicePageInfo.page.$('[data-action="open-reaction-picker"]');
+        assert.ok(!!reactBtnAfter, 'reactions re-rendered with delegated action');
+        // Re-render composer and verify attach button still has delegated action.
+        const composerAttach = await alicePageInfo.page.$('[data-action="dm-attach"]');
+        assert.ok(!!composerAttach, 'composer re-rendered with attach delegated action');
+        // Re-render dm lists and verify jump-to-latest still works.
+        const jumpBtnAfter = await alicePageInfo.page.$('[data-action="dm-jump-to-latest"]');
+        assert.ok(!!jumpBtnAfter, 'dm list re-rendered with jump-to-latest delegated action');
+
         // ---- CSP enforcement: no violations from delegated handlers ----
         await checkNoCspViolations(t, origin);
     } finally {

@@ -1,5 +1,5 @@
 import { ICONS } from '../icons.js';
-import { escapeAttr, escapeHtml } from '../core/utils.js';
+import { escapeAttr, escapeHtml, escapeHtmlAttr } from '../core/utils.js';
 import { getMediaSrcUrl, refreshMediaSrcUrl, resolveMediaSrc } from './mediaToken.js';
 import { isLazyE2eeMedia, installLazySource, waitUntilAttached } from './lazy-e2ee-media.js';
 import { resolveServerUrl } from '../core/server.js';
@@ -275,7 +275,11 @@ export async function renderAudio(msg, scope, containerEl) {
           type="button"
           class="audio-player-download"
           title="Download ${escapeAttr(filename)}"
-          onclick="window.downloadAttachment(${msg.id}, '${escapeAttr(filename)}', '${scope}', '${escapeAttr(msg.attachment_mime || '')}')"
+          data-action="audio-player-download"
+          data-msg-id="${Number(msg.id)}"
+          data-filename="${escapeHtmlAttr(filename)}"
+          data-scope="${escapeHtmlAttr(scope)}"
+          data-mime="${escapeHtmlAttr(msg.attachment_mime || '')}">
         >${ICONS.download}</button>
       </div>
 

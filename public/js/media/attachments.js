@@ -21,6 +21,7 @@ import {
 } from '../core/utils.js';
 
 import { isAudio, renderAudio } from './audio-player.js';
+import { registerActions } from '../ui/actions.js';
 import { isVideo, renderVideo } from './video-player.js';
 import {
   isVoiceMessage,
@@ -2206,3 +2207,14 @@ export async function downloadAttachment(
 
 window.downloadAttachment =
   downloadAttachment;
+
+registerActions({
+  'audio-player-download': (el) => {
+    const msgId = Number(el.dataset.msgId);
+    const filename = el.dataset.filename;
+    const scope = el.dataset.scope;
+    const mime = el.dataset.mime;
+    if (!Number.isFinite(msgId) || !filename || !scope) return;
+    downloadAttachment(msgId, filename, scope, mime);
+  },
+});

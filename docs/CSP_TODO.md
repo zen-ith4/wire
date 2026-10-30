@@ -29,7 +29,7 @@ not listed has cap 0. Caps may only go down: when legacy code is converted, lowe
 or delete its entry in the test and its row here. `tests/groups/group-csp-browser.test.mjs`
 runs the group UI in real Chromium with `CSP_ENFORCE=true` and requires zero violations.
 
-Totals in the merged tree, measured with the same regexes the test uses: **49 inline
+Totals in the merged tree, measured with the same regexes the test uses: **34 inline
 event-handler attributes**, **58 inline `style=\"\"` attributes**, **0 `escapeHtml()` inside a
 quoted attribute** (was 20; all converted to `escapeHtmlAttr()`).
 
@@ -37,21 +37,14 @@ quoted attribute** (was 20; all converted to `escapeHtmlAttr()`).
 |---|---:|---:|
 | `public/js/chat/dm.js` | 9 | 3 |
 | `public/js/settings/settings-render.js` | 8 | 16 |
-| `public/js/settings/admin.js` | 7 | 3 |
+| `public/js/settings/admin.js` | 5 | 3 |
 | `public/js/chat/composer.js` | 4 | 1 |
 | `public/js/media/attachments.js` | 3 | 1 |
-| `public/js/chat/reactions.js` | 3 | 0 |
-| `public/js/chat/thread.js` | 2 | 0 |
-| `public/js/settings/settings-media.js` | 2 | 0 |
-| `public/js/ui/avatar.js` | 2 | 0 |
-| `public/js/ui/confirm.js` | 2 | 0 |
+| `public/js/chat/reactions.js` | 1 | 0 |
 | `public/js/media/audio-player.js` | 1 | 1 |
+| `public/js/ui/avatar.js` | 1 | 0 |
 | `public/js/ui/profile-card.js` | 1 | 1 |
 | `public/js/wireguard/wireguard.js` | 1 | 1 |
-| `public/js/chat/group.js` | 1 | 0 |
-| `public/js/chat/reply.js` | 1 | 0 |
-| `public/js/core/utils.js` | 1 | 0 |
-| `public/js/files/files.js` | 1 | 0 |
 | `public/js/core/auth.js` | 0 | 21 |
 | `public/js/settings/settings-appearance-custom.js` | 0 | 3 |
 | `public/js/media/video-player.js` | 0 | 2 |
@@ -59,7 +52,7 @@ quoted attribute** (was 20; all converted to `escapeHtmlAttr()`).
 | `public/js/settings/settings-bubble-gradient.js` | 0 | 1 |
 | `public/js/settings/settings-message-sounds.js` | 0 | 1 |
 | `public/js/ui/emoji-picker.js` | 0 | 1 |
-| **total** | **59** | **59** |
+| **total** | **34** | **58** |
 
 ## Interim defence (already in place)
 

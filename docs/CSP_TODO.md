@@ -33,16 +33,27 @@ Totals in the merged tree, measured with the same regexes the test uses: **0 inl
 event-handler attributes**, **58 inline `style=\"\"` attributes**, **0 `escapeHtml()` inside a
 quoted attribute** (was 20; all converted to `escapeHtmlAttr()`).
 
-| File | `on*=` | `style=` |
-|---|---:|---:|
-| `public/js/core/auth.js` | 0 | 21 |
-| `public/js/settings/settings-appearance-custom.js` | 0 | 3 |
-| `public/js/media/video-player.js` | 0 | 2 |
-| `public/js/media/voice-message.js` | 0 | 2 |
-| `public/js/settings/settings-bubble-gradient.js` | 0 | 1 |
-| `public/js/settings/settings-message-sounds.js` | 0 | 1 |
-| `public/js/ui/emoji-picker.js` | 0 | 1 |
-| **total** | **0** | **58** |
+| File | `on*=` | `style=` | `setAttribute(style|on*)` |
+|---|---:|---:|---:|
+| `public/js/core/auth.js` | 0 | 21 | 0 |
+| `public/js/settings/settings-render.js` | 0 | 16 | 0 |
+| `public/js/chat/dm.js` | 0 | 3 | 1 |
+| `public/js/settings/admin.js` | 0 | 3 | 0 |
+| `public/js/settings/settings-appearance-custom.js` | 0 | 3 | 0 |
+| `public/js/media/video-player.js` | 0 | 2 | 0 |
+| `public/js/media/voice-message.js` | 0 | 2 | 0 |
+| `public/js/chat/composer.js` | 0 | 1 | 0 |
+| `public/js/media/attachments.js` | 0 | 1 | 4 |
+| `public/js/media/audio-player.js` | 0 | 1 | 0 |
+| `public/js/settings/settings-bubble-gradient.js` | 0 | 1 | 0 |
+| `public/js/settings/settings-message-sounds.js` | 0 | 1 | 0 |
+| `public/js/ui/emoji-picker.js` | 0 | 1 | 0 |
+| `public/js/ui/profile-card.js` | 0 | 1 | 0 |
+| `public/js/wireguard/wireguard.js` | 0 | 1 | 0 |
+| **total** | **0** | **58** | **5** |
+
+`setAttribute('style'|'on*')` / `.cssText` writes are Stage 3 work and are capped separately in
+`LEGACY_CAPS.setAttr`: `public/js/media/attachments.js` (4) and `public/js/chat/dm.js` (1).
 
 ## Interim defence (already in place)
 
@@ -54,11 +65,13 @@ Until enforcement is on, the real protection is output escaping:
 
 ## How to finish
 
-1. Replace each inline `on*=` with `data-action="..."` plus one delegated listener (pattern: `chat/reply.js`, `chat/reactions.js`; `ui/avatar.js` has an opt-in `delegated` mode, the legacy default still emits `onclick`).
+1. Replace each inline `on*=` with `data-action="..."` plus one delegated listener (pattern: `chat/reply.js`, `chat/reactions.js`).
 2. Replace `style="..."` with CSS classes, or set `el.style.prop = ...` from JS (allowed by CSP).
 3. Done (Stage 1): `index.html` loads `js/core/viewport-fix.js` (the `--vh` fixer) as a classic script; no inline script remains.
 4. ~~Replace `escapeHtml()`-in-attribute uses with `escapeHtmlAttr()`.~~ **Done** (20 sites; `tests/csp-attr-escape.test.mjs` renders each through the real function with `"`/`'` payloads, and the `escapeHtmlInAttr` cap in `tests/csp-static.test.mjs` is 0 everywhere, so any new site fails the build). `core/auth.js` keeps its own quote-escaping `escapeHtml()` and is excluded from that cap on purpose.
 5. Lower the caps in `tests/csp-static.test.mjs`, run with `CSP_ENFORCE=false`, load every screen, and confirm the console has no `[Report Only]` violations. Then flip `CSP_ENFORCE=true`.
+
+`public/js/ui/actions.js` registers a single click listener that dispatches `[data-action]` elements it knows about; any action name it does not recognize is ignored on purpose, because other modules (reactions, thread, group, confirm, composer instances) run their own delegated listeners for those names.
 
 ## Known effect while Report-Only
 Browsers log `[Report Only] Refused to ...` for each legacy construct above. That is expected and harmless, and it is how you measure remaining work. No report endpoint is configured.

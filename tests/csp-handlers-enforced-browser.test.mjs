@@ -50,6 +50,34 @@ const require = createRequire(import.meta.url);
 const CHROMIUM_DIR = process.env.CHROMIUM_DIR || '/tmp/browser-check';
 const PASSWORD = 'Passw0rd!x';
 
+// CSP violation tracking: collect securitypolicyviolation events and
+// console 'Refused to' errors per scenario, then assert empty after each.
+let cspViolations = [];
+let consoleRefused = [];
+
+function cspViolationSetup() {
+    window.__cspViolations = [];
+    document.addEventListener('securitypolicyviolation', (e) => {
+        window.__cspViolations.push({
+            directive: e.violatedDirective,
+            url: e.documentURI,
+            line: e.lineNumber,
+        });
+    });
+}
+
+function resetCspTracking() {
+    cspViolations = [];
+    consoleRefused = [];
+}
+
+async function checkNoCspViolations(t, origin) {
+    const violations = [...cspViolations, ...consoleRefused];
+    if (violations.length > 0) {
+        t.fail(`CSP violations detected:\n${violations.map((v) => JSON.stringify(v)).join('\n')}`);
+    }
+}
+
 let server = null;
 let io = null;
 after(async () => {
@@ -119,6 +147,7 @@ async function scenario(t, cspEnforce) {
     }
 
     const origin = await startApp(cspEnforce);
+    resetCspTracking();
 
     try {
         // ---- the policy really is enforced / report-only as configured ----
@@ -146,7 +175,12 @@ async function scenario(t, cspEnforce) {
         execSync(process.execPath, [adminCli, 'set-admin', adminName], { cwd: path.resolve(import.meta.dirname, '..') });
 
         // ---- sign in admin and test admin actions ----
-        const adminPageInfo = await newUserPage();
+        const adminPageInfo = await newUserPage({ onNewDocument: cspViolationSetup });
+        adminPageInfo.page.on('console', (msg) => {
+            if (msg.type() === 'error' && msg.text().includes('Refused to')) {
+                consoleRefused.push(msg.text());
+            }
+        });
         await loginUi(adminPageInfo.page, origin, adminName);
         await socketConnected(adminPageInfo.page);
         const adminSession = await sessionFromPage(adminPageInfo.page, origin, adminName);
@@ -188,7 +222,12 @@ async function scenario(t, cspEnforce) {
         assert.ok(addedPerm, 'admin-add-permission delegated action created a permission under CSP enforcement');
 
         // ---- sign in alice and test settings + DM actions ----
-        const alicePageInfo = await newUserPage();
+        const alicePageInfo = await newUserPage({ onNewDocument: cspViolationSetup });
+        alicePageInfo.page.on('console', (msg) => {
+            if (msg.type() === 'error' && msg.text().includes('Refused to')) {
+                consoleRefused.push(msg.text());
+            }
+        });
         await loginUi(alicePageInfo.page, origin, aliceName);
         await socketConnected(alicePageInfo.page);
         const aliceSession = await sessionFromPage(alicePageInfo.page, origin, aliceName);
@@ -222,7 +261,12 @@ async function scenario(t, cspEnforce) {
         await socketConnected(alicePageInfo.page);
 
         // Sign in bob.
-        const bobPageInfo = await newUserPage();
+        const bobPageInfo = await newUserPage({ onNewDocument: cspViolationSetup });
+        bobPageInfo.page.on('console', (msg) => {
+            if (msg.type() === 'error' && msg.text().includes('Refused to')) {
+                consoleRefused.push(msg.text());
+            }
+        });
         await loginUi(bobPageInfo.page, origin, bobName);
         await socketConnected(bobPageInfo.page);
 
@@ -273,6 +317,9 @@ async function scenario(t, cspEnforce) {
         await sleep(500);
         const jumpRounded = await alicePageInfo.page.evaluate(() => !!document.querySelector('.jump-to-latest-rounded'));
         assert.ok(jumpRounded, 'dm-jump-to-latest delegated action triggered jump state');
+
+        // ---- CSP enforcement: no violations from delegated handlers ----
+        await checkNoCspViolations(t, origin);
     } finally {
         await closeUserBrowsers();
         if (io) await new Promise((r) => io.close(() => r()));

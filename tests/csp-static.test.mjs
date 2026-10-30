@@ -212,3 +212,51 @@ test('every file that calls escapeHtmlAttr() imports or defines it', () => {
         .map((f) => f.rel);
     assert.deepEqual(offenders, []);
 });
+
+// ---------------------------------------------------------------------
+// registerActions() conflict guard: no action name may be registered
+// twice across files, and no name registered via actions.js may also
+// be handled by another module's own data-action click listener
+// (reactions, thread, group, confirm). Duplicate or overlapping names
+// would mean one handler silently swallows the other.
+// ---------------------------------------------------------------------
+
+test('registerActions() names are unique across files and do not overlap with other modules\' own data-action listeners', () => {
+    // 1) Names registered via actions.js registerActions({ 'name': ... })
+    const registered = [];
+    for (const f of files) {
+        const re = /\bregisterActions\s*\(\s*\{/;
+        if (!re.test(f.src)) continue;
+        const nameRe = /registerActions\s*\(\s*\{\s*(['"])((?:[^'"]|\\.)+)\1\s*:/g;
+        let m;
+        while ((m = nameRe.exec(f.src))) {
+            registered.push({ name: m[2], file: f.rel, line: f.src.slice(0, m.index).split('\n').length });
+        }
+    }
+
+    // 2) Names handled by another module's own click listener:
+    //    e.target.closest('[data-action="a"], [data-action="b"]')
+    const ownListeners = new Set();
+    const listenerRe = /\.closest\(\s*'\[data-action="([^"]+)"(?:\s*,\s*\[data-action="([^"]+)")?\]'\s*\)/g;
+    for (const f of files) {
+        let m;
+        while ((m = listenerRe.exec(f.src))) {
+            ownListeners.add(m[1]);
+            if (m[2]) ownListeners.add(m[2]);
+        }
+    }
+
+    // 3) Duplicates across registerActions files.
+    const counts = new Map();
+    for (const r of registered) counts.set(r.name, (counts.get(r.name) || []).concat(r));
+    const duplicates = [...counts.entries()].filter(([, list]) => list.length > 1)
+        .map(([name, list]) => `${name}: registered in ${list.map((l) => `${l.file}:L${l.line}`).join(', ')}`);
+
+    // 4) Overlap: registerActions name also handled by another module's own listener.
+    const overlaps = registered
+        .filter((r) => ownListeners.has(r.name))
+        .map((r) => `${r.name}: actions.js registered but ${r.file} also has its own [data-action="${r.name}"] listener`);
+
+    const problems = [...duplicates, ...overlaps];
+    if (problems.length > 0) assert.fail(problems.join('\n'));
+});

@@ -1088,13 +1088,12 @@ function renderBanner(me) {
           id="banner-input"
           class="hidden"
           accept="image/*"
-          onchange="window.uploadBanner()"
         />
 
         <button
           type="button"
           class="btn btn-sm btn-glass"
-          onclick="document.getElementById('banner-input').click()">
+          data-action="settings-change-banner">
 
           ${ICONS.camera}
           Change banner
@@ -1107,7 +1106,7 @@ function renderBanner(me) {
               <button
                 type="button"
                 class="btn btn-sm btn-glass btn-danger"
-                onclick="window.removeBanner()">
+                data-action="settings-remove-banner">
 
                 Remove
 
@@ -1194,13 +1193,12 @@ function renderProfile(me) {
             id="avatar-input"
             class="hidden"
             accept="image/*"
-            onchange="window.uploadAvatar()"
           />
 
           <button
             type="button"
             class="btn btn-sm"
-            onclick="document.getElementById('avatar-input').click()">
+            data-action="settings-change-avatar">
 
             ${ICONS.camera}
             Change photo
@@ -1213,7 +1211,7 @@ function renderProfile(me) {
                 <button
                   type="button"
                   class="btn btn-sm btn-danger"
-                  onclick="window.removeAvatar()">
+                  data-action="settings-remove-avatar">
 
                   Remove
 
@@ -1276,7 +1274,7 @@ function renderProfile(me) {
           <button
             type="button"
             class="btn btn-primary btn-sm"
-            onclick="window.saveBio()">
+            data-action="settings-save-bio">
 
             Save bio
 
@@ -1367,7 +1365,7 @@ function renderSecurity(security, privacy) {
         <button
           type="button"
           class="btn btn-primary btn-sm"
-          onclick="window.changePassword()"
+          data-action="settings-change-password"
           style="align-self:flex-start;">
 
           Update password

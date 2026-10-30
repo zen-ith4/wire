@@ -23,6 +23,8 @@ import {
   renderSettings
 } from './settings.js';
 
+import { registerActions } from '../ui/actions.js';
+
 
 // ============================================================
 // Password
@@ -101,7 +103,7 @@ async function changePassword() {
 
   const button =
     document.querySelector(
-      '[onclick="window.changePassword()"]'
+      '[data-action="settings-change-password"]'
     );
 
   if (button) {
@@ -727,10 +729,11 @@ function createPrivacyController() {
 // ============================================================
 
 export function bindSecuritySettings() {
-  window.changePassword =
-    changePassword;
-
   createEmail2FAController();
 
   createPrivacyController();
 }
+
+registerActions({
+  'settings-change-password': () => changePassword(),
+});

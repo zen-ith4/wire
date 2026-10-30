@@ -32,11 +32,7 @@ const require = createRequire(import.meta.url);
 // Per-file caps for X's legacy code (counts measured with the exact
 // regexes below; derived from docs/CSP_TODO.md). Missing file => cap 0.
 const LEGACY_CAPS = {
-  handlers: {
-    'js/chat/dm.js': 9,
-    'js/settings/settings-render.js': 8,
-    'js/settings/admin.js': 5,
-  },
+  handlers: {},
   styles: {
     'js/core/auth.js': 21,
     'js/settings/settings-render.js': 16,

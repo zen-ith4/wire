@@ -6,6 +6,7 @@ import { showConfirm } from '../ui/confirm.js';
 import { avatarHtml } from '../ui/avatar.js';
 import { claimRender } from '../core/view-session.js';
 import { deriveCredentials, generateKdfSalt, KDF_ITERATIONS } from '../crypto/credentials.js';
+import { registerActions } from '../ui/actions.js';
 import { MIN_PASSWORD_LENGTH, deriveOwnAuthKey } from '../crypto/account-kdf.js';
 
 /* ==================== USERS ==================== */
@@ -101,7 +102,7 @@ export async function renderAdminUsers() {
 
         <button
           class="btn btn-primary btn-sm"
-          onclick="window.addUser()"
+          data-action="admin-add-user"
         >
           + Add user
         </button>
@@ -250,7 +251,7 @@ async function closeInactiveLegacyLogins() {
   }
 }
 
-window.addUser = async function() {
+async function addUser() {
   const username =
     document.getElementById('new-username').value.trim();
 
@@ -468,7 +469,8 @@ export async function renderAdminFolders() {
         <td class="col-right">
           <button
             class="btn btn-danger btn-sm"
-            onclick="window.deleteFolder(${f.id})"
+            data-action="admin-delete-folder"
+            data-folder-id="${f.id}"
           >
             Delete
           </button>
@@ -499,7 +501,7 @@ export async function renderAdminFolders() {
 
         <button
           class="btn btn-primary btn-sm"
-          onclick="window.addFolder()"
+          data-action="admin-add-folder"
         >
           + Add folder
         </button>
@@ -546,7 +548,7 @@ export async function renderAdminFolders() {
   }
 }
 
-window.addFolder = async function() {
+async function addFolder() {
   const path =
     document.getElementById('new-folder-path').value.trim();
 
@@ -582,7 +584,7 @@ window.addFolder = async function() {
   }
 };
 
-window.deleteFolder = async function(id) {
+async function deleteFolder(id) {
   if (
     !await showConfirm(
       'Remove this shared folder? Files on disk are not deleted.',
@@ -656,7 +658,9 @@ export async function renderAdminPermissions() {
         <td class="col-right">
           <button
             class="btn btn-danger btn-sm"
-            onclick="window.deletePermission(${p.user_id},${p.folder_id})"
+            data-action="admin-delete-permission"
+            data-user-id="${p.user_id}"
+            data-folder-id="${p.folder_id}"
           >
             Remove
           </button>
@@ -699,7 +703,7 @@ export async function renderAdminPermissions() {
 
         <button
           class="btn btn-primary btn-sm"
-          onclick="window.addPermission()"
+          data-action="admin-add-permission"
         >
           + Grant
         </button>
@@ -750,7 +754,7 @@ export async function renderAdminPermissions() {
   }
 }
 
-window.addPermission = async function() {
+async function addPermission() {
   const user_id =
     document.getElementById('perm-user').value;
 
@@ -787,7 +791,7 @@ window.addPermission = async function() {
   }
 };
 
-window.deletePermission = async function(
+async function deletePermission(
   user_id,
   folder_id
 ) {
@@ -890,3 +894,20 @@ export async function renderAdminAudit() {
     </div>`;
   }
 }
+
+registerActions({
+  'admin-add-user': () => addUser(),
+  'admin-add-folder': () => addFolder(),
+  'admin-delete-folder': (el) => {
+    const id = Number(el.dataset.folderId);
+    if (!Number.isFinite(id)) return;
+    deleteFolder(id);
+  },
+  'admin-add-permission': () => addPermission(),
+  'admin-delete-permission': (el) => {
+    const userId = Number(el.dataset.userId);
+    const folderId = Number(el.dataset.folderId);
+    if (!Number.isFinite(userId) || !Number.isFinite(folderId)) return;
+    deletePermission(userId, folderId);
+  },
+});

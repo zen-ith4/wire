@@ -103,6 +103,7 @@ import {
   pushOverlay,
   closeOverlay,
 } from '../core/navigation.js';
+import { registerActions } from '../ui/actions.js';
 
 // ---------- Per-conversation message cache ----------
 const dmCache = new Map();
@@ -1051,9 +1052,9 @@ window.openNewDmPicker = async function () {
   const thread = document.getElementById('dm-thread');
   thread.innerHTML = `
     <div class="dm-thread-header">
-      <button class="icon-btn dm-back-btn" title="Back" onclick="window.closeNewDmPicker()">${ICONS.arrowLeft}</button>
+      <button class="icon-btn dm-back-btn" title="Back" data-action="dm-close-new-picker">${ICONS.arrowLeft}</button>
       <div class="card-title" style="margin:0;">${ICONS.plus} New message</div>
-      <button class="icon-btn dm-picker-close" title="Close" onclick="window.closeNewDmPicker()">${ICONS.close}</button>
+      <button class="icon-btn dm-picker-close" title="Close" data-action="dm-close-new-picker">${ICONS.close}</button>
     </div>
     <div class="dm-picker-body">
       <div class="conv-search-wrap dm-picker-search-wrap">
@@ -1634,8 +1635,8 @@ playDmThreadEnter();
 
 thread.innerHTML = `
     <div class="chat-top-bar chat-header-glass">
-      <button class="icon-btn dm-back-btn" title="Back" onclick="window.backFromDmThread()">${ICONS.arrowLeft}</button>
-      <div class="dm-peer-profile" title="View ${escapeAttr(username)}'s profile" onclick="window.openProfileCard(${peerId})">
+      <button class="icon-btn dm-back-btn" title="Back" data-action="dm-back-from-thread">${ICONS.arrowLeft}</button>
+      <div class="dm-peer-profile" title="View ${escapeAttr(username)}'s profile" data-action="dm-open-profile-card" data-peer-id="${peerId}">
         ${avatarHtml(peerId, username, 'chat-top-avatar', false, true)}
         <div class="dm-peer-meta">
           <div class="chat-top-name">${escapeHtml(username)}</div>
@@ -1663,7 +1664,7 @@ thread.innerHTML = `
     </section>
     <div class="chat-messages-wrap">
       <div class="chat-messages" id="dm-messages">${loadingState()}</div>
-      <button type="button" class="jump-to-latest-btn" id="dm-jump-latest" title="Jump to latest" aria-label="Jump to latest messages" onclick="window.dmJumpToLatest()">
+      <button type="button" class="jump-to-latest-btn" id="dm-jump-latest" title="Jump to latest" aria-label="Jump to latest messages" data-action="dm-jump-to-latest">
         ${ICONS.arrowDown}
         <span class="unread-dot" aria-hidden="true"></span>
       </button>
@@ -1683,8 +1684,8 @@ thread.innerHTML = `
       </div>
       <div class="chat-input-area" id="dm-input-area">
         <input type="file" id="dm-file-input" class="hidden" multiple>
-        <button class="btn btn-ghost btn-icon" title="Attach" onclick="document.getElementById('dm-file-input').click()">${ICONS.paperclip}</button>
-        <button class="btn btn-ghost btn-icon emoji-trigger" title="Emoji" onclick="window.openDmEmojiPicker(this)">${ICONS.emoji}</button>
+        <button class="btn btn-ghost btn-icon" title="Attach" data-action="dm-attach">${ICONS.paperclip}</button>
+        <button class="btn btn-ghost btn-icon emoji-trigger" title="Emoji" data-action="dm-open-emoji-picker">${ICONS.emoji}</button>
         <textarea id="dm-input" rows="1" placeholder="Message ${escapeHtmlAttr(username)}…"></textarea>
         <button class="composer-mic-btn" id="dm-mic-btn" aria-label="Record a voice message">${ICONS.mic}</button>
         <button data-action="dm-send" class="btn-send" title="Send message (Enter) — Shift+Enter for a new line">${ICONS.send}</button>
@@ -2333,10 +2334,10 @@ function buildDmMessageEl(msg, currentUser) {
       ${msg.has_attachment ? renderAttachment(msg, 'dm') : ''}
       <div class="chat-msg-actions" role="toolbar" aria-label="Message actions">
         <div class="chat-msg-actions-bar">
-        ${undecryptable ? '' : `<button type="button" class="chat-msg-reply" title="Reply" aria-label="Reply" onclick="window.replyToDmMessage(${msg.id})">${ICONS.reply}</button>`}
+        ${undecryptable ? '' : `<button type="button" class="chat-msg-reply" title="Reply" aria-label="Reply" data-action="dm-reply-to" data-msg-id="${msg.id}">${ICONS.reply}</button>`}
         ${
           canEdit
-            ? `<button type="button" class="chat-msg-edit" title="Edit message" aria-label="Edit message" onclick="window.editDmMessage(${msg.id})">${ICONS.edit}</button>`
+            ? `<button type="button" class="chat-msg-edit" title="Edit message" aria-label="Edit message" data-action="dm-edit" data-msg-id="${msg.id}">${ICONS.edit}</button>`
             : ''
         }
         ${undecryptable ? '' : reactButtonHtml(msg, 'dm')}
@@ -2993,3 +2994,30 @@ function wirePasteImage(inputId, addFn) {
     }
   });
 }
+
+registerActions({
+  'dm-close-new-picker': () => window.closeNewDmPicker(),
+  'dm-back-from-thread': () => window.backFromDmThread(),
+  'dm-open-profile-card': (el) => {
+    const id = Number(el.dataset.peerId);
+    if (!Number.isFinite(id)) return;
+    window.openProfileCard(id);
+  },
+  'dm-jump-to-latest': () => window.dmJumpToLatest(),
+  'dm-attach': () => {
+    document.getElementById('dm-file-input')?.click();
+  },
+  'dm-open-emoji-picker': (el) => {
+    window.openDmEmojiPicker(el);
+  },
+  'dm-reply-to': (el) => {
+    const id = Number(el.dataset.msgId);
+    if (!Number.isFinite(id)) return;
+    window.replyToDmMessage(id);
+  },
+  'dm-edit': (el) => {
+    const id = Number(el.dataset.msgId);
+    if (!Number.isFinite(id)) return;
+    window.editDmMessage(id);
+  },
+});

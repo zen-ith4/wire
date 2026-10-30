@@ -957,7 +957,7 @@ function paintConvRows(preparedConvs, filter = '') {
         <div class="dm-conv ${
           dmActivePeer && dmActivePeer.id == c.peer_id ? 'active' : ''
         }" data-peer="${c.peer_id}">
-          ${avatarHtml(c.peer_id, c.username, 'conv-avatar', true)}
+          ${avatarHtml(c.peer_id, c.username, 'conv-avatar', true, true)}
           <div class="conv-info">
             <div class="dm-conv-name">${escapeHtml(c.username)}</div>
             <div class="dm-conv-preview">${escapeHtml(
@@ -1151,7 +1151,7 @@ function renderDmPickerRows(filter = '') {
           data-user-id="${u.id}"
           data-username="${escapeAttr(u.username)}"
           aria-selected="false">
-          ${avatarHtml(u.id, u.username, 'conv-avatar dm-picker-avatar')}
+          ${avatarHtml(u.id, u.username, 'conv-avatar dm-picker-avatar', false, true)}
           <div class="dm-picker-info">
             <div class="dm-picker-name">${escapeHtml(u.username)}</div>
             <div class="dm-picker-status${online ? ' online' : ''}" data-user-id="${u.id}">${
@@ -1636,7 +1636,7 @@ thread.innerHTML = `
     <div class="chat-top-bar chat-header-glass">
       <button class="icon-btn dm-back-btn" title="Back" onclick="window.backFromDmThread()">${ICONS.arrowLeft}</button>
       <div class="dm-peer-profile" title="View ${escapeAttr(username)}'s profile" onclick="window.openProfileCard(${peerId})">
-        ${avatarHtml(peerId, username, 'chat-top-avatar', false)}
+        ${avatarHtml(peerId, username, 'chat-top-avatar', false, true)}
         <div class="dm-peer-meta">
           <div class="chat-top-name">${escapeHtml(username)}</div>
           <div class="chat-top-status${
@@ -2312,7 +2312,7 @@ function buildDmMessageEl(msg, currentUser) {
     own && !!messageText && !msg.has_attachment && !undecryptable;
 
   div.innerHTML = `
-    ${avatarHtml(msg.sender_id, msg.sender_username, 'chat-avatar')}
+    ${avatarHtml(msg.sender_id, msg.sender_username, 'chat-avatar', false, true)}
     <div class="chat-msg-content">
       <div class="chat-meta">
         <span class="chat-sender">${escapeHtml(msg.sender_username)}</span>

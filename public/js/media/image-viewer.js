@@ -108,7 +108,7 @@ export function openImageViewer(el) {
   if (avatarSlot) {
     const userId = el.dataset.userId;
     avatarSlot.innerHTML = userId
-      ? avatarHtml(userId, el.dataset.username || '', 'chat-avatar', false)
+      ? avatarHtml(userId, el.dataset.username || '', 'chat-avatar', false, true)
       : '';
   }
 

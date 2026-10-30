@@ -62,7 +62,7 @@ export async function renderAdminUsers() {
       <tr class="file-row">
         <td>
           <div style="display:flex;align-items:center;gap:10px;">
-            ${avatarHtml(u.id, u.username, 'chat-avatar')}
+            ${avatarHtml(u.id, u.username, 'chat-avatar', false, true)}
             <span>${escapeHtml(u.username)}</span>
           </div>
         </td>

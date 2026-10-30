@@ -962,7 +962,7 @@ window.openCreateGroupDialog = async function () {
         listEl.innerHTML = rows
             .map((u) => `
                 <div class="dm-picker-row grp-picker-row${selected.has(Number(u.id)) ? ' selected' : ''}" role="option" tabindex="0" aria-selected="${selected.has(Number(u.id))}" data-user-id="${Number(u.id)}">
-                    ${avatarHtml(u.id, u.username, 'conv-avatar dm-picker-avatar')}
+                    ${avatarHtml(u.id, u.username, 'conv-avatar dm-picker-avatar', false, true)}
                     <div class="dm-picker-info"><div class="dm-picker-name">${escapeHtml(u.username)}</div></div>
                     <span class="grp-picker-check">${ICONS.check || '✓'}</span>
                 </div>

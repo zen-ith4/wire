@@ -81,7 +81,7 @@ function renderProfileCard(profile) {
       ${bannerHtml(profile.id, 'profile-banner')}
     </div>
     <div class="profile-card-header">
-      ${avatarHtml(profile.id, profile.username, 'settings-avatar-big')}
+      ${avatarHtml(profile.id, profile.username, 'settings-avatar-big', false, true)}
       <div>
         <div class="profile-card-name">${escapeHtml(profile.username)}</div>
         <div class="profile-card-status${isUserOnline(profile.id) ? ' online' : ''}" data-presence-user="${profile.id}">

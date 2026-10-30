@@ -17,6 +17,7 @@ import {
   showToast,
   escapeAttr,
   escapeHtml,
+  escapeHtmlAttr,
   formatBytes
 } from '../core/utils.js';
 
@@ -889,9 +890,13 @@ export function imageDownloadButtonHtml(
       title="Download ${escapeAttr(
         msg.attachment_name
       )}"
-      onclick="window.downloadAttachment(${msg.id}, '${escapeAttr(
+      data-action="attachment-download"
+      data-msg-id="${msg.id}"
+      data-filename="${escapeHtmlAttr(
         msg.attachment_name
-      )}', '${scope}', '${escapeAttr(msg.attachment_mime || '')}')"
+      )}"
+      data-scope="${escapeHtmlAttr(scope)}"
+      data-mime="${escapeHtmlAttr(msg.attachment_mime || '')}"
     >${ICONS.download}</button>`;
 }
 
@@ -990,7 +995,7 @@ export function renderAttachment(
               )}"`
             : ''
         }
-        onclick="window.openImageViewer(this)"
+        data-action="open-image-viewer"
       >${innerHtml}</div>
     </div>`;
   }
@@ -998,9 +1003,13 @@ export function renderAttachment(
   return `
   <div
     class="chat-attachment"
-    onclick="window.downloadAttachment(${msg.id}, '${escapeAttr(
+    data-action="attachment-download"
+    data-msg-id="${msg.id}"
+    data-filename="${escapeHtmlAttr(
       msg.attachment_name
-    )}', '${scope}', '${escapeAttr(msg.attachment_mime || '')}')"
+    )}"
+    data-scope="${escapeHtmlAttr(scope)}"
+    data-mime="${escapeHtmlAttr(msg.attachment_mime || '')}"
   >
     ${ICONS.file}
 
@@ -2210,6 +2219,14 @@ window.downloadAttachment =
 
 registerActions({
   'audio-player-download': (el) => {
+    const msgId = Number(el.dataset.msgId);
+    const filename = el.dataset.filename;
+    const scope = el.dataset.scope;
+    const mime = el.dataset.mime;
+    if (!Number.isFinite(msgId) || !filename || !scope) return;
+    downloadAttachment(msgId, filename, scope, mime);
+  },
+  'attachment-download': (el) => {
     const msgId = Number(el.dataset.msgId);
     const filename = el.dataset.filename;
     const scope = el.dataset.scope;

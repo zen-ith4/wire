@@ -185,6 +185,7 @@ registerActions({
   'image-viewer-backdrop': (el, e) => {
     if (!e.target.closest('[data-stop]')) closeImageViewer();
   },
+  'open-image-viewer': (el) => openImageViewer(el),
 });
 
 // ---------------------------------------------------------------

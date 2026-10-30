@@ -40,12 +40,43 @@ import {
 
 import bidiFactory from '../vendor/bidi-js.js';
 
+import { registerActions } from '../ui/actions.js';
+
 const bidi =
   bidiFactory();
 
 const MAX_TEXTAREA_HEIGHT = 140;
 
 let chipSeq = 0;
+
+// Registry of live composer instances keyed by their staging container id,
+// so the delegated data-action handlers (registered once at module load)
+// can route attach/remove/reply-close/edit-close clicks to the right
+// instance's closure-local methods without window.* globals.
+const composerInstances = new Map();
+
+registerActions({
+  'composer-cancel-upload': (el) => {
+    const instance = composerInstances.get(el.dataset.stagingId);
+    if (!instance) return;
+    instance.cancelUpload(el.dataset.key);
+  },
+  'composer-attach-remove': (el) => {
+    const instance = composerInstances.get(el.dataset.stagingId);
+    if (!instance) return;
+    instance.removeFile(el.dataset.key);
+  },
+  'composer-reply-close': (el) => {
+    const instance = composerInstances.get(el.dataset.stagingId);
+    if (!instance) return;
+    instance.clearReply();
+  },
+  'composer-edit-close': (el) => {
+    const instance = composerInstances.get(el.dataset.stagingId);
+    if (!instance) return;
+    instance.cancelEdit();
+  },
+});
 
 // ============================================================
 // DEBUG
@@ -639,7 +670,9 @@ export function createComposer(
                 class="attach-chip-remove"
                 title="Cancel upload"
                 aria-label="Cancel upload"
-                onclick="window['__composerCancelUpload_${stagingId}']('${item.key}')"
+                data-action="composer-cancel-upload"
+                data-staging-id="${stagingId}"
+                data-key="${item.key}"
               >
                 ${ICONS.close}
               </button>
@@ -649,7 +682,9 @@ export function createComposer(
                 type="button"
                 class="attach-chip-remove"
                 title="Remove"
-                onclick="window['__composerRemove_${stagingId}']('${item.key}')"
+                data-action="composer-attach-remove"
+                data-staging-id="${stagingId}"
+                data-key="${item.key}"
               >
                 ${ICONS.close}
               </button>
@@ -735,9 +770,7 @@ export function createComposer(
     renderStaging();
   }
 
-  window[
-    `__composerRemove_${stagingId}`
-  ] = removeFile;
+  composerInstances.set(stagingId, { removeFile, cancelUpload, clearReply, cancelEdit });
 
   function cancelUpload(
     key
@@ -773,10 +806,6 @@ export function createComposer(
 
     renderStaging();
   }
-
-  window[
-    `__composerCancelUpload_${stagingId}`
-  ] = cancelUpload;
 
   function clearStaged() {
     staged = [];
@@ -884,7 +913,8 @@ export function createComposer(
         type="button"
         class="reply-preview-close"
         title="Cancel reply"
-        onclick="window['__composerCancelReply_${stagingId}']()"
+        data-action="composer-reply-close"
+        data-staging-id="${stagingId}"
       >
         ${ICONS.close}
       </button>
@@ -934,10 +964,6 @@ export function createComposer(
 
     renderReplyPreview();
   }
-
-  window[
-    `__composerCancelReply_${stagingId}`
-  ] = clearReply;
 
   // ==========================================================
   // EDIT MODE
@@ -1008,7 +1034,8 @@ export function createComposer(
         type="button"
         class="reply-preview-close"
         title="Cancel edit"
-        onclick="window['__composerCancelEdit_${stagingId}']()"
+        data-action="composer-edit-close"
+        data-staging-id="${stagingId}"
       >
         ${ICONS.close}
       </button>
@@ -1157,10 +1184,6 @@ export function createComposer(
       resetTextareaHeight();
     }
   }
-
-  window[
-    `__composerCancelEdit_${stagingId}`
-  ] = cancelEdit;
 
   // ==========================================================
   // TEXTAREA

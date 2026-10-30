@@ -112,9 +112,9 @@ function renderProfileCard(profile) {
     </div>
     ${!isSelf ? `
       <button class="btn btn-primary btn-sm profile-card-message-btn"
+        data-action="profile-card-message"
         data-user-id="${profile.id}"
-        data-username="${escapeAttr(profile.username)}"
-        onclick="window.messageFromProfileCard(this)">
+        data-username="${escapeAttr(profile.username)}">
         Send Message
       </button>
     ` : ''}
@@ -153,6 +153,7 @@ registerActions({
   'profile-card-backdrop': (el, e) => {
     if (!e.target.closest('[data-stop]')) window.closeProfileCard();
   },
+  'profile-card-message': (el) => window.messageFromProfileCard(el),
 });
 
 // Escape-to-close. Registered once (not per-open) and simply checks

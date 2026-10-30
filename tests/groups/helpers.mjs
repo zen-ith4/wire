@@ -51,7 +51,14 @@ export function installWebLocksPolyfill() {
     if (typeof globalThis.navigator === 'undefined') {
         globalThis.navigator = {};
     }
-    globalThis.navigator.locks = { request: requestLock };
+    // Node v26+ has native navigator.locks (a getter-only property).
+    // Override it with our deterministic polyfill so tests can reassign it.
+    // Use defineProperty because navigator.locks is a getter-only property in Node v26.
+    Object.defineProperty(globalThis.navigator, 'locks', {
+        value: { request: requestLock },
+        writable: true,
+        configurable: true,
+    });
 }
 
 /* =========================================================

@@ -314,12 +314,15 @@ export function avatarHtml(userId, username, className = 'chat-avatar', showPres
 }
 
 // Click handling for avatars (scoped to data-avatar-action="profile").
+// Capture phase on purpose: the old inline onclick ran before any ancestor
+// listener, and stopPropagation() must stop ancestors (e.g. the DM picker row)
+// from also acting on the same click.
 if (typeof document !== 'undefined') document.addEventListener('click', (e) => {
   const el = e.target.closest('.clickable-avatar[data-avatar-action="profile"]');
   if (!el) return;
   e.stopPropagation();
   window.openProfileCard(Number(el.dataset.avatarUser));
-});
+}, true);
 
 /**
  * Generate HTML for a banner placeholder and schedule its image load.

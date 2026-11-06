@@ -34,7 +34,6 @@ const require = createRequire(import.meta.url);
 const LEGACY_CAPS = {
   handlers: {},
   styles: {
-    'js/chat/dm.js': 3,
     'js/settings/settings-appearance-custom.js': 3,
     'js/chat/composer.js': 1,
     'js/media/attachments.js': 1,
@@ -44,7 +43,6 @@ const LEGACY_CAPS = {
   },
   setAttr: {
     'js/media/attachments.js': 4,
-    'js/chat/dm.js': 1,
   },
   // All 20 legacy sites now use escapeHtmlAttr(); cap is 0 everywhere.
   // (Explicit zeros kept so the diff shows what was removed. auth.js is

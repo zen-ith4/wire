@@ -55,6 +55,18 @@ quoted attribute** (was 20; all converted to `escapeHtmlAttr()`).
 `setAttribute('style'|'on*')` / `.cssText` writes are Stage 3 work and are capped separately in
 `LEGACY_CAPS.setAttr`: `public/js/media/attachments.js` (4) and `public/js/chat/dm.js` (1).
 
+## Stage 2 status: handlers done
+
+- Inline `on*=` handlers: **0** in all of `public/js` (`LEGACY_CAPS.handlers` is empty).
+- Every converted control uses `data-action` (registry: `public/js/ui/actions.js`) or a
+  module-owned `data-*` name (`data-avatar-action` in `ui/avatar.js`, `data-act` in the Files tab).
+- Avatar clicks (`ui/avatar.js`) use a **capture-phase** listener, which restores the ordering of the
+  old inline `onclick` (`stopPropagation()` runs before any ancestor, so a click on an avatar in the New-DM
+  picker opens only the profile card). Covered by `tests/csp-handlers-enforced-browser.test.mjs`.
+- Deliberate deviation from the original spec: `actions.js` **ignores unknown action names silently**
+  rather than calling `console.warn`. Other modules own their own `data-action` names (reactions,
+  thread, group, confirm, composer instances), so a warning would fire on every click of those.
+
 ## Interim defence (already in place)
 
 Until enforcement is on, the real protection is output escaping:

@@ -41,6 +41,7 @@ import {
 import bidiFactory from '../vendor/bidi-js.js';
 
 import { registerActions } from '../ui/actions.js';
+import { applyDynamicVars } from '../ui/dynamic-vars.js';
 
 const bidi =
   bidiFactory();
@@ -661,7 +662,7 @@ export function createComposer(
               <div class="attach-chip-progress">
                 <div
                   class="attach-chip-progress-fill"
-                  style="width:${item.progress || 0}%"
+                  data-progress="${item.progress || 0}"
                 ></div>
               </div>
 
@@ -694,6 +695,7 @@ export function createComposer(
     `
         )
         .join('');
+    applyDynamicVars(el);
   }
 
   function setChipProgress(

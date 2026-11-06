@@ -26,7 +26,7 @@ export async function renderWireguard() {
     main.innerHTML = `<div class="card">
       <div class="card-head"><div class="card-title">${ICONS.shield} WireGuard Peers</div></div>
       <div class="toolbar">
-        <input type="text" id="wg-pubkey" placeholder="Peer public key" style="min-width:260px;">
+        <input class="u-min-w-260" type="text" id="wg-pubkey" placeholder="Peer public key">
         <input type="text" id="wg-username" placeholder="Friendly name">
         <button class="btn btn-primary btn-sm" data-action="wireguard-map-peer">Map name</button>
       </div>

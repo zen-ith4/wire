@@ -61,6 +61,7 @@ import {
   mountSettingsCategoryNav,
   resetSettingsCategory
 } from './settings-nav.js';
+import { applyDynamicSettingsStyles } from './dynamic-style.js';
 
 
 // ============================================================
@@ -328,6 +329,8 @@ export async function renderSettings(opts) {
         hardwareAccelerationEnabled,
         activeCategoryId
       });
+
+    applyDynamicSettingsStyles(main);
 
     /*
      * Bind one category's feature area at a time, lazily, instead

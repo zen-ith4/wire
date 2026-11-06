@@ -35,7 +35,7 @@ export async function renderAdminUsers() {
       // admin hands it to another user and becomes a normal user.
       const actions = isSelf
         ? '<span class="text-muted">You (admin)</span>'
-        : `<div style="display:inline-flex;gap:8px;">
+        : `<div class="u-inline-flex-gap8">
             <button class="btn btn-sm" data-transfer-admin="${Number(u.id)}">Transfer admin role</button>
             <button class="btn btn-danger btn-sm" data-delete-user="${Number(u.id)}">Delete</button>
           </div>`;
@@ -62,7 +62,7 @@ export async function renderAdminUsers() {
       return `
       <tr class="file-row">
         <td>
-          <div style="display:flex;align-items:center;gap:10px;">
+          <div class="u-flex-center-gap10">
             ${avatarHtml(u.id, u.username, 'chat-avatar', false, true)}
             <span>${escapeHtml(u.username)}</span>
           </div>
@@ -486,11 +486,11 @@ export async function renderAdminFolders() {
       </div>
 
       <div class="toolbar">
-        <input
+        <input class="u-min-w-220"
           type="text"
           id="new-folder-path"
           placeholder="/srv/media/Movies"
-          style="min-width:220px;"
+         
         >
 
         <input

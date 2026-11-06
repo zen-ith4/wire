@@ -633,8 +633,8 @@ export async function renderVoiceMessage(
         <span class="icon-play">${ICONS.play}</span>
 
         <span
-          class="icon-pause"
-          style="display:none"
+          class="icon-pause js-hidden"
+         
         >${ICONS.pause}</span>
       </button>
 
@@ -675,8 +675,8 @@ export async function renderVoiceMessage(
           </span>
 
           <span
-            class="icon-volume-mute"
-            style="display:none"
+            class="icon-volume-mute js-hidden"
+           
           >${ICONS.volumeMute}</span>
         </button>
 

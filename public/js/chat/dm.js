@@ -1047,8 +1047,8 @@ function paintConvRows(preparedConvs, filter = '') {
 
   if (filtered.length === 0) {
     html = q
-      ? `<div class="text-muted" style="font-size:12.5px;padding:16px 10px;text-align:center;">No conversations found</div>`
-      : `<div class="text-muted" style="font-size:12.5px;padding:10px 4px;">No conversations yet. Start one above.</div>`;
+      ? `<div class="text-muted u-dm-empty-pad">No conversations found</div>`
+      : `<div class="text-muted u-dm-status-pad">No conversations yet. Start one above.</div>`;
   } else {
     html = filtered
       .map(
@@ -1151,7 +1151,7 @@ window.openNewDmPicker = async function () {
   thread.innerHTML = `
     <div class="dm-thread-header">
       <button class="icon-btn dm-back-btn" title="Back" data-action="dm-close-new-picker">${ICONS.arrowLeft}</button>
-      <div class="card-title" style="margin:0;">${ICONS.plus} New message</div>
+      <div class="card-title u-m0">${ICONS.plus} New message</div>
       <button class="icon-btn dm-picker-close" title="Close" data-action="dm-close-new-picker">${ICONS.close}</button>
     </div>
     <div class="dm-picker-body">
@@ -2508,8 +2508,7 @@ async function copyDmMessageText(btn) {
   field.value = text;
   field.setAttribute('readonly', '');
   field.setAttribute('aria-hidden', 'true');
-  field.style.cssText =
-    'position:fixed;top:0;left:0;opacity:0;pointer-events:none;';
+  field.className = 'u-offscreen-copy';
   document.body.appendChild(field);
   let result;
   try {

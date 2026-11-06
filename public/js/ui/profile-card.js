@@ -66,7 +66,7 @@ export async function openProfileCard(userId) {
     renderProfileCard(profile);
   } catch (e) {
     if (openProfileId !== id) return;
-    body.innerHTML = `<div class="text-muted" style="padding:24px 4px;text-align:center;">${escapeHtml(e.message)}</div>`;
+    body.innerHTML = `<div class="text-muted u-pc-pad">${escapeHtml(e.message)}</div>`;
   }
 }
 

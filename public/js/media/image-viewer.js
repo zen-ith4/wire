@@ -202,7 +202,9 @@ registerActions({
   const stage = document.querySelector('.image-viewer-stage');
   if (!img || !stage) return;
 
-  // Was an inline ondragstart="return false;" in index.html.
+  // Was an inline ondragstart="return false;" in index.html. Also covers
+  // native drag-and-drop ghost thumbnails that can appear even with
+  // draggable="false" on slow paint cycles.
   img.addEventListener('dragstart', (e) => e.preventDefault());
 
   const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -334,10 +336,6 @@ registerActions({
     img.classList.remove('panning');
   });
 
-  // Belt-and-suspenders: some browsers still attempt native
-  // image drag-and-drop (the "ghost thumbnail" in the middle of
-  // the screen) even with draggable="false" on slow paint cycles.
-  img.addEventListener('dragstart', (e) => e.preventDefault());
 })();
 
 // Escape-to-close, registered once — same pattern as the profile

@@ -35,7 +35,6 @@ const LEGACY_CAPS = {
   handlers: {},
   styles: {
     'js/chat/dm.js': 3,
-    'js/settings/admin.js': 3,
     'js/settings/settings-appearance-custom.js': 3,
     'js/media/video-player.js': 2,
     'js/media/voice-message.js': 2,

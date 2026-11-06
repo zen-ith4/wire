@@ -242,8 +242,8 @@ export async function renderAudio(msg, scope, containerEl) {
         >
           <span class="icon-play">${ICONS.play}</span>
           <span
-            class="icon-pause"
-            style="display:none"
+            class="icon-pause js-hidden"
+           
           >${ICONS.pause}</span>
         </button>
 

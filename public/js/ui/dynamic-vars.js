@@ -22,24 +22,52 @@ function clampPercent(raw) {
  */
 export function applyDynamicVars(root) {
   if (!root || typeof root.querySelectorAll !== 'function') return;
+  const all = (sel) => {
+    const out = root.matches && root.matches(sel) ? [root] : [];
+    return out.concat(Array.from(root.querySelectorAll(sel)));
+  };
 
-  root.querySelectorAll('[data-sound-volume]').forEach((el) => {
+  all('[data-sound-volume]').forEach((el) => {
     const pct = clampPercent(el.dataset.soundVolume);
     if (pct !== null) el.style.setProperty('--sound-volume', `${pct}%`);
   });
 
-  root.querySelectorAll('[data-swatch]').forEach((el) => {
+  all('[data-swatch]').forEach((el) => {
     const hex = el.dataset.swatch || '';
     if (HEX_COLOR.test(hex)) el.style.setProperty('--swatch', hex);
   });
 
-  root.querySelectorAll('[data-progress]').forEach((el) => {
+  all('[data-progress]').forEach((el) => {
     const pct = clampPercent(el.dataset.progress);
     if (pct !== null) el.style.width = `${pct}%`;
   });
 
-  root.querySelectorAll('[data-aspect]').forEach((el) => {
+  all('[data-aspect]').forEach((el) => {
     const ratio = String(el.dataset.aspect || '').trim();
     if (/^\d+(\.\d+)?(\s*\/\s*\d+(\.\d+)?)?$/.test(ratio)) el.style.aspectRatio = ratio;
   });
+}
+
+/**
+ * Applies data-driven values to every element the app inserts later, so
+ * call sites that build markup with innerHTML / insertAdjacentHTML need no
+ * manual hook. Installed once at boot (js/core/app.js).
+ */
+let observerInstalled = false;
+export function installDynamicVarsObserver() {
+  if (observerInstalled || typeof MutationObserver === 'undefined') return;
+  const start = () => {
+    if (observerInstalled || !document.body) return;
+    observerInstalled = true;
+    new MutationObserver((records) => {
+      for (const rec of records) {
+        for (const node of rec.addedNodes) {
+          if (node.nodeType === 1) applyDynamicVars(node);
+        }
+      }
+    }).observe(document.body, { childList: true, subtree: true });
+    applyDynamicVars(document.body);
+  };
+  if (document.body) start();
+  else document.addEventListener('DOMContentLoaded', start, { once: true });
 }

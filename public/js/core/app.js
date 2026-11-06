@@ -58,6 +58,8 @@ import {
 } from '../crypto/identity-service.js';
 
 import '../ui/actions.js';
+import { installDynamicVarsObserver } from '../ui/dynamic-vars.js';
+installDynamicVarsObserver();
 import '../ui/profile-card.js';
 import '../media/image-viewer.js';
 

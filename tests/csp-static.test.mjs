@@ -8,15 +8,8 @@
 //      would block (inline handlers, inline style attributes, eval,
 //      string timers, javascript: URLs, inline <script>/<style>).
 //
-// X's pre-existing UI still contains inline handlers / style="" attributes
-// and a few other constructs a strict CSP blocks (docs/CSP_TODO.md lists
-// them). They are tolerated through a PER-FILE CAPPED allowlist
-// (LEGACY_CAPS below), not a blanket exemption: a file fails if its count
-// goes ABOVE its cap, and every file not listed -- in particular
-// chat/group.js, chat/thread.js and every other new file -- has cap 0.
-// Caps may only go down: when legacy code is converted, lower (or delete)
-// its entry. CSP is Report-Only by default (middleware/csp.js); these caps
-// are what has to reach zero before CSP_ENFORCE=true is safe in production.
+// The front-end is CSP-clean: every count below must be zero. There is
+// no legacy allowlist.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -29,37 +22,14 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC = path.join(ROOT, 'public');
 const require = createRequire(import.meta.url);
 
-// Per-file caps for X's legacy code (counts measured with the exact
-// regexes below; derived from docs/CSP_TODO.md). Missing file => cap 0.
-const LEGACY_CAPS = {
-  handlers: {},
-  styles: {
-  },
-  setAttr: {
-  },
-  // All 20 legacy sites now use escapeHtmlAttr(); cap is 0 everywhere.
-  // (Explicit zeros kept so the diff shows what was removed. auth.js is
-  // excluded from this check by the test below: its local escapeHtml()
-  // escapes both quote kinds.)
-  escapeHtmlInAttr: {
-    'js/settings/settings-render.js': 0,
-    'js/settings/settings-shortcuts.js': 0,
-    'js/settings/settings-appearance-custom.js': 0,
-    'js/chat/composer.js': 0,
-    'js/chat/dm.js': 0,
-    'js/settings/settings-bubble-gradient.js': 0,
-  },
-  indexHtml: {"inlineScripts": 0, "styleBlocks": 0, "handlerAttrs": 0, "styleAttrs": 0},
-};
 
-// Files whose count exceeds their cap. Same shape as the old allowlist
-// check, but capped instead of exempt.
-function overCap(list, re, kind) {
+// Files with any match. There is no allowlist: every count must be zero.
+function overCap(list, re) {
     const g = new RegExp(re.source, re.flags.includes('g') ? re.flags : re.flags + 'g');
     return list
         .map((f) => ({ rel: f.rel, n: (f.src.match(g) || []).length }))
-        .filter(({ rel, n }) => n > (LEGACY_CAPS[kind][rel] ?? 0))
-        .map(({ rel, n }) => `${rel}: ${n} > cap ${LEGACY_CAPS[kind][rel] ?? 0}`);
+        .filter(({ n }) => n > 0)
+        .map(({ rel, n }) => `${rel}: ${n} occurrence(s), must be 0`);
 }
 
 function walk(dir, out = []) {
@@ -131,17 +101,16 @@ test('CSP header: strict script-src, no unsafe-inline / unsafe-eval anywhere', (
     assert.ok(!dirs['style-src'].some((v) => /unsafe-inline/.test(v)));
 });
 
-test('index.html has no inline <script>, <style>, on*= handler, or style="" attribute beyond its legacy cap', () => {
+test('index.html has no inline <script>, <style>, on*= handler, or style="" attribute', () => {
     const html = fs.readFileSync(path.join(PUBLIC, 'index.html'), 'utf8');
-    const cap = LEGACY_CAPS.indexHtml;
     const inlineScripts = [...html.matchAll(/<script\b([^>]*)>/gi)].filter((m) => !/\bsrc=/i.test(m[1])).length;
-    assert.ok(inlineScripts <= cap.inlineScripts, `inline <script> found: ${inlineScripts} > cap ${cap.inlineScripts}`);
+    assert.equal(inlineScripts, 0, `inline <script> found: ${inlineScripts}`);
     const styleBlocks = (html.match(/<style\b/gi) || []).length;
-    assert.ok(styleBlocks <= cap.styleBlocks, `inline <style> block found: ${styleBlocks} > cap ${cap.styleBlocks}`);
+    assert.equal(styleBlocks, 0, `inline <style> block found: ${styleBlocks}`);
     const handlerAttrs = (html.match(/\son[a-z]{3,}\s*=/gi) || []).length;
-    assert.ok(handlerAttrs <= cap.handlerAttrs, `inline event-handler attribute found: ${handlerAttrs} > cap ${cap.handlerAttrs}`);
+    assert.equal(handlerAttrs, 0, `inline event-handler attribute found: ${handlerAttrs}`);
     const styleAttrs = (html.match(/\sstyle\s*=/gi) || []).length;
-    assert.ok(styleAttrs <= cap.styleAttrs, `inline style attribute found: ${styleAttrs} > cap ${cap.styleAttrs}`);
+    assert.equal(styleAttrs, 0, `inline style attribute found: ${styleAttrs}`);
 });
 
 test('no eval / new Function / string timers / javascript: / document.write in front-end code', () => {
@@ -158,17 +127,17 @@ test('chat/group.js and chat/thread.js contain NO inline handlers or inline styl
     }
 });
 
-test('no inline on*= handler attributes beyond each legacy file\'s cap', () => {
-    assert.deepEqual(overCap(files, INLINE_HANDLER, 'handlers'), []);
+test('no inline on*= handler attributes ', () => {
+    assert.deepEqual(overCap(files, INLINE_HANDLER), []);
 });
 
-test('no inline style="" attributes beyond each legacy file\'s cap', () => {
-    assert.deepEqual(overCap(files, INLINE_STYLE, 'styles'), []);
+test('no inline style="" attributes ', () => {
+    assert.deepEqual(overCap(files, INLINE_STYLE), []);
 });
 
-test('no setAttribute("style"|"on*") and no .cssText writes beyond each legacy file\'s cap', () => {
+test('no setAttribute("style"|"on*") and no .cssText writes ', () => {
     const re = /setAttribute\(\s*["'](?:style|on[a-z]+)["']|\.cssText\s*=/;
-    assert.deepEqual(overCap(files, re, 'setAttr'), []);
+    assert.deepEqual(overCap(files, re), []);
 });
 
 // ---------------------------------------------------------------------
@@ -180,11 +149,11 @@ test('no setAttribute("style"|"on*") and no .cssText writes beyond each legacy f
 // (or files/html.js esc(), or auth.js's local quote-escaping helper).
 // ---------------------------------------------------------------------
 
-test('escapeHtml() is not used inside a quoted HTML attribute value beyond each legacy file\'s cap', () => {
+test('escapeHtml() is not used inside a quoted HTML attribute value ', () => {
     const re = /=\s*"[^"\n]*\$\{\s*escapeHtml\(/;
     // auth.js defines its OWN escapeHtml that does escape quotes.
     const scoped = files.filter((f) => f.rel !== 'js/core/auth.js');
-    assert.deepEqual(overCap(scoped, re, 'escapeHtmlInAttr'), []);
+    assert.deepEqual(overCap(scoped, re), []);
 });
 
 test('every file that calls escapeHtmlAttr() imports or defines it', () => {

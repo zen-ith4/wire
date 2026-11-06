@@ -74,13 +74,9 @@ function resetCspTracking() {
 }
 
 async function checkNoCspViolations(t, origin) {
-    // Stage 3 (inline style= / CSSOM) is out of scope for this test and is
-    // guaranteed to fire style-src violations under enforcement, so those are
-    // tracked but not asserted. Every other directive must be clean, and any
-    // console 'Refused to' error is a hard failure.
-    const styleDirectives = new Set(['style-src', 'style-src-attr', 'style-src-element']);
-    const otherViolations = cspViolations.filter((v) => !styleDirectives.has(v.directive));
-    const violations = [...otherViolations, ...consoleRefused];
+    // CSP-clean: every directive, including style-src / style-src-attr, must be
+    // silent, and any console 'Refused to' error is a hard failure.
+    const violations = [...cspViolations, ...consoleRefused];
     if (violations.length > 0) {
         assert.fail(`CSP violations detected:\n${violations.map((v) => JSON.stringify(v)).join('\n')}`);
     }
@@ -772,6 +768,33 @@ async function scenario(t, cspEnforce) {
         // Re-render dm lists and verify jump-to-latest still works.
         const jumpBtnAfter = await alicePageInfo.page.$('[data-action="dm-jump-to-latest"]');
         assert.ok(!!jumpBtnAfter, 'dm list re-rendered with jump-to-latest delegated action');
+
+        // ---- CSP view sweep (Stage 3): every top-level view under CSP_ENFORCE=true ----
+        // Views: messages, files, groups, each settings category, and the admin pages.
+        // Violations are collected for the whole sweep and asserted below.
+        {
+            const sweepPage = alicePageInfo.page;
+            for (const hash of ['#messages', '#files', '#groups']) {
+                await sweepPage.goto(`${origin}/${hash}`, { waitUntil: 'networkidle2' });
+                await sleep(600);
+            }
+            await sweepPage.goto(`${origin}/#settings`, { waitUntil: 'networkidle2' });
+            for (const id of ['appearance', 'profile', 'notifications', 'message-sounds', 'security', 'keyboard-shortcuts', 'account']) {
+                const row = await sweepPage.$(`#settings-category-row-${id}`);
+                if (row) {
+                    await row.click();
+                    await sleep(700);
+                }
+            }
+            for (const hash of ['#admin-users', '#admin-folders', '#admin-permissions', '#admin-audit', '#admin-wireguard']) {
+                await adminPageInfo.page.goto(`${origin}/${hash}`, { waitUntil: 'networkidle2' });
+                await sleep(600);
+            }
+            for (const pi of [adminPageInfo, alicePageInfo]) {
+                const pageViolations = await pi.page.evaluate(() => window.__cspViolations || []);
+                cspViolations.push(...pageViolations);
+            }
+        }
 
         // ---- CSP enforcement: no violations from delegated handlers ----
         // securitypolicyviolation events are collected per page (page context);

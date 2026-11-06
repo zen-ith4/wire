@@ -279,6 +279,28 @@ async function writeRecordIfAbsent(origin, ownUserId, peerId, value) {
     });
 }
 
+/**
+ * Replace an existing record with `change(record)`, in ONE transaction. No record,
+ * or a falsy answer from `change`, writes nothing.
+ */
+async function updateRecord(origin, ownUserId, peerId, change) {
+    const db = await openDb();
+    return new Promise((resolve, reject) => {
+        const key = recordKey(origin, ownUserId, peerId);
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        const existing = store.get(key);
+
+        existing.onsuccess = () => {
+            const next = existing.result ? change(existing.result) : null;
+            if (next) store.put(next, key);
+        };
+
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
 /* =========================================================
  * States
  *
@@ -457,6 +479,7 @@ export async function acceptPeerKey(peerId, newPublicKeyB64, ctx) {
         current: { fingerprint: evaluated.fingerprint, publicKey: newPublicKeyB64, at: Date.now() },
         accepted,
         verifiedAt: null,
+        encryptedFloor: previous?.encryptedFloor ?? null,
     };
 
     await writeRecord(ctx.origin, ctx.ownUserId, Number(peerId), pin);
@@ -492,6 +515,28 @@ export async function markPeerVerified(peerId, ctx, expectedFingerprint = null) 
     };
     await writeRecord(ctx.origin, ctx.ownUserId, Number(peerId), next);
     return next;
+}
+
+/**
+ * Remember that a DM row of this conversation opened under a pinned key.
+ *
+ * `encryptedFloor` is the lowest such row id this device has seen. It only ever moves
+ * down, and a whole page of rows opening at once must leave the lowest, so this is
+ * one transaction. It is what chat/dm-unencrypted.js judges a row with nothing sealed
+ * in it by, and it lives on the pin because only a row that opened under the pin can
+ * move it: the server's word never does.
+ *
+ * No pin means no row can have opened, so there is nothing to record.
+ *
+ * @param {number} peerId
+ * @param {number} rowId
+ * @param {{origin: string, ownUserId: number}} ctx
+ */
+export async function noteEncryptedRow(peerId, rowId, ctx) {
+    return updateRecord(ctx.origin, ctx.ownUserId, Number(peerId), (pin) => {
+        if (Number.isInteger(pin.encryptedFloor) && pin.encryptedFloor <= rowId) return null;
+        return { ...pin, encryptedFloor: rowId };
+    });
 }
 
 /** Forget a peer entirely — the "untrust this conversation" reset. */

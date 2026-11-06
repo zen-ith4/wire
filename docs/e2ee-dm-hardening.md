@@ -602,6 +602,15 @@ no HKDF info, no AAD, no envelope field:**
   only from keys already in the pin. A check in the thread followed by a separate
   fetch in the crypto layer is not a race against a hostile server, which picks the
   answer to each request. It is a bypass.
+- **Rows with nothing sealed** (`chat/dm-unencrypted.js`): the gate has no key to
+  check on a plaintext row, so a server could insert one that appeared to come from
+  a verified contact. The pin now records the lowest row id seen open. On a contact
+  with none yet, an unsealed row is shown and marked "Not encrypted". After that, one
+  that could be older than the recorded id is shown and marked, and anything else is
+  hidden, including everything that arrives live. An id alone proves nothing, because
+  the server picks it, so a row's place in its page counts too. The server refuses new
+  text that is not an envelope, so a hidden row is never something an honest server
+  stored.
 
 **Not shipped, deliberately:** signed pre-keys / XEdDSA / pre-key batches. Those
 all need new server storage and their own design review. Until they exist the

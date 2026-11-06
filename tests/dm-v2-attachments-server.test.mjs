@@ -259,9 +259,10 @@ test('R2: an over-cap text DM is refused with 413 before the v2 rule, nothing st
 });
 
 test('R2: an over-cap edit is refused with 413 and leaves the stored row unchanged', async () => {
+    const original = v1Envelope('short v1 text');
     const sent = await dmJson(alice, 'POST', '/api/dm/messages', {
         recipient_id: bob.id,
-        content: 'short v1 text',
+        content: original,
     });
     assert.equal(sent.status, 200, JSON.stringify(sent.body));
     const id = sent.body.id;
@@ -273,7 +274,7 @@ test('R2: an over-cap edit is refused with 413 and leaves the stored row unchang
 
     assert.equal(res.status, 413);
     assert.equal(res.body.code, 'DM_CONTENT_TOO_LONG');
-    assert.equal(rowOf(id).content, 'short v1 text', 'the old row must not be truncated or partly overwritten');
+    assert.equal(rowOf(id).content, original, 'the old row must not be truncated or partly overwritten');
 });
 
 test('R2: an over-cap encrypted-upload caption is refused with 413 and removes the upload', async () => {

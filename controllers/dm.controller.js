@@ -71,6 +71,25 @@ function normalizeDmReplyToId(value, userId, peerId) {
   return belongsToConversation ? id : null;
 }
 
+// DM_E2EE_TEXT_ENFORCED (default ON; set to "false" to roll back): DM text and edits
+// must have the encrypted-envelope shape, the rule uploads already follow. Current
+// clients always encrypt, so what this stops is an old or broken client storing
+// plaintext, with an error it can show instead of a message that looks sent. It is
+// also what lets a client hide a new unencrypted row (public/js/chat/dm-unencrypted.js):
+// with this ON, no honest server stored one. Rows from before it are left alone.
+function e2eeTextEnforced() {
+  return String(process.env.DM_E2EE_TEXT_ENFORCED ?? 'true')
+    .trim()
+    .toLowerCase() !== 'false';
+}
+
+function dmTextNotEncrypted(res) {
+  return res.status(400).json({
+    error: 'Messages must be end-to-end encrypted',
+    code: 'DM_NOT_ENCRYPTED',
+  });
+}
+
 // STEP 1B: server rule with teeth (docs/e2ee-dm-hardening.md 5.5).
 //
 // After trim(), try JSON.parse. If encryption.version === 2 AND the recipient's
@@ -465,6 +484,9 @@ function sendMessage(req, res) {
   const trimmed = content.trim();
   if (trimmed.length > dmStream.DM_MAX_CONTENT_CHARS) {
     return dmContentTooLong(res);
+  }
+  if (e2eeTextEnforced() && !isEncryptedEnvelopeShape(trimmed)) {
+    return dmTextNotEncrypted(res);
   }
   const v2Violation = dmV2RuleViolation(trimmed, Number(recipient_id));
   if (v2Violation) {
@@ -908,10 +930,10 @@ function getAttachment(req, res) {
 // sendMessage() above stores. This handler never decrypts it, never
 // generates its own encryption, and never accepts/produces plaintext
 // — it only ever swaps one encrypted blob for another, exactly like
-// sendMessage() already does for new messages. That also means it
-// doesn't need to independently validate the encryption envelope any
-// more than sendMessage() does: malformed content simply fails to
-// decrypt for the reader, the same failure mode as a corrupted send.
+// sendMessage() already does for new messages. Like sendMessage() it
+// checks the envelope's shape and nothing more: a well-formed envelope
+// with a bad tag simply fails to decrypt for the reader, the same
+// failure mode as a corrupted send.
 function editMessage(req, res) {
   const id = parseInt(req.params.messageId, 10);
   if (!Number.isInteger(id)) {
@@ -948,6 +970,9 @@ function editMessage(req, res) {
   const trimmed = content.trim();
   if (trimmed.length > dmStream.DM_MAX_CONTENT_CHARS) {
     return dmContentTooLong(res);
+  }
+  if (e2eeTextEnforced() && !isEncryptedEnvelopeShape(trimmed)) {
+    return dmTextNotEncrypted(res);
   }
   const v2Violation = dmV2RuleViolation(trimmed, Number(msg.recipient_id));
   if (v2Violation) {

@@ -10,6 +10,18 @@ import {
   renderVerifyView,
   KEY_TRUST_IDS
 } from './dm-key-trust.js';
+import {
+  HIDDEN_UNENCRYPTED_TEXT,
+  NOT_ENCRYPTED_MARK_HTML,
+  DmRowNotEncryptedError,
+  parseDmPayload,
+  isUnencryptedDmRow,
+  firstSealedRowIndex,
+  noteOpenedDmRow,
+  mayShowUnencryptedRow,
+  judgeQuotedRow,
+  unencryptedPreview
+} from './dm-unencrypted.js';
 import { ICONS } from '../icons.js';
 import {
   showToast,
@@ -290,30 +302,6 @@ export function getDmActivePeer() {
 
 // ---------- E2EE ----------
 
-function parseDmPayload(content) {
-  if (typeof content !== 'string') {
-    return null;
-  }
-
-  try {
-    const payload = JSON.parse(content);
-
-    if (
-      payload &&
-      typeof payload === 'object' &&
-      !Array.isArray(payload) &&
-      payload.encryption &&
-      typeof payload.encryption === 'object'
-    ) {
-      return payload;
-    }
-
-    return null;
-  } catch {
-    return null;
-  }
-}
-
 function isEncryptedDmContent(content) {
   return !!parseDmPayload(content);
 }
@@ -344,7 +332,26 @@ async function withKeyChangeBanner(peerId, step) {
   }
 }
 
-async function decryptDmMessage(msg) {
+// A placeholder that carries ONLY the row's identity and a fixed string. It must
+// NEVER carry the original `content`, the reply target's content, attachment or media
+// data, or an error's text. buildDmMessageEl() renders it as a plain, non-interactive
+// bubble (see the undecryptable gate there).
+function dmRowPlaceholder(row, content) {
+  return {
+    id: row.id,
+    sender_id: row.sender_id,
+    recipient_id: row.recipient_id,
+    sender_username: row.sender_username,
+    created_at: row.created_at,
+    timestamp: row.timestamp,
+    reply_to_id: row.reply_to_id == null ? null : Number(row.reply_to_id),
+    content,
+    undecryptable: true
+  };
+}
+
+// `arrivedNow`: see mayShowUnencryptedRow() in dm-unencrypted.js.
+async function decryptDmMessage(msg, { arrivedNow = false } = {}) {
   if (!msg) {
     throw new Error('Invalid DM message');
   }
@@ -419,6 +426,21 @@ async function decryptDmMessage(msg) {
   }
 
   // ----------------------------------------------------------
+  // A row with nothing sealed in it
+  // ----------------------------------------------------------
+  //
+  // It opens under no key, so nothing ties it to this peer. It goes no further unless
+  // it can be history from before encryption, and then it is always marked.
+  const notEncrypted = isUnencryptedDmRow(msg);
+
+  if (
+    notEncrypted &&
+    !(await mayShowUnencryptedRow(peerId, msg.id, { arrivedNow }))
+  ) {
+    throw new DmRowNotEncryptedError(msg.id);
+  }
+
+  // ----------------------------------------------------------
   // Decrypt main message content
   // ----------------------------------------------------------
 
@@ -427,7 +449,7 @@ async function decryptDmMessage(msg) {
   if (msg.content) {
     const payload = parseDmPayload(msg.content);
 
-    // Legacy/plaintext message
+    // No payload here: history that passed the check above.
     if (payload) {
       const encVer = payload.encryption.version;
       if (
@@ -480,6 +502,8 @@ async function decryptDmMessage(msg) {
           `Crypto layer returned encrypted data for DM ${msg.id}`
         );
       }
+
+      await noteOpenedDmRow(peerId, msg);
     }
   }
 
@@ -494,16 +518,16 @@ async function decryptDmMessage(msg) {
     typeof msg.reply_to === 'object'
   ) {
     decryptedReplyTo = {
-      ...msg.reply_to,
+      ...(await judgeQuotedRow(peerId, msg)),
     };
 
-    const replyContent = msg.reply_to.content;
+    const replyContent = decryptedReplyTo.content;
 
     if (typeof replyContent === 'string' && replyContent.length > 0) {
       const replyPayload = parseDmPayload(replyContent);
 
       // Only decrypt content that is actually an encrypted
-      // DM payload. Legacy/plaintext replies remain unchanged.
+      // DM payload. A quote with nothing sealed was settled above.
       if (replyPayload) {
         const replyVer = replyPayload.encryption.version;
         if (
@@ -561,18 +585,42 @@ async function decryptDmMessage(msg) {
     );
   }
 
-  return applyAttachmentMeta(
+  const decrypted = await applyAttachmentMeta(
     {
       ...msg,
       content: decryptedContent,
       reply_to: decryptedReplyTo,
+      // Set here, whatever the row says: only this client decides these two.
+      // applyAttachmentMeta() turns attachment_e2ee on when the metadata opens.
+      not_encrypted: notEncrypted,
+      attachment_e2ee: false,
     },
     peerId,
     'dm'
   );
+
+  if (decrypted.attachment_e2ee) {
+    await noteOpenedDmRow(peerId, msg);
+  }
+
+  return decrypted;
 }
 
-async function decryptDmMessages(messages) {
+// A row delivered live that is hidden for having nothing sealed keeps its place in the
+// thread, the same as one in a loaded page. It is not a failure to report.
+async function decryptLiveDmMessage(msg) {
+  try {
+    return await decryptDmMessage(msg, { arrivedNow: true });
+  } catch (e) {
+    if (e?.code !== 'DM_ROW_NOT_ENCRYPTED') {
+      throw e;
+    }
+    console.warn(e.message);
+    return dmRowPlaceholder(msg, HIDDEN_UNENCRYPTED_TEXT);
+  }
+}
+
+async function decryptDmMessages(messages, { arrivedNow = false } = {}) {
   // Decrypt every row INDEPENDENTLY. Previously this was
   // Promise.all(messages.map(decryptDmMessage)): a single rejected row
   // rejected the whole batch, and the caller's single try/catch replaced the
@@ -585,9 +633,29 @@ async function decryptDmMessages(messages) {
   //   - resolved null    -> held (Phase 2): left out of the result
   //   - rejected         -> a placeholder message object, so the row keeps
   //                        its place and the good rows around it still render
+  //
+  // Rows with nothing sealed in them go second, because the rows that open are what
+  // says whether these can be old history. Their place in the page counts as well as
+  // their id: the server picks both, and history cannot come after a sealed row.
+  const unsealed = messages.map((message) => isUnencryptedDmRow(message));
   const results = await Promise.allSettled(
-    messages.map((message) => decryptDmMessage(message))
+    messages.map((message, i) => (unsealed[i] ? null : decryptDmMessage(message)))
   );
+
+  const firstSealed = firstSealedRowIndex(messages);
+  const unsealedResults = await Promise.allSettled(
+    messages.map((message, i) =>
+      unsealed[i]
+        ? decryptDmMessage(message, {
+            arrivedNow: arrivedNow || (firstSealed !== -1 && i > firstSealed)
+          })
+        : null
+    )
+  );
+
+  for (let i = 0; i < messages.length; i++) {
+    if (unsealed[i]) results[i] = unsealedResults[i];
+  }
 
   const out = [];
   for (let i = 0; i < messages.length; i++) {
@@ -603,22 +671,14 @@ async function decryptDmMessages(messages) {
     } else {
       console.error(`Failed to process DM ${row.id}:`, res.reason);
 
-      // A placeholder that carries ONLY the row's identity and a fixed
-      // string. It must NEVER carry the original `content` (ciphertext),
-      // the reply target's content, attachment or media data, or the error
-      // text. buildDmMessageEl() renders it as a plain, non-interactive
-      // bubble (see the undecryptable gate below).
-      out.push({
-        id: row.id,
-        sender_id: row.sender_id,
-        recipient_id: row.recipient_id,
-        sender_username: row.sender_username,
-        created_at: row.created_at,
-        timestamp: row.timestamp,
-        reply_to_id: row.reply_to_id == null ? null : Number(row.reply_to_id),
-        content: 'Unable to decrypt',
-        undecryptable: true
-      });
+      out.push(
+        dmRowPlaceholder(
+          row,
+          res.reason?.code === 'DM_ROW_NOT_ENCRYPTED'
+            ? HIDDEN_UNENCRYPTED_TEXT
+            : 'Unable to decrypt'
+        )
+      );
     }
   }
 
@@ -686,9 +746,8 @@ async function decryptConversationPreview(
 
   const payload = parseDmPayload(lastMessage);
 
-  // Legacy/plaintext preview.
   if (!payload) {
-    return String(lastMessage);
+    return unencryptedPreview(peerUserId, lastMessage);
   }
 
   // Encrypted data must never fall through to the UI.
@@ -747,6 +806,8 @@ async function decryptConversationPreview(
         'Encrypted data returned instead of plaintext preview'
       );
     }
+
+    await noteOpenedDmRow(peerId, { id: rowId });
 
     return plaintext;
   } catch (error) {
@@ -2060,7 +2121,8 @@ async function syncDmMessagesSince() {
     if (!dmActivePeer || dmActivePeer.id !== peerId) return;
     if (messages.length === 0) return;
 
-    const decryptedMessages = await decryptDmMessages(messages);
+    // Newer than everything in the thread, so none of it can be old history.
+    const decryptedMessages = await decryptDmMessages(messages, { arrivedNow: true });
     if (!dmActivePeer || dmActivePeer.id !== peerId) return;
 
     const container = document.getElementById('dm-messages');
@@ -2382,6 +2444,7 @@ function buildDmMessageEl(msg, currentUser) {
           : ''
       }
       ${msg.has_attachment ? renderAttachment(msg, 'dm') : ''}
+      ${msg.not_encrypted ? NOT_ENCRYPTED_MARK_HTML : ''}
       <div class="chat-msg-actions" role="toolbar" aria-label="Message actions">
         <div class="chat-msg-actions-bar">
         ${undecryptable ? '' : `<button type="button" class="chat-msg-reply" title="Reply" aria-label="Reply" data-action="dm-reply-to" data-msg-id="${msg.id}">${ICONS.reply}</button>`}
@@ -2617,7 +2680,7 @@ export async function addDmMessage(msg) {
 
   let decrypted;
   try {
-    decrypted = await decryptDmMessage(msg);
+    decrypted = await decryptLiveDmMessage(msg);
   } catch (e) {
     console.error(`Failed to process DM ${msg.id}:`, e);
 
@@ -2668,23 +2731,27 @@ export async function addDmMessage(msg) {
   const isActiveConversation =
     dmActivePeer && Number(dmActivePeer.id) === peerId;
 
-  // Decision + platform dispatch for a system notification lives
-  // entirely in notification-manager.js. It already knows how to
-  // ignore the current user's own messages, so it's safe to call
-  // unconditionally here rather than threading a "was this from
-  // the socket" flag through — the composer's own optimistic-add
-  // path lands here too, and is simply a no-op for that module.
-  maybeNotifyDM(decrypted, isActiveConversation);
+  // A row hidden for having nothing sealed announces nothing: a server must not be
+  // able to make the user's device ring for words it will never show them.
+  if (!decrypted.undecryptable) {
+    // Decision + platform dispatch for a system notification lives
+    // entirely in notification-manager.js. It already knows how to
+    // ignore the current user's own messages, so it's safe to call
+    // unconditionally here rather than threading a "was this from
+    // the socket" flag through — the composer's own optimistic-add
+    // path lands here too, and is simply a no-op for that module.
+    maybeNotifyDM(decrypted, isActiveConversation);
 
-  // In-app "message received" sound. addDmMessage() is only reached
-  // for live messages (the Socket.IO 'new-dm-message' event and the
-  // composer's own send) — initial load, history sync and pagination
-  // fill the cache directly and never come through here. Reaching this
-  // point also means the message passed the entry.ids dedupe above and
-  // decrypted successfully; the manager additionally dedupes by id to
-  // cover two concurrent calls racing past that check.
-  if (Number(decrypted.sender_id) !== Number(currentUser.id)) {
-    messageSoundManager.playReceived(decrypted.id);
+    // In-app "message received" sound. addDmMessage() is only reached
+    // for live messages (the Socket.IO 'new-dm-message' event and the
+    // composer's own send) — initial load, history sync and pagination
+    // fill the cache directly and never come through here. Reaching this
+    // point also means the message passed the entry.ids dedupe above and
+    // decrypted successfully; the manager additionally dedupes by id to
+    // cover two concurrent calls racing past that check.
+    if (Number(decrypted.sender_id) !== Number(currentUser.id)) {
+      messageSoundManager.playReceived(decrypted.id);
+    }
   }
 
   if (!isActiveConversation) {
@@ -2821,6 +2888,13 @@ export async function updateDmMessage(msg) {
   // cached — can legitimately happen for a stale/out-of-order event.
   if (!entry || !entry.byId.has(msg.id)) return;
 
+  // An edit is always new and the composer seals every one, so this is never history.
+  // What is on screen stays as it is.
+  if (isUnencryptedDmRow(msg)) {
+    console.warn(`Ignoring an edit of DM ${msg.id} that is not encrypted`);
+    return;
+  }
+
   let decrypted;
   try {
     decrypted = await decryptDmMessage(msg);
@@ -2852,6 +2926,9 @@ export async function updateDmMessage(msg) {
   if (bubble) {
     bubble.innerHTML = linkifyHtml(text);
   }
+
+  // Someone edited an old unencrypted row of theirs: it is sealed now.
+  row.querySelector('.dm-not-encrypted')?.remove();
 
   const meta = row.querySelector('.chat-meta');
   if (meta && decrypted.edited_at && !meta.querySelector('.chat-edited-flag')) {

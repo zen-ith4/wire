@@ -97,7 +97,14 @@ test('a DM to a deactivated user gets 404 User not found and no row is written',
 test('a DM to an active user is still delivered (row written, 200 response)', () => {
   const before = countDmsTo(activeBobId);
 
-  const result = send(activeBobId, 'hello bob');
+  const result = send(activeBobId, JSON.stringify({
+    encryption: {
+      version: 1,
+      algorithm: 'AES-GCM',
+      iv: Buffer.alloc(12).toString('base64'),
+      ciphertext: Buffer.from('aabbcc', 'hex').toString('base64'),
+    },
+  }));
 
   assert.equal(result.status, 200, JSON.stringify(result.body));
   assert.equal(countDmsTo(activeBobId), before + 1);

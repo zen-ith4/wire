@@ -34,7 +34,6 @@ const require = createRequire(import.meta.url);
 const LEGACY_CAPS = {
   handlers: {},
   styles: {
-    'js/settings/settings-appearance-custom.js': 3,
     'js/media/attachments.js': 1,
   },
   setAttr: {

@@ -79,6 +79,7 @@ import {
 } from '../chat/message-accent.js';
 
 import { renderSettings } from './settings.js';
+import { applyDynamicVars } from '../ui/dynamic-vars.js';
 
 // ============================================================
 // Reusable controls
@@ -137,7 +138,7 @@ export function sliderRow({
           step="1"
           value="${value}"
           data-unit="${unit}"
-          style="--sound-volume:${fillPercent(value, min, max)}%"
+          data-sound-volume="${fillPercent(value, min, max)}"
           aria-label="${escapeHtmlAttr(label)}"
           ${attrs}
           ${disabled || hidden ? 'disabled' : ''}>
@@ -506,14 +507,14 @@ export function renderAdvancedAppearanceSection() {
       <summary class="settings-advanced-summary">
         <span>
           <span
-            class="settings-row-label"
-            style="display:block">
+            class="settings-row-label u-block"
+           >
             Advanced
           </span>
 
           <span
-            class="settings-row-sublabel"
-            style="display:block">
+            class="settings-row-sublabel u-block"
+           >
             Transparency and blur for each part of the interface
           </span>
         </span>

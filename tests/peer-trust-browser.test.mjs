@@ -905,9 +905,22 @@ test('both sides show the IDENTICAL safety number, and a key change clears the v
     assert.equal(afterForced.current, beforeForced.current,
         'the pinned key must not move');
 
-    // Accepting. The button is labelled "I verified the new key", so accepting IS
-    // the user asserting they compared the numbers - which is why
-    // acceptPeerKey() stamps verifiedAt. The flag now belongs to the NEW key.
+    // Alice had verified the old key, so this is not an ordinary rotation notice.
+    const changedBanner = await pollUntil(
+        async () => {
+            const text = await a.page.evaluate(
+                () => document.getElementById('dm-key-trust-banner')?.textContent || ''
+            );
+            return text ? text : null;
+        },
+        { what: 'the banner to render' }
+    );
+    assert.match(changedBanner, /changed after you verified it/,
+        `the banner must say the verified key changed: ${changedBanner}`);
+
+    // Accepting is not verifying: the button gets the user past the alarm and claims
+    // nothing about a comparison. So the old key's flag goes with the old key, and
+    // the new key has none until the user marks it.
     const beforeAccept = await readPin(a.page, bobId);
     await clickAcceptButton(a.page, errors);
 
@@ -921,18 +934,35 @@ test('both sides show the IDENTICAL safety number, and a key change clears the v
     assert.equal(accepted.state, 'ok');
 
     const stored = await readPin(a.page, bobId);
-    assert.ok(stored.verifiedAt && stored.verifiedAt >= beforeAccept.verifiedAt,
-        `accepting is the user claiming verification, so verifiedAt must move forward; ${JSON.stringify(stored)} vs ${JSON.stringify(beforeAccept)}`);
+    assert.equal(stored.verifiedAt, null,
+        `accepting must not mark the new key verified: ${JSON.stringify(stored)}`);
     assert.notEqual(stored.current, beforeAccept.current,
         'accepting must move the pin to the new key');
 
-    // ...and now the flag DOES describe the key on screen, so the view says so
-    // and the Mark button is available again.
+    // The view says what is true of the key on screen, and the Mark button is
+    // available again.
     const afterAcceptView = await openVerifyPanel(a.page, { reopen: true });
-    assert.match(afterAcceptView.marked, /Marked as verified/,
-        `the accepted key was verified by pressing the button; the view must say so: ${afterAcceptView.marked}`);
+    assert.match(afterAcceptView.marked, /Not yet marked/,
+        `the accepted key has not been compared; the view must say so: ${afterAcceptView.marked}`);
     assert.equal(afterAcceptView.markDisabled, false,
         'the Mark button must be available again once the key is accepted');
+
+    // Marking it is what verifies it, through the panel's own button.
+    await a.page.click('#dm-key-verify [data-action="mark-verified"]');
+    await pollUntil(
+        async () => {
+            const t = await a.page.evaluate(
+                () => document.getElementById('dm-key-verify-marked')?.textContent || ''
+            );
+            return /Marked as verified/.test(t) ? t : null;
+        },
+        { what: 'the panel to record the verification of the new key' }
+    );
+
+    const verified = await readPin(a.page, bobId);
+    assert.ok(verified.verifiedAt,
+        `marking must verify the new key: ${JSON.stringify(verified)}`);
+    assert.equal(verified.current, stored.current, 'marking must not move the pin');
 });
 
 test('a normal password change does NOT raise the alarm (real credential flow)', async () => {

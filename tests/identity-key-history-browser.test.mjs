@@ -312,6 +312,15 @@ test('a DM sent before a peer rotates its key still decrypts afterwards', async 
     await alice.reload({ waitUntil: 'domcontentloaded' });
     await loginUi(alice, server.origin, ALICE);
 
+    // 4b. alice accepts bob's new key, as the banner's button does. Reading the row
+    //     in step 2 pinned bob's original key, and a pinned key opens its own rows
+    //     with no fallback at all. The pin has to move for step 5 to reach the
+    //     retired-key fallback this file exists to exercise.
+    await alice.evaluate(async (id) => {
+        const { acceptNewKey } = await import('/js/chat/dm-key-trust.js');
+        await acceptNewKey(id);
+    }, bobId);
+
     // 5. alice reads the SAME row again. This is the assertion that matters: the
     //    retired-key fallback has to find bob's previous public key and use it.
     const after = await aliceDecrypts(alice, bobId, sent.id);

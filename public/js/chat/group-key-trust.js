@@ -117,7 +117,7 @@ export function renderGroupKeyTrustBanner(members) {
         // Plain text: the username is peer-controlled and never becomes HTML.
         text.textContent =
             `${name} is using a new key. ${name} is not receiving this group's ` +
-            'new messages until you verify or accept the new key.';
+            'new messages until you accept it. Compare safety numbers first if you can.';
 
         const verifyBtn = el(
             'button',
@@ -131,7 +131,7 @@ export function renderGroupKeyTrustBanner(members) {
         const btn = el(
             'button',
             'btn btn-warn dm-key-trust-accept',
-            'I verified the new key'
+            'Accept new key'
         );
         btn.type = 'button';
         btn.dataset.action = 'group-key-trust-accept';

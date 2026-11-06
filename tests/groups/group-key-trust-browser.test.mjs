@@ -785,8 +785,8 @@ test('group key pinning: a rotated Bob is skipped, accepted, rewrapped, and held
 
     assert.equal(acceptedPin.publicKey, rotation.installed,
         'the pin did not move to Bob\'s new key');
-    assert.ok(Number(acceptedPin.verifiedAt) > 0,
-        'accepting the new key did not mark it verified');
+    assert.equal(acceptedPin.verifiedAt, null,
+        'accepting the new key must not mark it verified: nobody compared it');
 
     const cleared = await pollUntil(async () => {
         const b = await readBanner(alice.page, bobSession.id);

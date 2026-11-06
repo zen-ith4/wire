@@ -20,6 +20,7 @@ import {
     chooseDmVersion,
     assertDmVersionAllowed,
     assertDmV2ContentFits,
+    assertDmPeerKeyUsable,
     getPeerDmMinVersion,
     DmDowngradeRefusedError
 } from './dm-v2-wire.js';
@@ -246,10 +247,16 @@ export async function decryptDmTextV2(payload, peerId, ctx = {}) {
  * downgrade while it still has nothing on disk and nothing in memory, and a test
  * proves it by spying on the File's read methods.
  *
+ * The peer key gate runs here for the same reason, and because this is the only
+ * check a file, a voice message or a caption passes: the composer's upload path
+ * never goes through the thread's text gate.
+ *
  * @param {number} recipientId
  * @returns {Promise<{version: number, peerMinVersion: number}>}
  */
 export async function resolveDmAttachmentVersion(recipientId) {
+    await assertDmPeerKeyUsable(recipientId);
+
     const peerMinVersion = await getPeerDmMinVersion(recipientId);
     const version = chooseDmVersion(recipientId, peerMinVersion);
     // Throws DmDowngradeRefusedError rather than silently sending v1 to a peer

@@ -1095,6 +1095,12 @@ if (typeof document !== 'undefined') document.addEventListener('click', async (e
                     await ensureSenderKeyReady(activeGroupId, activeGroupMembers, { force: true });
                     refreshGroupKeyTrustBanner(activeGroupId);
                 }
+
+                // An open panel still shows the pre-accept state, with Mark disabled.
+                if (document.getElementById(GROUP_VERIFY_IDS.verify)?.hasAttribute('hidden') === false) {
+                    const member = activeGroupMembers.find((m) => Number(m.user_id) === peerId);
+                    await renderGroupVerifyView(peerId, member?.username || `User ${peerId}`);
+                }
             } catch (err) {
                 console.error('[group] could not accept the new peer key:', err);
                 btn.disabled = false;

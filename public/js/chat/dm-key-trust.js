@@ -10,6 +10,16 @@
 //     a message;
 //   - render the safety-number view and the changed-key banner.
 //
+// This is the UI half. What actually stops a substituted key is one layer down:
+// the crypto layer only encrypts to bytes keys/peer-key-gate.js has just checked,
+// and only decrypts with keys already in the pin, whatever this module has or has
+// not been asked to do first.
+//
+// ACCEPTING IS NOT VERIFYING. Accepting says "let me read my messages and keep
+// talking"; verifying says "I compared the numbers". They are two actions so that
+// getting past the alarm never requires claiming a comparison nobody made, and so
+// "verified" keeps meaning something.
+//
 // DOM SAFETY
 // Every peer-controlled string (the username) is written with textContent or as
 // an attribute value assigned through the DOM, NEVER via innerHTML. There is no
@@ -21,39 +31,43 @@
 import { getCurrentUser } from '../core/auth.js';
 import { getServerEndpoint } from '../core/server.js';
 import {
-    getPeerPublicKey, getPeerKeyCandidates
+    getPeerPublicKeyBase64
 } from '../crypto/keys/peer-keys.js';
 
 import {
-    clearChangedGroupPeer
+    clearChangedGroupPeer,
+    evaluateAndPin,
+    PeerKeyChangedError
 } from '../crypto/keys/peer-key-gate.js';
 import { getCurrentIdentity } from '../crypto/identity-service.js';
 import {
     computeSafetyNumber,
-    evaluatePeerKey,
-    pinOnFirstUse,
+    getPeerPin,
     acceptPeerKey,
     markPeerVerified,
-    mayTryRetiredKey,
 } from '../crypto/keys/peer-trust.js';
 
 const IDS = {
     banner: 'dm-key-trust-banner',
     actions: 'dm-key-trust-actions',
     verify: 'dm-key-verify',
+    verifyOpen: 'dm-key-verify-open',
     verifyNumber: 'dm-key-verify-number',
     verifyWho: 'dm-key-verify-who',
     verifyMarked: 'dm-key-verify-marked',
 };
 
 /**
- * peerId -> { held: Array<{id, msg}>, state, pending }
+ * peerId -> { held: Array<{id, msg}>, state, pending, wasVerified }
  *
  * `held` keeps the RAW server rows, not decrypted text, so releasing after an
  * accept re-runs the normal decrypt+render path and nothing is lost or rendered
  * from a cache of half-decrypted values.
  */
 const held = new Map();
+
+/** The listener a render attached to a Mark button, so the next render can drop it. */
+const markListeners = new WeakMap();
 
 export function heldCount(peerId) {
     return held.get(Number(peerId))?.held.length ?? 0;
@@ -66,7 +80,7 @@ export function trustState(peerId) {
 function slot(peerId) {
     const id = Number(peerId);
     if (!held.has(id)) {
-        held.set(id, { held: [], state: 'unknown', pending: null });
+        held.set(id, { held: [], state: 'unknown', pending: null, wasVerified: false });
     }
     return held.get(id);
 }
@@ -82,17 +96,15 @@ function ctx() {
     return { origin: String(origin), ownUserId };
 }
 
-/** The peer's CURRENT public key, base64. Throws if the peer has none. */
-async function currentPeerKey(peerId) {
-    const key = await getPeerPublicKey(Number(peerId));
-    // getPeerPublicKey imports non-extractable, so the base64 comes from the same
-    // endpoint as the CryptoKey rather than being exported back out of it.
-    const { api } = await import('../core/api.js');
-    const data = await api(`/api/me/identity-key/${Number(peerId)}`);
-    if (typeof data?.publicKey !== 'string') {
-        throw new Error('Peer has no identity key');
-    }
-    return data.publicKey;
+/**
+ * Drop every key derived for this peer, after the pin changed under it.
+ *
+ * Loaded lazily, the same way this module's callers reach session.js: the group UI
+ * tests mock that module with only the exports the code under test uses.
+ */
+async function forgetDerivedKeys(peerId) {
+    const { removeSessionKey } = await import('../crypto/keys/session.js');
+    removeSessionKey(peerId);
 }
 
 /* =========================================================
@@ -102,42 +114,37 @@ async function currentPeerKey(peerId) {
 /**
  * Work out the trust state for a peer and apply TOFU on first contact.
  *
+ * `pending` is the key the user is being asked about, and it stays the FIRST one
+ * they were told about until they act. The number on the verify panel and the key
+ * the accept button pins both read it, so they cannot disagree: a server that
+ * changes its answer while the user is comparing digits does not get the new key
+ * accepted under the old key's number. It just raises a fresh alarm afterwards.
+ *
  * @param {number} peerId
- * @returns {Promise<{state: string, fingerprint: string|null, pending: object|null}>}
+ * @returns {Promise<{state: string, publicKey: string|null, fingerprint: string|null, pending: object|null, pin: object|null}>}
  */
 export async function resolveTrust(peerId) {
     const context = ctx();
     if (!context) {
-        return { state: 'unknown', fingerprint: null, pending: null };
+        return { state: 'unknown', publicKey: null, fingerprint: null, pending: null, pin: null };
     }
 
+    // Fetched once. The evaluation below is about these bytes and no others.
     let publicKey;
     try {
-        publicKey = await currentPeerKey(peerId);
+        publicKey = await getPeerPublicKeyBase64(Number(peerId));
     } catch {
-        return { state: 'no-key', fingerprint: null, pending: null };
+        return { state: 'no-key', publicKey: null, fingerprint: null, pending: null, pin: null };
     }
-
-    let evaluated = await evaluatePeerKey(peerId, publicKey, context);
 
     // TOFU: the very first time we meet this peer we pin what we see and carry
-    // on. Never overwrites an existing pin. The peer's retired keys come from the
-    // same exchange and are recorded with it - see pinOnFirstUse(), which
-    // explains why that is TOFU rather than a hole.
-    if (evaluated.state === 'first-contact') {
-        let retired = [];
-        try {
-            retired = (await getPeerKeyCandidates(peerId)).history;
-        } catch {
-            retired = [];
-        }
-        await pinOnFirstUse(peerId, publicKey, context, retired);
-        evaluated = { ...evaluated, state: 'ok' };
-    }
+    // on. Never overwrites an existing pin.
+    const evaluated = await evaluateAndPin(peerId, publicKey, context);
 
     const s = slot(peerId);
     s.state = evaluated.state;
-    s.pending = evaluated.pending;
+    s.pending = evaluated.state === 'changed' ? (s.pending ?? evaluated.pending) : null;
+    s.wasVerified = evaluated.state === 'changed' && Boolean(evaluated.pin?.verifiedAt);
 
     // The pin is shared with the group gate. If this resolution sees a known
     // or re-known key, any group "not receiving" marker for the peer is stale.
@@ -145,7 +152,13 @@ export async function resolveTrust(peerId) {
         clearChangedGroupPeer(peerId);
     }
 
-    return { state: evaluated.state, fingerprint: evaluated.fingerprint, pending: evaluated.pending };
+    return {
+        state: evaluated.state,
+        publicKey,
+        fingerprint: evaluated.fingerprint,
+        pending: s.pending,
+        pin: evaluated.pin,
+    };
 }
 
 /**
@@ -183,21 +196,17 @@ export function clearHeldMessages(peerId) {
  * Send gate
  * ========================================================= */
 
-export class SendBlockedError extends Error {
-    constructor(peerId) {
-        super("This peer's key has changed. Verify the new key before sending.");
-        this.name = 'SendBlockedError';
-        this.code = 'PEER_KEY_CHANGED';
-        this.peerId = Number(peerId);
-    }
-}
-
-/** Throws SendBlockedError while the peer's key is unrecognised. */
+/**
+ * Throws PeerKeyChangedError while the peer's key is unrecognised.
+ *
+ * This keeps the thread's own state and banner current. It does not choose the key:
+ * the encryption goes through the gate itself and derives from what that returns.
+ */
 export async function assertCanSendTo(peerId) {
     const state = await resolveTrust(peerId);
 
     if (state.state === 'changed') {
-        throw new SendBlockedError(peerId);
+        throw new PeerKeyChangedError(peerId);
     }
 
     return state;
@@ -208,25 +217,46 @@ export async function assertCanSendTo(peerId) {
  * ========================================================= */
 
 /**
- * The explicit "I verified / accept new key" action.
+ * The explicit "accept this new key" action. It does not mark the key verified.
  *
  * After this, the key is current AND recorded in `accepted`, so a later rotation
  * back to it is recognised rather than alarming again.
+ *
+ * What gets pinned is `pending`: the key the user was told about, never a fresh
+ * answer from the server (see resolveTrust). The group banner can get here without
+ * a DM thread having resolved this peer, so that one case resolves first, with no
+ * digits on screen yet to disagree with.
  */
 export async function acceptNewKey(peerId) {
     const context = ctx();
     if (!context) throw new Error('No signed-in account');
 
-    const publicKey = await currentPeerKey(peerId);
-    const pin = await acceptPeerKey(peerId, publicKey, context);
-
     const s = slot(peerId);
+
+    if (!s.pending) {
+        const trust = await resolveTrust(peerId);
+
+        if (trust.state === 'no-key' || trust.state === 'unknown') {
+            throw new Error("Could not read this contact's current key. Try again.");
+        }
+    }
+
+    // Nothing is waiting: the key is no longer one this device needs to ask about.
+    if (!s.pending) {
+        return getPeerPin(peerId, context);
+    }
+
+    const pin = await acceptPeerKey(peerId, s.pending.publicKey, context);
+
     s.state = 'ok';
     s.pending = null;
+    s.wasVerified = false;
 
     // The group banner reads the same changed-peer list; clear it here so a DM
     // accept and a group accept cannot leave different views disagreeing.
     clearChangedGroupPeer(peerId);
+
+    await forgetDerivedKeys(peerId);
 
     return pin;
 }
@@ -249,25 +279,51 @@ export function renderKeyTrustBanner(peerId, username) {
     const bar = document.getElementById(IDS.banner);
     if (!bar) return;
 
+    // Emptied rather than removed: a key can change while the thread is open, and
+    // the bar has to still be here when it does. An empty bar is hidden by its CSS.
     if (trustState(peerId) !== 'changed') {
-        bar.remove();
+        bar.replaceChildren();
         return;
     }
 
-    bar.replaceChildren();
+    // Already showing. This runs for every held row, and re-rendering would swap
+    // out a button the user may be in the middle of pressing.
+    if (bar.childElementCount > 0) return;
 
     const text = el('span', 'dm-key-trust-text');
     // Plain text; the username is a peer-controlled string and never becomes HTML.
-    text.textContent =
-        `${username} is using a new key. Messages are held until you verify it.`;
+    text.textContent = slot(peerId).wasVerified
+        ? `${username}'s key changed after you verified it. This can mean someone is ` +
+          'intercepting this conversation. Compare safety numbers again before accepting. ' +
+          'Messages are held until then.'
+        : `${username} is using a new key. Messages are held until you accept it. ` +
+          'Compare safety numbers first if you can.';
     bar.appendChild(text);
 
-    const btn = el('button', 'btn btn-warn dm-key-trust-accept', 'I verified the new key');
+    // The header's Verify button owns opening the panel; this is the same action,
+    // placed where the user is being asked to decide.
+    const review = el('button', 'btn btn-ghost dm-key-trust-verify', 'View safety number');
+    review.type = 'button';
+    review.addEventListener('click', () => {
+        const panel = document.getElementById(IDS.verify);
+        if (panel?.hasAttribute('hidden')) {
+            document.getElementById(IDS.verifyOpen)?.click();
+        }
+    });
+    bar.appendChild(review);
+
+    const btn = el('button', 'btn btn-warn dm-key-trust-accept', 'Accept new key');
     btn.type = 'button';
     btn.addEventListener('click', async () => {
         btn.disabled = true;
-        await acceptNewKey(peerId);
-        bar.remove();
+        try {
+            await acceptNewKey(peerId);
+        } catch (e) {
+            console.error('Could not accept the new peer key:', e);
+            btn.disabled = false;
+            return;
+        }
+        bar.replaceChildren();
         // Deliberately NO clearHeldMessages() here.
         //
         // The release listener (bindKeyTrustRelease) drains the queue with
@@ -279,6 +335,11 @@ export function renderKeyTrustBanner(peerId, username) {
         document.dispatchEvent(new CustomEvent('dm-key-trust-accepted', {
             detail: { peerId: Number(peerId) },
         }));
+
+        // An open panel still shows the pre-accept state, with Mark disabled.
+        if (document.getElementById(IDS.verify)?.hasAttribute('hidden') === false) {
+            await renderVerifyView(peerId, username);
+        }
     });
     bar.appendChild(btn);
 }
@@ -299,8 +360,9 @@ export function hideKeyTrustBanner() {
  * @param {(msg: object) => Promise<void>} deliver re-runs the normal
  *   decrypt+render path for one raw row. Passed in so this module does not have
  *   to import the DM cache, and so the test can substitute a recorder.
+ * @param {() => void} [afterRelease] runs once the queue has drained.
  */
-export function bindKeyTrustRelease(peerId, deliver) {
+export function bindKeyTrustRelease(peerId, deliver, afterRelease) {
     unbindKeyTrustRelease();
 
     const handler = async (event) => {
@@ -312,6 +374,7 @@ export function bindKeyTrustRelease(peerId, deliver) {
                 console.error(`Failed to release held DM ${msg.id}:`, e);
             }
         }
+        afterRelease?.();
     };
 
     releaseBinding = { handler };
@@ -333,17 +396,16 @@ export async function renderVerifyView(peerId, username, { ids = IDS } = {}) {
     const context = ctx();
     if (!context) return null;
 
-    let publicKey;
-    try {
-        publicKey = await currentPeerKey(peerId);
-    } catch {
-        return null;
-    }
+    const trust = await resolveTrust(peerId);
+    if (!trust.publicKey) return null;
 
     const identity = getCurrentIdentity();
     if (!identity?.publicKey) return null;
 
-    const { fingerprint, number } = await computeSafetyNumber(identity.publicKey, publicKey);
+    // While the key is unrecognised the digits are for `pending`: the same key the
+    // accept button would pin, so what the user compares is what they accept.
+    const shownKey = trust.state === 'changed' ? trust.pending.publicKey : trust.publicKey;
+    const { fingerprint, number } = await computeSafetyNumber(identity.publicKey, shownKey);
 
     const numberEl = document.getElementById(ids.verifyNumber);
     const whoEl = document.getElementById(ids.verifyWho);
@@ -353,26 +415,21 @@ export async function renderVerifyView(peerId, username, { ids = IDS } = {}) {
     if (numberEl) numberEl.textContent = number;
     if (whoEl) whoEl.textContent = username;
 
-    const pin = await evaluatePeerKey(peerId, publicKey, context);
-
-    // `verifiedAt` belongs to the key this device PINNED - `pin.current`. While the
-    // evaluation is 'changed' the key on screen is `pin.pending`, not
-    // `pin.current`, so the flag describes a different key from the number the
-    // user is being asked to compare. Showing it would claim the user verified
-    // something they never saw.
+    // `verifiedAt` belongs to the key this device PINNED - `pin.current`. In any
+    // state but 'ok' the key on screen is not `pin.current`, so the flag describes
+    // a different key from the number the user is being asked to compare. Showing
+    // it would claim the user verified something they never saw.
     //
     // This was a real bug: until they act, this view reported the PREVIOUS key's
     // verification against the NEW key's safety number, and offered a Mark button
     // that would have stamped the old key.
     //
     // Note this is NOT about when verifiedAt is cleared. It is cleared only when
-    // a key becomes pinned: pinOnFirstUse() writes null (trust on first sight is
-    // not verification), and acceptPeerKey() writes Date.now() - correctly, since
-    // the button that calls it is labelled "I verified the new key" and is the
-    // user asserting exactly that. So a pin that is verified and then changed
-    // keeps a stale verifiedAt on purpose; it is this view's job not to read it
-    // as if it described the pending key.
-    const verifiedHere = pin.state !== 'changed' && Boolean(pin.pin?.verifiedAt);
+    // a key becomes pinned: pinOnFirstUse() and acceptPeerKey() both write null,
+    // because neither trusting on first sight nor accepting is a comparison. So a
+    // pin that is verified and then changed keeps a stale verifiedAt on purpose;
+    // it is this view's job not to read it as if it described the pending key.
+    const verifiedHere = trust.state === 'ok' && Boolean(trust.pin?.verifiedAt);
 
     if (markedEl) {
         markedEl.textContent = verifiedHere
@@ -382,22 +439,52 @@ export async function renderVerifyView(peerId, username, { ids = IDS } = {}) {
 
     const markBtn = panel.querySelector('[data-action="mark-verified"]');
     if (markBtn) {
-        if (pin.state === 'changed') {
-            // Same reason: pressing this would stamp the old pinned key, not the
-            // one whose digits are on screen. Offer nothing rather than something
+        // One listener per button, however often the panel is rendered: one left
+        // over from an earlier render would still run when this one has none.
+        const previous = markListeners.get(markBtn);
+        if (previous) markBtn.removeEventListener('click', previous);
+        markListeners.delete(markBtn);
+
+        if (trust.state !== 'ok') {
+            // Same reason: pressing this would stamp the pinned key, not the one
+            // whose digits are on screen. Offer nothing rather than something
             // that means the wrong thing.
             markBtn.disabled = true;
-            markBtn.title = 'Accept the new key for this conversation first.';
+            markBtn.title = trust.state === 'changed'
+                ? 'Accept the new key for this conversation first.'
+                : 'This is not the key pinned on this device.';
         } else {
             markBtn.disabled = false;
-            markBtn.addEventListener('click', async () => {
-                const marked = await markPeerVerified(peerId, context);
-                if (markedEl && marked) markedEl.textContent = 'Marked as verified on this device.';
-            }, { once: true });
+            markBtn.title = '';
+
+            const listener = async () => {
+                const marked = await markPeerVerified(peerId, context, trust.fingerprint);
+
+                // The pinned key moved after these digits were drawn. Nothing was
+                // marked, so show the user what is true now.
+                if (!marked) {
+                    await renderVerifyView(peerId, username, { ids });
+                    return;
+                }
+
+                await forgetDerivedKeys(peerId);
+                if (markedEl) markedEl.textContent = 'Marked as verified on this device.';
+            };
+
+            markListeners.set(markBtn, listener);
+            markBtn.addEventListener('click', listener);
         }
     }
 
     return { fingerprint, number };
+}
+
+// A logout must not leave one account's held rows, or a key it was being asked
+// about, for the next account on this page. A 401-triggered logout does not reload.
+if (typeof window !== 'undefined' && window.addEventListener) {
+    window.addEventListener('wire:logout', () => {
+        held.clear();
+    });
 }
 
 export const KEY_TRUST_IDS = IDS;

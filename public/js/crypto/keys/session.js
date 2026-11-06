@@ -101,12 +101,26 @@ export async function createSessionKey(userId) {
         );
     }
 
-    // Loaded lazily: peer-keys.js -> core/api.js -> core/auth.js, and auth.js
-    // statically imports this module for clearSessionKeys(). Keeping this edge
-    // dynamic avoids the auth -> session -> peer-keys -> api -> auth cycle.
-    const { getPeerPublicKey } = await import('./peer-keys.js');
+    // Derived from this device's PIN, never from the server's latest answer: this
+    // key both reads rows and encrypts sends (encrypt.js), so a substituted key must
+    // not be able to reach it. A changed peer key therefore leaves this pointing at
+    // the pinned key until the user accepts the new one; sends are refused before
+    // they get here (assertCanSendTo, resolveDmAttachmentVersion).
+    //
+    // Loaded lazily: peer-key-gate.js -> peer-keys.js -> core/api.js ->
+    // core/auth.js, and auth.js statically imports this module for
+    // clearSessionKeys(). Keeping this edge dynamic avoids that cycle.
+    const { getTrustedPeerKeys } = await import('./peer-key-gate.js');
+    const [pinned] = await getTrustedPeerKeys(id);
+
+    if (!pinned) {
+        throw new Error(
+            'No pinned key for this peer'
+        );
+    }
+
     const peerPublicKey =
-        await getPeerPublicKey(id);
+        await importX25519(pinned.publicKey);
 
     const sessionKey =
         await deriveSessionKeyFromPeer(
@@ -297,14 +311,19 @@ async function buildArchivedSessionKeys(id) {
             // (first contact). After a key-change alarm the attacker's
             // substituted key is current, and an unknown retired key arriving
             // with it must not become a second way in. See mayTryRetiredKey().
+            //
+            // No context means the pin cannot be read, so nothing is tried: this
+            // list is the server's word until the pin has said otherwise.
             const trust = await getPeerTrustContext();
 
-            if (trust) {
-                const verdict = await mayTryRetiredKey(id, publicKey, trust);
+            if (!trust) {
+                continue;
+            }
 
-                if (!verdict.allowed) {
-                    continue;
-                }
+            const verdict = await mayTryRetiredKey(id, publicKey, trust);
+
+            if (!verdict.allowed) {
+                continue;
             }
 
             const imported = await importX25519(publicKey);
@@ -323,21 +342,30 @@ async function buildArchivedSessionKeys(id) {
 }
 
 /**
- * Move the candidate that actually worked to the front, so the next message in
- * this conversation does not retry the same failing keys first.
+ * Move the retired candidate that actually worked to the front of the retired
+ * list, so the next old message in this conversation does not retry the same
+ * failing keys first.
+ *
+ * It must NOT become the session key. getOrCreateSessionKey() is also what
+ * encrypt.js sends with, so reading one old row would redirect every later send to
+ * a retired key, and rows sealed to the current key would stop opening because the
+ * current key would no longer be a candidate.
  *
  * @param {number} userId
  * @param {CryptoKey} working
  */
 export function promoteSessionKeyCandidate(userId, working) {
     const id = normalizeUserId(userId);
+    const archived = archivedSessionKeys.get(id);
 
-    if (sessionKeys.get(id) === working) {
+    if (!archived || archived[0] === working || !archived.includes(working)) {
         return;
     }
 
-    sessionKeys.set(id, working);
-    archivedSessionKeys.delete(id);
+    archivedSessionKeys.set(id, [
+        working,
+        ...archived.filter((key) => key !== working)
+    ]);
 }
 
 async function importX25519(base64) {

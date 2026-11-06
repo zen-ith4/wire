@@ -2,11 +2,12 @@
 
 Every sentence here is meant to be checkable: it cites a file:line or a test by
 name. Tree: `wire-final-39` plus Item 3 (progressive DM media, commits C2a to
-C5d, flag OFF) and the P0 series (commits P0-1 to P0-5), branch
-`security-hardening` at `9918b14`. If code and this page disagree, the code is
-right and this page is a bug. Sections 2 and 3 are unchanged except for the rows
-and bullets marked **(Item 3)** and **(P0)**; the old Windows-only rows in
-section 4 are kept, and the new Linux results are added next to them.
+C5d, flag OFF), the P0 series (commits P0-1 to P0-5) and the DM key gate (branch
+`fix/dm-key-gate`), on top of branch `security-hardening` at `9918b14`. If code and
+this page disagree, the code is right and this page is a bug. Sections 2 and 3 are
+unchanged except for the rows and bullets marked **(Item 3)**, **(P0)** and **(Key
+gate)**; the old Windows-only rows in section 4 are kept, and the new Linux results
+are added next to them.
 
 ## 1. Threat model in one paragraph
 
@@ -26,7 +27,7 @@ server delivers, so nothing below holds against a server that changes it.
 | **DM text, v2** (peer at `dm_e2ee_min_version` >= 2) | confidentiality; reflection (a2b vs b2a); relabelling sender/recipient; re-pointing a reply; replay of a stored row under a new id (per device, windowed) | X25519 + HKDF-SHA-256 per direction (`public/js/crypto/messages/dm-v2.js:52-54`, `:231`), AES-256-GCM with AAD `dm-msg-v2` binding version, from, to, senderKeyFp, direction, iv, replyToId (`dm-v2.js:324`); replay store keyed on the iv (`dm-v2-wire.js:55`, `:61`) | `tests/dm-v2.test.mjs` "KAT: a2b AAD, key and ciphertext ...", "direction: a2b and b2a keys differ ...", "bound field: replyToId is bound ...", "rejected: a replayed IV is refused ..." |
 | **DM text, v1** (peer at 1) | confidentiality only | one direction-blind key, **no AAD** (`docs/e2ee-dm-hardening.md` 1) | - |
 | **DM attachments** | file bytes: confidentiality (STREAM format); meta (name, mime, per-file key) and caption: v2 envelope with AAD label `dm-att-v2` for a peer at >= 2 | `public/js/crypto/messages/attachment-stream.js`; `dm-v2.js:715`; the server stores an opaque name, `application/octet-stream`, voice flag 0 and the ciphertext size (`services/dm.service.js:270-277`) | `tests/dm-v2-attachments-browser.test.mjs` a, e1-e7, e4b, f1, f1b, f2, f2b; `tests/acceptance-no-plaintext.test.mjs` |
-| **DM key continuity** | a key substituted AFTER first contact is detected and HELD (no silent decrypt under the new key); safety number to compare out of band | TOFU pin + archive per device (`public/js/crypto/keys/peer-trust.js:30`); key-change alarm (`public/js/chat/dm-key-trust.js`) | `tests/peer-trust.test.mjs`, `tests/peer-trust-browser.test.mjs` |
+| **DM key continuity (Key gate)** | a key substituted AFTER first contact: nothing is encrypted to it (text, files, voice, captions), and an encrypted row sealed to it does not open under any path, including the conversation list and rows claiming to be our own, whichever key endpoint the server lies on; rows are HELD until the user acts; a key the server only listed at first contact cannot become current without the alarm; safety number to compare out of band; accepting a key does not mark it verified | encryption derives from the exact bytes one gate call evaluated (`resolveDmPeerKey` in `public/js/crypto/keys/peer-key-gate.js`); decryption chooses only from the pin (`getTrustedPeerKeys`, `pinnedPeerKeys` in `public/js/crypto/keys/peer-trust.js`); TOFU pin + archive per device (`public/js/crypto/keys/peer-trust.js:30`); key-change alarm (`public/js/chat/dm-key-trust.js`) | `tests/dm-key-gate.test.mjs`, `tests/peer-trust.test.mjs`, `tests/peer-trust-browser.test.mjs` |
 | **Group messages** | confidentiality (Sender Keys); per-message sender authentication (signature over group, senderKeyId, counter, iv, ciphertext, replyToId, attachment slot); KDM AAD binds group/from/to/epoch/version | `public/js/crypto/groups/signing.js:93-104`; `docs/GROUP_E2EE_MULTIDEVICE_DESIGN.md` 6 | `tests/groups/group-signing-adversarial.test.mjs` C4-1, C4-3, C4-4, C4-8 |
 | **Group KDM key continuity** | a group member's identity key substituted after first contact is detected: the KDM is neither produced nor unwrapped under the new key, and the member is shown as "not receiving" until accepted | the group path consults the SAME TOFU pin as DMs (`public/js/crypto/keys/peer-key-gate.js` called from `keys/session.js`); self-KDMs use the local identity key, never a server fetch; distributions skip only a changed member and are re-wrapped after accept | `tests/groups/group-kdm-key-pinning.test.mjs`, `tests/groups/group-signing-ensure.test.mjs` E-1b |
 | **Group attachments** | file bytes bound into the signature (iv, ciphertext hash, plaintext length); lazy download bounded by the SIGNED size; 20 MB auto-load budget per view; 2 concurrent downloads | `docs/GROUP_ATTACHMENTS_E2EE.md`; `public/js/chat/group-attachments.js:609`, `:669`, `:758` | `tests/groups/group-attachment-browser.test.mjs` 1-11 |
@@ -60,7 +61,22 @@ hypothesis (D13).
   future, until rotation (`docs/PHASE3_RFC.md`). Group Sender Keys give no PCS
   and no per-message FS (`docs/GROUP_E2EE_MULTIDEVICE_DESIGN.md` 6).
 - **First contact (TOFU).** The first key a client learns comes from the
-  server; only an out-of-band safety-number comparison closes that.
+  server; only an out-of-band safety-number comparison closes that. **(Key gate)**
+  Until that comparison, a key the server listed as retired at first contact can
+  still open rows, so it can forge one. Marking the contact verified drops those
+  keys (`markPeerVerified`, `public/js/crypto/keys/peer-trust.js`). The cost: a row
+  sealed to a genuinely retired key that this device only learned that way stops
+  opening on this device.
+- **(Key gate) Rows that are not encrypted at all.** A row whose content is not an
+  encrypted envelope is rendered as it is, with no key involved and no marker
+  (`decryptDmMessage`, `public/js/chat/dm.js`), and the server accepts such content
+  (`sendMessage`, `controllers/dm.controller.js`). It exists for legacy history, and
+  it means a server can still insert a plaintext row that appears to come from a
+  peer, on a verified contact too. The key gate does not reach it, because there is
+  no key to check.
+- **(Key gate) v1 rows from a peer pinned at v2.** Still decrypted, with one toast
+  per conversation per page load (`public/js/chat/dm.js`). v1 has no AAD, so a server
+  can reflect or relabel one under the pinned key. It cannot forge a new one.
 - **Key change before the user acts on the alarm.** A changed group member's
   KDM is skipped/held and the member is shown as "not receiving", but a server
   can still withhold the alarm itself, and first contact remains TOFU.
@@ -113,6 +129,7 @@ hypothesis (D13).
 | Non-browser suite | not re-run on wire-final-39 by the reviewer | see the follow-up report for counts | - |
 | **Item 3 and P0 (this tree, `9918b14`)** | owner's WSL2, Node 22.23.2, `@sparticuz/chromium` 153 (`HeadlessChrome/153.0.8010.0`): non-browser suite 996 tests, 980 pass, 0 fail, 3 skipped, 13 todo; browser suite in two halves, the only failures are the two known pre-existing tests `e3` and `e4` in `tests/dm-v2-wire-browser-paths.test.mjs`; `tests/media/sw-stream-browser.test.mjs` 11/11 in five solo runs; group attachment browser file 11/11 in ten runs (five on this tree, five on the tree before the C5d test files); `sw-manifest.js` version `a771fa2fb50e` and `sw-media-bundle.js` current; live server: example secret refused, old token 401 and new token 200 after a password change | - | - |
 | Item 3 mutation checks (flag-ON temp copy, never the repository) | cloud container, Chromium 153, `cloud-logs/` of the C5d deliverable: skipping the GCM tag check is caught by test 5, logout without purge by test 6, Content-Range from ciphertext size by tests 3, 4 and 7, decrypted chunks cached by test 8, a registry that ignores the client binding by test 6 | - | not re-run on the owner's WSL |
+| **DM key gate (this tree)** | - | Windows, Node 24.20 (not the pinned 22), `better-sqlite3` 12 in a throwaway copy, Chrome 157: non-browser suite 987 tests, 942 pass, 21 fail, 11 skipped, 13 todo; the same 21 fail on the tree before the change (14 are test files that cannot load on Node 24, where `navigator.locks` is read-only, and pass with a throwaway shim); browser files 100 pass, 3 fail, and the same 3 fail before the change (`tests/dm-csp-handlers-enforced-browser.test.mjs` Attach control, `tests/groups/group-e2e-browser.test.mjs` protocol timeout, `tests/credentials/f12-browser-login.test.mjs` "Add user"); 25 planted regressions, all caught by `tests/dm-key-gate.test.mjs`, `tests/peer-trust.test.mjs` and `tests/dm-key-trust-banner.test.mjs` | `tests/acceptance-xss-sweep-browser.test.mjs` (its fixture filename cannot exist on NTFS); Linux; Node 22 |
 | Firefox, Safari, Android WebView, iOS | - | - | **never** |
 | Electron client end to end | - | - | **never** (it loads the server, `electron-client/main.js:380`) |
 | The APK (`app-debug.apk`) | - | - | **never** (it bundles an old `public/`) |

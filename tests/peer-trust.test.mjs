@@ -302,6 +302,100 @@ test('markPeerVerified on a peer with no pin returns null rather than inventing 
         'verifying a peer we have never met must not create a trust record');
 });
 
+test('accepting a new key does not verify it, and clears the old key\'s verification', async () => {
+    // Getting past the alarm must never require claiming a comparison nobody made.
+    await resetPin();
+    await trust.pinOnFirstUse(PEER, THEIRS, CTX);
+    await trust.markPeerVerified(PEER, CTX);
+
+    const pin = await trust.acceptPeerKey(PEER, THEIRS_2, CTX);
+
+    assert.equal(pin.verifiedAt, null, 'nobody has compared the new key');
+    assert.equal((await trust.getPeerPin(PEER, CTX)).verifiedAt, null, 'and that is what is stored');
+});
+
+test('markPeerVerified refuses when the pinned key is not the one the user was shown', async () => {
+    await resetPin();
+    await trust.pinOnFirstUse(PEER, THEIRS, CTX);
+
+    const onScreen = (await trust.evaluatePeerKey(PEER, THEIRS_2, CTX)).fingerprint;
+    assert.equal(await trust.markPeerVerified(PEER, CTX, onScreen), null,
+        'digits for one key must not verify another');
+    assert.equal((await trust.getPeerPin(PEER, CTX)).verifiedAt, null);
+
+    const pinned = (await trust.evaluatePeerKey(PEER, THEIRS, CTX)).fingerprint;
+    const marked = await trust.markPeerVerified(PEER, CTX, pinned);
+    assert.equal(typeof marked.verifiedAt, 'number', 'digits for the pinned key do verify it');
+});
+
+test('a key the server only LISTED at first contact cannot become current without the alarm', async () => {
+    // If this were "reknown", the server could plant its own key in the retired list
+    // at first contact and switch to it later with no alarm at all.
+    await resetPin();
+    await trust.pinOnFirstUse(PEER, THEIRS, CTX, [THEIRS_2]);
+
+    const planted = await trust.evaluatePeerKey(PEER, THEIRS_2, CTX);
+    assert.equal(planted.state, 'changed');
+    assert.equal(planted.pending.publicKey, THEIRS_2);
+});
+
+test('accepting a key the server listed at first contact makes it an ordinary known key', async () => {
+    await resetPin();
+    await trust.pinOnFirstUse(PEER, THEIRS, CTX, [THEIRS_2]);
+    await trust.acceptPeerKey(PEER, THEIRS_2, CTX);
+
+    assert.equal((await trust.evaluatePeerKey(PEER, THEIRS_2, CTX)).state, 'ok');
+
+    await trust.acceptPeerKey(PEER, THEIRS, CTX);
+    assert.equal((await trust.evaluatePeerKey(PEER, THEIRS_2, CTX)).state, 'reknown',
+        'the user has accepted it now, so it may come back quietly');
+});
+
+test('on a verified contact, even a previously accepted key raises the alarm', async () => {
+    // "Verified" covers exactly one key. A quiet switch back to an older one would
+    // keep the label on a key the user never compared, and that older key may be
+    // exactly the one the peer rotated away from because it was compromised.
+    await resetPin();
+    await trust.pinOnFirstUse(PEER, THEIRS, CTX);
+    await trust.acceptPeerKey(PEER, THEIRS_2, CTX);
+    assert.equal((await trust.evaluatePeerKey(PEER, THEIRS, CTX)).state, 'reknown', 'control: unverified');
+
+    await trust.markPeerVerified(PEER, CTX);
+
+    assert.equal((await trust.evaluatePeerKey(PEER, THEIRS, CTX)).state, 'changed');
+    assert.equal((await trust.evaluatePeerKey(PEER, THEIRS_2, CTX)).state, 'ok', 'control: the verified key');
+});
+
+test('verifying drops what the server listed at first contact, and nothing else', async () => {
+    await resetPin();
+    await trust.pinOnFirstUse(PEER, THEIRS, CTX, [THEIRS_2]);
+    await trust.acceptPeerKey(PEER, MINE_2, CTX);
+
+    assert.equal((await trust.mayTryRetiredKey(PEER, THEIRS_2, CTX)).allowed, true, 'control: before verifying');
+
+    await trust.markPeerVerified(PEER, CTX);
+
+    const planted = await trust.mayTryRetiredKey(PEER, THEIRS_2, CTX);
+    assert.equal(planted.allowed, false, 'a key taken on the server\'s word must not outlive verification');
+    assert.equal(planted.reason, 'not-previously-accepted');
+
+    assert.equal((await trust.mayTryRetiredKey(PEER, THEIRS, CTX)).allowed, true,
+        'a key this device really held keeps its history readable');
+});
+
+test('pinnedPeerKeys lists the pin only, current first, without duplicates', async () => {
+    await resetPin();
+    assert.deepEqual(trust.pinnedPeerKeys(null), []);
+
+    await trust.pinOnFirstUse(PEER, THEIRS, CTX, [MINE_2]);
+    await trust.acceptPeerKey(PEER, THEIRS_2, CTX);
+
+    const keys = trust.pinnedPeerKeys(await trust.getPeerPin(PEER, CTX)).map((k) => k.publicKey);
+
+    assert.equal(keys[0], THEIRS_2, 'the current key is tried first');
+    assert.deepEqual([...keys].sort(), [THEIRS, THEIRS_2, MINE_2].sort());
+});
+
 test('a password change does not alarm, because it re-wraps the SAME key', async () => {
     // The real credential flow's invariant: prepareCredentialChange()
     // re-encrypts the existing PKCS#8 under a new salt and never generates a new
@@ -373,10 +467,28 @@ test('dm.js wires the trust gate into send, decrypt and the thread', async () =>
             /if \(decrypted === null\)\s*\{\s*return;/],
         ['the thread renders the banner', /renderKeyTrustBanner\(peerId, username\)/],
         ['the thread renders the safety number', /renderVerifyView\(peerId, username\)/],
-        ['accepting releases the held rows', /bindKeyTrustRelease\(peerId,/],
+        ['accepting releases the held rows', /bindKeyTrustRelease\(\s*peerId,/],
+        ['the conversation list holds what the thread holds',
+            /async function decryptConversationPreview[\s\S]*?if \(shouldHoldMessage\(peerUserId\)\)\s*\{\s*return HELD_PREVIEW;/],
+        ['a held row paints the banner even when the thread is already open',
+            /holdMessage\(peerId, msg\);\s*showKeyTrustBanner\(peerId\);/],
     ]) {
         assert.match(src, pattern, `dm.js must still wire: ${what}`);
     }
+});
+
+test('the attachment path passes the gate before it touches the file', async () => {
+    const fs = await import('node:fs');
+    const src = fs.readFileSync(
+        new URL('../public/js/crypto/messages/message-crypto.js', import.meta.url),
+        'utf8'
+    );
+
+    assert.match(
+        src,
+        /export async function resolveDmAttachmentVersion\(recipientId\) \{\s*await assertDmPeerKeyUsable\(recipientId\);/,
+        'files, voice messages and captions never go through the thread text gate'
+    );
 });
 
 /**

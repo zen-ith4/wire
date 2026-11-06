@@ -198,8 +198,8 @@ async function decryptWithRetiredPeerKeys(
             continue;
         }
 
-        // Remember which key worked so the rest of this conversation does not
-        // re-walk the same failures.
+        // Remember which retired key worked so older rows in this conversation do
+        // not re-walk the same failures. The session key itself does not move.
         promoteSessionKeyCandidate(peerUserId, key);
 
         return plaintext;

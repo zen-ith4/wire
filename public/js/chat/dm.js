@@ -318,6 +318,32 @@ function isEncryptedDmContent(content) {
   return !!parseDmPayload(content);
 }
 
+// What the conversation list says about a row it will not open because of a
+// key change. Never the row's content.
+const HELD_PREVIEW = 'Message held: this contact\'s key changed';
+
+// The banner is the only place a key change can be acted on, and a key can change
+// while a thread is already open, so every path a key change stops paints it.
+function showKeyTrustBanner(peerId) {
+  if (dmActivePeer && Number(dmActivePeer.id) === Number(peerId)) {
+    renderKeyTrustBanner(peerId, dmActivePeer.username);
+  }
+}
+
+// Runs one send step. A refusal over a changed key is shown as a toast by the
+// composer; this also gives the user somewhere to go from there.
+async function withKeyChangeBanner(peerId, step) {
+  try {
+    return await step();
+  } catch (e) {
+    if (e?.code === 'PEER_KEY_CHANGED') {
+      await resolveTrust(peerId);
+      showKeyTrustBanner(peerId);
+    }
+    throw e;
+  }
+}
+
 async function decryptDmMessage(msg) {
   if (!msg) {
     throw new Error('Invalid DM message');
@@ -388,6 +414,7 @@ async function decryptDmMessage(msg) {
 
   if (shouldHoldMessage(peerId)) {
     holdMessage(peerId, msg);
+    showKeyTrustBanner(peerId);
     return null;
   }
 
@@ -605,7 +632,7 @@ async function decryptDmMessages(messages) {
 // encryption path for outgoing DM text instead of two.
 async function encryptForActivePeer(content, replyToId = 0) {
   // Peer key trust (Phase 2): refuse to encrypt to a peer whose key this device
-  // does not recognise. Throws SendBlockedError; nothing leaves the browser.
+  // does not recognise. Throws PeerKeyChangedError; nothing leaves the browser.
   await assertCanSendTo(dmActivePeer.id);
 
   const currentUser = getCurrentUser();
@@ -647,6 +674,14 @@ async function decryptConversationPreview(
 ) {
   if (!lastMessage) {
     return '';
+  }
+
+  // The same rule as the thread: while this peer's key is unrecognised, no row is
+  // opened for display. What this knows comes from the last time the trust state
+  // was resolved. A row sealed to a key the pin does not hold fails below whatever
+  // that state says, so the list cannot show what the thread would hold.
+  if (shouldHoldMessage(peerUserId)) {
+    return HELD_PREVIEW;
   }
 
   const payload = parseDmPayload(lastMessage);
@@ -720,7 +755,9 @@ async function decryptConversationPreview(
       error
     );
 
-    return 'Unable to decrypt';
+    return error?.code === 'DM_V2_NO_SENDER_KEY'
+      ? HELD_PREVIEW
+      : 'Unable to decrypt';
   }
 }
 
@@ -1712,22 +1749,27 @@ thread.innerHTML = `
       const recipientId = Number(dmActivePeer.id);
       return {
         recipient_id: recipientId,
-        content: await encryptForActivePeer(content, replyToId),
+        content: await withKeyChangeBanner(
+          recipientId,
+          () => encryptForActivePeer(content, replyToId)
+        ),
       };
     },
     buildFormExtra: (form) => form.append('recipient_id', dmActivePeer.id),
     // Encrypts the file (and caption) before upload. Needs the
     // composer's prepareUpload hook (composer.js hunk, pending approval).
     prepareUpload: ({ file, caption, isVoice, replyToId }) =>
-      prepareDmAttachmentUpload({
-        file,
-        caption,
-        isVoice,
-        senderId: Number(getCurrentUser().id),
-        recipientId: Number(dmActivePeer.id),
-        // STEP 2A D4: the composer's reply target, bound into the AAD.
-        replyToId: Number(replyToId) || 0,
-      }),
+      withKeyChangeBanner(dmActivePeer.id, () =>
+        prepareDmAttachmentUpload({
+          file,
+          caption,
+          isVoice,
+          senderId: Number(getCurrentUser().id),
+          recipientId: Number(dmActivePeer.id),
+          // STEP 2A D4: the composer's reply target, bound into the AAD.
+          replyToId: Number(replyToId) || 0,
+        })
+      ),
     onMessage: (message) => {
       addDmMessage(message);
       // The composer only calls onMessage after the send succeeded
@@ -1746,7 +1788,10 @@ thread.innerHTML = `
     // ---------- Edit mode ----------
     editPreviewId: 'dm-edit-preview',
     buildEditBody: async (content) => ({
-      content: await encryptForActivePeer(content, dmEditingReplyToId),
+      content: await withKeyChangeBanner(
+        dmActivePeer.id,
+        () => encryptForActivePeer(content, dmEditingReplyToId)
+      ),
     }),
     editUrlFor: (id) => `/api/dm/messages/${id}`,
     onEdit: (message) => {
@@ -1804,8 +1849,13 @@ thread.innerHTML = `
 
   // Releasing held messages once the user accepts the new key. Re-runs the
   // normal decrypt+render path over rows that were deliberately kept RAW, so
-  // accepting a key can never lose a message.
-  bindKeyTrustRelease(peerId, (msg) => addDmMessage(msg));
+  // accepting a key can never lose a message. The conversation list still says
+  // this peer's row is held until it is prepared again.
+  bindKeyTrustRelease(
+    peerId,
+    (msg) => addDmMessage(msg),
+    () => void loadDmConversations()
+  );
 
   const container = document.getElementById('dm-messages');
 

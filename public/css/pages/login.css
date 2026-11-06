@@ -305,3 +305,17 @@
   outline-offset:3px;
   border-radius:4px;
 }
+
+/* ---- Inline-style replacements from js/core/auth.js (CSP: no style="" attrs).
+   Same declarations as the inline styles they replace. JS still toggles the
+   editor with el.style.display (CSSOM), which overrides .auth-is-hidden. ---- */
+.auth-link-btn{margin-left:4px;}
+.auth-server-row--native{margin-top:16px;display:flex;flex-direction:column;gap:8px;}
+.auth-server-head{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+.auth-server-value--native{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:.75;font-size:.9em;}
+.auth-is-hidden{display:none;}
+.auth-server-actions{display:flex;gap:8px;margin-top:8px;}
+.auth-flex-1{flex:1;}
+.auth-mt-8{margin-top:8px;}
+.auth-server-row--electron{margin-top:16px;display:flex;align-items:center;gap:10px;}
+.auth-server-value--electron{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;opacity:.75;}

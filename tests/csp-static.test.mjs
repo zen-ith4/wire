@@ -34,7 +34,6 @@ const require = createRequire(import.meta.url);
 const LEGACY_CAPS = {
   handlers: {},
   styles: {
-    'js/core/auth.js': 21,
     'js/settings/settings-render.js': 16,
     'js/chat/dm.js': 3,
     'js/settings/admin.js': 3,

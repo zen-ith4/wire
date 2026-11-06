@@ -1114,8 +1114,8 @@ function renderVerification(
     <button
       type="button"
       id="resend-verification"
-      class="btn btn-ghost btn-sm"
-      style="margin-left:4px;"
+      class="btn btn-ghost btn-sm auth-link-btn"
+     
     >
       Resend
     </button>
@@ -1865,8 +1865,8 @@ function renderAuthCard(
           <button
             type="button"
             id="switch-auth"
-            class="btn btn-ghost btn-sm"
-            style="margin-left:4px;"
+            class="btn btn-ghost btn-sm auth-link-btn"
+           
           >
             Sign in
           </button>
@@ -1877,8 +1877,8 @@ function renderAuthCard(
           <button
             type="button"
             id="switch-auth"
-            class="btn btn-ghost btn-sm"
-            style="margin-left:4px;"
+            class="btn btn-ghost btn-sm auth-link-btn"
+           
           >
             Create account
           </button>
@@ -1891,23 +1891,13 @@ function renderAuthCard(
     nativeApp
       ? `
         <div
-          class="auth-server-row"
+          class="auth-server-row auth-server-row--native"
           id="auth-server-row"
-          style="
-            margin-top:16px;
-            display:flex;
-            flex-direction:column;
-            gap:8px;
-          "
+         
         >
 
-          <div
-            style="
-              display:flex;
-              align-items:center;
-              justify-content:space-between;
-              gap:10px;
-            "
+          <div class="auth-server-head"
+           
           >
             <span>Server</span>
 
@@ -1921,20 +1911,14 @@ function renderAuthCard(
           </div>
 
           <span
-            class="auth-server-value"
+            class="auth-server-value auth-server-value--native"
             id="auth-server-value"
-            style="
-              overflow:hidden;
-              text-overflow:ellipsis;
-              white-space:nowrap;
-              opacity:.75;
-              font-size:.9em;
-            "
+           
           >${escapeHtml(getServerEndpoint())}</span>
 
-          <div
+          <div class="auth-is-hidden"
             id="auth-server-editor"
-            style="display:none;"
+           
           >
             <input
               type="text"
@@ -1946,18 +1930,14 @@ function renderAuthCard(
               value="${escapeHtml(getServerEndpoint())}"
             >
 
-            <div
-              style="
-                display:flex;
-                gap:8px;
-                margin-top:8px;
-              "
+            <div class="auth-server-actions"
+             
             >
               <button
                 type="button"
                 id="auth-server-connect"
-                class="btn btn-primary"
-                style="flex:1;"
+                class="btn btn-primary auth-flex-1"
+               
               >
                 Connect
               </button>
@@ -1965,8 +1945,8 @@ function renderAuthCard(
               <button
                 type="button"
                 id="auth-server-cancel"
-                class="btn btn-ghost"
-                style="flex:1;"
+                class="btn btn-ghost auth-flex-1"
+               
               >
                 Cancel
               </button>
@@ -1974,8 +1954,8 @@ function renderAuthCard(
 
             <div
               id="auth-server-error"
-              class="field-error"
-              style="margin-top:8px;"
+              class="field-error auth-mt-8"
+             
             ></div>
           </div>
 
@@ -1988,27 +1968,16 @@ function renderAuthCard(
     !isRegister && electronApp
       ? `
         <div
-          class="auth-server-row"
+          class="auth-server-row auth-server-row--electron"
           id="auth-server-row"
-          style="
-            margin-top:16px;
-            display:flex;
-            align-items:center;
-            gap:10px;
-          "
+         
         >
 
           <span>Server:</span>
 
           <span
-            class="auth-server-value"
-            style="
-              overflow:hidden;
-              text-overflow:ellipsis;
-              white-space:nowrap;
-              flex:1;
-              opacity:.75;
-            "
+            class="auth-server-value auth-server-value--electron"
+           
           >
             ${escapeHtml(getServerEndpoint())}
           </span>
@@ -2615,23 +2584,13 @@ export function renderUnlock(
     nativeApp
       ? `
         <div
-          class="auth-server-row"
+          class="auth-server-row auth-server-row--native"
           id="unlock-server-row"
-          style="
-            margin-top:16px;
-            display:flex;
-            flex-direction:column;
-            gap:8px;
-          "
+         
         >
 
-          <div
-            style="
-              display:flex;
-              align-items:center;
-              justify-content:space-between;
-              gap:10px;
-            "
+          <div class="auth-server-head"
+           
           >
             <span>Server</span>
 
@@ -2644,20 +2603,14 @@ export function renderUnlock(
             </button>
           </div>
 
-          <span
+          <span class="auth-server-value--native"
             id="unlock-server-value"
-            style="
-              overflow:hidden;
-              text-overflow:ellipsis;
-              white-space:nowrap;
-              opacity:.75;
-              font-size:.9em;
-            "
+           
           >${escapeHtml(getServerEndpoint())}</span>
 
-          <div
+          <div class="auth-is-hidden"
             id="unlock-server-editor"
-            style="display:none;"
+           
           >
 
             <input
@@ -2670,19 +2623,15 @@ export function renderUnlock(
               value="${escapeHtml(getServerEndpoint())}"
             >
 
-            <div
-              style="
-                display:flex;
-                gap:8px;
-                margin-top:8px;
-              "
+            <div class="auth-server-actions"
+             
             >
 
               <button
                 type="button"
                 id="unlock-server-connect"
-                class="btn btn-primary"
-                style="flex:1;"
+                class="btn btn-primary auth-flex-1"
+               
               >
                 Connect
               </button>
@@ -2690,8 +2639,8 @@ export function renderUnlock(
               <button
                 type="button"
                 id="unlock-server-cancel"
-                class="btn btn-ghost"
-                style="flex:1;"
+                class="btn btn-ghost auth-flex-1"
+               
               >
                 Cancel
               </button>
@@ -2700,8 +2649,8 @@ export function renderUnlock(
 
             <div
               id="unlock-server-error"
-              class="field-error"
-              style="margin-top:8px;"
+              class="field-error auth-mt-8"
+             
             ></div>
 
           </div>

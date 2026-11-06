@@ -39,6 +39,7 @@ import {
 } from './_acceptance-harness.mjs';
 
 import path from 'node:path';
+import os from 'node:os';
 import fs from 'node:fs';
 import http from 'node:http';
 import { createRequire } from 'node:module';
@@ -577,6 +578,184 @@ async function scenario(t, cspEnforce) {
             if (input) input.dispatchEvent(new Event('change', { bubbles: true }));
         });
         await sleep(800);
+
+        // ---- Stage 2 remaining controls: REAL clicks + server/DOM effects ----
+        // Selectors are taken from the source: composer.js (composer-attach-remove,
+        // composer-cancel-upload, composer-reply-close), dm.js (dm-send,
+        // dm-close-new-picker, dm-back-from-thread), profile-card.js
+        // (profile-card-message), settings-render.js/settings-media.js
+        // (settings-change-/remove-avatar|banner), files/files.js (data-act).
+        {
+            const page = alicePageInfo.page;
+            const pngPath = path.join(os.tmpdir(), `csp-stage2-${tag}.png`);
+            fs.writeFileSync(
+                pngPath,
+                Buffer.from(
+                    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+                    'base64'
+                )
+            );
+            // Click the first VISIBLE match (some controls exist twice: desktop + phone).
+            const clickVisible = async (sel) => {
+                for (const h of await page.$$(sel)) {
+                    if (await h.evaluate((el) => el.getClientRects().length > 0)) {
+                        await h.click();
+                        return;
+                    }
+                }
+                throw new Error(`no visible element for ${sel}`);
+            };
+            const pollApi = async (apiPath, pred, label) => {
+                const end = Date.now() + 10000;
+                let last;
+                while (Date.now() < end) {
+                    last = await aliceSession.api(apiPath);
+                    if (pred(last.body)) return last.body;
+                    await sleep(250);
+                }
+                assert.fail(`${label} (last: ${JSON.stringify(last && last.body).slice(0, 200)})`);
+            };
+            const openBobConversation = async () => {
+                await page.evaluate(async (id, name) => {
+                    await window.openDmConversation(id, name, { fromNav: true });
+                }, bobSession.id, bobName);
+                await page.waitForSelector('#dm-input', { timeout: 20000 });
+            };
+
+            // Mount the DM view first, exactly as the DM steps above do.
+            await page.goto(`${origin}/#messages`, { waitUntil: 'networkidle2' });
+            await page.waitForSelector('.dm-layout #dm-conv-list', { timeout: 20000 });
+            await sleep(600);
+            await openBobConversation();
+
+            // composer-attach-remove: stage a file, then click its remove chip.
+            const fileInput = await page.waitForSelector('#dm-file-input', { timeout: 20000 });
+            await fileInput.uploadFile(pngPath);
+            await page.waitForSelector('[data-action="composer-attach-remove"]', { timeout: 20000 });
+            await clickVisible('[data-action="composer-attach-remove"]');
+            await page.waitForFunction(
+                () => !document.querySelector('[data-action="composer-attach-remove"]'),
+                { timeout: 5000 }
+            );
+
+            // composer-cancel-upload: throttle the uplink so the upload is in flight
+            // long enough to click its cancel control, then restore the network.
+            // The chip only switches to 'uploading' when a send with attachments
+            // starts (composer.js: filesToSend -> status 'uploading'), so stage a
+            // file, throttle, send, and cancel while the send is in flight.
+            await fileInput.uploadFile(pngPath);
+            await page.waitForSelector('[data-action="composer-attach-remove"]', { timeout: 20000 });
+            await page.emulateNetworkConditions({ download: -1, upload: 2048, latency: 1500 });
+            try {
+                await page.type('#dm-input', `cancel upload ${tag}`);
+                await clickVisible('[data-action="dm-send"]');
+                await page.waitForSelector('[data-action="composer-cancel-upload"]', { timeout: 15000 });
+                await clickVisible('[data-action="composer-cancel-upload"]');
+            } finally {
+                await page.emulateNetworkConditions({ download: -1, upload: -1, latency: 0 });
+            }
+            await page.waitForFunction(
+                () => !document.querySelector('[data-action="composer-cancel-upload"]'),
+                { timeout: 10000 }
+            );
+
+            // composer-reply-close: start a reply, then cancel it with the close button.
+            await page.evaluate(() => document.querySelector('[data-action="dm-reply-to"]')?.click());
+            await page.waitForSelector('[data-action="composer-reply-close"]', { timeout: 10000 });
+            await clickVisible('[data-action="composer-reply-close"]');
+            await page.waitForFunction(
+                () => !document.querySelector('[data-action="composer-reply-close"]'),
+                { timeout: 5000 }
+            );
+
+            // dm-send: real click on the Send button (the other tests use Enter).
+            const sendBefore = new Set(
+                (await aliceSession.api(`/api/dm/messages/${bobSession.id}/recent`)).body.map((m) => m.id)
+            );
+            await page.type('#dm-input', `click send ${tag}`);
+            await clickVisible('[data-action="dm-send"]');
+            const sendAfter = await pollApi(
+                `/api/dm/messages/${bobSession.id}/recent`,
+                (rows) => rows.some((m) => !sendBefore.has(m.id)),
+                'dm-send click did not create a server message'
+            );
+            assert.equal(
+                sendAfter.filter((m) => !sendBefore.has(m.id)).length,
+                1,
+                'dm-send click created exactly one server message'
+            );
+
+            // dm-close-new-picker: open the picker, close it with its X button.
+            await page.evaluate(() => window.openNewDmPicker());
+            await page.waitForSelector('.dm-picker-close[data-action="dm-close-new-picker"]', { timeout: 20000 });
+            await clickVisible('.dm-picker-close[data-action="dm-close-new-picker"]');
+            await page.waitForFunction(() => !document.querySelector('.dm-picker-row'), { timeout: 5000 });
+
+            // profile-card-message: from the profile card, "Send message" opens the DM.
+            await page.evaluate((id) => window.openProfileCard(id), bobSession.id);
+            await page.waitForSelector('#profile-card-modal.active', { timeout: 10000 });
+            await clickVisible('.profile-card-message-btn[data-action="profile-card-message"]');
+            await page.waitForFunction(
+                () => !document.querySelector('#profile-card-modal.active'),
+                { timeout: 5000 }
+            );
+            await page.waitForSelector('#dm-input', { timeout: 20000 });
+
+            // dm-back-from-thread: the thread-header back button is CSS-hidden on
+            // desktop (responsive.css shows it on phones). Its delegated handler is
+            // reached by element.click() here, the same method the existing
+            // dm-open-profile-card step uses; this is NOT a pointer click on a
+            // visible button.
+            await openBobConversation();
+            await page.evaluate(() => document.querySelector('.dm-layout')?.classList.add('showing-thread'));
+            await page.waitForFunction(
+                () => document.querySelector('.dm-layout')?.classList.contains('showing-thread'),
+                { timeout: 5000 }
+            );
+            await page.evaluate(() => document.querySelector('.dm-back-btn[data-action="dm-back-from-thread"]')?.click());
+            await page.waitForFunction(
+                () => !document.querySelector('.dm-layout')?.classList.contains('showing-thread'),
+                { timeout: 5000 }
+            );
+
+            // Settings avatar + banner: the change buttons open a real file chooser,
+            // the file is uploaded, then the remove buttons clear it on the server.
+            await page.goto(`${origin}/#settings`, { waitUntil: 'networkidle2' });
+            await page.waitForSelector('#settings-category-row-profile', { timeout: 20000 });
+            await page.click('#settings-category-row-profile');
+
+            for (const kind of ['avatar', 'banner']) {
+                const changeSel = `[data-action="settings-change-${kind}"]`;
+                const removeSel = `[data-action="settings-remove-${kind}"]`;
+                await page.waitForSelector(changeSel, { timeout: 20000 });
+                const [chooser] = await Promise.all([
+                    page.waitForFileChooser({ timeout: 10000 }),
+                    clickVisible(changeSel),
+                ]);
+                await chooser.accept([pngPath]);
+                const flag = kind === 'avatar' ? 'has_avatar' : 'has_banner';
+                await pollApi('/api/me', (me) => me[flag] === true, `settings-change-${kind} upload did not reach the server`);
+
+                await page.waitForSelector(removeSel, { timeout: 20000 });
+                await clickVisible(removeSel);
+                // Removal asks for confirmation first (settings-media.js -> showConfirm).
+                await page.waitForSelector('#confirm-modal-ok[data-action="confirm-ok"]', { visible: true, timeout: 10000 });
+                await clickVisible('#confirm-modal-ok[data-action="confirm-ok"]');
+                await pollApi('/api/me', (me) => me[flag] === false, `settings-remove-${kind} did not clear the server ${kind}`);
+            }
+
+            // Files tab: a real click on a data-act control (new folder toggle).
+            await page.goto(`${origin}/#files`, { waitUntil: 'networkidle2' });
+            await page.waitForSelector('#files-root', { timeout: 20000 });
+            await clickVisible('[data-act="new-folder"]');
+            await page.waitForFunction(
+                () => document.querySelector('[data-act="new-folder"]')?.getAttribute('aria-expanded') === 'true',
+                { timeout: 5000 }
+            );
+
+            fs.rmSync(pngPath, { force: true });
+            await page.goto(`${origin}/#messages`, { waitUntil: 'networkidle2' });
+        }
 
         // Re-render verification: reactions, composer, dm lists still fire delegated actions.
         await alicePageInfo.page.goto(`${origin}/#messages`, { waitUntil: 'networkidle2' });

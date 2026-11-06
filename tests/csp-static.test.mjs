@@ -39,7 +39,6 @@ const LEGACY_CAPS = {
     'js/media/attachments.js': 1,
     'js/settings/settings-bubble-gradient.js': 1,
     'js/settings/settings-message-sounds.js': 1,
-    'js/ui/emoji-picker.js': 1,
   },
   setAttr: {
     'js/media/attachments.js': 4,

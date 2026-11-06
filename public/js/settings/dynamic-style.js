@@ -7,6 +7,8 @@
 // and settings.js all import it.
 // ============================================================
 
+import { applyDynamicVars } from '../ui/dynamic-vars.js';
+
 const HEX_COLOR = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
 
 /**
@@ -16,6 +18,8 @@ const HEX_COLOR = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
  */
 export function applyDynamicSettingsStyles(root) {
   if (!root || typeof root.querySelectorAll !== 'function') return;
+
+  applyDynamicVars(root);
 
   root.querySelectorAll('[data-bg-preview]').forEach((el) => {
     el.style.background = el.dataset.bgPreview || '';

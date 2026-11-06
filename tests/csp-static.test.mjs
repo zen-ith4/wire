@@ -41,7 +41,6 @@ const LEGACY_CAPS = {
     'js/settings/settings-bubble-gradient.js': 1,
     'js/settings/settings-message-sounds.js': 1,
     'js/ui/emoji-picker.js': 1,
-    'js/ui/profile-card.js': 1,
     'js/wireguard/wireguard.js': 1,
   },
   setAttr: {

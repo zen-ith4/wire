@@ -37,7 +37,6 @@ const LEGACY_CAPS = {
     'js/settings/settings-appearance-custom.js': 3,
     'js/chat/composer.js': 1,
     'js/media/attachments.js': 1,
-    'js/settings/settings-bubble-gradient.js': 1,
     'js/settings/settings-message-sounds.js': 1,
   },
   setAttr: {

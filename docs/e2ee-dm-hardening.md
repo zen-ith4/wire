@@ -665,7 +665,11 @@ limit that. A disclosed key can never become current without the alarm, because
 nobody has accepted it. And marking the contact verified drops every disclosed key,
 because otherwise the server could still forge rows under one on a contact the user
 believes is verified. The cost is that a row sealed to a genuinely retired key,
-learned only this way, stops opening on that device.
+learned only this way, stops opening on that device. Pins saved by an older version
+are held to the same rule when read (`readStoredPin` in `keys/peer-trust.js`): there
+is no migration, because pins live on the device and nothing guarantees one would run.
+That also clears marks the old accept button stamped, which it wrote in the same
+statement as the key, unlike a person who has to compare 60 digits first.
 
 Open questions that must be answered before code: pre-key batch size and refill
 protocol; whether rotation keeps the old key archived and for how long; whether

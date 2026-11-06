@@ -1,0 +1,23 @@
+dc17732 csp docs: CSP-clean status, rules for new code, known gaps
+4ca2730 csp stage 3: enforced browser test sweeps every top-level view and asserts zero violations including style-src
+472c959 csp stage 3: remove LEGACY_CAPS; every static CSP count is asserted to be zero
+bb808f8 csp stage 3: attachments.js: download-progress cssText (4) -> classes; aspect-ratio via data-aspect. dynamic-vars.js observer installed at boot (app.js) so every inserted node gets data-* values
+e7d15a3 csp stage 3: settings-appearance-custom.js slider fill via data-sound-volume; display:block spans -> u-block
+9e0e77c csp stage 3: composer.js upload progress width via data-progress + applyDynamicVars on render (later updates were already CSSOM)
+0b84c9e csp stage 3: settings-message-sounds.js --sound-volume via data-sound-volume + applyDynamicVars
+25793ef csp stage 3: settings-bubble-gradient.js --sound-volume via data-sound-volume + applyDynamicVars
+bc37317 csp stage 3: emoji-picker.js skin swatch --swatch via data-swatch + CSSOM; add ui/dynamic-vars.js helper (validated sound-volume/swatch/progress/aspect)
+0b8d455 csp stage 3: dm.js inline style= (3) -> utility classes; copy-helper textarea uses class instead of style.cssText
+8b6d72e csp stage 3: wireguard.js inline style= (1) -> u-min-w-260
+29fdaf9 csp stage 3: profile-card.js inline style= (1) -> u-pc-pad
+ea4188d csp stage 3: audio-player.js display:none (1) -> js-hidden
+e0e20d6 csp stage 3: voice-message.js display:none (2) -> js-hidden (JS keeps toggling via style.display)
+87a2922 csp stage 3: video-player.js display:none (2) -> js-hidden; video-time shows as 'block' (same as '' for a div with no display rule)
+3dc4e57 csp stage 3: admin.js inline style= (3) -> utility classes in utilities.css
+d2f959e csp stage 3: settings-render.js inline style= (16) -> classes; bg preview and accent swatch via data-* + CSSOM (dynamic-style.js, validated hex)
+2585042 csp stage 3: auth.js inline style= (21) -> classes in pages/login.css; same declarations, JS toggles still via CSSOM
+7679a1b csp stage 2: real-click tests for composer, dm-send, picker close, profile-card message, dm back, settings avatar/banner (with confirm), files new-folder
+9d10da0 csp docs: Stage 2 handler status, actions.js unknown-name behaviour documented
+5097c6e csp stage 2: image-viewer.js remove duplicate dragstart preventDefault listener
+b6ca277 csp stage 2: browser test for avatar click inside DM picker row (profile opens, DM does not)
+23123da csp stage 2: avatar.js click listener in capture phase so ancestors do not double-fire

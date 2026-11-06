@@ -675,6 +675,149 @@ test('accepting clears keys derived before the pin moved', async () => {
     assert.equal(await v1Open(sent, rotated), 'to the new key');
 });
 
+/* ---------------------------------------------------------------- pins an older version saved */
+
+// Pins live on the user's device and outlive any deploy, so an upgraded device holds
+// what an older version wrote. These tests put exactly that on disk: `verifiedAt` with
+// no `verifiedKey`, and keys from first contact still in `accepted`.
+const HOUR = 3600000;
+
+const pinFingerprint = async (keys) => b64(new Uint8Array(await crypto.subtle.digest('SHA-256', keys.raw)));
+
+async function writeRawPin(peerId, pin) {
+    const opening = indexedDB.open('wire-peer-trust', 1);
+    const db = await new Promise((resolve, reject) => {
+        opening.onsuccess = () => resolve(opening.result);
+        opening.onerror = () => reject(opening.error);
+    });
+    await new Promise((resolve, reject) => {
+        const tx = db.transaction('peer-pins', 'readwrite');
+        tx.objectStore('peer-pins').put(pin, `${ORIGIN}::${ALICE}::${peerId}`);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
+/** `markedAfter`: how long after the key was pinned the old code stamped verifiedAt. */
+async function peerWithOldPin(markedAfter) {
+    const peer = await meetPeer();
+    const planted = await person();
+    const at = Date.now() - 24 * HOUR;
+
+    await writeRawPin(peer.id, {
+        peerId: peer.id,
+        current: { fingerprint: await pinFingerprint(peer.keys), publicKey: peer.keys.b64, at },
+        accepted: [{ fingerprint: await pinFingerprint(planted), publicKey: planted.b64, at, viaFirstContact: true }],
+        verifiedAt: markedAfter === null ? null : at + markedAfter,
+    });
+
+    return { peer, planted };
+}
+
+const noSenderKey = (e) => e?.code === 'DM_V2_NO_SENDER_KEY';
+
+test('old pin, really verified: a key the server listed at first contact opens nothing', async () => {
+    const { peer, planted } = await peerWithOldPin(HOUR);
+
+    const genuine = await open(await rowFrom(peer.id, peer.keys, 'real'), peer.id);
+    assert.equal(genuine.plaintext, 'real', 'control: the real key still opens');
+
+    await assert.rejects(async () => open(await rowFrom(peer.id, planted, 'forged'), peer.id), noSenderKey);
+    await assert.rejects(async () => messageCrypto.decryptIncomingMessage(await v1RowFrom(peer.id, planted, 'forged'), peer.id));
+
+    const retired = await trust.mayTryRetiredKey(peer.id, planted.b64, CTX);
+    assert.equal(retired.allowed, false);
+});
+
+test('control for that: on a contact nobody verified, the same fixture really does open', async () => {
+    const { peer, planted } = await peerWithOldPin(null);
+
+    const forged = await open(await rowFrom(peer.id, planted, 'still allowed until verified'), peer.id);
+    assert.equal(forged.plaintext, 'still allowed until verified');
+    assert.equal((await trust.mayTryRetiredKey(peer.id, planted.b64, CTX)).allowed, true);
+});
+
+test('old pin, really verified: accepting a new key does not bring those keys back', async () => {
+    const { peer, planted } = await peerWithOldPin(HOUR);
+    const next = await person();
+
+    const accepted = await trust.acceptPeerKey(peer.id, next.b64, CTX);
+    assert.equal(accepted.verifiedAt, null, 'accepting is not verifying, so this contact is now unverified');
+
+    await assert.rejects(async () => open(await rowFrom(peer.id, planted, 'forged'), peer.id), noSenderKey);
+});
+
+test('old pin: a mark stamped within a second of the key being pinned is not a verification', async () => {
+    for (const [markedAfter, verified] of [[0, false], [1, false], [999, false], [1000, true], [HOUR, true]]) {
+        const { peer, planted } = await peerWithOldPin(markedAfter);
+        const pin = await trust.getPeerPin(peer.id, CTX);
+
+        assert.equal(Boolean(pin.verifiedAt), verified, `${markedAfter}ms after the key was pinned`);
+        assert.equal(
+            trust.pinnedPeerKeys(pin).some((k) => k.publicKey === planted.b64),
+            !verified,
+            'an unverified contact keeps those keys for its history, a verified one does not'
+        );
+    }
+});
+
+test('old pin: a mark with no time to compare it against proves nothing', async () => {
+    const peer = await meetPeer();
+
+    await writeRawPin(peer.id, {
+        peerId: peer.id,
+        current: { fingerprint: await pinFingerprint(peer.keys), publicKey: peer.keys.b64 },
+        accepted: [],
+        verifiedAt: Date.now(),
+    });
+
+    assert.equal((await trust.getPeerPin(peer.id, CTX)).verifiedAt, null);
+});
+
+test('old pin: a key change on a contact the old button stamped is not called a verified key change', async () => {
+    const { peer } = await peerWithOldPin(0);
+    const evaluated = await trust.evaluatePeerKey(peer.id, mallory.b64, CTX);
+
+    assert.equal(evaluated.state, 'changed');
+    assert.equal(evaluated.pin.verifiedAt, null);
+});
+
+test('old pin: marking it now verifies it, and it stays verified', async () => {
+    const { peer, planted } = await peerWithOldPin(0);
+    const fingerprint = await pinFingerprint(peer.keys);
+
+    const marked = await trust.markPeerVerified(peer.id, CTX, fingerprint);
+    assert.ok(marked.verifiedAt);
+
+    const pin = await trust.getPeerPin(peer.id, CTX);
+    assert.ok(pin.verifiedAt, 'marking within a second of pinning is fine now the mark says who made it');
+    assert.equal(trust.pinnedPeerKeys(pin).some((k) => k.publicKey === planted.b64), false);
+});
+
+test('a mark made today counts however soon it comes after the key was pinned', async () => {
+    const peer = await pinnedPeer();
+    await trust.markPeerVerified(peer.id, CTX);
+    assert.ok((await trust.getPeerPin(peer.id, CTX)).verifiedAt, 'right after first contact');
+
+    const next = await person();
+    await trust.acceptPeerKey(peer.id, next.b64, CTX);
+    assert.equal((await trust.getPeerPin(peer.id, CTX)).verifiedAt, null, 'accepting clears it');
+
+    await trust.markPeerVerified(peer.id, CTX);
+    assert.ok((await trust.getPeerPin(peer.id, CTX)).verifiedAt, 'right after accepting');
+});
+
+test('old pin: recording an opened row leaves the old fields alone and reads the same', async () => {
+    const { peer, planted } = await peerWithOldPin(HOUR);
+
+    await trust.noteEncryptedRow(peer.id, 500, CTX);
+
+    const pin = await trust.getPeerPin(peer.id, CTX);
+    assert.equal(pin.encryptedFloor, 500);
+    assert.ok(pin.verifiedAt);
+    assert.equal(trust.pinnedPeerKeys(pin).some((k) => k.publicKey === planted.b64), false);
+});
+
 /* ---------------------------------------------------------------- static guards */
 
 test('no DM path can fetch a key and use it without going through the gate', () => {

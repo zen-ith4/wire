@@ -1,0 +1,254 @@
+From bb808f8003a679fe20d122d63ce1b66587b3c657 Mon Sep 17 00:00:00 2001
+From: Claude <claude@example.com>
+Date: Fri, 6 Nov 2026 05:43:22 +0000
+Subject: [PATCH 20/23] csp stage 3: attachments.js: download-progress cssText
+ (4) -> classes; aspect-ratio via data-aspect. dynamic-vars.js observer
+ installed at boot (app.js) so every inserted node gets data-* values
+
+---
+ public/css/utilities.css       |  8 ++++++
+ public/js/core/app.js          |  2 ++
+ public/js/media/attachments.js | 48 ++++------------------------------
+ public/js/ui/dynamic-vars.js   | 36 ++++++++++++++++++++++---
+ public/sw-manifest.js          | 10 +++----
+ tests/csp-static.test.mjs      |  2 --
+ 6 files changed, 52 insertions(+), 54 deletions(-)
+
+diff --git a/public/css/utilities.css b/public/css/utilities.css
+index 81159b5..2d1b23e 100644
+--- a/public/css/utilities.css
++++ b/public/css/utilities.css
+@@ -14,3 +14,11 @@
+ .u-m0{margin:0;}
+ .u-pc-pad{padding:24px 4px;text-align:center;}
+ .u-offscreen-copy{position:fixed;top:0;left:0;opacity:0;pointer-events:none;}
++
++/* Download progress bar (media/attachments.js). Same declarations as the
++   former cssText; the two transition values are kept as-is (they were never
++   valid CSS, so the browser has always ignored them). */
++.wire-dl-progress{position:fixed;top:0;left:0;right:0;z-index:2147483647;pointer-events:none;font-family:inherit;}
++.wire-dl-progress-track{width:100%;height:3px;background:rgba(255,255,255,.10);overflow:hidden;}
++.wire-dl-progress-fill{width:0%;height:100%;background:var(--accent,#4da6ff);transition:width:.15s ease;transform-origin:left center;}
++.wire-dl-progress-info{position:absolute;top:7px;left:50%;transform:translateX(-50%);max-width:calc(100vw - 24px);padding:4px 10px;border-radius:999px;background:rgba(15,15,20,.88);color:rgba(255,255,255,.92);border:1px solid rgba(255,255,255,.10);box-shadow:0 4px 16px rgba(0,0,0,.22);font-size:11px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:0;transition:opacity:.15s ease;}
+diff --git a/public/js/core/app.js b/public/js/core/app.js
+index 8c00175..844671e 100644
+--- a/public/js/core/app.js
++++ b/public/js/core/app.js
+@@ -58,6 +58,8 @@ import {
+ } from '../crypto/identity-service.js';
+ 
+ import '../ui/actions.js';
++import { installDynamicVarsObserver } from '../ui/dynamic-vars.js';
++installDynamicVarsObserver();
+ import '../ui/profile-card.js';
+ import '../media/image-viewer.js';
+ 
+diff --git a/public/js/media/attachments.js b/public/js/media/attachments.js
+index 6c4f1f0..fcacdc9 100644
+--- a/public/js/media/attachments.js
++++ b/public/js/media/attachments.js
+@@ -126,36 +126,17 @@ function ensureDownloadProgressUI() {
+   container.id =
+     'wire-download-progress';
+ 
+-  container.style.cssText = `
+-    position:fixed;
+-    top:0;
+-    left:0;
+-    right:0;
+-    z-index:2147483647;
+-    pointer-events:none;
+-    font-family:inherit;
+-  `;
++  container.className = 'wire-dl-progress';
+ 
+   const track =
+     document.createElement('div');
+ 
+-  track.style.cssText = `
+-    width:100%;
+-    height:3px;
+-    background:rgba(255,255,255,.10);
+-    overflow:hidden;
+-  `;
++  track.className = 'wire-dl-progress-track';
+ 
+   const fill =
+     document.createElement('div');
+ 
+-  fill.style.cssText = `
+-    width:0%;
+-    height:100%;
+-    background:var(--accent,#4da6ff);
+-    transition:width:.15s ease;
+-    transform-origin:left center;
+-  `;
++  fill.className = 'wire-dl-progress-fill';
+ 
+   track.appendChild(
+     fill
+@@ -164,26 +145,7 @@ function ensureDownloadProgressUI() {
+   const info =
+     document.createElement('div');
+ 
+-  info.style.cssText = `
+-    position:absolute;
+-    top:7px;
+-    left:50%;
+-    transform:translateX(-50%);
+-    max-width:calc(100vw - 24px);
+-    padding:4px 10px;
+-    border-radius:999px;
+-    background:rgba(15,15,20,.88);
+-    color:rgba(255,255,255,.92);
+-    border:1px solid rgba(255,255,255,.10);
+-    box-shadow:0 4px 16px rgba(0,0,0,.22);
+-    font-size:11px;
+-    line-height:1.2;
+-    white-space:nowrap;
+-    overflow:hidden;
+-    text-overflow:ellipsis;
+-    opacity:0;
+-    transition:opacity:.15s ease;
+-  `;
++  info.className = 'wire-dl-progress-info';
+ 
+   container.appendChild(
+     track
+@@ -977,7 +939,7 @@ export function renderAttachment(
+       <div
+         class="chat-attachment-image"
+         id="${key}"
+-        style="aspect-ratio:${ratio};"
++        data-aspect="${ratio}"
+         data-scope="${scope}"
+         data-filename="${escapeAttr(
+           msg.attachment_name
+diff --git a/public/js/ui/dynamic-vars.js b/public/js/ui/dynamic-vars.js
+index ae62687..b97ebcf 100644
+--- a/public/js/ui/dynamic-vars.js
++++ b/public/js/ui/dynamic-vars.js
+@@ -22,24 +22,52 @@ function clampPercent(raw) {
+  */
+ export function applyDynamicVars(root) {
+   if (!root || typeof root.querySelectorAll !== 'function') return;
++  const all = (sel) => {
++    const out = root.matches && root.matches(sel) ? [root] : [];
++    return out.concat(Array.from(root.querySelectorAll(sel)));
++  };
+ 
+-  root.querySelectorAll('[data-sound-volume]').forEach((el) => {
++  all('[data-sound-volume]').forEach((el) => {
+     const pct = clampPercent(el.dataset.soundVolume);
+     if (pct !== null) el.style.setProperty('--sound-volume', `${pct}%`);
+   });
+ 
+-  root.querySelectorAll('[data-swatch]').forEach((el) => {
++  all('[data-swatch]').forEach((el) => {
+     const hex = el.dataset.swatch || '';
+     if (HEX_COLOR.test(hex)) el.style.setProperty('--swatch', hex);
+   });
+ 
+-  root.querySelectorAll('[data-progress]').forEach((el) => {
++  all('[data-progress]').forEach((el) => {
+     const pct = clampPercent(el.dataset.progress);
+     if (pct !== null) el.style.width = `${pct}%`;
+   });
+ 
+-  root.querySelectorAll('[data-aspect]').forEach((el) => {
++  all('[data-aspect]').forEach((el) => {
+     const ratio = String(el.dataset.aspect || '').trim();
+     if (/^\d+(\.\d+)?(\s*\/\s*\d+(\.\d+)?)?$/.test(ratio)) el.style.aspectRatio = ratio;
+   });
+ }
++
++/**
++ * Applies data-driven values to every element the app inserts later, so
++ * call sites that build markup with innerHTML / insertAdjacentHTML need no
++ * manual hook. Installed once at boot (js/core/app.js).
++ */
++let observerInstalled = false;
++export function installDynamicVarsObserver() {
++  if (observerInstalled || typeof MutationObserver === 'undefined') return;
++  const start = () => {
++    if (observerInstalled || !document.body) return;
++    observerInstalled = true;
++    new MutationObserver((records) => {
++      for (const rec of records) {
++        for (const node of rec.addedNodes) {
++          if (node.nodeType === 1) applyDynamicVars(node);
++        }
++      }
++    }).observe(document.body, { childList: true, subtree: true });
++    applyDynamicVars(document.body);
++  };
++  if (document.body) start();
++  else document.addEventListener('DOMContentLoaded', start, { once: true });
++}
+diff --git a/public/sw-manifest.js b/public/sw-manifest.js
+index 9d67f4a..6c49ae2 100644
+--- a/public/sw-manifest.js
++++ b/public/sw-manifest.js
+@@ -1,7 +1,7 @@
+ // GENERATED by scripts/build-sw-manifest.mjs — do not edit by hand.
+ // Re-run it on every deploy; `--check` verifies it is current.
+ self.WIRE_SHELL = {
+- "version": "83a6dd0d1780",
++ "version": "2a6e8c3e93a0",
+  "files": [
+   {
+    "url": "/css/components/badges.css",
+@@ -145,7 +145,7 @@ self.WIRE_SHELL = {
+   },
+   {
+    "url": "/css/utilities.css",
+-   "rev": "eef226e4c1748d150534f89d562fdaac7f3ab48e201e7c7e633ede8a05f26c55"
++   "rev": "693658dc7ce03200215e028a25ccde413f39e4d995671a062cb55d833f867814"
+   },
+   {
+    "url": "/favicon.ico",
+@@ -285,7 +285,7 @@ self.WIRE_SHELL = {
+   },
+   {
+    "url": "/js/core/app.js",
+-   "rev": "258d781fa22fbe45fa15014234edabfb5790945d4adaf0129fb2cfc256e83a09"
++   "rev": "90e56c53b56317a112ba72fd06a5592e6eee05fa5b8872bbb6e84d74316a53fa"
+   },
+   {
+    "url": "/js/core/appUpdate.js",
+@@ -541,7 +541,7 @@ self.WIRE_SHELL = {
+   },
+   {
+    "url": "/js/media/attachments.js",
+-   "rev": "3f4eea1922cbc90f0c5b4f6b0b54c96320629115cab97f0fbd71ba2e6b9be039"
++   "rev": "9cfbbf2dce3042c42fc754244f7266d9e46c33c27b388b6326579c9edefebc88"
+   },
+   {
+    "url": "/js/media/audio-player.js",
+@@ -697,7 +697,7 @@ self.WIRE_SHELL = {
+   },
+   {
+    "url": "/js/ui/dynamic-vars.js",
+-   "rev": "5f60f0b17987d7282f5ae43b5b4bf3a2f3bcd93bb4e02725125bef54696aeae4"
++   "rev": "08f1eb3a56d0d2749f21cf6c5879d6b8de3faa17853048821247ff8adac6fe87"
+   },
+   {
+    "url": "/js/ui/emoji-picker.js",
+diff --git a/tests/csp-static.test.mjs b/tests/csp-static.test.mjs
+index d3f5890..5956f1d 100644
+--- a/tests/csp-static.test.mjs
++++ b/tests/csp-static.test.mjs
+@@ -34,10 +34,8 @@ const require = createRequire(import.meta.url);
+ const LEGACY_CAPS = {
+   handlers: {},
+   styles: {
+-    'js/media/attachments.js': 1,
+   },
+   setAttr: {
+-    'js/media/attachments.js': 4,
+   },
+   // All 20 legacy sites now use escapeHtmlAttr(); cap is 0 everywhere.
+   // (Explicit zeros kept so the diff shows what was removed. auth.js is
+-- 
+2.43.0
+

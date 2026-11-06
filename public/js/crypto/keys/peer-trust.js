@@ -313,6 +313,44 @@ async function updateRecord(origin, ownUserId, peerId, change) {
  *                  any key other than the one the user verified. The alarm.
  * ========================================================= */
 
+// How long after a key was pinned a verified mark must come for a person to have made
+// it. See readStoredPin().
+const OLD_ACCEPT_STAMP_MS = 1000;
+
+/**
+ * A stored pin, read by today's rules whichever version of this code saved it.
+ *
+ * Pins live on the user's device and outlive any deploy. This runs on every read
+ * instead of as a migration, so nothing depends on a migration having run, on another
+ * tab having reloaded, or on a pin ever being written again.
+ *
+ *   - The old "I verified the new key" button stamped verifiedAt in the same statement
+ *     that set current.at, and nobody had compared anything. A person comparing 60
+ *     digits cannot be that quick, so a mark that close to the pin is not a
+ *     verification. Marks made today carry verifiedKey and are not second-guessed.
+ *   - A verified contact does not use keys the server merely listed at first contact.
+ *     markPeerVerified() drops them now, but a contact verified before it did still
+ *     has them on disk, and one of those keys could forge messages there.
+ *
+ * Both times come from this device's own clock, and the server can touch neither.
+ */
+function readStoredPin(pin) {
+    if (!pin) return null;
+
+    const stampedByOldButton =
+        pin.verifiedAt &&
+        !pin.verifiedKey &&
+        !(pin.verifiedAt - pin.current?.at >= OLD_ACCEPT_STAMP_MS);
+
+    const verifiedAt = stampedByOldButton ? null : pin.verifiedAt ?? null;
+
+    return {
+        ...pin,
+        verifiedAt,
+        accepted: normaliseAccepted(pin).filter((k) => !verifiedAt || !k.viaFirstContact),
+    };
+}
+
 export async function getPeerPin(peerId, { origin, ownUserId }) {
     if (!Number.isInteger(Number(peerId)) || Number(peerId) <= 0) {
         throw new Error('Invalid peer id');
@@ -320,7 +358,7 @@ export async function getPeerPin(peerId, { origin, ownUserId }) {
     if (!Number.isInteger(Number(ownUserId)) || Number(ownUserId) <= 0) {
         throw new Error('Invalid own user id');
     }
-    return readRecord(origin, ownUserId, Number(peerId));
+    return readStoredPin(await readRecord(origin, ownUserId, Number(peerId)));
 }
 
 function normaliseAccepted(pin) {
@@ -512,6 +550,7 @@ export async function markPeerVerified(peerId, ctx, expectedFingerprint = null) 
         ...pin,
         accepted: normaliseAccepted(pin).filter((k) => !k.viaFirstContact),
         verifiedAt: Date.now(),
+        verifiedKey: pin.current?.fingerprint,
     };
     await writeRecord(ctx.origin, ctx.ownUserId, Number(peerId), next);
     return next;

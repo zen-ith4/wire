@@ -1546,3 +1546,16 @@
     justify-content:flex-start;
   }
 }
+
+/* ---- Inline-style replacements from js/settings/settings-render.js
+   (CSP: no style="" attributes). Same declarations as the inline styles.
+   The two data-driven values (bg preview, accent swatch) are applied by
+   js/settings/dynamic-style.js through CSSOM after the HTML is inserted. */
+.settings-row-inline{display:flex;align-items:center;gap:16px;}
+.settings-stack{flex-direction:column;align-items:stretch;gap:10px;}
+.settings-row-between{display:flex;justify-content:space-between;align-items:center;}
+.settings-row-between-wide{display:flex;align-items:center;justify-content:space-between;gap:16px;}
+.settings-counter{font-size:11.5px;}
+.settings-self-start{align-self:flex-start;}
+.settings-2fa-panel{display:none;flex-direction:column;gap:10px;margin-top:4px;}
+.settings-2fa-panel-flush{display:none;flex-direction:column;gap:10px;}

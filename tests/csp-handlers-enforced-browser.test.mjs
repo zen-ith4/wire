@@ -656,7 +656,7 @@ async function scenario(t, cspEnforce) {
             );
 
             // composer-reply-close: start a reply, then cancel it with the close button.
-            await page.evaluate(() => document.querySelector('[data-action="dm-reply-to"]')?.click());
+            await page.evaluate(() => [...document.querySelectorAll('[data-action="dm-reply-to"]')].at(-1)?.click());
             await page.waitForSelector('[data-action="composer-reply-close"]', { timeout: 10000 });
             await clickVisible('[data-action="composer-reply-close"]');
             await page.waitForFunction(

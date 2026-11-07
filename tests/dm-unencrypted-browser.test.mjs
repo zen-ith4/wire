@@ -267,6 +267,10 @@ test('a. a forged row on a contact with encrypted history: hidden in the thread 
     await forgetPeer(pair.b.page, pair.aid);
     await reopenBob(pair);
     await threadShows(pair.b.page, HIDDEN, 'the forged row to be hidden on a first load');
+    await pollUntil(
+        async () => (await conversationPreview(pair.b.page, pair.aid)) === HIDDEN,
+        { what: 'the list preview to be hidden on a first load', describe: async () => conversationPreview(pair.b.page, pair.aid) }
+    );
     await assertNowhere(pair.b.page, FORGED, 'first load');
 });
 

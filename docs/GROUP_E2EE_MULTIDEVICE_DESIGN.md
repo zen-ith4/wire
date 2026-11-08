@@ -269,11 +269,12 @@ user the server names as its author.
    **removed member's own old key** is attributed to **her** (never to anyone else, never as a member's message). The server is the
    membership gate. A message signed late by a superseded key whose signing handle was still in memory (an in-flight send) is
    accepted. Pinned by **C4-5** and **C4-7** (same file); proposal in 7.2.
-3. **No identity pinning on the GROUP path.** (STEP 3F follow-up 3.I: DMs have had a TOFU pin, a key-change alarm and a safety
-   number since Phase 2, `public/js/crypto/keys/peer-trust.js`; the GROUP path does not consult them - the KDM wrap key is derived
-   from `getPeerPublicKey(id)`, `public/js/crypto/keys/session.js:387`, with no pin check.) `keys/peer-keys.js` fetches peer identity
-   public keys from the server and the group path uses them unchecked. A malicious server can still substitute identity public keys (and so read and forge at the account level);
-   the signatures do not change that. Proposal in 7.4.
+3. **Identity pinning on the GROUP path (fixed in Item 1).** Group KDM derivation now consults the SAME TOFU pin
+   as DMs through `public/js/crypto/keys/peer-key-gate.js` (called from `keys/session.js`): a peer key that changed after
+   first contact is neither wrapped nor unwrapped, the affected member is shown as "not receiving" by
+   `public/js/chat/group-key-trust.js`, and accepting the new key forces one re-wrap. Self-KDMs use the local identity
+   public key and never ask the server. A malicious server can still substitute a key at FIRST contact, and can withhold
+   the alarm itself; the signatures do not change that. Group member safety-number display remains the separate 7.4 item.
 4. **Leaked passwords leak the identity.** The identity key is wrapped under the password-derived key and stored server-side
    (login scheme 2); anyone with the password and the wrapped blob recovers the identity and can then act as the account. Accepted.
 5. **Group attachments: SENDING is disabled; the bytes ARE bound.** (STEP 3F follow-up 3.I: the first half of this item
@@ -309,7 +310,7 @@ What happens to old data, so nothing is surprising:
 | Area | Tests |
 |---|---|
 | Primitive (C1) | `group-signing.test.mjs` (round trip, every field tampered, wrong key, unambiguous encoding property test, malformed public keys, malleability + seen-set) |
-| Key lifecycle (C2) | `group-signing-keys.test.mjs` (C2-1 .. C2-20: non-extractable cache, zeroed buffers, wrapped storage and AAD, KDM structure, claimed-sender check, immutable owner, rotation fault injection, second device, lock), `group-signing-ensure.test.mjs` (E-1 .. E-6: ensure, drain logging) |
+| Key lifecycle (C2) | `group-signing-keys.test.mjs` (C2-1 .. C2-20: non-extractable cache, zeroed buffers, wrapped storage and AAD, KDM structure, claimed-sender check, immutable owner, rotation fault injection, second device, lock), `group-signing-ensure.test.mjs` (E-1 .. E-6, including E-1b forced re-wrap), `group-kdm-key-pinning.test.mjs` (real session + peer-trust gate: first contact, changed key, self-KDM, fail closed, send skip/re-wrap, receive hold) |
 | Sign / verify (C3) | `group-signing-messages.test.mjs` (C3-1 .. C3-12), `group-signing-ui.test.mjs` (UI-1 .. UI-8) |
 | Adversarial (C4) | `group-signing-adversarial.test.mjs` (C4-1 .. C4-8), `group-signing-adversarial-ui.test.mjs` (C4-9 .. C4-13), `group-hostile-browser.test.mjs` (real Chromium) |
 | End to end (C2) | `group-e2e-browser.test.mjs` (real Chromium, three accounts, the whole group lifecycle) |
@@ -412,7 +413,7 @@ Proposed text changes (not applied; the skill is outside this repository). State
 
 ### 7.4 Safety numbers / key fingerprints (separate future item)
 
-**Goal.** Close 6.7 item 3: let two people check that the identity public key each holds for the other is the one the other generated.
+**Goal.** Extend the existing DM safety-number flow to groups: let two people check that the identity public key each holds for the other is the one the other generated, and show that comparison per group member.
 
 **Sketch.** (1) A fingerprint of the account identity public key (for example SHA-256 over a domain label and the key, shown as 12 groups of 5 digits and
 as a QR code); (2) trust on first use: store each peer's key fingerprint locally when it is first seen and show a clear warning, not a silent

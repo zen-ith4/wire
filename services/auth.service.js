@@ -82,7 +82,8 @@ function issueSession(user) {
       requiresPasswordChange: true,
       token: signPasswordChangeToken({
         id: user.id,
-        username: user.username
+        username: user.username,
+        token_version: user.token_version
       })
     };
   }
@@ -91,7 +92,8 @@ function issueSession(user) {
     token: signToken({
       id: user.id,
       username: user.username,
-      is_admin: Boolean(user.is_admin)
+      is_admin: Boolean(user.is_admin),
+      token_version: user.token_version
     })
   };
 }
@@ -125,7 +127,8 @@ async function authenticateUser(username, credentials) {
       accent_color,
       auth_scheme,
       legacy_login_closed,
-      must_change_password
+      must_change_password,
+      token_version
     FROM users
     WHERE username = ? COLLATE NOCASE
     ORDER BY (username = ?) DESC, id
@@ -472,7 +475,8 @@ async function registerUser(username, email, password) {
         email_verified,
         is_admin,
         is_active,
-        accent_color
+        accent_color,
+        token_version
       FROM users
       WHERE id = ?
     `).get(userId);
@@ -496,7 +500,8 @@ async function registerUser(username, email, password) {
       token: signToken({
         id: user.id,
         username: user.username,
-        is_admin: Boolean(user.is_admin)
+        is_admin: Boolean(user.is_admin),
+        token_version: user.token_version
       })
     };
   }

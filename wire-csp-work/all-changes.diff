@@ -1,0 +1,1944 @@
+diff --git a/docs/CSP_TODO.md b/docs/CSP_TODO.md
+index 1c7ec66..5957012 100644
+--- a/docs/CSP_TODO.md
++++ b/docs/CSP_TODO.md
+@@ -1,77 +1,60 @@
+-# CSP TODO: legacy code that blocks `CSP_ENFORCE=true`
+-
+-`middleware/csp.js` sends a strict policy (no `'unsafe-inline'`, no `'unsafe-eval'`).
+-It is **Report-Only by default** (`CSP_ENFORCE` unset/false) because parts of the
+-pre-existing UI still use constructs that a strict CSP blocks. Enforcing today
+-would silently break those controls. The Groups UI (`js/chat/group.js`,
+-`js/chat/thread.js`, `js/crypto/groups/*`) and every other file added by the
+-group port have **cap 0** and are clean under enforcement.
+-
+-> **CSP_ENFORCE=true is STILL NOT SAFE.** Two lanes converted this UI independently and both sets of
+-> conversions are in the tree:
+->
+-> - **lane C** — the confirm modal (`#confirm-modal`, used by group message Delete, Remove member and
+->   DM delete) uses `data-action` + one delegated listener, proven under the enforced header by
+->   `tests/csp-confirm-enforced-browser.test.mjs`;
+-> - **lane B** — the DM Send button (`dm.js:1530`, was `window.sendDm`) and the DM delete button
+->   (`dm.js:2139`, was `window.deleteDmMessage`) were converted the same way, with their own
+->   real-Chromium test `tests/dm-csp-handlers-enforced-browser.test.mjs`.
+->
+-> Both conversions were merged without undoing each other, so these remain blocked when enforced:
+-> - **`public/js/core/auth.js`** (login template) — 21 inline `style=` attributes;
+-> - the remaining legacy rows in the table below.
+-
+-## These counts are enforced
+-
+-`tests/csp-static.test.mjs` holds a per-file cap for every number in the table
+-below (`LEGACY_CAPS`). A file fails if its count goes **above** its cap; a file
+-not listed has cap 0. Caps may only go down: when legacy code is converted, lower
+-or delete its entry in the test and its row here. `tests/groups/group-csp-browser.test.mjs`
+-runs the group UI in real Chromium with `CSP_ENFORCE=true` and requires zero violations.
+-
+-Totals in the merged tree, measured with the same regexes the test uses: **0 inline
+-event-handler attributes**, **58 inline `style=\"\"` attributes**, **0 `escapeHtml()` inside a
+-quoted attribute** (was 20; all converted to `escapeHtmlAttr()`).
+-
+-| File | `on*=` | `style=` | `setAttribute(style|on*)` |
+-|---|---:|---:|---:|
+-| `public/js/core/auth.js` | 0 | 21 | 0 |
+-| `public/js/settings/settings-render.js` | 0 | 16 | 0 |
+-| `public/js/chat/dm.js` | 0 | 3 | 1 |
+-| `public/js/settings/admin.js` | 0 | 3 | 0 |
+-| `public/js/settings/settings-appearance-custom.js` | 0 | 3 | 0 |
+-| `public/js/media/video-player.js` | 0 | 2 | 0 |
+-| `public/js/media/voice-message.js` | 0 | 2 | 0 |
+-| `public/js/chat/composer.js` | 0 | 1 | 0 |
+-| `public/js/media/attachments.js` | 0 | 1 | 4 |
+-| `public/js/media/audio-player.js` | 0 | 1 | 0 |
+-| `public/js/settings/settings-bubble-gradient.js` | 0 | 1 | 0 |
+-| `public/js/settings/settings-message-sounds.js` | 0 | 1 | 0 |
+-| `public/js/ui/emoji-picker.js` | 0 | 1 | 0 |
+-| `public/js/ui/profile-card.js` | 0 | 1 | 0 |
+-| `public/js/wireguard/wireguard.js` | 0 | 1 | 0 |
+-| **total** | **0** | **58** | **5** |
+-
+-`setAttribute('style'|'on*')` / `.cssText` writes are Stage 3 work and are capped separately in
+-`LEGACY_CAPS.setAttr`: `public/js/media/attachments.js` (4) and `public/js/chat/dm.js` (1).
+-
+-## Interim defence (already in place)
+-
+-Until enforcement is on, the real protection is output escaping:
+-- `escapeHtmlAttr()` in `core/utils.js`, used for `title`/`data-*` attributes and the linkified `href`.
+-- Reaction emoji (`chat/reactions.js`): escaped as text and as `data-emoji`, delivered through a delegated listener instead of an inline `onclick` string. This closed a stored-XSS hole that existed in this tree before the port.
+-- Reply-quote filename/text (`chat/reply.js`): escaped in both branches.
+-- Group member role / names in `chat/group.js`: rendered as text.
+-
+-## How to finish
+-
+-1. Replace each inline `on*=` with `data-action="..."` plus one delegated listener (pattern: `chat/reply.js`, `chat/reactions.js`).
+-2. Replace `style="..."` with CSS classes, or set `el.style.prop = ...` from JS (allowed by CSP).
+-3. Done (Stage 1): `index.html` loads `js/core/viewport-fix.js` (the `--vh` fixer) as a classic script; no inline script remains.
+-4. ~~Replace `escapeHtml()`-in-attribute uses with `escapeHtmlAttr()`.~~ **Done** (20 sites; `tests/csp-attr-escape.test.mjs` renders each through the real function with `"`/`'` payloads, and the `escapeHtmlInAttr` cap in `tests/csp-static.test.mjs` is 0 everywhere, so any new site fails the build). `core/auth.js` keeps its own quote-escaping `escapeHtml()` and is excluded from that cap on purpose.
+-5. Lower the caps in `tests/csp-static.test.mjs`, run with `CSP_ENFORCE=false`, load every screen, and confirm the console has no `[Report Only]` violations. Then flip `CSP_ENFORCE=true`.
+-
+-`public/js/ui/actions.js` registers a single click listener that dispatches `[data-action]` elements it knows about; any action name it does not recognize is ignored on purpose, because other modules (reactions, thread, group, confirm, composer instances) run their own delegated listeners for those names.
+-
+-## Known effect while Report-Only
+-Browsers log `[Report Only] Refused to ...` for each legacy construct above. That is expected and harmless, and it is how you measure remaining work. No report endpoint is configured.
++# CSP status: front-end is CSP-clean
++
++`middleware/csp.js` sends a strict policy (no `'unsafe-inline'`, no `'unsafe-eval'`,
++no nonce or hash). The front-end under `public/` now contains none of the constructs
++that policy blocks, so `CSP_ENFORCE=true` is safe to enable.
++
++## What is enforced by tests
++
++- `tests/csp-static.test.mjs` asserts a flat zero for every construct, with no
++  allowlist: inline `on*=` handlers, `style=""` attributes, `setAttribute('style'|'on*')`
++  and `.cssText` writes, `escapeHtml()` inside a quoted attribute, `eval` and string
++  timers, `javascript:` URLs, and inline `<script>`, `<style>` or handler attributes in
++  `index.html`.
++- `tests/csp-handlers-enforced-browser.test.mjs` runs in real Chromium with
++  `CSP_ENFORCE=true`. It clicks the converted controls and sweeps every top-level view
++  (messages, files, groups, every settings category, every admin page). It asserts zero
++  `securitypolicyviolation` events, including `style-src`, and zero `Refused to` console
++  errors.
++- `tests/groups/group-csp-browser.test.mjs` covers the groups UI the same way.
++
++## How the replacements work
++
++- Static styles became named classes in the stylesheet for their area
++  (`css/pages/login.css`, `css/features/settings.css`, `css/utilities.css`).
++  Each class carries the same declarations as the inline style it replaced.
++- Show/hide that JS toggles through `el.style.display` uses `.js-hidden`
++  (`display:none`, not `!important`), so an inline value set by JS still wins.
++  Do not use `.hidden` for these: it is `!important` and would block the JS.
++- Data-driven values (slider fill, swatch color, upload progress, aspect ratio, the
++  background preview) are written as `data-*` attributes and applied through CSSOM by
++  `js/ui/dynamic-vars.js`. Colors are checked against a hex pattern and numbers are
++  clamped first. `js/ui/dynamic-vars.js` installs a `MutationObserver` at boot
++  (`js/core/app.js`), so markup inserted later is covered without a per-call hook.
++- Settings markup also goes through `applyDynamicSettingsStyles()`
++  (`js/settings/dynamic-style.js`), called wherever settings HTML is written.
++
++## Rules for new code
++
++- Do not write `style="..."` in HTML strings, and do not use `setAttribute('style', ...)`
++  or `.cssText`. Put the look in a class. For a value that depends on data, use a
++  `data-*` attribute and apply it through `dynamic-vars.js`, or set a single property
++  with `el.style.prop = ...` (that is allowed).
++- Put any value that lands in an HTML attribute through `escapeHtmlAttr()`.
++- Run `node scripts/build-sw-manifest.mjs` after any change under `public/`, then
++  `--check`.
++
++## Known gaps
++
++- `open-image-viewer` and attachment download clicks are covered only by steps that
++  run when an attachment is already on the page (`if (imgBtn)`). A deterministic test
++  is still needed.
++- The `CSP header: strict script-src` test in `csp-static.test.mjs` fails on the mock
++  response's missing header and is not yet investigated. It fails on the unmodified
++  tree too.
++
++## Interim defence (still in place)
++
++Output escaping remains the first line of defence: `escapeHtmlAttr()` for attributes,
++escaped text for reactions and reply quotes, and member names in `chat/group.js`
++rendered as text.
+diff --git a/public/css/features/settings.css b/public/css/features/settings.css
+index b476886..6264c28 100644
+--- a/public/css/features/settings.css
++++ b/public/css/features/settings.css
+@@ -1546,3 +1546,16 @@
+     justify-content:flex-start;
+   }
+ }
++
++/* ---- Inline-style replacements from js/settings/settings-render.js
++   (CSP: no style="" attributes). Same declarations as the inline styles.
++   The two data-driven values (bg preview, accent swatch) are applied by
++   js/settings/dynamic-style.js through CSSOM after the HTML is inserted. */
++.settings-row-inline{display:flex;align-items:center;gap:16px;}
++.settings-stack{flex-direction:column;align-items:stretch;gap:10px;}
++.settings-row-between{display:flex;justify-content:space-between;align-items:center;}
++.settings-row-between-wide{display:flex;align-items:center;justify-content:space-between;gap:16px;}
++.settings-counter{font-size:11.5px;}
++.settings-self-start{align-self:flex-start;}
++.settings-2fa-panel{display:none;flex-direction:column;gap:10px;margin-top:4px;}
++.settings-2fa-panel-flush{display:none;flex-direction:column;gap:10px;}
+diff --git a/public/css/pages/login.css b/public/css/pages/login.css
+index ad05a6d..e68e705 100644
+--- a/public/css/pages/login.css
++++ b/public/css/pages/login.css
+@@ -305,3 +305,17 @@
+   outline-offset:3px;
+   border-radius:4px;
+ }
++
++/* ---- Inline-style replacements from js/core/auth.js (CSP: no style="" attrs).
++   Same declarations as the inline styles they replace. JS still toggles the
++   editor with el.style.display (CSSOM), which overrides .auth-is-hidden. ---- */
++.auth-link-btn{margin-left:4px;}
++.auth-server-row--native{margin-top:16px;display:flex;flex-direction:column;gap:8px;}
++.auth-server-head{display:flex;align-items:center;justify-content:space-between;gap:10px;}
++.auth-server-value--native{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:.75;font-size:.9em;}
++.auth-is-hidden{display:none;}
++.auth-server-actions{display:flex;gap:8px;margin-top:8px;}
++.auth-flex-1{flex:1;}
++.auth-mt-8{margin-top:8px;}
++.auth-server-row--electron{margin-top:16px;display:flex;align-items:center;gap:10px;}
++.auth-server-value--electron{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;opacity:.75;}
+diff --git a/public/css/utilities.css b/public/css/utilities.css
+index b799f9c..2d1b23e 100644
+--- a/public/css/utilities.css
++++ b/public/css/utilities.css
+@@ -1,2 +1,24 @@
+ .text-muted{color:var(--muted);}
+ .hidden{display:none !important;}
++
++/* Inline-style replacements (CSP). Deliberately NOT !important: JS toggles
++   these elements with el.style.display, and an inline value must still win. */
++.js-hidden{display:none;}
++.u-block{display:block;}
++.u-inline-flex-gap8{display:inline-flex;gap:8px;}
++.u-flex-center-gap10{display:flex;align-items:center;gap:10px;}
++.u-min-w-220{min-width:220px;}
++.u-min-w-260{min-width:260px;}
++.u-dm-empty-pad{font-size:12.5px;padding:16px 10px;text-align:center;}
++.u-dm-status-pad{font-size:12.5px;padding:10px 4px;}
++.u-m0{margin:0;}
++.u-pc-pad{padding:24px 4px;text-align:center;}
++.u-offscreen-copy{position:fixed;top:0;left:0;opacity:0;pointer-events:none;}
++
++/* Download progress bar (media/attachments.js). Same declarations as the
++   former cssText; the two transition values are kept as-is (they were never
++   valid CSS, so the browser has always ignored them). */
++.wire-dl-progress{position:fixed;top:0;left:0;right:0;z-index:2147483647;pointer-events:none;font-family:inherit;}
++.wire-dl-progress-track{width:100%;height:3px;background:rgba(255,255,255,.10);overflow:hidden;}
++.wire-dl-progress-fill{width:0%;height:100%;background:var(--accent,#4da6ff);transition:width:.15s ease;transform-origin:left center;}
++.wire-dl-progress-info{position:absolute;top:7px;left:50%;transform:translateX(-50%);max-width:calc(100vw - 24px);padding:4px 10px;border-radius:999px;background:rgba(15,15,20,.88);color:rgba(255,255,255,.92);border:1px solid rgba(255,255,255,.10);box-shadow:0 4px 16px rgba(0,0,0,.22);font-size:11px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:0;transition:opacity:.15s ease;}
+diff --git a/public/js/chat/composer.js b/public/js/chat/composer.js
+index 39902c6..c02df7e 100644
+--- a/public/js/chat/composer.js
++++ b/public/js/chat/composer.js
+@@ -41,6 +41,7 @@ import {
+ import bidiFactory from '../vendor/bidi-js.js';
+ 
+ import { registerActions } from '../ui/actions.js';
++import { applyDynamicVars } from '../ui/dynamic-vars.js';
+ 
+ const bidi =
+   bidiFactory();
+@@ -661,7 +662,7 @@ export function createComposer(
+               <div class="attach-chip-progress">
+                 <div
+                   class="attach-chip-progress-fill"
+-                  style="width:${item.progress || 0}%"
++                  data-progress="${item.progress || 0}"
+                 ></div>
+               </div>
+ 
+@@ -694,6 +695,7 @@ export function createComposer(
+     `
+         )
+         .join('');
++    applyDynamicVars(el);
+   }
+ 
+   function setChipProgress(
+diff --git a/public/js/chat/dm.js b/public/js/chat/dm.js
+index f9b0e0e..fd67eae 100644
+--- a/public/js/chat/dm.js
++++ b/public/js/chat/dm.js
+@@ -949,8 +949,8 @@ function paintConvRows(preparedConvs, filter = '') {
+ 
+   if (filtered.length === 0) {
+     html = q
+-      ? `<div class="text-muted" style="font-size:12.5px;padding:16px 10px;text-align:center;">No conversations found</div>`
+-      : `<div class="text-muted" style="font-size:12.5px;padding:10px 4px;">No conversations yet. Start one above.</div>`;
++      ? `<div class="text-muted u-dm-empty-pad">No conversations found</div>`
++      : `<div class="text-muted u-dm-status-pad">No conversations yet. Start one above.</div>`;
+   } else {
+     html = filtered
+       .map(
+@@ -1053,7 +1053,7 @@ window.openNewDmPicker = async function () {
+   thread.innerHTML = `
+     <div class="dm-thread-header">
+       <button class="icon-btn dm-back-btn" title="Back" data-action="dm-close-new-picker">${ICONS.arrowLeft}</button>
+-      <div class="card-title" style="margin:0;">${ICONS.plus} New message</div>
++      <div class="card-title u-m0">${ICONS.plus} New message</div>
+       <button class="icon-btn dm-picker-close" title="Close" data-action="dm-close-new-picker">${ICONS.close}</button>
+     </div>
+     <div class="dm-picker-body">
+@@ -2395,8 +2395,7 @@ async function copyDmMessageText(btn) {
+   field.value = text;
+   field.setAttribute('readonly', '');
+   field.setAttribute('aria-hidden', 'true');
+-  field.style.cssText =
+-    'position:fixed;top:0;left:0;opacity:0;pointer-events:none;';
++  field.className = 'u-offscreen-copy';
+   document.body.appendChild(field);
+   let result;
+   try {
+diff --git a/public/js/core/app.js b/public/js/core/app.js
+index 8c00175..844671e 100644
+--- a/public/js/core/app.js
++++ b/public/js/core/app.js
+@@ -58,6 +58,8 @@ import {
+ } from '../crypto/identity-service.js';
+ 
+ import '../ui/actions.js';
++import { installDynamicVarsObserver } from '../ui/dynamic-vars.js';
++installDynamicVarsObserver();
+ import '../ui/profile-card.js';
+ import '../media/image-viewer.js';
+ 
+diff --git a/public/js/core/auth.js b/public/js/core/auth.js
+index 83264a0..4305d79 100644
+--- a/public/js/core/auth.js
++++ b/public/js/core/auth.js
+@@ -1114,8 +1114,8 @@ function renderVerification(
+     <button
+       type="button"
+       id="resend-verification"
+-      class="btn btn-ghost btn-sm"
+-      style="margin-left:4px;"
++      class="btn btn-ghost btn-sm auth-link-btn"
++     
+     >
+       Resend
+     </button>
+@@ -1865,8 +1865,8 @@ function renderAuthCard(
+           <button
+             type="button"
+             id="switch-auth"
+-            class="btn btn-ghost btn-sm"
+-            style="margin-left:4px;"
++            class="btn btn-ghost btn-sm auth-link-btn"
++           
+           >
+             Sign in
+           </button>
+@@ -1877,8 +1877,8 @@ function renderAuthCard(
+           <button
+             type="button"
+             id="switch-auth"
+-            class="btn btn-ghost btn-sm"
+-            style="margin-left:4px;"
++            class="btn btn-ghost btn-sm auth-link-btn"
++           
+           >
+             Create account
+           </button>
+@@ -1891,23 +1891,13 @@ function renderAuthCard(
+     nativeApp
+       ? `
+         <div
+-          class="auth-server-row"
++          class="auth-server-row auth-server-row--native"
+           id="auth-server-row"
+-          style="
+-            margin-top:16px;
+-            display:flex;
+-            flex-direction:column;
+-            gap:8px;
+-          "
++         
+         >
+ 
+-          <div
+-            style="
+-              display:flex;
+-              align-items:center;
+-              justify-content:space-between;
+-              gap:10px;
+-            "
++          <div class="auth-server-head"
++           
+           >
+             <span>Server</span>
+ 
+@@ -1921,20 +1911,14 @@ function renderAuthCard(
+           </div>
+ 
+           <span
+-            class="auth-server-value"
++            class="auth-server-value auth-server-value--native"
+             id="auth-server-value"
+-            style="
+-              overflow:hidden;
+-              text-overflow:ellipsis;
+-              white-space:nowrap;
+-              opacity:.75;
+-              font-size:.9em;
+-            "
++           
+           >${escapeHtml(getServerEndpoint())}</span>
+ 
+-          <div
++          <div class="auth-is-hidden"
+             id="auth-server-editor"
+-            style="display:none;"
++           
+           >
+             <input
+               type="text"
+@@ -1946,18 +1930,14 @@ function renderAuthCard(
+               value="${escapeHtml(getServerEndpoint())}"
+             >
+ 
+-            <div
+-              style="
+-                display:flex;
+-                gap:8px;
+-                margin-top:8px;
+-              "
++            <div class="auth-server-actions"
++             
+             >
+               <button
+                 type="button"
+                 id="auth-server-connect"
+-                class="btn btn-primary"
+-                style="flex:1;"
++                class="btn btn-primary auth-flex-1"
++               
+               >
+                 Connect
+               </button>
+@@ -1965,8 +1945,8 @@ function renderAuthCard(
+               <button
+                 type="button"
+                 id="auth-server-cancel"
+-                class="btn btn-ghost"
+-                style="flex:1;"
++                class="btn btn-ghost auth-flex-1"
++               
+               >
+                 Cancel
+               </button>
+@@ -1974,8 +1954,8 @@ function renderAuthCard(
+ 
+             <div
+               id="auth-server-error"
+-              class="field-error"
+-              style="margin-top:8px;"
++              class="field-error auth-mt-8"
++             
+             ></div>
+           </div>
+ 
+@@ -1988,27 +1968,16 @@ function renderAuthCard(
+     !isRegister && electronApp
+       ? `
+         <div
+-          class="auth-server-row"
++          class="auth-server-row auth-server-row--electron"
+           id="auth-server-row"
+-          style="
+-            margin-top:16px;
+-            display:flex;
+-            align-items:center;
+-            gap:10px;
+-          "
++         
+         >
+ 
+           <span>Server:</span>
+ 
+           <span
+-            class="auth-server-value"
+-            style="
+-              overflow:hidden;
+-              text-overflow:ellipsis;
+-              white-space:nowrap;
+-              flex:1;
+-              opacity:.75;
+-            "
++            class="auth-server-value auth-server-value--electron"
++           
+           >
+             ${escapeHtml(getServerEndpoint())}
+           </span>
+@@ -2615,23 +2584,13 @@ export function renderUnlock(
+     nativeApp
+       ? `
+         <div
+-          class="auth-server-row"
++          class="auth-server-row auth-server-row--native"
+           id="unlock-server-row"
+-          style="
+-            margin-top:16px;
+-            display:flex;
+-            flex-direction:column;
+-            gap:8px;
+-          "
++         
+         >
+ 
+-          <div
+-            style="
+-              display:flex;
+-              align-items:center;
+-              justify-content:space-between;
+-              gap:10px;
+-            "
++          <div class="auth-server-head"
++           
+           >
+             <span>Server</span>
+ 
+@@ -2644,20 +2603,14 @@ export function renderUnlock(
+             </button>
+           </div>
+ 
+-          <span
++          <span class="auth-server-value--native"
+             id="unlock-server-value"
+-            style="
+-              overflow:hidden;
+-              text-overflow:ellipsis;
+-              white-space:nowrap;
+-              opacity:.75;
+-              font-size:.9em;
+-            "
++           
+           >${escapeHtml(getServerEndpoint())}</span>
+ 
+-          <div
++          <div class="auth-is-hidden"
+             id="unlock-server-editor"
+-            style="display:none;"
++           
+           >
+ 
+             <input
+@@ -2670,19 +2623,15 @@ export function renderUnlock(
+               value="${escapeHtml(getServerEndpoint())}"
+             >
+ 
+-            <div
+-              style="
+-                display:flex;
+-                gap:8px;
+-                margin-top:8px;
+-              "
++            <div class="auth-server-actions"
++             
+             >
+ 
+               <button
+                 type="button"
+                 id="unlock-server-connect"
+-                class="btn btn-primary"
+-                style="flex:1;"
++                class="btn btn-primary auth-flex-1"
++               
+               >
+                 Connect
+               </button>
+@@ -2690,8 +2639,8 @@ export function renderUnlock(
+               <button
+                 type="button"
+                 id="unlock-server-cancel"
+-                class="btn btn-ghost"
+-                style="flex:1;"
++                class="btn btn-ghost auth-flex-1"
++               
+               >
+                 Cancel
+               </button>
+@@ -2700,8 +2649,8 @@ export function renderUnlock(
+ 
+             <div
+               id="unlock-server-error"
+-              class="field-error"
+-              style="margin-top:8px;"
++              class="field-error auth-mt-8"
++             
+             ></div>
+ 
+           </div>
+diff --git a/public/js/media/attachments.js b/public/js/media/attachments.js
+index 6c4f1f0..fcacdc9 100644
+--- a/public/js/media/attachments.js
++++ b/public/js/media/attachments.js
+@@ -126,36 +126,17 @@ function ensureDownloadProgressUI() {
+   container.id =
+     'wire-download-progress';
+ 
+-  container.style.cssText = `
+-    position:fixed;
+-    top:0;
+-    left:0;
+-    right:0;
+-    z-index:2147483647;
+-    pointer-events:none;
+-    font-family:inherit;
+-  `;
++  container.className = 'wire-dl-progress';
+ 
+   const track =
+     document.createElement('div');
+ 
+-  track.style.cssText = `
+-    width:100%;
+-    height:3px;
+-    background:rgba(255,255,255,.10);
+-    overflow:hidden;
+-  `;
++  track.className = 'wire-dl-progress-track';
+ 
+   const fill =
+     document.createElement('div');
+ 
+-  fill.style.cssText = `
+-    width:0%;
+-    height:100%;
+-    background:var(--accent,#4da6ff);
+-    transition:width:.15s ease;
+-    transform-origin:left center;
+-  `;
++  fill.className = 'wire-dl-progress-fill';
+ 
+   track.appendChild(
+     fill
+@@ -164,26 +145,7 @@ function ensureDownloadProgressUI() {
+   const info =
+     document.createElement('div');
+ 
+-  info.style.cssText = `
+-    position:absolute;
+-    top:7px;
+-    left:50%;
+-    transform:translateX(-50%);
+-    max-width:calc(100vw - 24px);
+-    padding:4px 10px;
+-    border-radius:999px;
+-    background:rgba(15,15,20,.88);
+-    color:rgba(255,255,255,.92);
+-    border:1px solid rgba(255,255,255,.10);
+-    box-shadow:0 4px 16px rgba(0,0,0,.22);
+-    font-size:11px;
+-    line-height:1.2;
+-    white-space:nowrap;
+-    overflow:hidden;
+-    text-overflow:ellipsis;
+-    opacity:0;
+-    transition:opacity:.15s ease;
+-  `;
++  info.className = 'wire-dl-progress-info';
+ 
+   container.appendChild(
+     track
+@@ -977,7 +939,7 @@ export function renderAttachment(
+       <div
+         class="chat-attachment-image"
+         id="${key}"
+-        style="aspect-ratio:${ratio};"
++        data-aspect="${ratio}"
+         data-scope="${scope}"
+         data-filename="${escapeAttr(
+           msg.attachment_name
+diff --git a/public/js/media/audio-player.js b/public/js/media/audio-player.js
+index 32b5733..e5206d1 100644
+--- a/public/js/media/audio-player.js
++++ b/public/js/media/audio-player.js
+@@ -242,8 +242,8 @@ export async function renderAudio(msg, scope, containerEl) {
+         >
+           <span class="icon-play">${ICONS.play}</span>
+           <span
+-            class="icon-pause"
+-            style="display:none"
++            class="icon-pause js-hidden"
++           
+           >${ICONS.pause}</span>
+         </button>
+ 
+diff --git a/public/js/media/image-viewer.js b/public/js/media/image-viewer.js
+index 85e891d..1cdeaaa 100644
+--- a/public/js/media/image-viewer.js
++++ b/public/js/media/image-viewer.js
+@@ -202,7 +202,9 @@ registerActions({
+   const stage = document.querySelector('.image-viewer-stage');
+   if (!img || !stage) return;
+ 
+-  // Was an inline ondragstart="return false;" in index.html.
++  // Was an inline ondragstart="return false;" in index.html. Also covers
++  // native drag-and-drop ghost thumbnails that can appear even with
++  // draggable="false" on slow paint cycles.
+   img.addEventListener('dragstart', (e) => e.preventDefault());
+ 
+   const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+@@ -334,10 +336,6 @@ registerActions({
+     img.classList.remove('panning');
+   });
+ 
+-  // Belt-and-suspenders: some browsers still attempt native
+-  // image drag-and-drop (the "ghost thumbnail" in the middle of
+-  // the screen) even with draggable="false" on slow paint cycles.
+-  img.addEventListener('dragstart', (e) => e.preventDefault());
+ })();
+ 
+ // Escape-to-close, registered once — same pattern as the profile
+diff --git a/public/js/media/video-player.js b/public/js/media/video-player.js
+index 18eb09a..f79a171 100644
+--- a/public/js/media/video-player.js
++++ b/public/js/media/video-player.js
+@@ -132,16 +132,16 @@ export async function renderVideo(
+           </span>
+ 
+           <span
+-            class="icon-pause"
+-            style="display:none"
++            class="icon-pause js-hidden"
++           
+           >
+             ${ICONS.pause}
+           </span>
+         </button>
+ 
+         <div
+-          class="video-time"
+-          style="display:none"
++          class="video-time js-hidden"
++         
+         >
+           <span class="current-time">
+             0:00
+@@ -540,7 +540,7 @@ export async function renderVideo(
+ 
+     videoTime.style.display =
+       isPlayerFullscreen()
+-        ? ''
++        ? 'block'
+         : 'none';
+   };
+ 
+diff --git a/public/js/media/voice-message.js b/public/js/media/voice-message.js
+index 80147be..9a251cf 100644
+--- a/public/js/media/voice-message.js
++++ b/public/js/media/voice-message.js
+@@ -633,8 +633,8 @@ export async function renderVoiceMessage(
+         <span class="icon-play">${ICONS.play}</span>
+ 
+         <span
+-          class="icon-pause"
+-          style="display:none"
++          class="icon-pause js-hidden"
++         
+         >${ICONS.pause}</span>
+       </button>
+ 
+@@ -675,8 +675,8 @@ export async function renderVoiceMessage(
+           </span>
+ 
+           <span
+-            class="icon-volume-mute"
+-            style="display:none"
++            class="icon-volume-mute js-hidden"
++           
+           >${ICONS.volumeMute}</span>
+         </button>
+ 
+diff --git a/public/js/settings/admin.js b/public/js/settings/admin.js
+index d4fdbe0..7523f97 100644
+--- a/public/js/settings/admin.js
++++ b/public/js/settings/admin.js
+@@ -35,7 +35,7 @@ export async function renderAdminUsers() {
+       // admin hands it to another user and becomes a normal user.
+       const actions = isSelf
+         ? '<span class="text-muted">You (admin)</span>'
+-        : `<div style="display:inline-flex;gap:8px;">
++        : `<div class="u-inline-flex-gap8">
+             <button class="btn btn-sm" data-transfer-admin="${Number(u.id)}">Transfer admin role</button>
+             <button class="btn btn-danger btn-sm" data-delete-user="${Number(u.id)}">Delete</button>
+           </div>`;
+@@ -62,7 +62,7 @@ export async function renderAdminUsers() {
+       return `
+       <tr class="file-row">
+         <td>
+-          <div style="display:flex;align-items:center;gap:10px;">
++          <div class="u-flex-center-gap10">
+             ${avatarHtml(u.id, u.username, 'chat-avatar', false, true)}
+             <span>${escapeHtml(u.username)}</span>
+           </div>
+@@ -486,11 +486,11 @@ export async function renderAdminFolders() {
+       </div>
+ 
+       <div class="toolbar">
+-        <input
++        <input class="u-min-w-220"
+           type="text"
+           id="new-folder-path"
+           placeholder="/srv/media/Movies"
+-          style="min-width:220px;"
++         
+         >
+ 
+         <input
+diff --git a/public/js/settings/dynamic-style.js b/public/js/settings/dynamic-style.js
+new file mode 100644
+index 0000000..6f1ce0c
+--- /dev/null
++++ b/public/js/settings/dynamic-style.js
+@@ -0,0 +1,32 @@
++// ============================================================
++// Post-insertion styling for settings markup (CSP: no style="" in HTML).
++//
++// Settings markup carries data-* values; once the HTML is in the DOM,
++// these values are applied through CSSOM (el.style.*), which the CSP
++// allows. Keep this module free of imports: settings-render.js, settings-nav.js
++// and settings.js all import it.
++// ============================================================
++
++import { applyDynamicVars } from '../ui/dynamic-vars.js';
++
++const HEX_COLOR = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
++
++/**
++ * Apply every data-driven style under `root`. Call after assigning innerHTML.
++ *   [data-bg-preview]   -> background (CSS gradient built by theme.js)
++ *   [data-swatch-color] -> --swatch-color custom property (validated hex only)
++ */
++export function applyDynamicSettingsStyles(root) {
++  if (!root || typeof root.querySelectorAll !== 'function') return;
++
++  applyDynamicVars(root);
++
++  root.querySelectorAll('[data-bg-preview]').forEach((el) => {
++    el.style.background = el.dataset.bgPreview || '';
++  });
++
++  root.querySelectorAll('[data-swatch-color]').forEach((el) => {
++    const hex = el.dataset.swatchColor || '';
++    if (HEX_COLOR.test(hex)) el.style.setProperty('--swatch-color', hex);
++  });
++}
+diff --git a/public/js/settings/settings-appearance-custom.js b/public/js/settings/settings-appearance-custom.js
+index b92e7f7..30ff20a 100644
+--- a/public/js/settings/settings-appearance-custom.js
++++ b/public/js/settings/settings-appearance-custom.js
+@@ -79,6 +79,7 @@ import {
+ } from '../chat/message-accent.js';
+ 
+ import { renderSettings } from './settings.js';
++import { applyDynamicVars } from '../ui/dynamic-vars.js';
+ 
+ // ============================================================
+ // Reusable controls
+@@ -137,7 +138,7 @@ export function sliderRow({
+           step="1"
+           value="${value}"
+           data-unit="${unit}"
+-          style="--sound-volume:${fillPercent(value, min, max)}%"
++          data-sound-volume="${fillPercent(value, min, max)}"
+           aria-label="${escapeHtmlAttr(label)}"
+           ${attrs}
+           ${disabled || hidden ? 'disabled' : ''}>
+@@ -506,14 +507,14 @@ export function renderAdvancedAppearanceSection() {
+       <summary class="settings-advanced-summary">
+         <span>
+           <span
+-            class="settings-row-label"
+-            style="display:block">
++            class="settings-row-label u-block"
++           >
+             Advanced
+           </span>
+ 
+           <span
+-            class="settings-row-sublabel"
+-            style="display:block">
++            class="settings-row-sublabel u-block"
++           >
+             Transparency and blur for each part of the interface
+           </span>
+         </span>
+diff --git a/public/js/settings/settings-bubble-gradient.js b/public/js/settings/settings-bubble-gradient.js
+index 275e44d..2c27216 100644
+--- a/public/js/settings/settings-bubble-gradient.js
++++ b/public/js/settings/settings-bubble-gradient.js
+@@ -1,3 +1,4 @@
++import { applyDynamicVars } from '../ui/dynamic-vars.js';
+ // ============================================================
+ // Settings → Appearance: "My message colors"
+ //
+@@ -79,7 +80,7 @@ function stopsHtml(stops) {
+               value="${stop.position}"
+               data-unit="%"
+               data-og-position="${index}"
+-              style="--sound-volume:${stop.position}%"
++              data-sound-volume="${stop.position}"
+               aria-label="Color ${index + 1} position">
+ 
+             <output
+@@ -325,6 +326,7 @@ function syncStops() {
+   const list = $('own-gradient-stops');
+   if (list) {
+     list.innerHTML = stopsHtml(draft.stops);
++    applyDynamicVars(list);
+   }
+ 
+   const add = $('own-gradient-add');
+diff --git a/public/js/settings/settings-message-sounds.js b/public/js/settings/settings-message-sounds.js
+index 2abe6fb..636eddf 100644
+--- a/public/js/settings/settings-message-sounds.js
++++ b/public/js/settings/settings-message-sounds.js
+@@ -1,3 +1,4 @@
++import { applyDynamicVars } from '../ui/dynamic-vars.js';
+ // ============================================================
+ // Settings > Message sounds
+ // ------------------------------------------------------------
+@@ -302,7 +303,7 @@ function bodyHtml() {
+             max="100"
+             step="1"
+             value="${settings.volume}"
+-            style="--sound-volume:${settings.volume}%"
++            data-sound-volume="${settings.volume}"
+             aria-label="Message sound volume"${dis}>
+ 
+           <output
+@@ -412,6 +413,7 @@ export function bindMessageSoundSettings() {
+       document.activeElement?.dataset?.fid || null;
+ 
+     body.innerHTML = bodyHtml();
++  applyDynamicVars(body);
+ 
+     if (focusId) {
+       const el = body.querySelector(
+diff --git a/public/js/settings/settings-nav.js b/public/js/settings/settings-nav.js
+index 003c1bf..6493b4b 100644
+--- a/public/js/settings/settings-nav.js
++++ b/public/js/settings/settings-nav.js
+@@ -22,6 +22,7 @@ import {
+   pushOverlay,
+   closeOverlay
+ } from '../core/navigation.js';
++import { applyDynamicSettingsStyles } from './dynamic-style.js';
+ 
+ 
+ // ============================================================
+@@ -134,6 +135,7 @@ export async function openSettingsCategory(
+   if (bodyEl && renderBody) {
+     bodyEl.innerHTML =
+       renderBody(categoryId);
++    applyDynamicSettingsStyles(bodyEl);
+   }
+ 
+   // Two-layer transition (see .settings-shell/.category-open in
+diff --git a/public/js/settings/settings-render.js b/public/js/settings/settings-render.js
+index a2b3af4..5177380 100644
+--- a/public/js/settings/settings-render.js
++++ b/public/js/settings/settings-render.js
+@@ -128,7 +128,7 @@ function renderBackgroundPreset(
+ 
+       <span
+         class="bg-swatch-preview"
+-        style="background:${previewCss};">
++        data-bg-preview="${escapeHtmlAttr(previewCss)}">
+ 
+         <span class="bg-swatch-check">
+           ${ICONS.check || ''}
+@@ -173,7 +173,7 @@ function renderAppearance({
+           }"
+           data-name="${escapeHtmlAttr(p.name)}"
+           title="${escapeHtmlAttr(p.name)}"
+-          style="--swatch-color:${p.hex};"
++          data-swatch-color="${escapeHtmlAttr(p.hex)}"
+           aria-label="Select ${escapeHtmlAttr(p.name)} accent color">
+         </button>
+       `)
+@@ -1147,12 +1147,8 @@ function renderProfile(me) {
+ 
+       <div class="settings-row">
+ 
+-        <div
+-          style="
+-            display:flex;
+-            align-items:center;
+-            gap:16px;
+-          ">
++        <div class="settings-row-inline"
++         >
+ 
+           <div
+             class="settings-avatar-big"
+@@ -1233,12 +1229,8 @@ function renderProfile(me) {
+       <!-- Bio -->
+ 
+       <div
+-        class="settings-row"
+-        style="
+-          flex-direction:column;
+-          align-items:stretch;
+-          gap:10px;
+-        ">
++        class="settings-row settings-stack"
++       >
+ 
+         <label
+           class="settings-label"
+@@ -1255,17 +1247,13 @@ function renderProfile(me) {
+             bio
+           )}</textarea>
+ 
+-        <div
+-          style="
+-            display:flex;
+-            justify-content:space-between;
+-            align-items:center;
+-          ">
++        <div class="settings-row-between"
++         >
+ 
+           <span
+-            class="text-muted"
++            class="text-muted settings-counter"
+             id="bio-counter"
+-            style="font-size:11.5px;">
++           >
+ 
+             ${bio.length}/300
+ 
+@@ -1321,12 +1309,8 @@ function renderSecurity(security, privacy) {
+       <!-- Password -->
+ 
+       <div
+-        class="settings-row"
+-        style="
+-          flex-direction:column;
+-          align-items:stretch;
+-          gap:10px;
+-        ">
++        class="settings-row settings-stack"
++       >
+ 
+         <label
+           class="settings-label"
+@@ -1364,9 +1348,9 @@ function renderSecurity(security, privacy) {
+ 
+         <button
+           type="button"
+-          class="btn btn-primary btn-sm"
++          class="btn btn-primary btn-sm settings-self-start"
+           data-action="settings-change-password"
+-          style="align-self:flex-start;">
++         >
+ 
+           Update password
+ 
+@@ -1379,20 +1363,11 @@ function renderSecurity(security, privacy) {
+         emailFeatureEnabled
+           ? `
+             <div
+-              class="settings-row"
+-              style="
+-                flex-direction:column;
+-                align-items:stretch;
+-                gap:10px;
+-              ">
++              class="settings-row settings-stack"
++             >
+ 
+-              <div
+-                style="
+-                  display:flex;
+-                  align-items:center;
+-                  justify-content:space-between;
+-                  gap:16px;
+-                ">
++              <div class="settings-row-between-wide"
++               >
+ 
+                 <div>
+ 
+@@ -1432,14 +1407,9 @@ function renderSecurity(security, privacy) {
+ 
+               <!-- Enable -->
+ 
+-              <div
++              <div class="settings-2fa-panel"
+                 id="email-2fa-setup"
+-                style="
+-                  display:none;
+-                  flex-direction:column;
+-                  gap:10px;
+-                  margin-top:4px;
+-                ">
++               >
+ 
+                 <input
+                   type="password"
+@@ -1450,22 +1420,18 @@ function renderSecurity(security, privacy) {
+ 
+                 <button
+                   type="button"
+-                  class="btn btn-primary btn-sm"
++                  class="btn btn-primary btn-sm settings-self-start"
+                   id="email-2fa-send-code"
+-                  style="align-self:flex-start;">
++                 >
+ 
+                   Send verification code
+ 
+                 </button>
+ 
+ 
+-                <div
++                <div class="settings-2fa-panel-flush"
+                   id="email-2fa-code-section"
+-                  style="
+-                    display:none;
+-                    flex-direction:column;
+-                    gap:10px;
+-                  ">
++                 >
+ 
+                   <div
+                     class="settings-row-sublabel"
+@@ -1487,9 +1453,9 @@ function renderSecurity(security, privacy) {
+ 
+                   <button
+                     type="button"
+-                    class="btn btn-primary btn-sm"
++                    class="btn btn-primary btn-sm settings-self-start"
+                     id="email-2fa-verify"
+-                    style="align-self:flex-start;">
++                   >
+ 
+                     Verify and enable
+ 
+@@ -1502,14 +1468,9 @@ function renderSecurity(security, privacy) {
+ 
+               <!-- Disable -->
+ 
+-              <div
++              <div class="settings-2fa-panel"
+                 id="email-2fa-disable"
+-                style="
+-                  display:none;
+-                  flex-direction:column;
+-                  gap:10px;
+-                  margin-top:4px;
+-                ">
++               >
+ 
+                 <div class="settings-row-sublabel">
+ 
+@@ -1526,9 +1487,9 @@ function renderSecurity(security, privacy) {
+ 
+                 <button
+                   type="button"
+-                  class="btn btn-sm btn-danger"
++                  class="btn btn-sm btn-danger settings-self-start"
+                   id="email-2fa-confirm-disable"
+-                  style="align-self:flex-start;">
++                 >
+ 
+                   Disable Email 2FA
+ 
+diff --git a/public/js/settings/settings.js b/public/js/settings/settings.js
+index 5544661..4ae8715 100644
+--- a/public/js/settings/settings.js
++++ b/public/js/settings/settings.js
+@@ -61,6 +61,7 @@ import {
+   mountSettingsCategoryNav,
+   resetSettingsCategory
+ } from './settings-nav.js';
++import { applyDynamicSettingsStyles } from './dynamic-style.js';
+ 
+ 
+ // ============================================================
+@@ -329,6 +330,8 @@ export async function renderSettings(opts) {
+         activeCategoryId
+       });
+ 
++    applyDynamicSettingsStyles(main);
++
+     /*
+      * Bind one category's feature area at a time, lazily, instead
+      * of every module unconditionally on every paint: only the
+diff --git a/public/js/ui/avatar.js b/public/js/ui/avatar.js
+index de3fe1c..a4d62fb 100644
+--- a/public/js/ui/avatar.js
++++ b/public/js/ui/avatar.js
+@@ -314,12 +314,15 @@ export function avatarHtml(userId, username, className = 'chat-avatar', showPres
+ }
+ 
+ // Click handling for avatars (scoped to data-avatar-action="profile").
++// Capture phase on purpose: the old inline onclick ran before any ancestor
++// listener, and stopPropagation() must stop ancestors (e.g. the DM picker row)
++// from also acting on the same click.
+ if (typeof document !== 'undefined') document.addEventListener('click', (e) => {
+   const el = e.target.closest('.clickable-avatar[data-avatar-action="profile"]');
+   if (!el) return;
+   e.stopPropagation();
+   window.openProfileCard(Number(el.dataset.avatarUser));
+-});
++}, true);
+ 
+ /**
+  * Generate HTML for a banner placeholder and schedule its image load.
+diff --git a/public/js/ui/dynamic-vars.js b/public/js/ui/dynamic-vars.js
+new file mode 100644
+index 0000000..b97ebcf
+--- /dev/null
++++ b/public/js/ui/dynamic-vars.js
+@@ -0,0 +1,73 @@
++// ============================================================
++// Applies data-driven CSS values after markup is inserted (CSP: no style=""
++// attributes in HTML). Values travel as data-* attributes and are set through
++// CSSOM (el.style.*), which the CSP allows. Every value is validated or clamped
++// before it is used.
++// ============================================================
++
++const HEX_COLOR = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
++
++function clampPercent(raw) {
++  const n = Number(raw);
++  if (!Number.isFinite(n)) return null;
++  return Math.min(100, Math.max(0, n));
++}
++
++/**
++ * Call after assigning innerHTML (or after a template is inserted).
++ *   [data-sound-volume]  -> --sound-volume: N%      (range-slider fill)
++ *   [data-swatch]        -> --swatch: #hex          (validated)
++ *   [data-progress]      -> width: N%               (upload progress)
++ *   [data-aspect]        -> aspect-ratio: N / M     (validated)
++ */
++export function applyDynamicVars(root) {
++  if (!root || typeof root.querySelectorAll !== 'function') return;
++  const all = (sel) => {
++    const out = root.matches && root.matches(sel) ? [root] : [];
++    return out.concat(Array.from(root.querySelectorAll(sel)));
++  };
++
++  all('[data-sound-volume]').forEach((el) => {
++    const pct = clampPercent(el.dataset.soundVolume);
++    if (pct !== null) el.style.setProperty('--sound-volume', `${pct}%`);
++  });
++
++  all('[data-swatch]').forEach((el) => {
++    const hex = el.dataset.swatch || '';
++    if (HEX_COLOR.test(hex)) el.style.setProperty('--swatch', hex);
++  });
++
++  all('[data-progress]').forEach((el) => {
++    const pct = clampPercent(el.dataset.progress);
++    if (pct !== null) el.style.width = `${pct}%`;
++  });
++
++  all('[data-aspect]').forEach((el) => {
++    const ratio = String(el.dataset.aspect || '').trim();
++    if (/^\d+(\.\d+)?(\s*\/\s*\d+(\.\d+)?)?$/.test(ratio)) el.style.aspectRatio = ratio;
++  });
++}
++
++/**
++ * Applies data-driven values to every element the app inserts later, so
++ * call sites that build markup with innerHTML / insertAdjacentHTML need no
++ * manual hook. Installed once at boot (js/core/app.js).
++ */
++let observerInstalled = false;
++export function installDynamicVarsObserver() {
++  if (observerInstalled || typeof MutationObserver === 'undefined') return;
++  const start = () => {
++    if (observerInstalled || !document.body) return;
++    observerInstalled = true;
++    new MutationObserver((records) => {
++      for (const rec of records) {
++        for (const node of rec.addedNodes) {
++          if (node.nodeType === 1) applyDynamicVars(node);
++        }
++      }
++    }).observe(document.body, { childList: true, subtree: true });
++    applyDynamicVars(document.body);
++  };
++  if (document.body) start();
++  else document.addEventListener('DOMContentLoaded', start, { once: true });
++}
+diff --git a/public/js/ui/emoji-picker.js b/public/js/ui/emoji-picker.js
+index 9e15acf..05fc2bc 100644
+--- a/public/js/ui/emoji-picker.js
++++ b/public/js/ui/emoji-picker.js
+@@ -1,3 +1,4 @@
++import { applyDynamicVars } from './dynamic-vars.js';
+ // ============================================================
+ // Emoji picker
+ // ------------------------------------------------------------
+@@ -389,10 +390,11 @@ function buildPicker() {
+             class="emoji-picker-skin-swatch"
+             data-skin="${i}"
+             title="${SKIN_LABELS[i]}"
+-            style="--swatch:${color};"
++            data-swatch="${color}"
+           ></button>
+         `
+     ).join('');
++  applyDynamicVars(skinMenuEl);
+ 
+   // ---- Search ----
+ 
+diff --git a/public/js/ui/profile-card.js b/public/js/ui/profile-card.js
+index 3214698..c9ff5e0 100644
+--- a/public/js/ui/profile-card.js
++++ b/public/js/ui/profile-card.js
+@@ -66,7 +66,7 @@ export async function openProfileCard(userId) {
+     renderProfileCard(profile);
+   } catch (e) {
+     if (openProfileId !== id) return;
+-    body.innerHTML = `<div class="text-muted" style="padding:24px 4px;text-align:center;">${escapeHtml(e.message)}</div>`;
++    body.innerHTML = `<div class="text-muted u-pc-pad">${escapeHtml(e.message)}</div>`;
+   }
+ }
+ 
+diff --git a/public/js/wireguard/wireguard.js b/public/js/wireguard/wireguard.js
+index 6fa06e3..10074f1 100644
+--- a/public/js/wireguard/wireguard.js
++++ b/public/js/wireguard/wireguard.js
+@@ -26,7 +26,7 @@ export async function renderWireguard() {
+     main.innerHTML = `<div class="card">
+       <div class="card-head"><div class="card-title">${ICONS.shield} WireGuard Peers</div></div>
+       <div class="toolbar">
+-        <input type="text" id="wg-pubkey" placeholder="Peer public key" style="min-width:260px;">
++        <input class="u-min-w-260" type="text" id="wg-pubkey" placeholder="Peer public key">
+         <input type="text" id="wg-username" placeholder="Friendly name">
+         <button class="btn btn-primary btn-sm" data-action="wireguard-map-peer">Map name</button>
+       </div>
+diff --git a/public/sw-manifest.js b/public/sw-manifest.js
+index d47d049..6c49ae2 100644
+--- a/public/sw-manifest.js
++++ b/public/sw-manifest.js
+@@ -1,7 +1,7 @@
+ // GENERATED by scripts/build-sw-manifest.mjs — do not edit by hand.
+ // Re-run it on every deploy; `--check` verifies it is current.
+ self.WIRE_SHELL = {
+- "version": "04dbed6cf97a",
++ "version": "2a6e8c3e93a0",
+  "files": [
+   {
+    "url": "/css/components/badges.css",
+@@ -89,7 +89,7 @@ self.WIRE_SHELL = {
+   },
+   {
+    "url": "/css/features/settings.css",
+-   "rev": "319e8174f59fff330e089f9899021e074b12735d6ff9df9465a16f9cc25f8da2"
++   "rev": "2949ebb7c39191fcdc54ac96c2bd41c42b258aa7997014c668d2fdacd80f3014"
+   },
+   {
+    "url": "/css/features/sharing.css",
+@@ -137,7 +137,7 @@ self.WIRE_SHELL = {
+   },
+   {
+    "url": "/css/pages/login.css",
+-   "rev": "25e8a2ad2bcd3d991a534ad1efc4c9f9774b94522ce02bba963872546aff711d"
++   "rev": "fa638402499f66160bdae4e57537f338a99b826a346335deb9af9369a058d95b"
+   },
+   {
+    "url": "/css/responsive.css",
+@@ -145,7 +145,7 @@ self.WIRE_SHELL = {
+   },
+   {
+    "url": "/css/utilities.css",
+-   "rev": "75a0eb47d5f607c34641cceaffe5dddefc6bba6332773306c211a93c26d1e744"
++   "rev": "693658dc7ce03200215e028a25ccde413f39e4d995671a062cb55d833f867814"
+   },
+   {
+    "url": "/favicon.ico",
+@@ -217,7 +217,7 @@ self.WIRE_SHELL = {
+   },
+   {
+    "url": "/js/chat/composer.js",
+-   "rev": "6d5c4fd638bf1f1e3db169b0a9b0a7cf0cb7708c46814cef98e672b38ae938ac"
++   "rev": "e2b3b4937ba043d91103114fc2b20c892396222a1f0e5655ab4d094ddfe06f91"
+   },
+   {
+    "url": "/js/chat/dm-key-trust.js",
+@@ -229,7 +229,7 @@ self.WIRE_SHELL = {
+   },
+   {
+    "url": "/js/chat/dm.js",
+-   "rev": "2ce3c9f53dde85fe7b9a97537dd60120e3765988a0a7213093971d692109bda2"
++   "rev": "80a331fba3c1c8f626b25609e069cbf038204e107de8bcad2786708654cfb2ea"
+   },
+   {
+    "url": "/js/chat/group-attachments-flag.js",
+@@ -285,7 +285,7 @@ self.WIRE_SHELL = {
+   },
+   {
+    "url": "/js/core/app.js",
+-   "rev": "258d781fa22fbe45fa15014234edabfb5790945d4adaf0129fb2cfc256e83a09"
++   "rev": "90e56c53b56317a112ba72fd06a5592e6eee05fa5b8872bbb6e84d74316a53fa"
+   },
+   {
+    "url": "/js/core/appUpdate.js",
+@@ -293,7 +293,7 @@ self.WIRE_SHELL = {
+   },
+   {
+    "url": "/js/core/auth.js",
+-   "rev": "7d0c022ad566b5a4c9c1af1c04fbc19fe4cea3d83c76badf053bf3b608cb26f6"
++   "rev": "6a373c789f126be60b491b5bf62cad6ecb5358ea4d0682d95a337f6b8b747151"
+   },
+   {
+    "url": "/js/core/navigation.js",
+@@ -541,15 +541,15 @@ self.WIRE_SHELL = {
+   },
+   {
+    "url": "/js/media/attachments.js",
+-   "rev": "3f4eea1922cbc90f0c5b4f6b0b54c96320629115cab97f0fbd71ba2e6b9be039"
++   "rev": "9cfbbf2dce3042c42fc754244f7266d9e46c33c27b388b6326579c9edefebc88"
+   },
+   {
+    "url": "/js/media/audio-player.js",
+-   "rev": "36e22648445497fdb5ce06268f0bfac3334c8640c1cc2b7bdd33135ed9ae55aa"
++   "rev": "2a4da109520decfe8f1475b2f4cd77e36653205717a6203b1789121adbc07e05"
+   },
+   {
+    "url": "/js/media/image-viewer.js",
+-   "rev": "805066417333d06c62cfba270213b5578b39a5c91a9bda99327c5d7bb3998038"
++   "rev": "2036392b780b5ba396b760ad49ee878da1dd5edd50cfc6b9cd5fae0dad200954"
+   },
+   {
+    "url": "/js/media/lazy-e2ee-media.js",
+@@ -569,11 +569,11 @@ self.WIRE_SHELL = {
+   },
+   {
+    "url": "/js/media/video-player.js",
+-   "rev": "b48aaff7ed65ea235d2f7416926b1685904b6457a5d4f1d2b5c4ca34a09dc611"
++   "rev": "f198577be3a235b81b57bfd7206354f864e46a65232b40ac9d1d0ad3aa5c02c1"
+   },
+   {
+    "url": "/js/media/voice-message.js",
+-   "rev": "a1f57f3e0af0f470a65ddf7d253ad52d763b15224096ef2c30062e6d470dccad"
++   "rev": "02da252201c0dab1b274360835cd67ab236e193289192ca7bb9a3101003280fc"
+   },
+   {
+    "url": "/js/media/voice-recorder.js",
+@@ -597,7 +597,7 @@ self.WIRE_SHELL = {
+   },
+   {
+    "url": "/js/settings/admin.js",
+-   "rev": "2523017786fbf5f5061bb4ed490a08a0e30c4af6d30fbe3c24ff948a154c0679"
++   "rev": "47ec5e7b6673afeed251cc5fd1c23ec8684c4c8df9939a45470c5a934c36595d"
+   },
+   {
+    "url": "/js/settings/appearance-surfaces.js",
+@@ -607,13 +607,17 @@ self.WIRE_SHELL = {
+    "url": "/js/settings/custom-background.js",
+    "rev": "03ce442fdc12ad40c58be27a3245e82c8ef9fe5558514fdee1a3b30d70a002ab"
+   },
++  {
++   "url": "/js/settings/dynamic-style.js",
++   "rev": "cdaf4e03eada0ef69f805aaaed1d6b368bc9ceb9e12b2eb6bc709c430ccc61bf"
++  },
+   {
+    "url": "/js/settings/settings-account.js",
+    "rev": "807f46885833bfc71697f9e207667f6c9aa56a1b109b7840573a2622e61e222a"
+   },
+   {
+    "url": "/js/settings/settings-appearance-custom.js",
+-   "rev": "885def6a1ba23ab953ce297944c01daf3e10e5587ca28894cf35d789ea5cd928"
++   "rev": "adb8d1aa58185879d0970ed874a6b0799464edb779d32d26217501e0527f379e"
+   },
+   {
+    "url": "/js/settings/settings-appearance.js",
+@@ -621,7 +625,7 @@ self.WIRE_SHELL = {
+   },
+   {
+    "url": "/js/settings/settings-bubble-gradient.js",
+-   "rev": "db34fa4eb6ca23260480acf511b93fd49339d44ee133242578490a5e8684f12d"
++   "rev": "55379b83064fb8705cf9c6d259ac95046168f80cca0128701eb027bd151f3df1"
+   },
+   {
+    "url": "/js/settings/settings-media.js",
+@@ -629,11 +633,11 @@ self.WIRE_SHELL = {
+   },
+   {
+    "url": "/js/settings/settings-message-sounds.js",
+-   "rev": "abb43a1c79a3114bec377e622d811a7033ebc0b1943bb042aebe37d0266cf420"
++   "rev": "33b0202fa496068c232828ecdaf3924d68b423ec76c511e627d42d4864fcdfd7"
+   },
+   {
+    "url": "/js/settings/settings-nav.js",
+-   "rev": "176e91303ecdf127323448ae750ddb7f876fe34f69343a59d869e2dfb2a5d252"
++   "rev": "8c18bcd0046a832a1cd7de6c7be0b66fe7da7027e33cba0653c8cbdefc7c59e4"
+   },
+   {
+    "url": "/js/settings/settings-notifications.js",
+@@ -645,7 +649,7 @@ self.WIRE_SHELL = {
+   },
+   {
+    "url": "/js/settings/settings-render.js",
+-   "rev": "dbb9e4c06dfb09807a0a67236f878c773132cc81dd1ef4989e208c9c33470a4d"
++   "rev": "1706e70576c136637beb48a0ed244892618b7b04b69b2ad9fa8d6e63e9d1bae0"
+   },
+   {
+    "url": "/js/settings/settings-security.js",
+@@ -657,7 +661,7 @@ self.WIRE_SHELL = {
+   },
+   {
+    "url": "/js/settings/settings.js",
+-   "rev": "9c18cf1fed00a8128355ebcc73799763bbe141d09a54264ff8b3242987d6d807"
++   "rev": "fbbf6bf1c96fd3789e1480bc1a82cfca63caf6a91ee69c467cf86fd622ef2fb0"
+   },
+   {
+    "url": "/js/settings/theme.js",
+@@ -685,15 +689,19 @@ self.WIRE_SHELL = {
+   },
+   {
+    "url": "/js/ui/avatar.js",
+-   "rev": "f594a04758b7862e0bb31b83583dd3dcfeaed587492b4e2cd85116ecceffc489"
++   "rev": "c88991678aaf479af83c4d145aef6b1864580068ca9128ac6d4492278e8f7635"
+   },
+   {
+    "url": "/js/ui/confirm.js",
+    "rev": "d090a977e2f8319d6e3d2433fdc4cd14a137d14589af2963e6f782f2e808acc5"
+   },
++  {
++   "url": "/js/ui/dynamic-vars.js",
++   "rev": "08f1eb3a56d0d2749f21cf6c5879d6b8de3faa17853048821247ff8adac6fe87"
++  },
+   {
+    "url": "/js/ui/emoji-picker.js",
+-   "rev": "ad895f21eb44542541c34061670d788856b0255bb1a9a23263f422bb6ff9ece7"
++   "rev": "d8f24c9de532c2561ed2247112d679965df2de072730ca69fbdc177db25ad28a"
+   },
+   {
+    "url": "/js/ui/mobile-shell.js",
+@@ -705,7 +713,7 @@ self.WIRE_SHELL = {
+   },
+   {
+    "url": "/js/ui/profile-card.js",
+-   "rev": "dd95ccaf0f00f14fd58486b619ebf1a6924a022578b78a4e2591de2730ab3dde"
++   "rev": "d5093bcf48138658ad435c0e570a0167cbb8f9a36c1129ad8b2cebe27b120f70"
+   },
+   {
+    "url": "/js/ui/sidebar-resize.js",
+@@ -745,7 +753,7 @@ self.WIRE_SHELL = {
+   },
+   {
+    "url": "/js/wireguard/wireguard.js",
+-   "rev": "696b8713237e81dbb3d646beb4784db9198a2d5280102fb36c534f8cbcb4c79c"
++   "rev": "a3ec36906a0f464f27dfe1e37a94f48dbbfe3d026befdd81afa817f997fdbc39"
+   },
+   {
+    "url": "/sw-media-bundle.js",
+diff --git a/tests/csp-handlers-enforced-browser.test.mjs b/tests/csp-handlers-enforced-browser.test.mjs
+index 910c988..7b2196d 100644
+--- a/tests/csp-handlers-enforced-browser.test.mjs
++++ b/tests/csp-handlers-enforced-browser.test.mjs
+@@ -39,6 +39,7 @@ import {
+ } from './_acceptance-harness.mjs';
+ 
+ import path from 'node:path';
++import os from 'node:os';
+ import fs from 'node:fs';
+ import http from 'node:http';
+ import { createRequire } from 'node:module';
+@@ -73,13 +74,9 @@ function resetCspTracking() {
+ }
+ 
+ async function checkNoCspViolations(t, origin) {
+-    // Stage 3 (inline style= / CSSOM) is out of scope for this test and is
+-    // guaranteed to fire style-src violations under enforcement, so those are
+-    // tracked but not asserted. Every other directive must be clean, and any
+-    // console 'Refused to' error is a hard failure.
+-    const styleDirectives = new Set(['style-src', 'style-src-attr', 'style-src-element']);
+-    const otherViolations = cspViolations.filter((v) => !styleDirectives.has(v.directive));
+-    const violations = [...otherViolations, ...consoleRefused];
++    // CSP-clean: every directive, including style-src / style-src-attr, must be
++    // silent, and any console 'Refused to' error is a hard failure.
++    const violations = [...cspViolations, ...consoleRefused];
+     if (violations.length > 0) {
+         assert.fail(`CSP violations detected:\n${violations.map((v) => JSON.stringify(v)).join('\n')}`);
+     }
+@@ -400,6 +397,31 @@ async function scenario(t, cspEnforce) {
+         const cardVisible = await alicePageInfo.page.evaluate(() => !!document.querySelector('#profile-card-modal.active'));
+         assert.ok(cardVisible, 'dm-open-profile-card delegated action opened profile card');
+ 
++        // Regression (avatar.js capture phase): clicking the avatar inside a
++        // New-DM picker row must open the profile card ONLY. The row's own
++        // click handler must not also open the conversation.
++        await alicePageInfo.page.evaluate(() => window.openNewDmPicker());
++        await alicePageInfo.page.waitForSelector('#dm-picker-list', { timeout: 20000 });
++        const pickerAvatar = await alicePageInfo.page.waitForSelector(
++            `.dm-picker-row[data-user-id="${bobSession.id}"] .clickable-avatar[data-avatar-action="profile"]`,
++            { timeout: 20000 }
++        );
++        await pickerAvatar.click();
++        await sleep(800);
++        const pickerCardOpen = await alicePageInfo.page.evaluate(
++            () => !!document.querySelector('#profile-card-modal.active')
++        );
++        assert.ok(pickerCardOpen, 'avatar click in DM picker row opened the profile card');
++        const pickerStillOpen = await alicePageInfo.page.evaluate(
++            () => !!document.getElementById('dm-picker-list')
++        );
++        assert.ok(pickerStillOpen, 'avatar click in DM picker row did NOT open the DM conversation (picker closed)');
++        await alicePageInfo.page.evaluate(() => {
++            window.closeProfileCard?.();
++            window.closeNewDmPicker?.();
++        });
++        await sleep(300);
++
+         // DM: dm-jump-to-latest (data-action="dm-jump-to-latest").
+         // The handler calls window.dmJumpToLatest(); spy on it to prove the
+         // delegated dispatch reached the handler (the DOM effect — scroll +
+@@ -553,6 +575,184 @@ async function scenario(t, cspEnforce) {
+         });
+         await sleep(800);
+ 
++        // ---- Stage 2 remaining controls: REAL clicks + server/DOM effects ----
++        // Selectors are taken from the source: composer.js (composer-attach-remove,
++        // composer-cancel-upload, composer-reply-close), dm.js (dm-send,
++        // dm-close-new-picker, dm-back-from-thread), profile-card.js
++        // (profile-card-message), settings-render.js/settings-media.js
++        // (settings-change-/remove-avatar|banner), files/files.js (data-act).
++        {
++            const page = alicePageInfo.page;
++            const pngPath = path.join(os.tmpdir(), `csp-stage2-${tag}.png`);
++            fs.writeFileSync(
++                pngPath,
++                Buffer.from(
++                    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
++                    'base64'
++                )
++            );
++            // Click the first VISIBLE match (some controls exist twice: desktop + phone).
++            const clickVisible = async (sel) => {
++                for (const h of await page.$$(sel)) {
++                    if (await h.evaluate((el) => el.getClientRects().length > 0)) {
++                        await h.click();
++                        return;
++                    }
++                }
++                throw new Error(`no visible element for ${sel}`);
++            };
++            const pollApi = async (apiPath, pred, label) => {
++                const end = Date.now() + 10000;
++                let last;
++                while (Date.now() < end) {
++                    last = await aliceSession.api(apiPath);
++                    if (pred(last.body)) return last.body;
++                    await sleep(250);
++                }
++                assert.fail(`${label} (last: ${JSON.stringify(last && last.body).slice(0, 200)})`);
++            };
++            const openBobConversation = async () => {
++                await page.evaluate(async (id, name) => {
++                    await window.openDmConversation(id, name, { fromNav: true });
++                }, bobSession.id, bobName);
++                await page.waitForSelector('#dm-input', { timeout: 20000 });
++            };
++
++            // Mount the DM view first, exactly as the DM steps above do.
++            await page.goto(`${origin}/#messages`, { waitUntil: 'networkidle2' });
++            await page.waitForSelector('.dm-layout #dm-conv-list', { timeout: 20000 });
++            await sleep(600);
++            await openBobConversation();
++
++            // composer-attach-remove: stage a file, then click its remove chip.
++            const fileInput = await page.waitForSelector('#dm-file-input', { timeout: 20000 });
++            await fileInput.uploadFile(pngPath);
++            await page.waitForSelector('[data-action="composer-attach-remove"]', { timeout: 20000 });
++            await clickVisible('[data-action="composer-attach-remove"]');
++            await page.waitForFunction(
++                () => !document.querySelector('[data-action="composer-attach-remove"]'),
++                { timeout: 5000 }
++            );
++
++            // composer-cancel-upload: throttle the uplink so the upload is in flight
++            // long enough to click its cancel control, then restore the network.
++            // The chip only switches to 'uploading' when a send with attachments
++            // starts (composer.js: filesToSend -> status 'uploading'), so stage a
++            // file, throttle, send, and cancel while the send is in flight.
++            await fileInput.uploadFile(pngPath);
++            await page.waitForSelector('[data-action="composer-attach-remove"]', { timeout: 20000 });
++            await page.emulateNetworkConditions({ download: -1, upload: 2048, latency: 1500 });
++            try {
++                await page.type('#dm-input', `cancel upload ${tag}`);
++                await clickVisible('[data-action="dm-send"]');
++                await page.waitForSelector('[data-action="composer-cancel-upload"]', { timeout: 15000 });
++                await clickVisible('[data-action="composer-cancel-upload"]');
++            } finally {
++                await page.emulateNetworkConditions({ download: -1, upload: -1, latency: 0 });
++            }
++            await page.waitForFunction(
++                () => !document.querySelector('[data-action="composer-cancel-upload"]'),
++                { timeout: 10000 }
++            );
++
++            // composer-reply-close: start a reply, then cancel it with the close button.
++            await page.evaluate(() => document.querySelector('[data-action="dm-reply-to"]')?.click());
++            await page.waitForSelector('[data-action="composer-reply-close"]', { timeout: 10000 });
++            await clickVisible('[data-action="composer-reply-close"]');
++            await page.waitForFunction(
++                () => !document.querySelector('[data-action="composer-reply-close"]'),
++                { timeout: 5000 }
++            );
++
++            // dm-send: real click on the Send button (the other tests use Enter).
++            const sendBefore = new Set(
++                (await aliceSession.api(`/api/dm/messages/${bobSession.id}/recent`)).body.map((m) => m.id)
++            );
++            await page.type('#dm-input', `click send ${tag}`);
++            await clickVisible('[data-action="dm-send"]');
++            const sendAfter = await pollApi(
++                `/api/dm/messages/${bobSession.id}/recent`,
++                (rows) => rows.some((m) => !sendBefore.has(m.id)),
++                'dm-send click did not create a server message'
++            );
++            assert.equal(
++                sendAfter.filter((m) => !sendBefore.has(m.id)).length,
++                1,
++                'dm-send click created exactly one server message'
++            );
++
++            // dm-close-new-picker: open the picker, close it with its X button.
++            await page.evaluate(() => window.openNewDmPicker());
++            await page.waitForSelector('.dm-picker-close[data-action="dm-close-new-picker"]', { timeout: 20000 });
++            await clickVisible('.dm-picker-close[data-action="dm-close-new-picker"]');
++            await page.waitForFunction(() => !document.querySelector('.dm-picker-row'), { timeout: 5000 });
++
++            // profile-card-message: from the profile card, "Send message" opens the DM.
++            await page.evaluate((id) => window.openProfileCard(id), bobSession.id);
++            await page.waitForSelector('#profile-card-modal.active', { timeout: 10000 });
++            await clickVisible('.profile-card-message-btn[data-action="profile-card-message"]');
++            await page.waitForFunction(
++                () => !document.querySelector('#profile-card-modal.active'),
++                { timeout: 5000 }
++            );
++            await page.waitForSelector('#dm-input', { timeout: 20000 });
++
++            // dm-back-from-thread: the thread-header back button is CSS-hidden on
++            // desktop (responsive.css shows it on phones). Its delegated handler is
++            // reached by element.click() here, the same method the existing
++            // dm-open-profile-card step uses; this is NOT a pointer click on a
++            // visible button.
++            await openBobConversation();
++            await page.evaluate(() => document.querySelector('.dm-layout')?.classList.add('showing-thread'));
++            await page.waitForFunction(
++                () => document.querySelector('.dm-layout')?.classList.contains('showing-thread'),
++                { timeout: 5000 }
++            );
++            await page.evaluate(() => document.querySelector('.dm-back-btn[data-action="dm-back-from-thread"]')?.click());
++            await page.waitForFunction(
++                () => !document.querySelector('.dm-layout')?.classList.contains('showing-thread'),
++                { timeout: 5000 }
++            );
++
++            // Settings avatar + banner: the change buttons open a real file chooser,
++            // the file is uploaded, then the remove buttons clear it on the server.
++            await page.goto(`${origin}/#settings`, { waitUntil: 'networkidle2' });
++            await page.waitForSelector('#settings-category-row-profile', { timeout: 20000 });
++            await page.click('#settings-category-row-profile');
++
++            for (const kind of ['avatar', 'banner']) {
++                const changeSel = `[data-action="settings-change-${kind}"]`;
++                const removeSel = `[data-action="settings-remove-${kind}"]`;
++                await page.waitForSelector(changeSel, { timeout: 20000 });
++                const [chooser] = await Promise.all([
++                    page.waitForFileChooser({ timeout: 10000 }),
++                    clickVisible(changeSel),
++                ]);
++                await chooser.accept([pngPath]);
++                const flag = kind === 'avatar' ? 'has_avatar' : 'has_banner';
++                await pollApi('/api/me', (me) => me[flag] === true, `settings-change-${kind} upload did not reach the server`);
++
++                await page.waitForSelector(removeSel, { timeout: 20000 });
++                await clickVisible(removeSel);
++                // Removal asks for confirmation first (settings-media.js -> showConfirm).
++                await page.waitForSelector('#confirm-modal-ok[data-action="confirm-ok"]', { visible: true, timeout: 10000 });
++                await clickVisible('#confirm-modal-ok[data-action="confirm-ok"]');
++                await pollApi('/api/me', (me) => me[flag] === false, `settings-remove-${kind} did not clear the server ${kind}`);
++            }
++
++            // Files tab: a real click on a data-act control (new folder toggle).
++            await page.goto(`${origin}/#files`, { waitUntil: 'networkidle2' });
++            await page.waitForSelector('#files-root', { timeout: 20000 });
++            await clickVisible('[data-act="new-folder"]');
++            await page.waitForFunction(
++                () => document.querySelector('[data-act="new-folder"]')?.getAttribute('aria-expanded') === 'true',
++                { timeout: 5000 }
++            );
++
++            fs.rmSync(pngPath, { force: true });
++            await page.goto(`${origin}/#messages`, { waitUntil: 'networkidle2' });
++        }
++
+         // Re-render verification: reactions, composer, dm lists still fire delegated actions.
+         await alicePageInfo.page.goto(`${origin}/#messages`, { waitUntil: 'networkidle2' });
+         await alicePageInfo.page.evaluate(async (id, name) => {
+@@ -569,6 +769,33 @@ async function scenario(t, cspEnforce) {
+         const jumpBtnAfter = await alicePageInfo.page.$('[data-action="dm-jump-to-latest"]');
+         assert.ok(!!jumpBtnAfter, 'dm list re-rendered with jump-to-latest delegated action');
+ 
++        // ---- CSP view sweep (Stage 3): every top-level view under CSP_ENFORCE=true ----
++        // Views: messages, files, groups, each settings category, and the admin pages.
++        // Violations are collected for the whole sweep and asserted below.
++        {
++            const sweepPage = alicePageInfo.page;
++            for (const hash of ['#messages', '#files', '#groups']) {
++                await sweepPage.goto(`${origin}/${hash}`, { waitUntil: 'networkidle2' });
++                await sleep(600);
++            }
++            await sweepPage.goto(`${origin}/#settings`, { waitUntil: 'networkidle2' });
++            for (const id of ['appearance', 'profile', 'notifications', 'message-sounds', 'security', 'keyboard-shortcuts', 'account']) {
++                const row = await sweepPage.$(`#settings-category-row-${id}`);
++                if (row) {
++                    await row.click();
++                    await sleep(700);
++                }
++            }
++            for (const hash of ['#admin-users', '#admin-folders', '#admin-permissions', '#admin-audit', '#admin-wireguard']) {
++                await adminPageInfo.page.goto(`${origin}/${hash}`, { waitUntil: 'networkidle2' });
++                await sleep(600);
++            }
++            for (const pi of [adminPageInfo, alicePageInfo]) {
++                const pageViolations = await pi.page.evaluate(() => window.__cspViolations || []);
++                cspViolations.push(...pageViolations);
++            }
++        }
++
+         // ---- CSP enforcement: no violations from delegated handlers ----
+         // securitypolicyviolation events are collected per page (page context);
+         // merge every page's list into the module-level tracker before asserting.
+diff --git a/tests/csp-static.test.mjs b/tests/csp-static.test.mjs
+index 64a1b9e..e6dee0a 100644
+--- a/tests/csp-static.test.mjs
++++ b/tests/csp-static.test.mjs
+@@ -8,15 +8,8 @@
+ //      would block (inline handlers, inline style attributes, eval,
+ //      string timers, javascript: URLs, inline <script>/<style>).
+ //
+-// X's pre-existing UI still contains inline handlers / style="" attributes
+-// and a few other constructs a strict CSP blocks (docs/CSP_TODO.md lists
+-// them). They are tolerated through a PER-FILE CAPPED allowlist
+-// (LEGACY_CAPS below), not a blanket exemption: a file fails if its count
+-// goes ABOVE its cap, and every file not listed -- in particular
+-// chat/group.js, chat/thread.js and every other new file -- has cap 0.
+-// Caps may only go down: when legacy code is converted, lower (or delete)
+-// its entry. CSP is Report-Only by default (middleware/csp.js); these caps
+-// are what has to reach zero before CSP_ENFORCE=true is safe in production.
++// The front-end is CSP-clean: every count below must be zero. There is
++// no legacy allowlist.
+ 
+ import { test } from 'node:test';
+ import assert from 'node:assert/strict';
+@@ -29,54 +22,14 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+ const PUBLIC = path.join(ROOT, 'public');
+ const require = createRequire(import.meta.url);
+ 
+-// Per-file caps for X's legacy code (counts measured with the exact
+-// regexes below; derived from docs/CSP_TODO.md). Missing file => cap 0.
+-const LEGACY_CAPS = {
+-  handlers: {},
+-  styles: {
+-    'js/core/auth.js': 21,
+-    'js/settings/settings-render.js': 16,
+-    'js/chat/dm.js': 3,
+-    'js/settings/admin.js': 3,
+-    'js/settings/settings-appearance-custom.js': 3,
+-    'js/media/video-player.js': 2,
+-    'js/media/voice-message.js': 2,
+-    'js/chat/composer.js': 1,
+-    'js/media/attachments.js': 1,
+-    'js/media/audio-player.js': 1,
+-    'js/settings/settings-bubble-gradient.js': 1,
+-    'js/settings/settings-message-sounds.js': 1,
+-    'js/ui/emoji-picker.js': 1,
+-    'js/ui/profile-card.js': 1,
+-    'js/wireguard/wireguard.js': 1,
+-  },
+-  setAttr: {
+-    'js/media/attachments.js': 4,
+-    'js/chat/dm.js': 1,
+-  },
+-  // All 20 legacy sites now use escapeHtmlAttr(); cap is 0 everywhere.
+-  // (Explicit zeros kept so the diff shows what was removed. auth.js is
+-  // excluded from this check by the test below: its local escapeHtml()
+-  // escapes both quote kinds.)
+-  escapeHtmlInAttr: {
+-    'js/settings/settings-render.js': 0,
+-    'js/settings/settings-shortcuts.js': 0,
+-    'js/settings/settings-appearance-custom.js': 0,
+-    'js/chat/composer.js': 0,
+-    'js/chat/dm.js': 0,
+-    'js/settings/settings-bubble-gradient.js': 0,
+-  },
+-  indexHtml: {"inlineScripts": 0, "styleBlocks": 0, "handlerAttrs": 0, "styleAttrs": 0},
+-};
+ 
+-// Files whose count exceeds their cap. Same shape as the old allowlist
+-// check, but capped instead of exempt.
+-function overCap(list, re, kind) {
++// Files with any match. There is no allowlist: every count must be zero.
++function overCap(list, re) {
+     const g = new RegExp(re.source, re.flags.includes('g') ? re.flags : re.flags + 'g');
+     return list
+         .map((f) => ({ rel: f.rel, n: (f.src.match(g) || []).length }))
+-        .filter(({ rel, n }) => n > (LEGACY_CAPS[kind][rel] ?? 0))
+-        .map(({ rel, n }) => `${rel}: ${n} > cap ${LEGACY_CAPS[kind][rel] ?? 0}`);
++        .filter(({ n }) => n > 0)
++        .map(({ rel, n }) => `${rel}: ${n} occurrence(s), must be 0`);
+ }
+ 
+ function walk(dir, out = []) {
+@@ -148,17 +101,16 @@ test('CSP header: strict script-src, no unsafe-inline / unsafe-eval anywhere', (
+     assert.ok(!dirs['style-src'].some((v) => /unsafe-inline/.test(v)));
+ });
+ 
+-test('index.html has no inline <script>, <style>, on*= handler, or style="" attribute beyond its legacy cap', () => {
++test('index.html has no inline <script>, <style>, on*= handler, or style="" attribute', () => {
+     const html = fs.readFileSync(path.join(PUBLIC, 'index.html'), 'utf8');
+-    const cap = LEGACY_CAPS.indexHtml;
+     const inlineScripts = [...html.matchAll(/<script\b([^>]*)>/gi)].filter((m) => !/\bsrc=/i.test(m[1])).length;
+-    assert.ok(inlineScripts <= cap.inlineScripts, `inline <script> found: ${inlineScripts} > cap ${cap.inlineScripts}`);
++    assert.equal(inlineScripts, 0, `inline <script> found: ${inlineScripts}`);
+     const styleBlocks = (html.match(/<style\b/gi) || []).length;
+-    assert.ok(styleBlocks <= cap.styleBlocks, `inline <style> block found: ${styleBlocks} > cap ${cap.styleBlocks}`);
++    assert.equal(styleBlocks, 0, `inline <style> block found: ${styleBlocks}`);
+     const handlerAttrs = (html.match(/\son[a-z]{3,}\s*=/gi) || []).length;
+-    assert.ok(handlerAttrs <= cap.handlerAttrs, `inline event-handler attribute found: ${handlerAttrs} > cap ${cap.handlerAttrs}`);
++    assert.equal(handlerAttrs, 0, `inline event-handler attribute found: ${handlerAttrs}`);
+     const styleAttrs = (html.match(/\sstyle\s*=/gi) || []).length;
+-    assert.ok(styleAttrs <= cap.styleAttrs, `inline style attribute found: ${styleAttrs} > cap ${cap.styleAttrs}`);
++    assert.equal(styleAttrs, 0, `inline style attribute found: ${styleAttrs}`);
+ });
+ 
+ test('no eval / new Function / string timers / javascript: / document.write in front-end code', () => {
+@@ -175,17 +127,17 @@ test('chat/group.js and chat/thread.js contain NO inline handlers or inline styl
+     }
+ });
+ 
+-test('no inline on*= handler attributes beyond each legacy file\'s cap', () => {
+-    assert.deepEqual(overCap(files, INLINE_HANDLER, 'handlers'), []);
++test('no inline on*= handler attributes ', () => {
++    assert.deepEqual(overCap(files, INLINE_HANDLER), []);
+ });
+ 
+-test('no inline style="" attributes beyond each legacy file\'s cap', () => {
+-    assert.deepEqual(overCap(files, INLINE_STYLE, 'styles'), []);
++test('no inline style="" attributes ', () => {
++    assert.deepEqual(overCap(files, INLINE_STYLE), []);
+ });
+ 
+-test('no setAttribute("style"|"on*") and no .cssText writes beyond each legacy file\'s cap', () => {
++test('no setAttribute("style"|"on*") and no .cssText writes ', () => {
+     const re = /setAttribute\(\s*["'](?:style|on[a-z]+)["']|\.cssText\s*=/;
+-    assert.deepEqual(overCap(files, re, 'setAttr'), []);
++    assert.deepEqual(overCap(files, re), []);
+ });
+ 
+ // ---------------------------------------------------------------------
+@@ -197,11 +149,11 @@ test('no setAttribute("style"|"on*") and no .cssText writes beyond each legacy f
+ // (or files/html.js esc(), or auth.js's local quote-escaping helper).
+ // ---------------------------------------------------------------------
+ 
+-test('escapeHtml() is not used inside a quoted HTML attribute value beyond each legacy file\'s cap', () => {
++test('escapeHtml() is not used inside a quoted HTML attribute value ', () => {
+     const re = /=\s*"[^"\n]*\$\{\s*escapeHtml\(/;
+     // auth.js defines its OWN escapeHtml that does escape quotes.
+     const scoped = files.filter((f) => f.rel !== 'js/core/auth.js');
+-    assert.deepEqual(overCap(scoped, re, 'escapeHtmlInAttr'), []);
++    assert.deepEqual(overCap(scoped, re), []);
+ });
+ 
+ test('every file that calls escapeHtmlAttr() imports or defines it', () => {

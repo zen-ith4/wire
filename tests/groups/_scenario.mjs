@@ -33,7 +33,7 @@ export async function createScenario(names) {
     for (const name of names) {
         const n = `${name}${seq++}`;
         const actor = createBrowserActor(n, server.origin);
-        cleanups.push(() => actor.window.close());
+        cleanups.push(() => actor.dispose());
         const password = `pw-${n}-long-enough-passphrase`;
         const ident = await signUpAndUnlock(actor, { username: n, email: `${n}@example.test`, password });
         ident.password = password;
@@ -136,7 +136,7 @@ export async function createScenario(names) {
         async addDevice(u, label = 'dev2') {
             const n = `${u.n}-${label}-${seq++}`;
             const actor = createBrowserActor(n, server.origin);
-            cleanups.push(() => actor.window.close());
+            cleanups.push(() => actor.dispose());
             actor.use();
             const auth = await actor.importModule('core/auth.js');
             await auth.login(u.n, u.ident.password);
@@ -161,7 +161,7 @@ export async function createScenario(names) {
         async addTab(u, label = 'tab2') {
             const n = `${u.n}-${label}-${seq++}`;
             const actor = createBrowserActor(n, server.origin, { profileOf: u.actor });
-            cleanups.push(() => actor.window.close());
+            cleanups.push(() => actor.dispose());
             actor.use();
             const auth = await actor.importModule('core/auth.js');
             await auth.login(u.n, u.ident.password);
@@ -188,7 +188,7 @@ export async function createScenario(names) {
             try { u.socketMod?.getSocket()?.disconnect(); } catch { /* ignore */ }
             const n = `${u.n}-${label}-${seq++}`;
             const actor = createBrowserActor(n, server.origin, { profileOf: u.actor, freshLocks: true });
-            cleanups.push(() => actor.window.close());
+            cleanups.push(() => actor.dispose());
             actor.use();
             const auth = await actor.importModule('core/auth.js');
             await auth.login(u.n, u.ident.password);

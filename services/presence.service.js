@@ -29,7 +29,10 @@ function markOnline(userId) {
  *   (they just transitioned from online to offline).
  */
 function markOffline(userId) {
-  const count = (onlineCounts.get(userId) || 1) - 1;
+  // A user with no open socket was never online: nothing transitions.
+  if (!onlineCounts.has(userId)) return false;
+
+  const count = onlineCounts.get(userId) - 1;
   if (count <= 0) {
     onlineCounts.delete(userId);
     return true;

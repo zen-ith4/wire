@@ -127,6 +127,11 @@ holds no keys, so only the sender's client could re-upload them. Delete the
 messages (which unlinks the files) or remove `DM_UPLOAD_DIR` contents to get
 rid of them.
 
+Having no `attachment_meta` is also all a server needs to invent one, so the client
+treats these as it treats plaintext text rows (`public/js/chat/dm-unencrypted.js`):
+marked "Not encrypted" where the row can be history, hidden and never fetched where
+it cannot.
+
 ## Dead code on the DM path
 
 `detectMimeFromBytes`, `normalizeSniffedMime`, `isInlineSafeMime` and

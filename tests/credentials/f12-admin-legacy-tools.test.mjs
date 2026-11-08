@@ -17,7 +17,7 @@ before(async () => {
     srv = await bootServer(dbPath, c.dir);
     // The fixture's own admin is mixed-case ('Admin'); login of mixed-case accounts is B9's
     // job (NOCASE lookup), so promote the lowercase account 'alice' in the copy instead.
-    exec("UPDATE users SET is_admin = 1 WHERE username = 'alice'");
+    exec("UPDATE users SET is_admin = CASE WHEN username = 'alice' THEN 1 ELSE 0 END");
     const r = await legacyLogin('alice', 'alice-legacy-pass');
     assert.equal(r.status, 200, JSON.stringify(r.body));
     adminToken = r.body.token;

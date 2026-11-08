@@ -20,12 +20,13 @@ test('seed on a fresh DB: scheme-2 admin (lowercased) that logs in with the deri
     const dir = tmpDir();
     const dbPath = path.join(dir, 'seed.db');
     const pw = 'operator supplied password';
-    const srv = await bootServer(dbPath, dir, { DEFAULT_ADMIN_USER: 'SeedAdmin', DEFAULT_ADMIN_PASS: pw });
+    const srv = await bootServer(dbPath, dir, { DEFAULT_ADMIN_USER: 'SeedAdmin', DEFAULT_ADMIN_PASS: pw, DM_E2EE_DEFAULT_MIN_VERSION: '2' });
     try {
-        const u = row(dbPath, "SELECT username, auth_scheme, kdf_salt, kdf_iterations, is_admin FROM users");
+        const u = row(dbPath, "SELECT username, auth_scheme, kdf_salt, kdf_iterations, is_admin, dm_e2ee_min_version FROM users");
         assert.equal(u.username, 'seedadmin');
         assert.equal(u.auth_scheme, 2);
         assert.equal(u.is_admin, 1);
+        assert.equal(u.dm_e2ee_min_version, 2);
         assert.equal(u.kdf_iterations, cred.KDF_ITERATIONS);
         assert.ok(cred.isValidKdfSalt(u.kdf_salt));
 
@@ -75,6 +76,7 @@ test('setup wizard (real prompts, copied tree): creates a scheme-2 admin; refuse
             DB_PATH: dbPath,
             BCRYPT_ROUNDS: '4',
             ALLOWED_SUBNET: '127.0.0.0/8',
+            DM_E2EE_DEFAULT_MIN_VERSION: '2',
         },
     });
     delete env.SETUP_COMPLETED;
@@ -118,10 +120,11 @@ test('setup wizard (real prompts, copied tree): creates a scheme-2 admin; refuse
     } finally { child.kill('SIGKILL'); }
 
     assert.match(plain(), /at least 12 characters/, 'a short password is refused by the wizard');
-    const u = row(dbPath, "SELECT username, auth_scheme, kdf_salt, kdf_iterations, is_admin, password_hash FROM users");
+    const u = row(dbPath, "SELECT username, auth_scheme, kdf_salt, kdf_iterations, is_admin, dm_e2ee_min_version, password_hash FROM users");
     assert.equal(u.username, 'wizadmin');
     assert.equal(u.auth_scheme, 2);
     assert.equal(u.is_admin, 1);
+    assert.equal(u.dm_e2ee_min_version, 2);
     assert.equal(u.kdf_iterations, cred.KDF_ITERATIONS);
     const { authKey } = cred.deriveCredentialsNode(goodPw, u.kdf_salt);
     const bcrypt = (await import('node:module')).createRequire(import.meta.url)('bcrypt');

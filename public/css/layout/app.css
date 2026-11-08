@@ -19,6 +19,8 @@
    owns its own overflow, the *document* (html/body, core/reset.css)
    never needs to scroll or grow — this is what keeps the page-level
    scrollbar from ever appearing. */
+/* `display:flex` below would otherwise beat the hidden attribute */
+#app[hidden]{display:none !important;}
 .app{
   position:relative;z-index:1;display:flex;width:100%;background:transparent;
   height:100vh;

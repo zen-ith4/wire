@@ -132,16 +132,16 @@ export async function renderVideo(
           </span>
 
           <span
-            class="icon-pause"
-            style="display:none"
+            class="icon-pause js-hidden"
+           
           >
             ${ICONS.pause}
           </span>
         </button>
 
         <div
-          class="video-time"
-          style="display:none"
+          class="video-time js-hidden"
+         
         >
           <span class="current-time">
             0:00
@@ -540,7 +540,7 @@ export async function renderVideo(
 
     videoTime.style.display =
       isPlayerFullscreen()
-        ? ''
+        ? 'block'
         : 'none';
   };
 

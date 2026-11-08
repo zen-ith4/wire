@@ -47,6 +47,8 @@ export const DM_V2_FINGERPRINT_LENGTH = 32;
 export const DM_V2_MSG_ID_BYTES = 8;
 export const DM_V2_MSG_ID_LENGTH = 16;
 export const DM_V2_MAX_CIPHERTEXT_LENGTH = 64 * 1024;
+// Base64 characters needed for DM_V2_MAX_CIPHERTEXT_LENGTH bytes (87384).
+const MAX_CIPHERTEXT_BASE64_CHARS = Math.ceil(DM_V2_MAX_CIPHERTEXT_LENGTH / 3) * 4;
 
 /** lower-id -> higher-id */
 export const DM_V2_INFO_A2B = 'Wire-E2EE-DM-v2-a2b';
@@ -397,6 +399,10 @@ export function buildDmV2Envelope({
     if (typeof ciphertext !== 'string' || ciphertext.length === 0) {
         throw new DmV2ValidationError('ciphertext is required');
     }
+    // Cheap pre-check: reject oversized strings before decoding them.
+    if (ciphertext.length > MAX_CIPHERTEXT_BASE64_CHARS) {
+        throw new DmV2ValidationError('Ciphertext is too large');
+    }
     const ciphertextLength = base64ToBytes(ciphertext, 'ciphertext').length;
     if (ciphertextLength > DM_V2_MAX_CIPHERTEXT_LENGTH) {
         throw new DmV2ValidationError('Ciphertext is too large');
@@ -452,6 +458,10 @@ export function validateDmV2Envelope(payload) {
     const senderId = requireUserId(payload.senderId, 'senderId');
     const recipientId = requireUserId(payload.recipientId, 'recipientId');
 
+    // Cheap pre-check: reject oversized strings before decoding them.
+    if (typeof encryption.ciphertext === 'string' && encryption.ciphertext.length > MAX_CIPHERTEXT_BASE64_CHARS) {
+        throw new DmV2ValidationError('Ciphertext is too large');
+    }
     const ciphertextLength = base64ToBytes(encryption.ciphertext, 'ciphertext').length;
     if (ciphertextLength > DM_V2_MAX_CIPHERTEXT_LENGTH) {
         throw new DmV2ValidationError('Ciphertext is too large');

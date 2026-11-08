@@ -1,0 +1,49 @@
+From b6ca2779fce2f54e46ab5a7444a3b00751551507 Mon Sep 17 00:00:00 2001
+From: Claude <claude@example.com>
+Date: Fri, 6 Nov 2026 04:04:42 +0000
+Subject: [PATCH 02/23] csp stage 2: browser test for avatar click inside DM
+ picker row (profile opens, DM does not)
+
+---
+ tests/csp-handlers-enforced-browser.test.mjs | 25 ++++++++++++++++++++
+ 1 file changed, 25 insertions(+)
+
+diff --git a/tests/csp-handlers-enforced-browser.test.mjs b/tests/csp-handlers-enforced-browser.test.mjs
+index 910c988..e828905 100644
+--- a/tests/csp-handlers-enforced-browser.test.mjs
++++ b/tests/csp-handlers-enforced-browser.test.mjs
+@@ -400,6 +400,31 @@ async function scenario(t, cspEnforce) {
+         const cardVisible = await alicePageInfo.page.evaluate(() => !!document.querySelector('#profile-card-modal.active'));
+         assert.ok(cardVisible, 'dm-open-profile-card delegated action opened profile card');
+ 
++        // Regression (avatar.js capture phase): clicking the avatar inside a
++        // New-DM picker row must open the profile card ONLY. The row's own
++        // click handler must not also open the conversation.
++        await alicePageInfo.page.evaluate(() => window.openNewDmPicker());
++        await alicePageInfo.page.waitForSelector('#dm-picker-list', { timeout: 20000 });
++        const pickerAvatar = await alicePageInfo.page.waitForSelector(
++            `.dm-picker-row[data-user-id="${bobSession.id}"] .clickable-avatar[data-avatar-action="profile"]`,
++            { timeout: 20000 }
++        );
++        await pickerAvatar.click();
++        await sleep(800);
++        const pickerCardOpen = await alicePageInfo.page.evaluate(
++            () => !!document.querySelector('#profile-card-modal.active')
++        );
++        assert.ok(pickerCardOpen, 'avatar click in DM picker row opened the profile card');
++        const pickerStillOpen = await alicePageInfo.page.evaluate(
++            () => !!document.getElementById('dm-picker-list')
++        );
++        assert.ok(pickerStillOpen, 'avatar click in DM picker row did NOT open the DM conversation (picker closed)');
++        await alicePageInfo.page.evaluate(() => {
++            window.closeProfileCard?.();
++            window.closeNewDmPicker?.();
++        });
++        await sleep(300);
++
+         // DM: dm-jump-to-latest (data-action="dm-jump-to-latest").
+         // The handler calls window.dmJumpToLatest(); spy on it to prove the
+         // delegated dispatch reached the handler (the DOM effect — scroll +
+-- 
+2.43.0
+

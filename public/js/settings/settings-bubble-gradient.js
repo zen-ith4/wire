@@ -1,3 +1,4 @@
+import { applyDynamicVars } from '../ui/dynamic-vars.js';
 // ============================================================
 // Settings → Appearance: "My message colors"
 //
@@ -79,7 +80,7 @@ function stopsHtml(stops) {
               value="${stop.position}"
               data-unit="%"
               data-og-position="${index}"
-              style="--sound-volume:${stop.position}%"
+              data-sound-volume="${stop.position}"
               aria-label="Color ${index + 1} position">
 
             <output
@@ -325,6 +326,7 @@ function syncStops() {
   const list = $('own-gradient-stops');
   if (list) {
     list.innerHTML = stopsHtml(draft.stops);
+    applyDynamicVars(list);
   }
 
   const add = $('own-gradient-add');

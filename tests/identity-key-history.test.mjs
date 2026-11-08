@@ -40,6 +40,16 @@ const require = createRequire(import.meta.url);
 // cannot silently make every group call below a 426.
 const { GROUP_PROTOCOL_MIN } = require(path.join(ROOT, 'middleware', 'groupProtocol.js'));
 
+// These tests only need a DM to exist, and the server only checks an envelope's shape.
+const ANY_DM_ENVELOPE = JSON.stringify({
+    encryption: {
+        version: 1,
+        algorithm: 'AES-GCM',
+        iv: Buffer.alloc(12).toString('base64'),
+        ciphertext: Buffer.from('aabbcc', 'hex').toString('base64'),
+    },
+});
+
 /** A fresh X25519 pair, in the same shape the browser hands the rotate endpoint. */
 function newX25519() {
     const { publicKey, privateKey } = crypto.generateKeyPairSync('x25519');
@@ -247,7 +257,7 @@ test('a user who exists but has NO identity key answers the same 404 as a user w
     const bob = await session('bob');
     const dmed = await srv.call('POST', '/api/dm/messages', {
         token: bob.token,
-        body: { recipient_id: META.ids.carol, content: 'hi' },
+        body: { recipient_id: META.ids.carol, content: ANY_DM_ENVELOPE },
     });
     assert.ok(dmed.status === 200 || dmed.status === 201, `dm to carol: ${dmed.status}`);
 
@@ -268,7 +278,7 @@ test('a DM contact may read it; a stranger may not, and cannot tell "no" from "d
 
     const dm = await srv.call('POST', '/api/dm/messages', {
         token: alice.token,
-        body: { recipient_id: bobId, content: 'hello' },
+        body: { recipient_id: bobId, content: ANY_DM_ENVELOPE },
     });
     assert.ok(dm.status === 200 || dm.status === 201, `dm send: ${dm.status} ${JSON.stringify(dm.body)}`);
 

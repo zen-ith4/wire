@@ -18,6 +18,12 @@ const {
   renameGroup,
   setGroupAvatar,
   bumpEpochForRemainingMembers,
+  transferOwnership,
+  promoteToAdmin,
+  demoteAdmin,
+  deleteGroupWithCleanup,
+  removeMemberWithSuccession,
+  unlinkQuietly,
 } = require('../services/groups.service');
 
 const {
@@ -95,9 +101,25 @@ function isElevated(role) {
   return role === 'owner' || role === 'admin';
 }
 
+// Kick rule: the owner can remove anyone (the owner leaving is handled
+// separately by succession); an admin can remove ONLY plain members —
+// never another admin or the owner; members can remove nobody.
+function canRemove(actorRole, targetRole) {
+  if (actorRole === 'owner') return true;
+  if (actorRole === 'admin') return targetRole === 'member';
+  return false;
+}
+
+// Accepts only canonical positive integers. parseInt would read "1abc" as 1
+// and "1.5" as 1, letting malformed ids reach the database as valid ones.
+function parseCanonicalId(raw) {
+  if (typeof raw !== 'string' || !/^[1-9]\d*$/.test(raw)) return null;
+  const id = Number(raw);
+  return Number.isSafeInteger(id) ? id : null;
+}
+
 function parseGroupId(req) {
-  const id = Number.parseInt(req.params.groupId, 10);
-  return Number.isInteger(id) && id > 0 ? id : null;
+  return parseCanonicalId(req.params.groupId);
 }
 
 // ---------------------------------------------------------------
@@ -203,7 +225,7 @@ function addMemberHandler(req, res) {
 // what I have" and self-heal if it misses the live socket event.
 function removeMemberHandler(req, res) {
   const groupId = parseGroupId(req);
-  const targetUserId = Number.parseInt(req.params.userId, 10);
+  const targetUserId = parseCanonicalId(req.params.userId);
 
   if (!groupId || !Number.isInteger(targetUserId)) {
     return res.status(400).json({ error: 'Invalid group or user id' });
@@ -223,34 +245,38 @@ function removeMemberHandler(req, res) {
     return res.status(404).json({ error: 'User is not a member of this group' });
   }
 
-  // Group owner can't be removed by an admin, and can't remove
-  // themself if they're the last owner without transferring
-  // ownership first — leaving a group with no owner is a state this
-  // endpoint deliberately refuses to create.
-  if (target.role === 'owner' && !isSelf) {
-    return res.status(403).json({ error: "The group owner can't be removed" });
-  }
-
-  if (target.role === 'owner' && isSelf && memberCount(groupId) > 1) {
-    return res.status(400).json({
-      error: 'Transfer ownership before leaving a group with other members',
+  // Leaving is always allowed (the owner's departure is handled by
+  // succession below). Removing someone else follows canRemove(): an
+  // admin may only remove plain members, so admin-kicks-admin and
+  // anyone-kicks-owner are 403.
+  if (!isSelf && !canRemove(membership.role, target.role)) {
+    return res.status(403).json({
+      error: target.role === 'owner'
+        ? "The group owner can't be removed"
+        : 'Only the owner can remove an admin',
     });
   }
 
-  removeMember(groupId, targetUserId);
+  // One transaction: if the owner is leaving and others remain, the
+  // oldest admin (else oldest member) becomes owner first; if they were
+  // the last member the group is deleted.
+  const outcome = removeMemberWithSuccession(groupId, targetUserId);
+  if (!outcome) {
+    return res.status(404).json({ error: 'User is not a member of this group' });
+  }
+
   purgeKdmsForUser(groupId, targetUserId);
   removeUserFromGroupRoom(targetUserId, groupId);
 
-  const remaining = getMemberUserIds(groupId);
-
-  if (remaining.length === 0) {
+  if (outcome.groupDeleted) {
     // Last member left — nothing left to notify or rotate for.
-    const { deleteGroup } = require('../services/groups.service');
-    deleteGroup(groupId);
+    outcome.files.forEach(unlinkQuietly);
     return res.json({ removed: true, group_deleted: true });
   }
 
   bumpEpochForRemainingMembers(groupId);
+
+  const remaining = getMemberUserIds(groupId);
 
   emitGroupMembershipChanged(groupId, {
     type: 'removed',
@@ -259,12 +285,184 @@ function removeMemberHandler(req, res) {
     self_initiated: isSelf,
   }, [...remaining, targetUserId]);
 
-  res.json({ removed: true });
+  if (outcome.successorId) {
+    // Role change (no key rotation needed): clients refresh the member
+    // list — and their own role — from this.
+    emitGroupMembershipChanged(groupId, {
+      type: 'ownership_transferred',
+      old_owner_id: targetUserId,
+      new_owner_id: outcome.successorId,
+      by_user_id: req.user.id,
+      automatic: true,
+    }, remaining);
+  }
+
+  res.json({
+    removed: true,
+    ...(outcome.successorId ? { new_owner_id: outcome.successorId } : {}),
+  });
 }
 
 function leaveGroupHandler(req, res) {
   req.params.userId = String(req.user.id);
   return removeMemberHandler(req, res);
+}
+
+// ---------------------------------------------------------------
+// Roles & ownership — owner only. A role change alone does NOT bump
+// key_epoch (Sender Keys don't depend on role). Clients learn of it via
+// the same 'group:membership-changed' event with a role-specific `type`;
+// the existing client handler reloads the member list (and the caller's
+// own role) for any type it doesn't specially treat.
+// ---------------------------------------------------------------
+
+// Shared prologue for the owner-only role endpoints. Returns
+// { groupId, targetUserId } or null after having sent the response.
+function authorizeOwnerRoleChange(req, res, rawTargetUserId) {
+  const groupId = parseGroupId(req);
+  const targetUserId = parseCanonicalId(
+    typeof rawTargetUserId === 'number' ? String(rawTargetUserId) : rawTargetUserId
+  );
+
+  if (!groupId || !Number.isInteger(targetUserId)) {
+    res.status(400).json({ error: 'Invalid group or user id' });
+    return null;
+  }
+
+  const membership = requireMembership(req, res, groupId);
+  if (!membership) return null;
+
+  if (membership.role !== 'owner') {
+    res.status(403).json({ error: 'Only the group owner can do this' });
+    return null;
+  }
+
+  return { groupId, targetUserId };
+}
+
+function notifyRoleChange(groupId, payload) {
+  emitGroupMembershipChanged(groupId, payload, getMemberUserIds(groupId));
+}
+
+function promoteAdminHandler(req, res) {
+  const ctx = authorizeOwnerRoleChange(req, res, req.params.userId);
+  if (!ctx) return;
+  const { groupId, targetUserId } = ctx;
+
+  const target = getMembership(groupId, targetUserId);
+  if (!target) {
+    return res.status(404).json({ error: 'User is not a member of this group' });
+  }
+  if (target.role !== 'member') {
+    return res.status(400).json({
+      error: target.role === 'owner'
+        ? 'The owner cannot be made an admin'
+        : 'User is already an admin',
+    });
+  }
+
+  promoteToAdmin(groupId, targetUserId);
+  notifyRoleChange(groupId, {
+    type: 'admin_promoted',
+    user_id: targetUserId,
+    by_user_id: req.user.id,
+  });
+
+  res.json({ success: true, user_id: targetUserId, role: 'admin' });
+}
+
+function demoteAdminHandler(req, res) {
+  const ctx = authorizeOwnerRoleChange(req, res, req.params.userId);
+  if (!ctx) return;
+  const { groupId, targetUserId } = ctx;
+
+  const target = getMembership(groupId, targetUserId);
+  if (!target) {
+    return res.status(404).json({ error: 'User is not a member of this group' });
+  }
+  if (target.role !== 'admin') {
+    return res.status(400).json({
+      error: target.role === 'owner'
+        ? 'The owner cannot be demoted; transfer ownership instead'
+        : 'User is not an admin',
+    });
+  }
+
+  demoteAdmin(groupId, targetUserId);
+  notifyRoleChange(groupId, {
+    type: 'admin_demoted',
+    user_id: targetUserId,
+    by_user_id: req.user.id,
+  });
+
+  res.json({ success: true, user_id: targetUserId, role: 'member' });
+}
+
+function transferOwnershipHandler(req, res) {
+  const ctx = authorizeOwnerRoleChange(req, res, req.body?.userId);
+  if (!ctx) return;
+  const { groupId, targetUserId } = ctx;
+
+  if (targetUserId === req.user.id) {
+    return res.status(400).json({ error: 'You already own this group' });
+  }
+
+  if (!isMember(groupId, targetUserId)) {
+    return res.status(404).json({ error: 'User is not a member of this group' });
+  }
+
+  const result = transferOwnership(groupId, req.user.id, targetUserId);
+  if (!result.ok) {
+    // Lost a race between the checks above and the transaction.
+    const status = result.reason === 'not_member' ? 404 : 409;
+    return res.status(status).json({ error: 'Ownership could not be transferred' });
+  }
+
+  notifyRoleChange(groupId, {
+    type: 'ownership_transferred',
+    old_owner_id: req.user.id,
+    new_owner_id: targetUserId,
+    by_user_id: req.user.id,
+    automatic: false,
+  });
+
+  res.json({ success: true, owner_id: targetUserId, previous_owner_role: 'admin' });
+}
+
+function deleteGroupHandler(req, res) {
+  const groupId = parseGroupId(req);
+  if (!groupId) return res.status(400).json({ error: 'Invalid group id' });
+
+  const membership = requireMembership(req, res, groupId);
+  if (!membership) return;
+
+  if (membership.role !== 'owner') {
+    return res.status(403).json({ error: 'Only the group owner can delete the group' });
+  }
+
+  // Capture members before the rows disappear so everyone can be told.
+  const memberIds = getMemberUserIds(groupId);
+
+  const { deleted, files } = deleteGroupWithCleanup(groupId);
+  if (!deleted) return res.status(404).json({ error: 'Group not found' });
+
+  files.forEach(unlinkQuietly);
+
+  // One 'removed' event per member, addressed to that member only: the
+  // existing client treats "removed: me" as "forget this group's keys and
+  // drop it from my list", which is exactly what a deleted group needs.
+  for (const memberId of memberIds) {
+    removeUserFromGroupRoom(memberId, groupId);
+    emitGroupMembershipChanged(groupId, {
+      type: 'removed',
+      user_id: memberId,
+      by_user_id: req.user.id,
+      self_initiated: false,
+      group_deleted: true,
+    }, [memberId]);
+  }
+
+  res.json({ success: true, group_deleted: true });
 }
 
 function renameGroupHandler(req, res) {
@@ -413,7 +611,7 @@ function sendMessageHandler(req, res) {
 
 function deleteMessageHandler(req, res) {
   const groupId = parseGroupId(req);
-  const messageId = Number.parseInt(req.params.messageId, 10);
+  const messageId = parseCanonicalId(req.params.messageId);
 
   if (!groupId || !Number.isInteger(messageId)) {
     return res.status(400).json({ error: 'Invalid group or message id' });
@@ -428,7 +626,9 @@ function deleteMessageHandler(req, res) {
   }
 
   const isOwnMessage = msg.sender_id === req.user.id;
-  const canModerate = isElevated(membership.role) || req.user.is_admin;
+  // Group moderation comes from the group role only. The site admin has no
+  // power over message content.
+  const canModerate = isElevated(membership.role);
 
   if (!isOwnMessage && !canModerate) {
     return res.status(403).json({ error: 'You can only delete your own messages' });
@@ -436,11 +636,14 @@ function deleteMessageHandler(req, res) {
 
   if (msg.attachment_path) {
     const filePath = path.join(constants.GROUP_UPLOAD_DIR, msg.attachment_path);
-    fs.unlink(filePath, (err) => {
-      if (err && err.code !== 'ENOENT') {
+    // The 200 below means "gone": remove the file before responding, as the DM handler does.
+    try {
+      fs.unlinkSync(filePath);
+    } catch (err) {
+      if (err.code !== 'ENOENT') {
         console.error('Failed to delete group attachment:', err.message);
       }
-    });
+    }
   }
 
   deleteGroupMessage(messageId);
@@ -574,7 +777,7 @@ function ackKdmsHandler(req, res) {
 // the sender or an elevated role.
 function toggleGroupReactionHandler(req, res) {
   const groupId = parseGroupId(req);
-  const messageId = Number.parseInt(req.params.messageId, 10);
+  const messageId = parseCanonicalId(req.params.messageId);
 
   if (!groupId || !Number.isInteger(messageId)) {
     return res.status(400).json({ error: 'Invalid group or message id' });
@@ -649,7 +852,13 @@ async function sendMessageWithAttachmentHandler(req, res) {
   // never sniffed server-side.
   const attachmentIv = (req.body.attachment_iv || '').trim();
 
-  if (!attachmentIv || !/^[A-Za-z0-9+/]+=*$/.test(attachmentIv) || attachmentIv.length > 64) {
+  // The client always sends a 12-byte AES-GCM IV (IV_LENGTH = 12 in
+  // public/js/crypto/groups/*): 16 base64 chars with no padding.
+  if (
+    !attachmentIv ||
+    !/^[A-Za-z0-9+/]{16}$/.test(attachmentIv) ||
+    Buffer.from(attachmentIv, 'base64').length !== 12
+  ) {
     cleanup();
     return res.status(400).json({ error: 'attachment_iv (base64) is required' });
   }
@@ -802,6 +1011,10 @@ module.exports = {
   addMemberHandler,
   removeMemberHandler,
   leaveGroupHandler,
+  promoteAdminHandler,
+  demoteAdminHandler,
+  transferOwnershipHandler,
+  deleteGroupHandler,
   renameGroupHandler,
   setAvatarHandler,
   getRecentMessagesHandler,

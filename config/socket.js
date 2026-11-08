@@ -1,11 +1,12 @@
 const { Server } = require('socket.io');
-const { verifySessionToken } = require('../utils/jwt');
+const { verifySessionToken, tokenVersionMatches } = require('../utils/jwt');
 
 const { JWT_SECRET } = require('./constants');
 const { getDb } = require('./database');
 const { setupDmSocket } = require('../sockets/dm.socket');
 const { setupGroupSocket } = require('../sockets/group.socket');
 const { setIo } = require('../services/socket.service');
+const { checkClientAddress, clientAddressFromRequest } = require('../middleware/ipRestrict');
 const { markOnline, markOffline, getOnlineUserIds } = require('../services/presence.service');
 const {
   isShowLastSeenEnabled,
@@ -31,6 +32,15 @@ function setupSocketIO(server) {
     // are detected promptly and presence can be corrected.
     pingInterval: 25000,
     pingTimeout: 20000,
+
+    // Same ALLOWED_SUBNET rule as the HTTP middleware (middleware/ipRestrict.js),
+    // applied before any socket handshake. The Socket.IO handshake is a raw
+    // HTTP request that bypasses Express, so the client address comes from
+    // clientAddressFromRequest(), which honors X-Forwarded-For only under
+    // the same trust-proxy rule Express uses.
+    allowRequest: (req, callback) => {
+      callback(null, checkClientAddress(clientAddressFromRequest(req)) === null);
+    },
   });
 
   // ===== Authentication =====
@@ -51,11 +61,16 @@ function setupSocketIO(server) {
       }
 
       const account = getDb()
-        .prepare('SELECT id, is_active FROM users WHERE id = ?')
+        .prepare('SELECT id, is_active, token_version FROM users WHERE id = ?')
         .get(user.id);
 
       if (!account || account.is_active === 0) {
         return next(new Error('Account is inactive'));
+      }
+
+      // Revoked by a password change (see users.token_version).
+      if (!tokenVersionMatches(user, account)) {
+        return next(new Error('Invalid or expired token'));
       }
 
       socket.user = user;

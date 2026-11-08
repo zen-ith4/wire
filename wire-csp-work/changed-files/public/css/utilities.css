@@ -1,0 +1,24 @@
+.text-muted{color:var(--muted);}
+.hidden{display:none !important;}
+
+/* Inline-style replacements (CSP). Deliberately NOT !important: JS toggles
+   these elements with el.style.display, and an inline value must still win. */
+.js-hidden{display:none;}
+.u-block{display:block;}
+.u-inline-flex-gap8{display:inline-flex;gap:8px;}
+.u-flex-center-gap10{display:flex;align-items:center;gap:10px;}
+.u-min-w-220{min-width:220px;}
+.u-min-w-260{min-width:260px;}
+.u-dm-empty-pad{font-size:12.5px;padding:16px 10px;text-align:center;}
+.u-dm-status-pad{font-size:12.5px;padding:10px 4px;}
+.u-m0{margin:0;}
+.u-pc-pad{padding:24px 4px;text-align:center;}
+.u-offscreen-copy{position:fixed;top:0;left:0;opacity:0;pointer-events:none;}
+
+/* Download progress bar (media/attachments.js). Same declarations as the
+   former cssText; the two transition values are kept as-is (they were never
+   valid CSS, so the browser has always ignored them). */
+.wire-dl-progress{position:fixed;top:0;left:0;right:0;z-index:2147483647;pointer-events:none;font-family:inherit;}
+.wire-dl-progress-track{width:100%;height:3px;background:rgba(255,255,255,.10);overflow:hidden;}
+.wire-dl-progress-fill{width:0%;height:100%;background:var(--accent,#4da6ff);transition:width:.15s ease;transform-origin:left center;}
+.wire-dl-progress-info{position:absolute;top:7px;left:50%;transform:translateX(-50%);max-width:calc(100vw - 24px);padding:4px 10px;border-radius:999px;background:rgba(15,15,20,.88);color:rgba(255,255,255,.92);border:1px solid rgba(255,255,255,.10);box-shadow:0 4px 16px rgba(0,0,0,.22);font-size:11px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:0;transition:opacity:.15s ease;}

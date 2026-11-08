@@ -152,6 +152,26 @@ test('v1 for anyone is untouched', async () => {
     assert.equal(sent.body.content, env);
 });
 
+test('a v1 envelope from a v1-only client to a min-2 recipient is accepted and stored verbatim', async () => {
+    // D13: pin what actually happens when an old (v1-only) client talks to an
+    // account that opted in to v2. The server does not reject v1 by recipient
+    // min-version; the min-2 account remains able to read v1, which is the
+    // compatibility behavior the APK hypothesis has to be evaluated against.
+    const login = await srv.call('POST', '/api/auth/login', { body: { username: 'sender1', password: 'Passw0rd!x' } });
+    let token = login.body?.token;
+    if (!token) {
+        const reg = await srv.call('POST', '/api/auth/register', { body: { username: 'sender1', email: 's@x.invalid', password: 'Passw0rd!x' } });
+        assert.equal(reg.status, 201);
+        const l2 = await srv.call('POST', '/api/auth/login', { body: { username: 'sender1', password: 'Passw0rd!x' } });
+        assert.equal(l2.status, 200);
+        token = l2.body.token;
+    }
+    const env = v1Envelope(2, BOB);
+    const sent = await srv.call('POST', '/api/dm/messages', { token, body: { recipient_id: BOB, content: env } });
+    assert.equal(sent.status, 200);
+    assert.equal(sent.body.content, env, 'the server must not rewrite or wrap a v1 envelope');
+});
+
 test('v2 for a min-2 recipient is stored verbatim', async () => {
     const env = v2Envelope(2, BOB);
     const login = await srv.call('POST', '/api/auth/login', { body: { username: 'sender1', password: 'Passw0rd!x' } });

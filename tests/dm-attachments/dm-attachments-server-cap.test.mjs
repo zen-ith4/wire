@@ -7,7 +7,7 @@ import { TEST_ROOT } from './_env.mjs';
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { startDmServer, createUser, prepareAsClient, postUpload } from './_harness.mjs';
+import { startDmServer, createUser, prepareAsClient, postUpload, disposeActors } from './_harness.mjs';
 import { encryptAttachmentStream, encryptedSizeFor } from '../../public/js/crypto/messages/attachment-stream.js';
 import { dmCiphertextOverheadBytes } from '../../config/multer.js';
 
@@ -20,6 +20,7 @@ before(async () => {
   bob = await createUser(server, 'bob');
 });
 after(async () => {
+  await disposeActors();
   await server.stop();
   fs.rmSync(TEST_ROOT, { recursive: true, force: true });
   setTimeout(() => process.exit(process.exitCode || 0), 50).unref();

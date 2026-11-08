@@ -1,3 +1,4 @@
+import { applyDynamicVars } from '../ui/dynamic-vars.js';
 // ============================================================
 // Settings > Message sounds
 // ------------------------------------------------------------
@@ -302,7 +303,7 @@ function bodyHtml() {
             max="100"
             step="1"
             value="${settings.volume}"
-            style="--sound-volume:${settings.volume}%"
+            data-sound-volume="${settings.volume}"
             aria-label="Message sound volume"${dis}>
 
           <output
@@ -412,6 +413,7 @@ export function bindMessageSoundSettings() {
       document.activeElement?.dataset?.fid || null;
 
     body.innerHTML = bodyHtml();
+  applyDynamicVars(body);
 
     if (focusId) {
       const el = body.querySelector(

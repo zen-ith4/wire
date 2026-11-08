@@ -26,7 +26,7 @@ const { setupSocketIO } = require('./config/socket');
 const ensureDirectories = require('./utils/ensureDirectories');
 const runSetupWizard = require('./utils/setupWizard');
 
-const { ipRestrict } = require('./middleware/ipRestrict');
+const { ipRestrict, trustProxySetting } = require('./middleware/ipRestrict');
 const { csp } = require('./middleware/csp');
 const { logger } = require('./middleware/logger');
 const { errorHandler } = require('./middleware/errorHandler');
@@ -51,7 +51,9 @@ async function startServer() {
     setupSocketIO(server);
 
     // 4. Express configuration
-    app.set('trust proxy', false);
+    // Only when bound to 127.0.0.1 (behind Caddy) is X-Forwarded-For trusted.
+    // See middleware/ipRestrict.js.
+    app.set('trust proxy', trustProxySetting());
 
     // IP restriction runs first and applies to *every* request,
     // static assets and body parsing included.

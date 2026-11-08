@@ -17,6 +17,10 @@ const {
   addMemberHandler,
   removeMemberHandler,
   leaveGroupHandler,
+  promoteAdminHandler,
+  demoteAdminHandler,
+  transferOwnershipHandler,
+  deleteGroupHandler,
   renameGroupHandler,
   setAvatarHandler,
   getRecentMessagesHandler,
@@ -72,6 +76,12 @@ router.post('/:groupId/members', authenticate, addMemberHandler);
 router.delete('/:groupId/members/:userId', authenticate, removeMemberHandler);
 router.post('/:groupId/leave', authenticate, leaveGroupHandler);
 
+// Owner-only role management (see groups.controller.js).
+router.post('/:groupId/admins/:userId', authenticate, promoteAdminHandler);
+router.delete('/:groupId/admins/:userId', authenticate, demoteAdminHandler);
+router.post('/:groupId/transfer-ownership', authenticate, transferOwnershipHandler);
+router.delete('/:groupId', authenticate, deleteGroupHandler);
+
 router.patch('/:groupId', authenticate, renameGroupHandler);
 router.post('/:groupId/avatar', authenticate, uploadLimiter, groupAvatarUpload.single('avatar'), asyncHandler(setAvatarHandler));
 
@@ -101,6 +111,7 @@ router.post(
 router.get(
   '/:groupId/attachments/:messageId/media-token',
   authenticate,
+  requireGroupProtocol,
   getAttachmentMediaTokenHandler
 );
 

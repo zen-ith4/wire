@@ -14,6 +14,10 @@ const {
   isValidIterations,
 } = require('../utils/credentials');
 const constants = require('../config/constants');
+const {
+  prepareOwnedGroupsForUserDeletion,
+  unlinkQuietly: unlinkGroupFileQuietly,
+} = require('./groups.service');
 
 // Same pattern registerUser() (auth.service.js) and the setup wizard
 // use to accept an email address.
@@ -25,12 +29,14 @@ function normalizeUsername(username) {
 }
 
 
+// Intentionally selects only non-credential columns: this row is handed to
+// callers that must never see password_hash, kdf_salt, token_version, etc.
 function findUserByUsername(username) {
   username = normalizeUsername(username);
 
   return getDb()
     .prepare(`
-      SELECT * FROM users
+      SELECT id, username, is_admin, is_active FROM users
       WHERE username = ? COLLATE NOCASE
       ORDER BY (username = ?) DESC, id
       LIMIT 1
@@ -38,6 +44,15 @@ function findUserByUsername(username) {
     .get(username, username);
 }
 
+
+// Used to decide whether a user may RECEIVE new content. Deactivated accounts
+// (is_active = 0) cannot log in, so they must not be sent messages either.
+// Selects only id so is_active never leaks through profile endpoints.
+function findActiveUserById(id) {
+  return getDb()
+    .prepare('SELECT id FROM users WHERE id = ? AND is_active = 1')
+    .get(id);
+}
 
 function findUserById(id) {
   return getDb()
@@ -92,13 +107,15 @@ async function createAdmin(username, password) {
       (
         username,
         password_hash,
-        is_admin
+        is_admin,
+        dm_e2ee_min_version
       )
-      VALUES (?, ?, 1)
+      VALUES (?, ?, 1, ?)
     `)
     .run(
       username,
-      hash
+      hash,
+      constants.DM_E2EE_DEFAULT_MIN_VERSION
     );
 }
 
@@ -176,6 +193,9 @@ function findDuplicateUserError(db, username, email) {
 // no verification email — the account belongs to someone else.
 //
 // Resolves to the created user's safe fields (never password_hash).
+// Accounts are always created as normal users. The admin role changes
+// hands only through transferAdmin() or the CLI. The `isAdmin` argument is
+// accepted for call-site compatibility and deliberately ignored.
 // F12: the admin's browser derives the NEW account's credentials from the
 // temporary password it was given (fresh salt, PBKDF2+HKDF) and sends only
 //   creds = { authKey, kdfSalt, kdfIterations }
@@ -249,15 +269,6 @@ async function createUser(username, email, creds, isAdmin) {
     );
   }
 
-  // Strictly a boolean: "true", 1, null, undefined, etc. are rejected
-  // so a malformed caller can never grant admin rights by accident.
-  if (typeof isAdmin !== 'boolean') {
-    throw createUserError(
-      'INVALID_IS_ADMIN',
-      'is_admin must be a boolean'
-    );
-  }
-
 
   // Cheap duplicate check first, so an obvious duplicate doesn't pay
   // for a bcrypt hash.
@@ -296,17 +307,19 @@ async function createUser(username, email, creds, isAdmin) {
         auth_scheme,
         kdf_salt,
         kdf_iterations,
-        must_change_password
+        must_change_password,
+        dm_e2ee_min_version
       )
-      VALUES (?, ?, ?, ?, ?, 2, ?, ?, 1)
+      VALUES (?, ?, ?, ?, ?, 2, ?, ?, 1, ?)
     `).run(
       username,
       email,
       passwordHash,
       emailVerified,
-      isAdmin ? 1 : 0,
+      0,
       creds.kdfSalt,
-      creds.kdfIterations
+      creds.kdfIterations,
+      constants.DM_E2EE_DEFAULT_MIN_VERSION
     );
 
     userId =
@@ -362,20 +375,41 @@ async function createUser(username, email, creds, isAdmin) {
 }
 
 
-// Changes ONLY the is_admin flag of one user. Callers are responsible
-// for authorization and for validating that isAdmin is a boolean.
-function setUserAdmin(userId, isAdmin) {
+// Hands the site-admin role from fromId to toId in ONE transaction.
+// The old admin is demoted first, so the one-admin unique index
+// (idx_users_one_admin) is never violated. Callers must have verified
+// the caller's password. Throws NOT_ADMIN if fromId is not the admin
+// at commit time, and INVALID_TARGET if toId is not an active account.
+function transferAdmin(fromId, toId) {
 
-  return getDb()
-    .prepare(`
-      UPDATE users
-      SET is_admin = ?
-      WHERE id = ?
-    `)
-    .run(
-      isAdmin ? 1 : 0,
-      userId
-    );
+  const db = getDb();
+
+  return db.transaction(() => {
+
+    const demoted = db
+      .prepare('UPDATE users SET is_admin = 0 WHERE id = ? AND is_admin = 1')
+      .run(fromId);
+
+    if (demoted.changes !== 1) {
+      throw createUserError(
+        'NOT_ADMIN',
+        'Only the current admin can transfer the admin role'
+      );
+    }
+
+    const promoted = db
+      .prepare('UPDATE users SET is_admin = 1 WHERE id = ? AND is_active = 1')
+      .run(toId);
+
+    if (promoted.changes !== 1) {
+      throw createUserError(
+        'INVALID_TARGET',
+        'The new admin must be an active account'
+      );
+    }
+
+    return { fromId, toId };
+  })();
 }
 
 
@@ -607,7 +641,8 @@ async function updatePassword(userId, newPassword) {
   return getDb()
     .prepare(`
       UPDATE users
-      SET password_hash = ?
+      SET password_hash = ?,
+          token_version = token_version + 1
       WHERE id = ?
     `)
     .run(
@@ -675,7 +710,8 @@ async function changeCredentialsV2(
             password_hash = ?,
             kdf_salt = ?,
             kdf_iterations = ?,
-            must_change_password = 0
+            must_change_password = 0,
+            token_version = token_version + 1
           WHERE id = ?
             AND auth_scheme = 2
             AND password_hash = ?
@@ -691,8 +727,14 @@ async function changeCredentialsV2(
         return { ok: false, reason: 'conflict' };
       }
 
+      // Every session token minted before this change is now revoked
+      // (see users.token_version). The caller gets the new value so it can
+      // hand the current device a fresh token.
+      const { token_version: tokenVersion } =
+        db.prepare('SELECT token_version FROM users WHERE id = ?').get(userId);
+
       if (!identity) {
-        return { ok: true };
+        return { ok: true, tokenVersion };
       }
 
       const i =
@@ -726,7 +768,7 @@ async function changeCredentialsV2(
         );
       }
 
-      return { ok: true };
+      return { ok: true, tokenVersion };
     });
 
   return transaction();
@@ -839,13 +881,27 @@ function deleteUser(userId) {
       userId
     );
 
+  // Groups this user OWNS must not vanish or be left owner-less when the
+  // account goes: hand each one to its successor (oldest admin, else
+  // oldest member) and rotate keys for whoever stays, or delete it if they
+  // were the only member. Same transaction as the DELETE below so a failure
+  // can't leave a half-migrated state.
+  let groupChanges = [];
+
   const result =
-    getDb()
-      .prepare(`
-        DELETE FROM users
-        WHERE id = ?
-      `)
-      .run(userId);
+    getDb().transaction(() => {
+      groupChanges =
+        prepareOwnedGroupsForUserDeletion(
+          userId
+        );
+
+      return getDb()
+        .prepare(`
+          DELETE FROM users
+          WHERE id = ?
+        `)
+        .run(userId);
+    })();
 
   // Only clean up files once the row (and its cascade) actually
   // went through — if the DELETE affected nothing (e.g. a
@@ -855,9 +911,20 @@ function deleteUser(userId) {
     filesToRemove.forEach(
       unlinkQuietly
     );
+
+    for (const change of groupChanges) {
+      change.files.forEach(
+        unlinkGroupFileQuietly
+      );
+    }
   }
 
-  return result;
+  // Per-group outcomes, so the caller (admin.controller) can notify
+  // connected clients. Not part of the sqlite result shape.
+  return {
+    ...result,
+    groupChanges,
+  };
 }
 
 
@@ -899,12 +966,13 @@ function listUsersExcept(userId) {
 module.exports = {
   findUserByUsername,
   findUserById,
+  findActiveUserById,
   findUserWithPassword,
 
   createAdmin,
   createUser,
 
-  setUserAdmin,
+  transferAdmin,
   updateBio,
   updateAccentColor,
 

@@ -73,7 +73,9 @@ async function statEntriesLimited(dirents, dirPath) {
       const i = cursor++;
       const dirent = dirents[i];
       const full = path.join(dirPath, dirent.name);
-      const stat = await fsp.stat(full);
+      let stat;
+      try { stat = await fsp.stat(full); }
+      catch (err) { if (err.code === 'ENOENT') continue; throw err; }
       results[i] = {
         name: dirent.name,
         type: dirent.isDirectory() ? 'dir' : 'file',
@@ -89,7 +91,9 @@ async function statEntriesLimited(dirents, dirPath) {
   );
   await Promise.all(workers);
 
-  return results;
+  // Entries removed between readdir and stat leave holes; drop them so
+  // the response never contains null. Order of the rest is preserved.
+  return results.filter(Boolean);
 }
 
 async function pathExists(p) {
@@ -183,6 +187,12 @@ async function uploadFile(req, res) {
     return res.status(400).json({ error: 'Invalid file name' });
   }
 
+  // The filesystem limit is 255 bytes, not characters (multi-byte names hit it sooner).
+  if (Buffer.byteLength(name) > 255) {
+    cleanupTemp();
+    return res.status(400).json({ error: 'File name too long' });
+  }
+
   let finalPath = path.join(dir.fullPath, name);
   let count = 1;
   while (fs.existsSync(finalPath)) {
@@ -191,6 +201,12 @@ async function uploadFile(req, res) {
     name = `${base} (${count})${ext}`;
     finalPath = path.join(dir.fullPath, name);
     count++;
+  }
+
+  // The " (N)" suffix added above can push a valid name over the limit.
+  if (Buffer.byteLength(name) > 255) {
+    cleanupTemp();
+    return res.status(400).json({ error: 'File name too long' });
   }
 
   try {
@@ -472,6 +488,7 @@ async function streamFile(req, res) {
 }
 
 module.exports = {
+  statEntriesLimited,
   getFolders,
   listFiles,
   downloadFile,

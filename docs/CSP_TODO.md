@@ -1,84 +1,60 @@
-# CSP TODO: legacy code that blocks `CSP_ENFORCE=true`
+# CSP status: front-end is CSP-clean
 
-`middleware/csp.js` sends a strict policy (no `'unsafe-inline'`, no `'unsafe-eval'`).
-It is **Report-Only by default** (`CSP_ENFORCE` unset/false) because parts of the
-pre-existing UI still use constructs that a strict CSP blocks. Enforcing today
-would silently break those controls. The Groups UI (`js/chat/group.js`,
-`js/chat/thread.js`, `js/crypto/groups/*`) and every other file added by the
-group port have **cap 0** and are clean under enforcement.
+`middleware/csp.js` sends a strict policy (no `'unsafe-inline'`, no `'unsafe-eval'`,
+no nonce or hash). The front-end under `public/` now contains none of the constructs
+that policy blocks, so `CSP_ENFORCE=true` is safe to enable.
 
-> **CSP_ENFORCE=true is STILL NOT SAFE.** Two lanes converted this UI independently and both sets of
-> conversions are in the tree:
->
-> - **lane C** — the confirm modal (`#confirm-modal`, used by group message Delete, Remove member and
->   DM delete) uses `data-action` + one delegated listener, proven under the enforced header by
->   `tests/csp-confirm-enforced-browser.test.mjs`;
-> - **lane B** — the DM Send button (`dm.js:1530`, was `window.sendDm`) and the DM delete button
->   (`dm.js:2139`, was `window.deleteDmMessage`) were converted the same way, with their own
->   real-Chromium test `tests/dm-csp-handlers-enforced-browser.test.mjs`.
->
-> Both conversions were merged without undoing each other, so these remain blocked when enforced:
-> - **10 inline handlers in `public/index.html`**: image viewer, two more handlers, profile card;
->   plus the inline `<script>` (`setVh`) and `style="display:none;"`;
-> - **`public/js/core/auth.js`** (login template) — 21 inline `style=` attributes;
-> - the remaining legacy rows in the table below.
+## What is enforced by tests
 
-## These counts are enforced
+- `tests/csp-static.test.mjs` asserts a flat zero for every construct, with no
+  allowlist: inline `on*=` handlers, `style=""` attributes, `setAttribute('style'|'on*')`
+  and `.cssText` writes, `escapeHtml()` inside a quoted attribute, `eval` and string
+  timers, `javascript:` URLs, and inline `<script>`, `<style>` or handler attributes in
+  `index.html`.
+- `tests/csp-handlers-enforced-browser.test.mjs` runs in real Chromium with
+  `CSP_ENFORCE=true`. It clicks the converted controls and sweeps every top-level view
+  (messages, files, groups, every settings category, every admin page). It asserts zero
+  `securitypolicyviolation` events, including `style-src`, and zero `Refused to` console
+  errors.
+- `tests/groups/group-csp-browser.test.mjs` covers the groups UI the same way.
 
-`tests/csp-static.test.mjs` holds a per-file cap for every number in the table
-below (`LEGACY_CAPS`). A file fails if its count goes **above** its cap; a file
-not listed has cap 0. Caps may only go down: when legacy code is converted, lower
-or delete its entry in the test and its row here. `tests/groups/group-csp-browser.test.mjs`
-runs the group UI in real Chromium with `CSP_ENFORCE=true` and requires zero violations.
+## How the replacements work
 
-Totals in the merged tree, measured with the same regexes the test uses: **59 inline
-event-handler attributes**, **59 inline `style=""` attributes**, **0 `escapeHtml()` inside a
-quoted attribute** (was 20; all converted to `escapeHtmlAttr()`), **1 inline `<script>`** (in `index.html`).
+- Static styles became named classes in the stylesheet for their area
+  (`css/pages/login.css`, `css/features/settings.css`, `css/utilities.css`).
+  Each class carries the same declarations as the inline style it replaced.
+- Show/hide that JS toggles through `el.style.display` uses `.js-hidden`
+  (`display:none`, not `!important`), so an inline value set by JS still wins.
+  Do not use `.hidden` for these: it is `!important` and would block the JS.
+- Data-driven values (slider fill, swatch color, upload progress, aspect ratio, the
+  background preview) are written as `data-*` attributes and applied through CSSOM by
+  `js/ui/dynamic-vars.js`. Colors are checked against a hex pattern and numbers are
+  clamped first. `js/ui/dynamic-vars.js` installs a `MutationObserver` at boot
+  (`js/core/app.js`), so markup inserted later is covered without a per-call hook.
+- Settings markup also goes through `applyDynamicSettingsStyles()`
+  (`js/settings/dynamic-style.js`), called wherever settings HTML is written.
 
-| File | `on*=` | `style=` |
-|---|---:|---:|
-| `public/index.html` | 10 | 1 |
-| `public/js/chat/dm.js` | 9 | 3 |
-| `public/js/settings/settings-render.js` | 8 | 16 |
-| `public/js/settings/admin.js` | 7 | 3 |
-| `public/js/chat/composer.js` | 4 | 1 |
-| `public/js/media/attachments.js` | 3 | 1 |
-| `public/js/chat/reactions.js` | 3 | 0 |
-| `public/js/chat/thread.js` | 2 | 0 |
-| `public/js/settings/settings-media.js` | 2 | 0 |
-| `public/js/ui/avatar.js` | 2 | 0 |
-| `public/js/ui/confirm.js` | 2 | 0 |
-| `public/js/media/audio-player.js` | 1 | 1 |
-| `public/js/ui/profile-card.js` | 1 | 1 |
-| `public/js/wireguard/wireguard.js` | 1 | 1 |
-| `public/js/chat/group.js` | 1 | 0 |
-| `public/js/chat/reply.js` | 1 | 0 |
-| `public/js/core/utils.js` | 1 | 0 |
-| `public/js/files/files.js` | 1 | 0 |
-| `public/js/core/auth.js` | 0 | 21 |
-| `public/js/settings/settings-appearance-custom.js` | 0 | 3 |
-| `public/js/media/video-player.js` | 0 | 2 |
-| `public/js/media/voice-message.js` | 0 | 2 |
-| `public/js/settings/settings-bubble-gradient.js` | 0 | 1 |
-| `public/js/settings/settings-message-sounds.js` | 0 | 1 |
-| `public/js/ui/emoji-picker.js` | 0 | 1 |
-| **total** | **59** | **59** |
+## Rules for new code
 
-## Interim defence (already in place)
+- Do not write `style="..."` in HTML strings, and do not use `setAttribute('style', ...)`
+  or `.cssText`. Put the look in a class. For a value that depends on data, use a
+  `data-*` attribute and apply it through `dynamic-vars.js`, or set a single property
+  with `el.style.prop = ...` (that is allowed).
+- Put any value that lands in an HTML attribute through `escapeHtmlAttr()`.
+- Run `node scripts/build-sw-manifest.mjs` after any change under `public/`, then
+  `--check`.
 
-Until enforcement is on, the real protection is output escaping:
-- `escapeHtmlAttr()` in `core/utils.js`, used for `title`/`data-*` attributes and the linkified `href`.
-- Reaction emoji (`chat/reactions.js`): escaped as text and as `data-emoji`, delivered through a delegated listener instead of an inline `onclick` string. This closed a stored-XSS hole that existed in this tree before the port.
-- Reply-quote filename/text (`chat/reply.js`): escaped in both branches.
-- Group member role / names in `chat/group.js`: rendered as text.
+## Known gaps
 
-## How to finish
+- `open-image-viewer` and attachment download clicks are covered only by steps that
+  run when an attachment is already on the page (`if (imgBtn)`). A deterministic test
+  is still needed.
+- The `CSP header: strict script-src` test in `csp-static.test.mjs` fails on the mock
+  response's missing header and is not yet investigated. It fails on the unmodified
+  tree too.
 
-1. Replace each inline `on*=` with `data-action="..."` plus one delegated listener (pattern: `chat/reply.js`, `chat/reactions.js`; `ui/avatar.js` has an opt-in `delegated` mode, the legacy default still emits `onclick`).
-2. Replace `style="..."` with CSS classes, or set `el.style.prop = ...` from JS (allowed by CSP).
-3. Move the inline `<script>` in `index.html` (the `--vh` fixer) into an external file (`js/core/viewport-fix.js` is already shipped for this).
-4. ~~Replace `escapeHtml()`-in-attribute uses with `escapeHtmlAttr()`.~~ **Done** (20 sites; `tests/csp-attr-escape.test.mjs` renders each through the real function with `"`/`'` payloads, and the `escapeHtmlInAttr` cap in `tests/csp-static.test.mjs` is 0 everywhere, so any new site fails the build). `core/auth.js` keeps its own quote-escaping `escapeHtml()` and is excluded from that cap on purpose.
-5. Lower the caps in `tests/csp-static.test.mjs`, run with `CSP_ENFORCE=false`, load every screen, and confirm the console has no `[Report Only]` violations. Then flip `CSP_ENFORCE=true`.
+## Interim defence (still in place)
 
-## Known effect while Report-Only
-Browsers log `[Report Only] Refused to ...` for each legacy construct above. That is expected and harmless, and it is how you measure remaining work. No report endpoint is configured.
+Output escaping remains the first line of defence: `escapeHtmlAttr()` for attributes,
+escaped text for reactions and reply quotes, and member names in `chat/group.js`
+rendered as text.

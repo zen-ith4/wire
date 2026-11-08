@@ -128,7 +128,7 @@ function renderBackgroundPreset(
 
       <span
         class="bg-swatch-preview"
-        style="background:${previewCss};">
+        data-bg-preview="${escapeHtmlAttr(previewCss)}">
 
         <span class="bg-swatch-check">
           ${ICONS.check || ''}
@@ -173,7 +173,7 @@ function renderAppearance({
           }"
           data-name="${escapeHtmlAttr(p.name)}"
           title="${escapeHtmlAttr(p.name)}"
-          style="--swatch-color:${p.hex};"
+          data-swatch-color="${escapeHtmlAttr(p.hex)}"
           aria-label="Select ${escapeHtmlAttr(p.name)} accent color">
         </button>
       `)
@@ -1088,13 +1088,12 @@ function renderBanner(me) {
           id="banner-input"
           class="hidden"
           accept="image/*"
-          onchange="window.uploadBanner()"
         />
 
         <button
           type="button"
           class="btn btn-sm btn-glass"
-          onclick="document.getElementById('banner-input').click()">
+          data-action="settings-change-banner">
 
           ${ICONS.camera}
           Change banner
@@ -1107,7 +1106,7 @@ function renderBanner(me) {
               <button
                 type="button"
                 class="btn btn-sm btn-glass btn-danger"
-                onclick="window.removeBanner()">
+                data-action="settings-remove-banner">
 
                 Remove
 
@@ -1148,12 +1147,8 @@ function renderProfile(me) {
 
       <div class="settings-row">
 
-        <div
-          style="
-            display:flex;
-            align-items:center;
-            gap:16px;
-          ">
+        <div class="settings-row-inline"
+         >
 
           <div
             class="settings-avatar-big"
@@ -1194,13 +1189,12 @@ function renderProfile(me) {
             id="avatar-input"
             class="hidden"
             accept="image/*"
-            onchange="window.uploadAvatar()"
           />
 
           <button
             type="button"
             class="btn btn-sm"
-            onclick="document.getElementById('avatar-input').click()">
+            data-action="settings-change-avatar">
 
             ${ICONS.camera}
             Change photo
@@ -1213,7 +1207,7 @@ function renderProfile(me) {
                 <button
                   type="button"
                   class="btn btn-sm btn-danger"
-                  onclick="window.removeAvatar()">
+                  data-action="settings-remove-avatar">
 
                   Remove
 
@@ -1235,12 +1229,8 @@ function renderProfile(me) {
       <!-- Bio -->
 
       <div
-        class="settings-row"
-        style="
-          flex-direction:column;
-          align-items:stretch;
-          gap:10px;
-        ">
+        class="settings-row settings-stack"
+       >
 
         <label
           class="settings-label"
@@ -1257,17 +1247,13 @@ function renderProfile(me) {
             bio
           )}</textarea>
 
-        <div
-          style="
-            display:flex;
-            justify-content:space-between;
-            align-items:center;
-          ">
+        <div class="settings-row-between"
+         >
 
           <span
-            class="text-muted"
+            class="text-muted settings-counter"
             id="bio-counter"
-            style="font-size:11.5px;">
+           >
 
             ${bio.length}/300
 
@@ -1276,7 +1262,7 @@ function renderProfile(me) {
           <button
             type="button"
             class="btn btn-primary btn-sm"
-            onclick="window.saveBio()">
+            data-action="settings-save-bio">
 
             Save bio
 
@@ -1323,12 +1309,8 @@ function renderSecurity(security, privacy) {
       <!-- Password -->
 
       <div
-        class="settings-row"
-        style="
-          flex-direction:column;
-          align-items:stretch;
-          gap:10px;
-        ">
+        class="settings-row settings-stack"
+       >
 
         <label
           class="settings-label"
@@ -1366,9 +1348,9 @@ function renderSecurity(security, privacy) {
 
         <button
           type="button"
-          class="btn btn-primary btn-sm"
-          onclick="window.changePassword()"
-          style="align-self:flex-start;">
+          class="btn btn-primary btn-sm settings-self-start"
+          data-action="settings-change-password"
+         >
 
           Update password
 
@@ -1381,20 +1363,11 @@ function renderSecurity(security, privacy) {
         emailFeatureEnabled
           ? `
             <div
-              class="settings-row"
-              style="
-                flex-direction:column;
-                align-items:stretch;
-                gap:10px;
-              ">
+              class="settings-row settings-stack"
+             >
 
-              <div
-                style="
-                  display:flex;
-                  align-items:center;
-                  justify-content:space-between;
-                  gap:16px;
-                ">
+              <div class="settings-row-between-wide"
+               >
 
                 <div>
 
@@ -1434,14 +1407,9 @@ function renderSecurity(security, privacy) {
 
               <!-- Enable -->
 
-              <div
+              <div class="settings-2fa-panel"
                 id="email-2fa-setup"
-                style="
-                  display:none;
-                  flex-direction:column;
-                  gap:10px;
-                  margin-top:4px;
-                ">
+               >
 
                 <input
                   type="password"
@@ -1452,22 +1420,18 @@ function renderSecurity(security, privacy) {
 
                 <button
                   type="button"
-                  class="btn btn-primary btn-sm"
+                  class="btn btn-primary btn-sm settings-self-start"
                   id="email-2fa-send-code"
-                  style="align-self:flex-start;">
+                 >
 
                   Send verification code
 
                 </button>
 
 
-                <div
+                <div class="settings-2fa-panel-flush"
                   id="email-2fa-code-section"
-                  style="
-                    display:none;
-                    flex-direction:column;
-                    gap:10px;
-                  ">
+                 >
 
                   <div
                     class="settings-row-sublabel"
@@ -1489,9 +1453,9 @@ function renderSecurity(security, privacy) {
 
                   <button
                     type="button"
-                    class="btn btn-primary btn-sm"
+                    class="btn btn-primary btn-sm settings-self-start"
                     id="email-2fa-verify"
-                    style="align-self:flex-start;">
+                   >
 
                     Verify and enable
 
@@ -1504,14 +1468,9 @@ function renderSecurity(security, privacy) {
 
               <!-- Disable -->
 
-              <div
+              <div class="settings-2fa-panel"
                 id="email-2fa-disable"
-                style="
-                  display:none;
-                  flex-direction:column;
-                  gap:10px;
-                  margin-top:4px;
-                ">
+               >
 
                 <div class="settings-row-sublabel">
 
@@ -1528,9 +1487,9 @@ function renderSecurity(security, privacy) {
 
                 <button
                   type="button"
-                  class="btn btn-sm btn-danger"
+                  class="btn btn-sm btn-danger settings-self-start"
                   id="email-2fa-confirm-disable"
-                  style="align-self:flex-start;">
+                 >
 
                   Disable Email 2FA
 

@@ -249,17 +249,107 @@ async function writeRecord(origin, ownUserId, peerId, value) {
     });
 }
 
+/**
+ * Store `value` unless a record already exists, in ONE transaction, and resolve
+ * to whichever record ended up stored.
+ *
+ * A read followed by a separate write is not enough here: a thread opening fires
+ * one trust check per row, and two first contacts that both read "no pin" would
+ * let the later write replace a pin the earlier caller has already acted on.
+ */
+async function writeRecordIfAbsent(origin, ownUserId, peerId, value) {
+    const db = await openDb();
+    return new Promise((resolve, reject) => {
+        const key = recordKey(origin, ownUserId, peerId);
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        const existing = store.get(key);
+        let stored = value;
+
+        existing.onsuccess = () => {
+            if (existing.result) {
+                stored = existing.result;
+            } else {
+                store.put(value, key);
+            }
+        };
+
+        tx.oncomplete = () => resolve(stored);
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
+/**
+ * Replace an existing record with `change(record)`, in ONE transaction. No record,
+ * or a falsy answer from `change`, writes nothing.
+ */
+async function updateRecord(origin, ownUserId, peerId, change) {
+    const db = await openDb();
+    return new Promise((resolve, reject) => {
+        const key = recordKey(origin, ownUserId, peerId);
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        const existing = store.get(key);
+
+        existing.onsuccess = () => {
+            const next = existing.result ? change(existing.result) : null;
+            if (next) store.put(next, key);
+        };
+
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
 /* =========================================================
  * States
  *
  *   first-contact  no pin yet. Trust on first use: pin it and carry on.
  *   ok             the current key is the pinned one.
- *   reknown        the current key is one the user has already accepted
- *                  before (they rotated away and back, or restored a backup).
- *                  Not an alarm.
- *   changed        the current key is one this device has never accepted.
- *                  The alarm.
+ *   reknown        the current key is one this device has already held or the
+ *                  user has already accepted (they rotated away and back). Not
+ *                  an alarm, but only on a contact nobody has verified.
+ *   changed        the current key is one this device has never accepted, or
+ *                  any key other than the one the user verified. The alarm.
  * ========================================================= */
+
+// How long after a key was pinned a verified mark must come for a person to have made
+// it. See readStoredPin().
+const OLD_ACCEPT_STAMP_MS = 1000;
+
+/**
+ * A stored pin, read by today's rules whichever version of this code saved it.
+ *
+ * Pins live on the user's device and outlive any deploy. This runs on every read
+ * instead of as a migration, so nothing depends on a migration having run, on another
+ * tab having reloaded, or on a pin ever being written again.
+ *
+ *   - The old "I verified the new key" button stamped verifiedAt in the same statement
+ *     that set current.at, and nobody had compared anything. A person comparing 60
+ *     digits cannot be that quick, so a mark that close to the pin is not a
+ *     verification. Marks made today carry verifiedKey and are not second-guessed.
+ *   - A verified contact does not use keys the server merely listed at first contact.
+ *     markPeerVerified() drops them now, but a contact verified before it did still
+ *     has them on disk, and one of those keys could forge messages there.
+ *
+ * Both times come from this device's own clock, and the server can touch neither.
+ */
+function readStoredPin(pin) {
+    if (!pin) return null;
+
+    const stampedByOldButton =
+        pin.verifiedAt &&
+        !pin.verifiedKey &&
+        !(pin.verifiedAt - pin.current?.at >= OLD_ACCEPT_STAMP_MS);
+
+    const verifiedAt = stampedByOldButton ? null : pin.verifiedAt ?? null;
+
+    return {
+        ...pin,
+        verifiedAt,
+        accepted: normaliseAccepted(pin).filter((k) => !verifiedAt || !k.viaFirstContact),
+    };
+}
 
 export async function getPeerPin(peerId, { origin, ownUserId }) {
     if (!Number.isInteger(Number(peerId)) || Number(peerId) <= 0) {
@@ -268,11 +358,33 @@ export async function getPeerPin(peerId, { origin, ownUserId }) {
     if (!Number.isInteger(Number(ownUserId)) || Number(ownUserId) <= 0) {
         throw new Error('Invalid own user id');
     }
-    return readRecord(origin, ownUserId, Number(peerId));
+    return readStoredPin(await readRecord(origin, ownUserId, Number(peerId)));
 }
 
 function normaliseAccepted(pin) {
     return Array.isArray(pin?.accepted) ? pin.accepted : [];
+}
+
+/**
+ * Every key in a pin that may open a message, `current` first.
+ *
+ * This list is what the DM decrypt paths choose from, and it comes from this
+ * device alone: the server has no way to add to it after the pin exists.
+ *
+ * @param {object|null} pin
+ * @returns {Array<{fingerprint: string, publicKey: string}>}
+ */
+export function pinnedPeerKeys(pin) {
+    const keys = [];
+    const seen = new Set();
+
+    for (const key of [pin?.current, ...normaliseAccepted(pin)]) {
+        if (!key?.fingerprint || !key.publicKey || seen.has(key.fingerprint)) continue;
+        seen.add(key.fingerprint);
+        keys.push({ fingerprint: key.fingerprint, publicKey: key.publicKey });
+    }
+
+    return keys;
 }
 
 /**
@@ -298,7 +410,18 @@ export async function evaluatePeerKey(peerId, currentPublicKeyB64, ctx) {
         return { state: 'ok', pin, pending: null, fingerprint };
     }
 
-    if (normaliseAccepted(pin).some((k) => k.fingerprint === fingerprint)) {
+    // Only a key this device really held may come back quietly, and only on a
+    // contact nobody has verified:
+    //
+    //   - a key the server merely LISTED at first contact (viaFirstContact) was
+    //     never compared or accepted by anyone. Calling it known would let the
+    //     server plant a key of its own in that list and switch to it later with
+    //     no alarm, including after the users compared safety numbers.
+    //   - "verified" covers exactly one key. Once the user has compared numbers
+    //     for pin.current, any other key needs them to look again.
+    const known = normaliseAccepted(pin).find((k) => k.fingerprint === fingerprint);
+
+    if (known && !known.viaFirstContact && !pin.verifiedAt) {
         return { state: 'reknown', pin, pending: null, fingerprint };
     }
 
@@ -317,14 +440,15 @@ export async function evaluatePeerKey(peerId, currentPublicKeyB64, ctx) {
  * contact must never be able to overwrite an earlier one.
  *
  * `retiredKeys` is the peer's key history as the SERVER reported it in the same
- * exchange. They are recorded as accepted alongside the current key, and that is
- * not a loophole — it is what TOFU means. At first contact there is nothing to
- * compare against, so everything the server hands over in one response is taken
- * as that peer's key set. Omitting them caused a real regression: a user whose
- * FIRST contact happened after their peer had rotated would pin the new key
- * only, and could then never read the pre-rotation history that the v15 archive
- * exists to preserve. The security property this file needs is about keys that
- * appear LATER, out of band of the pin, not about the pin's own first response.
+ * exchange. They are recorded alongside the current key so old history stays
+ * readable, flagged viaFirstContact because nobody has checked them. Omitting them
+ * caused a real regression: a user whose FIRST contact happened after their peer
+ * had rotated would pin the new key only, and could then never read the
+ * pre-rotation history that the v15 archive exists to preserve.
+ *
+ * That is all the flag allows. Such a key can never become current without the
+ * alarm (evaluatePeerKey), and verifying the contact drops it (markPeerVerified),
+ * so a key the server planted here cannot outlive the safety-number comparison.
  *
  * @param {number} peerId
  * @param {string} currentPublicKeyB64
@@ -362,16 +486,19 @@ export async function pinOnFirstUse(peerId, currentPublicKeyB64, ctx, retiredKey
         verifiedAt: null,
     };
 
-    await writeRecord(ctx.origin, ctx.ownUserId, Number(peerId), pin);
-    return pin;
+    return writeRecordIfAbsent(ctx.origin, ctx.ownUserId, Number(peerId), pin);
 }
 
 /**
- * The user's explicit "I verified this" action.
+ * The user's explicit "accept this new key" action.
  *
  * Adds the new key to `accepted` AND makes it current, so the same key is
  * recognised on every later visit and a second rotation back to it is not an
  * alarm.
+ *
+ * Accepting is NOT verifying, and it clears `verifiedAt` even when the previous
+ * key was verified: the user may simply want to read their messages, and nobody
+ * has compared the new key yet. markPeerVerified() is the only thing that sets it.
  */
 export async function acceptPeerKey(peerId, newPublicKeyB64, ctx) {
     const evaluated = await evaluatePeerKey(peerId, newPublicKeyB64, ctx);
@@ -389,20 +516,66 @@ export async function acceptPeerKey(peerId, newPublicKeyB64, ctx) {
         peerId: Number(peerId),
         current: { fingerprint: evaluated.fingerprint, publicKey: newPublicKeyB64, at: Date.now() },
         accepted,
-        verifiedAt: Date.now(),
+        verifiedAt: null,
+        encryptedFloor: previous?.encryptedFloor ?? null,
     };
 
     await writeRecord(ctx.origin, ctx.ownUserId, Number(peerId), pin);
     return pin;
 }
 
-/** Mark the current key as human-verified (does not change which key is current). */
-export async function markPeerVerified(peerId, ctx) {
+/**
+ * Mark the current key as human-verified (does not change which key is current).
+ *
+ * `expectedFingerprint` is the key whose digits the user was shown. When it is no
+ * longer the pinned key nothing is marked, because the user never compared the one
+ * that is pinned now.
+ *
+ * Verifying also drops every key the server merely listed at first contact. They
+ * were only ever taken on the server's word, and the user has just established a
+ * key that does not depend on it. The cost is deliberate: a message sealed to one
+ * of those keys stops opening on this device. Rotation is rare, and the alternative
+ * is a retired key the server chose being able to forge messages on a contact the
+ * user believes is verified.
+ *
+ * @returns {Promise<object|null>} the updated pin, or null when nothing was marked
+ */
+export async function markPeerVerified(peerId, ctx, expectedFingerprint = null) {
     const pin = await getPeerPin(peerId, ctx);
     if (!pin) return null;
-    const next = { ...pin, verifiedAt: Date.now() };
+    if (expectedFingerprint !== null && pin.current?.fingerprint !== expectedFingerprint) {
+        return null;
+    }
+    const next = {
+        ...pin,
+        accepted: normaliseAccepted(pin).filter((k) => !k.viaFirstContact),
+        verifiedAt: Date.now(),
+        verifiedKey: pin.current?.fingerprint,
+    };
     await writeRecord(ctx.origin, ctx.ownUserId, Number(peerId), next);
     return next;
+}
+
+/**
+ * Remember that a DM row of this conversation opened under a pinned key.
+ *
+ * `encryptedFloor` is the lowest such row id this device has seen. It only ever moves
+ * down, and a whole page of rows opening at once must leave the lowest, so this is
+ * one transaction. It is what chat/dm-unencrypted.js judges a row with nothing sealed
+ * in it by, and it lives on the pin because only a row that opened under the pin can
+ * move it: the server's word never does.
+ *
+ * No pin means no row can have opened, so there is nothing to record.
+ *
+ * @param {number} peerId
+ * @param {number} rowId
+ * @param {{origin: string, ownUserId: number}} ctx
+ */
+export async function noteEncryptedRow(peerId, rowId, ctx) {
+    return updateRecord(ctx.origin, ctx.ownUserId, Number(peerId), (pin) => {
+        if (Number.isInteger(pin.encryptedFloor) && pin.encryptedFloor <= rowId) return null;
+        return { ...pin, encryptedFloor: rowId };
+    });
 }
 
 /** Forget a peer entirely — the "untrust this conversation" reset. */
@@ -457,10 +630,11 @@ export async function mayTryRetiredKey(peerId, retiredPublicKeyB64, ctx) {
     try {
         pin = await getPeerPin(peerId, ctx);
     } catch {
-        // No storage available: treat as no pin, which is the first-contact
-        // branch. Failing closed here would break decryption for a browser that
-        // refuses IndexedDB, and the pin is hardening rather than the only gate.
-        return { allowed: true, reason: 'no-pin-storage', fingerprint };
+        // No storage available: refuse. Treating this as "no pin" would hand the
+        // choice of key to the server exactly when the pin cannot be consulted, and
+        // it would not save anything: a browser that refuses IndexedDB already
+        // cannot pass the trust check that runs before a DM is decrypted.
+        return { allowed: false, reason: 'no-pin-storage', fingerprint };
     }
 
     if (!pin) {

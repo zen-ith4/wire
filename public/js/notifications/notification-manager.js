@@ -254,6 +254,12 @@ export function shouldNotifyDM(
 const MAX_PREVIEW_LENGTH = 120;
 
 function buildPreview(message) {
+  // Nothing ties this row to its sender, and a system notification has nowhere to put
+  // the mark the thread shows, so none of its text or file details go in one.
+  if (message.not_encrypted) {
+    return 'Not encrypted message';
+  }
+
   if (isVoiceMessage(message)) {
     return '🎤 Voice message';
   }

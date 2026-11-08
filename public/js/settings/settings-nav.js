@@ -22,6 +22,7 @@ import {
   pushOverlay,
   closeOverlay
 } from '../core/navigation.js';
+import { applyDynamicSettingsStyles } from './dynamic-style.js';
 
 
 // ============================================================
@@ -134,6 +135,7 @@ export async function openSettingsCategory(
   if (bodyEl && renderBody) {
     bodyEl.innerHTML =
       renderBody(categoryId);
+    applyDynamicSettingsStyles(bodyEl);
   }
 
   // Two-layer transition (see .settings-shell/.category-open in

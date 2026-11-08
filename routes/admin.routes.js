@@ -14,12 +14,13 @@ const {
 const {
   listUsers,
   usernameAudit,
+  auditLog,
   credentialStatus,
   previewInactiveLegacy,
   closeInactiveLegacy,
   setLegacyLogin,
   createUser,
-  setUserAdmin,
+  transferAdmin,
   deleteUser,
   listFolders,
   createFolder,
@@ -50,12 +51,18 @@ router.post(
   asyncHandler(createUser)
 );
 
-// Change a user's admin flag. PUT (not PATCH) with a single-property
-// sub-path mirrors the project's existing convention, e.g.
-// PUT /api/me/accent-color.
-router.put(
-  '/users/:id/is-admin',
-  setUserAdmin
+// Hand the admin role to another user (the caller becomes a normal user).
+// Replaces the old PUT /users/:id/is-admin: there is exactly one admin, so
+// the role can only move, never be added or removed on its own.
+router.post(
+  '/transfer',
+  transferAdmin
+);
+
+// Read-only audit trail of admin actions.
+router.get(
+  '/audit',
+  auditLog
 );
 
 // F12 migration tools

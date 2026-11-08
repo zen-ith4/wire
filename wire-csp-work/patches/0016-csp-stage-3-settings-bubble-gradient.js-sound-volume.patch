@@ -1,0 +1,52 @@
+From 25793ef3eabfd7f3e300cace85092a1bfe7bb5ef Mon Sep 17 00:00:00 2001
+From: Claude <claude@example.com>
+Date: Fri, 6 Nov 2026 05:42:47 +0000
+Subject: [PATCH 16/23] csp stage 3: settings-bubble-gradient.js --sound-volume
+ via data-sound-volume + applyDynamicVars
+
+---
+ public/js/settings/settings-bubble-gradient.js | 4 +++-
+ tests/csp-static.test.mjs                      | 1 -
+ 2 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/public/js/settings/settings-bubble-gradient.js b/public/js/settings/settings-bubble-gradient.js
+index 275e44d..2c27216 100644
+--- a/public/js/settings/settings-bubble-gradient.js
++++ b/public/js/settings/settings-bubble-gradient.js
+@@ -1,3 +1,4 @@
++import { applyDynamicVars } from '../ui/dynamic-vars.js';
+ // ============================================================
+ // Settings → Appearance: "My message colors"
+ //
+@@ -79,7 +80,7 @@ function stopsHtml(stops) {
+               value="${stop.position}"
+               data-unit="%"
+               data-og-position="${index}"
+-              style="--sound-volume:${stop.position}%"
++              data-sound-volume="${stop.position}"
+               aria-label="Color ${index + 1} position">
+ 
+             <output
+@@ -325,6 +326,7 @@ function syncStops() {
+   const list = $('own-gradient-stops');
+   if (list) {
+     list.innerHTML = stopsHtml(draft.stops);
++    applyDynamicVars(list);
+   }
+ 
+   const add = $('own-gradient-add');
+diff --git a/tests/csp-static.test.mjs b/tests/csp-static.test.mjs
+index 3e62824..50995b9 100644
+--- a/tests/csp-static.test.mjs
++++ b/tests/csp-static.test.mjs
+@@ -37,7 +37,6 @@ const LEGACY_CAPS = {
+     'js/settings/settings-appearance-custom.js': 3,
+     'js/chat/composer.js': 1,
+     'js/media/attachments.js': 1,
+-    'js/settings/settings-bubble-gradient.js': 1,
+     'js/settings/settings-message-sounds.js': 1,
+   },
+   setAttr: {
+-- 
+2.43.0
+

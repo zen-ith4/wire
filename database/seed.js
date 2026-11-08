@@ -34,6 +34,14 @@ function createDefaultAdmin(db) {
     return existing.id;
   }
 
+  // The site has exactly one admin. If one exists under another name, do not
+  // create a second one (the unique index would refuse it anyway).
+  const anyAdmin = db.prepare('SELECT id FROM users WHERE is_admin = 1').get();
+
+  if (anyAdmin) {
+    return anyAdmin.id;
+  }
+
   // F12: the seed is the one place where the SERVER HOST is handed a plaintext
   // password (by its operator, via the environment). It derives exactly what a
   // browser would (PBKDF2 + HKDF with a fresh salt) and stores bcrypt(authKey),
@@ -58,14 +66,16 @@ function createDefaultAdmin(db) {
       is_admin,
       auth_scheme,
       kdf_salt,
-      kdf_iterations
+      kdf_iterations,
+      dm_e2ee_min_version
     )
-    VALUES (?, ?, 1, 2, ?, ?)
+    VALUES (?, ?, 1, 2, ?, ?, ?)
   `).run(
     String(DEFAULT_ADMIN_USER).trim().toLowerCase(),
     hash,
     kdfSalt,
-    KDF_ITERATIONS
+    KDF_ITERATIONS,
+    constants.DM_E2EE_DEFAULT_MIN_VERSION
   );
 
   console.log('✅ Default admin account created');

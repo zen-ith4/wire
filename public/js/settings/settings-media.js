@@ -22,6 +22,8 @@ import {
   hideUploadProgress
 } from '../files/upload.js';
 
+import { registerActions } from '../ui/actions.js';
+
 
 // ============================================================
 // Image validation
@@ -457,25 +459,39 @@ async function removeBanner() {
 // Public binder
 // ============================================================
 
-export function bindMediaSettings() {
-  /*
-   * The existing settings markup still uses:
-   *
-   *   onchange="window.uploadAvatar()"
-   *   onclick="window.removeAvatar()"
-   *
-   * Keep these globals during the refactor so we do not have to
-   * change unrelated markup at the same time.
-   */
-  window.uploadAvatar =
-    uploadAvatar;
+export function bindMediaSettings({ me }) {
+  const bannerInput =
+    document.getElementById(
+      'banner-input'
+    );
 
-  window.removeAvatar =
-    removeAvatar;
+  if (bannerInput) {
+    bannerInput.addEventListener(
+      'change',
+      () => uploadBanner()
+    );
+  }
 
-  window.uploadBanner =
-    uploadBanner;
+  const avatarInput =
+    document.getElementById(
+      'avatar-input'
+    );
 
-  window.removeBanner =
-    removeBanner;
+  if (avatarInput) {
+    avatarInput.addEventListener(
+      'change',
+      () => uploadAvatar()
+    );
+  }
 }
+
+registerActions({
+  'settings-change-banner': () => {
+    document.getElementById('banner-input')?.click();
+  },
+  'settings-remove-banner': () => removeBanner(),
+  'settings-change-avatar': () => {
+    document.getElementById('avatar-input')?.click();
+  },
+  'settings-remove-avatar': () => removeAvatar(),
+});

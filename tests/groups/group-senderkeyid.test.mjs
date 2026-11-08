@@ -40,8 +40,8 @@ test('decorate() attaches senderKeyId, usable with decryptAttachmentForGroup', a
 
     const alice = createBrowserActor('alice', server.origin);
     const bob = createBrowserActor('bob', server.origin);
-    t.after(() => alice.window.close());
-    t.after(() => bob.window.close());
+    t.after(() => alice.dispose());
+    t.after(() => bob.dispose());
 
     const aliceId = await signUpAndUnlock(alice, {
         username: 'alice_sk', email: 'alice_sk@example.test', password: 'pw-alice-sk-0001',

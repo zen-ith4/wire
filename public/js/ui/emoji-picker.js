@@ -1,3 +1,4 @@
+import { applyDynamicVars } from './dynamic-vars.js';
 // ============================================================
 // Emoji picker
 // ------------------------------------------------------------
@@ -389,10 +390,11 @@ function buildPicker() {
             class="emoji-picker-skin-swatch"
             data-skin="${i}"
             title="${SKIN_LABELS[i]}"
-            style="--swatch:${color};"
+            data-swatch="${color}"
           ></button>
         `
     ).join('');
+  applyDynamicVars(skinMenuEl);
 
   // ---- Search ----
 

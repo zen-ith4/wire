@@ -1,4 +1,5 @@
 const fs = require('fs');
+const { isStoredFolderAllowed } = require('../utils/folderPolicy');
 const path = require('path');
 
 const constants = require('../config/constants');
@@ -130,7 +131,9 @@ function deleteFolderHandler(req, res) {
     });
   }
 
-  if (fs.existsSync(folder.path)) {
+  // Only delete what the sharing policy would allow. A stored path outside
+  // the allowed roots is left alone (the folder row is still removed).
+  if (fs.existsSync(folder.path) && isStoredFolderAllowed(folder.path)) {
     fs.rmSync(folder.path, {
       recursive: true,
       force: true,

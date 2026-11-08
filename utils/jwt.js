@@ -1,12 +1,37 @@
 const jwt = require('jsonwebtoken');
 const constants = require('../config/constants');
 
+// token_version is required (not defaulted): signing a token with a stale or
+// missing version would silently log the account out or let a revoked token
+// back in. Every caller must pass the value read from the users row.
+function requireTokenVersion(user) {
+  if (!Number.isInteger(user.token_version)) {
+    throw new Error('signToken: token_version must be provided');
+  }
+
+  return user.token_version;
+}
+
+// Tokens minted before token_version existed have no `tv` claim and are
+// treated as version 0, so deploying this does not log everyone out.
+// Fails closed: a row without a readable version never matches.
+function tokenVersionMatches(payload, row) {
+  if (!row || !Number.isInteger(row.token_version)) {
+    return false;
+  }
+
+  const claimed = payload.tv === undefined ? 0 : payload.tv;
+
+  return claimed === row.token_version;
+}
+
 function signToken(user) {
   return jwt.sign(
     {
       id: user.id,
       username: user.username,
       is_admin: !!user.is_admin,
+      tv: requireTokenVersion(user),
     },
     constants.JWT_SECRET,
     { expiresIn: '24h' }
@@ -79,6 +104,7 @@ function signPasswordChangeToken(user) {
       id: user.id,
       username: user.username,
       typ: 'pcr',
+      tv: requireTokenVersion(user),
     },
     constants.JWT_SECRET,
     { expiresIn: PASSWORD_CHANGE_TOKEN_TTL_SECONDS }
@@ -237,6 +263,7 @@ function signPushAvatarToken(userId) {
 
 module.exports = {
   signToken,
+  tokenVersionMatches,
   verifyToken,
   verifySessionToken,
   signPasswordChangeToken,

@@ -13,6 +13,8 @@ import {
   applyAvatar
 } from '../ui/avatar.js';
 
+import { registerActions } from '../ui/actions.js';
+
 
 // ============================================================
 // Profile
@@ -114,12 +116,8 @@ export function bindProfileSettings({
   }
 
   bindBio();
-
-  /*
-   * Keep the existing inline HTML API intact.
-   * This means existing markup does not need to be rewritten
-   * during this refactor.
-   */
-  window.saveBio =
-    saveBio;
 }
+
+registerActions({
+  'settings-save-bio': () => saveBio(),
+});

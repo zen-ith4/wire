@@ -41,7 +41,7 @@ async function boot(_t, names) {
         for (const name of names) {
             const n = `${name}${seq++}`;
             const actor = createBrowserActor(n, server.origin);
-            cleanups.push(() => actor.window.close());
+            cleanups.push(() => actor.dispose());
             const password = `pw-${n}-long-enough`;
             const ident = await signUpAndUnlock(actor, { username: n, email: `${n}@example.test`, password });
             ident.password = password;
@@ -390,7 +390,7 @@ test('F-I (was OPEN, fixed by key-derived senderKeyId): a second device of the s
 
     // Alice's second device: same account, same password, fresh browser profile.
     const a2 = { actor: createBrowserActor(`alice2_${seq++}`, server.origin), n: 'alice-dev2' };
-    cleanups.push(() => a2.actor.window.close());
+    cleanups.push(() => a2.actor.dispose());
     a2.actor.use();
     const auth2 = await a2.actor.importModule('core/auth.js');
     await auth2.login(alice.n, alice.ident.password);
@@ -428,7 +428,7 @@ test('G (was OPEN, fixed by device-local sending keys): two devices of one user 
     await send(alice, 'd1 m1');
 
     const a2 = { actor: createBrowserActor(`alice3_${seq++}`, server.origin), n: 'alice-dev2b' };
-    cleanups.push(() => a2.actor.window.close());
+    cleanups.push(() => a2.actor.dispose());
     a2.actor.use();
     const auth2 = await a2.actor.importModule('core/auth.js');
     await auth2.login(alice.n, alice.ident.password);

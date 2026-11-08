@@ -15,12 +15,15 @@ import {
 
 import {
   clearPersistedUnlockKey,
-  getCurrentUser
+  getCurrentUser,
+  setToken
 } from '../core/auth.js';
 
 import {
   renderSettings
 } from './settings.js';
+
+import { registerActions } from '../ui/actions.js';
 
 
 // ============================================================
@@ -100,7 +103,7 @@ async function changePassword() {
 
   const button =
     document.querySelector(
-      '[onclick="window.changePassword()"]'
+      '[data-action="settings-change-password"]'
     );
 
   if (button) {
@@ -122,7 +125,7 @@ async function changePassword() {
 
     // This write makes the cached settings data stale (see settings.js).
     window.dispatchEvent(new Event('wire:settings-stale'));
-    await api(
+    const changed = await api(
       '/api/me/password',
       {
         method: 'PUT',
@@ -135,6 +138,13 @@ async function changePassword() {
         body: JSON.stringify(change)
       }
     );
+
+    // The change revoked every session token minted before it, including
+    // this device's. The server returns a token for the new version so this
+    // device stays signed in.
+    if (changed && changed.token) {
+      setToken(changed.token);
+    }
 
     // The cached auto-unlock key belongs to the old wrapKey and can no longer
     // open the identity: drop it (the next launch asks for the new password).
@@ -719,10 +729,11 @@ function createPrivacyController() {
 // ============================================================
 
 export function bindSecuritySettings() {
-  window.changePassword =
-    changePassword;
-
   createEmail2FAController();
 
   createPrivacyController();
 }
+
+registerActions({
+  'settings-change-password': () => changePassword(),
+});

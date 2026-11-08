@@ -52,13 +52,7 @@ function fingerprintOf(base64PublicKey) {
         return '';
     }
 
-    let raw;
-
-    try {
-        raw = Buffer.from(base64PublicKey, 'base64');
-    } catch {
-        return '';
-    }
+    const raw = Buffer.from(base64PublicKey, 'base64');
 
     if (raw.length !== X25519_PUBLIC_KEY_BYTES) {
         return '';

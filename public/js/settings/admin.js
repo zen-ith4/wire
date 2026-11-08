@@ -6,7 +6,8 @@ import { showConfirm } from '../ui/confirm.js';
 import { avatarHtml } from '../ui/avatar.js';
 import { claimRender } from '../core/view-session.js';
 import { deriveCredentials, generateKdfSalt, KDF_ITERATIONS } from '../crypto/credentials.js';
-import { MIN_PASSWORD_LENGTH } from '../crypto/account-kdf.js';
+import { registerActions } from '../ui/actions.js';
+import { MIN_PASSWORD_LENGTH, deriveOwnAuthKey } from '../crypto/account-kdf.js';
 
 /* ==================== USERS ==================== */
 export async function renderAdminUsers() {
@@ -20,6 +21,9 @@ export async function renderAdminUsers() {
     const users = await api('/api/admin/users');
     if (!isCurrent()) return;
 
+    // Usernames stay out of HTML attributes (CSP/escape rules): look them up by id.
+    const usernameById = new Map(users.map((u) => [Number(u.id), u.username]));
+
     const currentUser = getCurrentUser();
 
     let rows = users.map(u => {
@@ -27,13 +31,13 @@ export async function renderAdminUsers() {
 
       // The signed-in admin can neither delete nor demote themselves.
       // (The backend enforces this too; this just avoids offering it.)
+      // Only one admin exists, so the role moves by transfer: the current
+      // admin hands it to another user and becomes a normal user.
       const actions = isSelf
-        ? '<span class="text-muted">You</span>'
-        : `<div style="display:inline-flex;gap:8px;">
-            <button class="btn btn-sm" onclick="window.setUserAdmin(${u.id}, ${!u.is_admin}, this)">
-              ${u.is_admin ? 'Remove admin' : 'Make admin'}
-            </button>
-            <button class="btn btn-danger btn-sm" onclick="window.deleteUser(${u.id})">Delete</button>
+        ? '<span class="text-muted">You (admin)</span>'
+        : `<div class="u-inline-flex-gap8">
+            <button class="btn btn-sm" data-transfer-admin="${Number(u.id)}">Transfer admin role</button>
+            <button class="btn btn-danger btn-sm" data-delete-user="${Number(u.id)}">Delete</button>
           </div>`;
 
       // F12: where this account is in the credential migration.
@@ -58,8 +62,8 @@ export async function renderAdminUsers() {
       return `
       <tr class="file-row">
         <td>
-          <div style="display:flex;align-items:center;gap:10px;">
-            ${avatarHtml(u.id, u.username, 'chat-avatar')}
+          <div class="u-flex-center-gap10">
+            ${avatarHtml(u.id, u.username, 'chat-avatar', false, true)}
             <span>${escapeHtml(u.username)}</span>
           </div>
         </td>
@@ -96,14 +100,9 @@ export async function renderAdminUsers() {
           autocomplete="new-password"
         >
 
-        <label class="check">
-          <input type="checkbox" id="new-admin">
-          Admin
-        </label>
-
         <button
           class="btn btn-primary btn-sm"
-          onclick="window.addUser()"
+          data-action="admin-add-user"
         >
           + Add user
         </button>
@@ -157,6 +156,18 @@ export async function renderAdminUsers() {
     document
       .getElementById('close-inactive-legacy')
       ?.addEventListener('click', closeInactiveLegacyLogins);
+
+    main.querySelectorAll('[data-transfer-admin]').forEach((btn) => {
+      btn.addEventListener('click', () =>
+        transferAdminFlow(Number(btn.dataset.transferAdmin), usernameById.get(Number(btn.dataset.transferAdmin)))
+      );
+    });
+
+    main.querySelectorAll('[data-delete-user]').forEach((btn) => {
+      btn.addEventListener('click', () =>
+        deleteUserFlow(Number(btn.dataset.deleteUser), usernameById.get(Number(btn.dataset.deleteUser)))
+      );
+    });
   } catch (e) {
     if (!isCurrent()) return;
 
@@ -240,7 +251,7 @@ async function closeInactiveLegacyLogins() {
   }
 }
 
-window.addUser = async function() {
+async function addUser() {
   const username =
     document.getElementById('new-username').value.trim();
 
@@ -250,9 +261,6 @@ window.addUser = async function() {
   // Keep password exactly as entered.
   const password =
     document.getElementById('new-password').value;
-
-  const is_admin =
-    document.getElementById('new-admin').checked;
 
   const errEl =
     document.getElementById('admin-user-error');
@@ -294,7 +302,6 @@ window.addUser = async function() {
         auth_key: authKey,
         kdf_salt: kdfSalt,
         kdf_iterations: KDF_ITERATIONS,
-        is_admin
       }),
     });
 
@@ -311,67 +318,137 @@ window.addUser = async function() {
   }
 };
 
-window.setUserAdmin = async function(id, makeAdmin, btn) {
-  const currentUser = getCurrentUser();
+// Password prompt for dangerous admin actions. Reuses the confirm modal's
+// styling. Resolves with the typed password, or null if cancelled.
+function askPassword({ title, message, confirmText }) {
+  return new Promise((resolve) => {
+    const modal = document.createElement('div');
+    modal.className = 'modal active';
 
-  if (currentUser && Number(id) === Number(currentUser.id)) {
-    showToast('You cannot change your own admin role', 'error');
-    return;
-  }
+    const box = document.createElement('div');
+    box.className = 'modal-content confirm-modal-content';
 
-  // Prevent double-clicks while the request is in flight.
-  if (btn) btn.disabled = true;
+    const h3 = document.createElement('h3');
+    h3.textContent = title;
+
+    const p = document.createElement('p');
+    p.textContent = message;
+
+    const input = document.createElement('input');
+    input.type = 'password';
+    input.autocomplete = 'current-password';
+    input.placeholder = 'Your admin password';
+    input.className = 'confirm-modal-input';
+
+    const actions = document.createElement('div');
+    actions.className = 'confirm-modal-actions';
+
+    const cancel = document.createElement('button');
+    cancel.className = 'btn btn-ghost btn-sm';
+    cancel.textContent = 'Cancel';
+
+    const ok = document.createElement('button');
+    ok.className = 'btn btn-danger btn-sm';
+    ok.textContent = confirmText;
+
+    actions.append(cancel, ok);
+    box.append(h3, p, input, actions);
+    modal.append(box);
+    document.body.append(modal);
+
+    const finish = (value) => {
+      document.removeEventListener('keydown', onKey);
+      modal.remove();
+      resolve(value);
+    };
+
+    const submit = () => {
+      if (!input.value) {
+        input.focus();
+        return;
+      }
+      finish(input.value);
+    };
+
+    const onKey = (e) => {
+      if (e.key === 'Escape') finish(null);
+      if (e.key === 'Enter') submit();
+    };
+
+    cancel.addEventListener('click', () => finish(null));
+    ok.addEventListener('click', submit);
+    document.addEventListener('keydown', onKey);
+    input.focus();
+  });
+}
+
+async function transferAdminFlow(id, username) {
+  const confirmed = await showConfirm(
+    `Make "${username}" the admin? You will become a normal user and lose admin rights immediately. There is always exactly one admin.`,
+    { title: 'Transfer admin role', confirmText: 'Transfer', danger: true }
+  );
+
+  if (!confirmed) return;
+
+  const password = await askPassword({
+    title: 'Confirm with your password',
+    message: `Enter your password to transfer the admin role to "${username}".`,
+    confirmText: 'Transfer admin role',
+  });
+
+  if (password === null) return;
 
   try {
-    await api(`/api/admin/users/${id}/is-admin`, {
-      method: 'PUT',
+    const current_auth_key = await deriveOwnAuthKey(password);
+
+    await api('/api/admin/transfer', {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ is_admin: makeAdmin }),
+      body: JSON.stringify({ userId: id, current_auth_key }),
     });
 
-    await renderAdminUsers();
-    showToast(
-      makeAdmin
-        ? 'Admin role granted'
-        : 'Admin role removed',
-      'success'
-    );
+    showToast(`Admin role transferred to ${username}`, 'success');
+
+    // This account is no longer an admin: reload so the admin navigation
+    // and every cached admin view go away.
+    window.location.reload();
   } catch (e) {
-    if (btn) btn.disabled = false;
     showToast(e.message, 'error');
   }
-};
+}
 
-window.deleteUser = async function(id) {
-  const currentUser = getCurrentUser();
+async function deleteUserFlow(id, username) {
+  const confirmed = await showConfirm(
+    `Delete "${username}"? This cannot be undone.`,
+    { title: 'Delete user' }
+  );
 
-  if (currentUser && Number(id) === Number(currentUser.id)) {
-    showToast('You cannot delete yourself', 'error');
-    return;
-  }
+  if (!confirmed) return;
 
-  if (
-    !await showConfirm(
-      'Delete this user? This cannot be undone.',
-      { title: 'Delete user' }
-    )
-  ) {
-    return;
-  }
+  const password = await askPassword({
+    title: 'Confirm with your password',
+    message: `Enter your password to delete "${username}".`,
+    confirmText: 'Delete user',
+  });
+
+  if (password === null) return;
 
   try {
+    const current_auth_key = await deriveOwnAuthKey(password);
+
     await api(`/api/admin/users/${id}`, {
-      method: 'DELETE'
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ current_auth_key }),
     });
 
     await renderAdminUsers();
 
     showToast('User deleted', 'success');
-
   } catch (e) {
     showToast(e.message, 'error');
   }
-};
+}
 
 /* ==================== FOLDERS ==================== */
 export async function renderAdminFolders() {
@@ -392,7 +469,8 @@ export async function renderAdminFolders() {
         <td class="col-right">
           <button
             class="btn btn-danger btn-sm"
-            onclick="window.deleteFolder(${f.id})"
+            data-action="admin-delete-folder"
+            data-folder-id="${f.id}"
           >
             Delete
           </button>
@@ -408,11 +486,11 @@ export async function renderAdminFolders() {
       </div>
 
       <div class="toolbar">
-        <input
+        <input class="u-min-w-220"
           type="text"
           id="new-folder-path"
           placeholder="/srv/media/Movies"
-          style="min-width:220px;"
+         
         >
 
         <input
@@ -423,7 +501,7 @@ export async function renderAdminFolders() {
 
         <button
           class="btn btn-primary btn-sm"
-          onclick="window.addFolder()"
+          data-action="admin-add-folder"
         >
           + Add folder
         </button>
@@ -470,7 +548,7 @@ export async function renderAdminFolders() {
   }
 }
 
-window.addFolder = async function() {
+async function addFolder() {
   const path =
     document.getElementById('new-folder-path').value.trim();
 
@@ -506,7 +584,7 @@ window.addFolder = async function() {
   }
 };
 
-window.deleteFolder = async function(id) {
+async function deleteFolder(id) {
   if (
     !await showConfirm(
       'Remove this shared folder? Files on disk are not deleted.',
@@ -580,7 +658,9 @@ export async function renderAdminPermissions() {
         <td class="col-right">
           <button
             class="btn btn-danger btn-sm"
-            onclick="window.deletePermission(${p.user_id},${p.folder_id})"
+            data-action="admin-delete-permission"
+            data-user-id="${p.user_id}"
+            data-folder-id="${p.folder_id}"
           >
             Remove
           </button>
@@ -623,7 +703,7 @@ export async function renderAdminPermissions() {
 
         <button
           class="btn btn-primary btn-sm"
-          onclick="window.addPermission()"
+          data-action="admin-add-permission"
         >
           + Grant
         </button>
@@ -674,7 +754,7 @@ export async function renderAdminPermissions() {
   }
 }
 
-window.addPermission = async function() {
+async function addPermission() {
   const user_id =
     document.getElementById('perm-user').value;
 
@@ -711,7 +791,7 @@ window.addPermission = async function() {
   }
 };
 
-window.deletePermission = async function(
+async function deletePermission(
   user_id,
   folder_id
 ) {
@@ -737,3 +817,97 @@ window.deletePermission = async function(
     showToast(e.message, 'error');
   }
 };
+
+/* ==================== AUDIT LOG (read-only) ==================== */
+const AUDIT_ACTION_LABELS = {
+  create_user: 'Created user',
+  delete_user: 'Deleted user',
+  transfer_admin: 'Transferred admin role',
+  create_folder: 'Added folder',
+  delete_folder: 'Removed folder',
+  grant_permission: 'Granted permission',
+  revoke_permission: 'Revoked permission',
+};
+
+function auditDetailsText(details) {
+  if (!details || typeof details !== 'object') return '';
+
+  return Object.entries(details)
+    .filter(([, value]) => value !== null && value !== undefined)
+    .map(([key, value]) => `${key}: ${typeof value === 'object' ? JSON.stringify(value) : value}`)
+    .join(' · ');
+}
+
+export async function renderAdminAudit() {
+  const isCurrent = claimRender('admin-audit');
+  if (!isCurrent()) return;
+
+  const main = document.getElementById('content-area');
+  main.innerHTML = `<div class="card">${loadingState()}</div>`;
+
+  try {
+    const entries = await api('/api/admin/audit?limit=100');
+    if (!isCurrent()) return;
+
+    const rows = entries.map((e) => {
+      const label = AUDIT_ACTION_LABELS[e.action] || e.action;
+      const who = e.admin_username ? escapeHtml(e.admin_username) : '<span class="text-muted">server (CLI)</span>';
+      const target = e.target_type
+        ? `${escapeHtml(e.target_type)} #${Number(e.target_id) || 0}`
+        : '<span class="text-muted">—</span>';
+
+      return `
+        <tr class="file-row">
+          <td class="text-muted">${escapeHtml(e.created_at)}</td>
+          <td>${who}</td>
+          <td>${escapeHtml(label)}</td>
+          <td>${target}</td>
+          <td class="text-muted">${escapeHtml(auditDetailsText(e.details))}</td>
+        </tr>`;
+    }).join('');
+
+    main.innerHTML = `<div class="card">
+      <div class="card-head"><div class="card-title">${ICONS.key} Audit log</div></div>
+      <p class="text-muted">Admin actions, newest first. Message content is never logged.</p>
+      <div class="table-scroll">
+        <table class="file-table">
+          <thead>
+            <tr>
+              <th>When</th>
+              <th>Admin</th>
+              <th>Action</th>
+              <th>Target</th>
+              <th>Details</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows || `<tr><td colspan="5">${emptyState(ICONS.key, 'No admin actions yet')}</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+  } catch (e) {
+    if (!isCurrent()) return;
+
+    main.innerHTML = `<div class="card">
+      ${emptyState(ICONS.empty, 'Failed to load', escapeHtml(e.message))}
+    </div>`;
+  }
+}
+
+registerActions({
+  'admin-add-user': () => addUser(),
+  'admin-add-folder': () => addFolder(),
+  'admin-delete-folder': (el) => {
+    const id = Number(el.dataset.folderId);
+    if (!Number.isFinite(id)) return;
+    deleteFolder(id);
+  },
+  'admin-add-permission': () => addPermission(),
+  'admin-delete-permission': (el) => {
+    const userId = Number(el.dataset.userId);
+    const folderId = Number(el.dataset.folderId);
+    if (!Number.isFinite(userId) || !Number.isFinite(folderId)) return;
+    deletePermission(userId, folderId);
+  },
+});

@@ -120,6 +120,31 @@ test('E-1: ensureSenderKeyForGroup mints a signing key with the first key, is a 
     });
 });
 
+test('E-1b: force=true mints a fresh key at the same epoch, for re-wrapping an accepted member', async () => {
+    const alice = await user(1);
+    const dev = await makeDevice(alice);
+    const posts = [];
+    apiImpl = async (path, opts) => { posts.push({ path, body: JSON.parse(opts.body) }); return {}; };
+
+    await dev.run(async () => {
+        assert.equal(await gmc.ensureSenderKeyForGroup(GROUP, [1], 0), true);
+        const first = await sk.getMySenderKey(alice, GROUP);
+
+        assert.equal(await gmc.ensureSenderKeyForGroup(GROUP, [1], 0), false, 'same epoch: no rotation');
+        assert.equal(posts.length, 1);
+
+        assert.equal(
+            await gmc.ensureSenderKeyForGroup(GROUP, [1], 0, { force: true }),
+            true,
+            'force rotates even at the same epoch'
+        );
+        assert.equal(posts.length, 2);
+
+        const second = await sk.getMySenderKey(alice, GROUP);
+        assert.notEqual(second.senderKeyId, first.senderKeyId);
+    });
+});
+
 test('E-2: a sending row without a signing key is unusable for sending and the next ensure re-keys (even at the same epoch)', async () => {
     const alice = await user(1);
     const dev = await makeDevice(alice);

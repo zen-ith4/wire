@@ -1,4 +1,36 @@
-# Test baseline — `wire-final-12.zip`
+# Test baseline — current Linux results and historical `wire-final-12`
+
+## 0. Current Linux baseline (2026-10-22, `13b27e2`)
+
+Measured at C1 (`13b27e2`) on Linux, before this docs-only state update. The
+non-browser counts are from the clean clone; the browser counts are the isolated
+browser split.
+
+| split | files | tests | pass | fail | cancelled | skipped | todo |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| non-browser | 101 | 868 | 851 | **0** | — | 4 | 13 |
+| browser (isolated; two alphabetical halves) | 20 | 93 | 90 | **0** | 0 | 1 | 2 |
+
+Browser engine line:
+
+```text
+# browser: chromium (@sparticuz/chromium) HeadlessChrome/153.0.8010.0
+```
+
+Artifact checks at the same commit:
+
+- `public/sw-media-bundle.js`: 20,953 bytes, SHA-256 `ccb02a43e161c8b8b47c0da1ced1a07b9b2b9d07978a6a7e030ba94423455634`.
+- `public/sw-manifest.js --check`: current, version `f9c10f936ecf`, 183 files.
+- `public/js/sw-media/handler-core.js`: 7,087 bytes, SHA-256 `93737f04d788fb26b3ac3683d3ae4e94c0d821251841208aa9d7bb43b37390c8`.
+- Targeted C1 handler test: 25/25 pass (re-run 2026-10-22 on Windows); related suite 63/63 pass recorded in the C1 validation.
+- Clean-clone targeted tests: 63/63 pass.
+
+The remote Linux server has only had the read-only Step 0 inspection: no
+`~/wire-work`, no clone, no server baseline, and no push. The remote baseline
+still has to be measured after the server clone is created.
+
+**The sections below are the historical `wire-final-12` baseline and Windows
+measurements. Their counts do not describe the current tree.**
 
 Two numbers matter here, and they are from different trees. Keep them apart.
 
@@ -14,8 +46,8 @@ package runs Chromium with `--single-process --no-zygote`; see
 | `wire-final-8` run 1 | 426 | 422 | **0** | 2 | 2 |
 | `wire-final-8` run 2 | 426 | 422 | **0** | 2 | 2 |
 
-Identical across both runs. This is the baseline any change is measured
-against.
+Identical across both runs. This was the baseline for the historical
+`wire-final-8` tree; the current baseline is §0.
 
 ### The two skips
 
@@ -38,10 +70,10 @@ against.
 - `tests/sw-manifest.test.mjs` → 10/10
 - `public/` text files containing CR → 0 of 158
 
-## 2. Tests added since that baseline (not yet Linux-verified)
+## 2. Tests added after the `wire-final-12` baseline (historical; now included in §0)
 
-Everything below landed on `wire-final-8` after the 426/422/0 run above, so the
-test count is now higher and the Linux numbers above do not yet include it.
+Everything below landed on `wire-final-8` after the 426/422/0 run above. These
+counts are retained as history; the current Linux run is §0.
 
 | addition | tests |
 |---|---|
@@ -55,8 +87,8 @@ test count is now higher and the Linux numbers above do not yet include it.
 | `tests/peer-trust-browser.test.mjs` | 2 |
 | `tests/acceptance-xss-sweep-browser.test.mjs` | +1 (case K) |
 
-The suite is now **539 tests**. A Linux run is required before that is a
-baseline.
+The suite later grew to **539 tests** at this historical point. The current
+Linux run is §0; the counts in this section are retained for history.
 
 ### Peer key trust (Phase 2)
 

@@ -10,6 +10,7 @@
 
 import { api } from '../core/api.js';
 import { escapeHtml, escapeAttr, loadingState, formatBytes } from '../core/utils.js';
+import { registerActions } from './actions.js';
 import { avatarHtml, bannerHtml } from './avatar.js';
 import { isUserOnline, setUserOnline, setLastSeenAt, onPresenceChange, getPresenceStatusText } from '../chat/presence.js';
 import { getCurrentUser } from '../core/auth.js';
@@ -65,7 +66,7 @@ export async function openProfileCard(userId) {
     renderProfileCard(profile);
   } catch (e) {
     if (openProfileId !== id) return;
-    body.innerHTML = `<div class="text-muted" style="padding:24px 4px;text-align:center;">${escapeHtml(e.message)}</div>`;
+    body.innerHTML = `<div class="text-muted u-pc-pad">${escapeHtml(e.message)}</div>`;
   }
 }
 
@@ -80,7 +81,7 @@ function renderProfileCard(profile) {
       ${bannerHtml(profile.id, 'profile-banner')}
     </div>
     <div class="profile-card-header">
-      ${avatarHtml(profile.id, profile.username, 'settings-avatar-big')}
+      ${avatarHtml(profile.id, profile.username, 'settings-avatar-big', false, true)}
       <div>
         <div class="profile-card-name">${escapeHtml(profile.username)}</div>
         <div class="profile-card-status${isUserOnline(profile.id) ? ' online' : ''}" data-presence-user="${profile.id}">
@@ -111,9 +112,9 @@ function renderProfileCard(profile) {
     </div>
     ${!isSelf ? `
       <button class="btn btn-primary btn-sm profile-card-message-btn"
+        data-action="profile-card-message"
         data-user-id="${profile.id}"
-        data-username="${escapeAttr(profile.username)}"
-        onclick="window.messageFromProfileCard(this)">
+        data-username="${escapeAttr(profile.username)}">
         Send Message
       </button>
     ` : ''}
@@ -139,6 +140,21 @@ window.closeProfileCard = function() {
 };
 
 window.openProfileCard = openProfileCard;
+
+// Markup in index.html carries data-action names (see ui/actions.js).
+// Backdrop closes unless the click is inside [data-stop] (the card itself).
+// Same as the image viewer: clicks on the card content stop here.
+document.querySelectorAll('#profile-card-modal [data-stop]').forEach((el) => {
+  el.addEventListener('click', (e) => e.stopPropagation());
+});
+
+registerActions({
+  'profile-card-close': () => window.closeProfileCard(),
+  'profile-card-backdrop': (el, e) => {
+    if (!e.target.closest('[data-stop]')) window.closeProfileCard();
+  },
+  'profile-card-message': (el) => window.messageFromProfileCard(el),
+});
 
 // Escape-to-close. Registered once (not per-open) and simply checks
 // whether the modal is currently active, same pattern used for the

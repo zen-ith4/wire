@@ -350,3 +350,9 @@ export function parseAttachmentMeta(plaintext) {
     height: clampDimension(meta.h),
   };
 }
+
+// Item 3 Phase 3A: re-exported so attachment-range.js (and a future Service
+// Worker) use the SAME header bytes and the SAME per-chunk nonce layout
+// instead of re-implementing them. Pure re-export: no new logic, no
+// import-time side effects.
+export { HEADER, chunkNonce };

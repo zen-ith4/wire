@@ -27,6 +27,7 @@
 .confirm-modal-content{max-width:380px;padding:calc(24px * var(--wire-density-scale));}
 .confirm-modal-content h3{font-size:calc(15px * var(--wire-font-scale));margin:0 0 calc(10px * var(--wire-density-scale));font-weight:600;}
 .confirm-modal-content p{font-size:calc(13px * var(--wire-font-scale));color:var(--muted);line-height:1.5;margin:0 0 calc(20px * var(--wire-density-scale));}
+.confirm-modal-input{width:100%;margin-bottom:16px;}
 .confirm-modal-actions{display:flex;justify-content:flex-end;gap:calc(10px * var(--wire-density-scale));}
 
 .clickable-avatar{cursor:pointer;transition:opacity var(--ease-fast);}

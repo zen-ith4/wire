@@ -46,7 +46,7 @@ async function boot(_t, names) {
         for (const name of names) {
             const n = `${name}${seq++}`;
             const actor = createBrowserActor(n, server.origin);
-            cleanups.push(() => actor.window.close());
+            cleanups.push(() => actor.dispose());
             const password = `pw-${n}-long-enough`;
             const ident = await signUpAndUnlock(actor, { username: n, email: `${n}@example.test`, password });
             ident.password = password;

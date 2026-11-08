@@ -23,8 +23,8 @@
 import { getServerEndpoint } from '../../core/server.js';
 import { getCurrentUser } from '../../core/auth.js';
 import { getCurrentIdentity } from '../identity-service.js';
-import { getPeerPublicKey, getPeerKeyCandidates, getPeerDmMinVersion } from '../keys/peer-keys.js';
-import { mayTryRetiredKey, bytesToBase64, base64ToBytes } from '../keys/peer-trust.js';
+import { getPeerDmMinVersion } from '../keys/peer-keys.js';
+import { bytesToBase64, base64ToBytes } from '../keys/peer-trust.js';
 import {
     DM_V2_VERSION,
     DM_V2_IV_LENGTH,
@@ -61,21 +61,23 @@ export const DM_V2_REPLAY_PER_CONV_MAX = 2000;
 export const DM_V2_REPLAY_MAX_CONVERSATIONS = 50;
 
 /**
- * The server truncates DM `content` to this many characters
- * (controllers/dm.controller.js sendMessage/editMessage: content.trim().slice(0, 2000)).
+ * The server rejects DM `content` above this many characters
+ * (config/dm-stream.js DM_MAX_CONTENT_CHARS, shared with the v2 client guard by
+ * tests/dm-attachments/dm-stream-constants.test.mjs).
  *
  * A v2 envelope is bigger than a v1 one (senderFp 44 base64 chars + msgId 16 +
  * two key names), so the plaintext budget is correspondingly smaller. Sending an
- * envelope that the server will truncate produces a row that cannot be decrypted
- * by anyone, ever - so the client refuses instead of sending one. This is a v1
- * bug too (a v1 message above ~1391 plaintext bytes already breaks); 1B does not
- * fix v1, it only stops v2 from creating a new instance of it.
+ * envelope that the server will reject produces a failed send, and the old
+ * truncation produced a row that cannot be decrypted by anyone, ever. Both the
+ * v2 builder and the v1 branch of encryptDmTextV2 now measure the REAL
+ * serialised envelope and refuse before the request.
  */
 export const DM_V2_MAX_CONTENT_CHARS = 2000;
 
 /**
- * Pure guard used by buildDmV2Content. Throws DmV2TooLargeError when the
- * serialised envelope would exceed the server's content cap.
+ * Pure guard used by buildDmV2Content and the v1 branch of encryptDmTextV2.
+ * Throws DmV2TooLargeError when the serialised envelope would exceed the
+ * server's content cap.
  */
 export function assertDmV2ContentFits(contentChars) {
     if (!Number.isInteger(Number(contentChars)) || Number(contentChars) < 0) {
@@ -121,7 +123,7 @@ export class DmDowngradeRefusedError extends Error {
 export class DmV2TooLargeError extends Error {
     constructor(length) {
         super(
-            `Message is too long for DM v2: the encrypted envelope is ${length} ` +
+            `Message is too long: the encrypted envelope is ${length} ` +
             `characters and the server stores at most ${DM_V2_MAX_CONTENT_CHARS}. ` +
             'Shorten the message.'
         );
@@ -389,7 +391,11 @@ export function resetDmDowngradeNotices() {
 }
 
 /* =========================================================
- * Key selection for receive
+ * Peer keys, through the gate
+ *
+ * Every key below comes from keys/peer-key-gate.js and none is fetched here. It is
+ * loaded lazily for the same reason keys/session.js loads it lazily: the gate reaches
+ * core/api.js -> core/auth.js, and this keeps it out of auth.js's static graph.
  * ========================================================= */
 
 async function importX25519(publicKeyB64) {
@@ -403,11 +409,39 @@ async function importX25519(publicKeyB64) {
 }
 
 /**
+ * Refuse now if this peer's current key may not be encrypted to.
+ *
+ * For a caller about to do expensive work (encrypting a file). It does not replace
+ * the gate at the point of use, which is what the encryption actually derives from.
+ *
+ * @throws PeerKeyChangedError, PeerKeyUnavailableError (keys/peer-key-gate.js)
+ */
+export async function assertDmPeerKeyUsable(peerId) {
+    const { resolveDmPeerKey } = await import('../keys/peer-key-gate.js');
+    await resolveDmPeerKey(peerId);
+}
+
+/** The recipient's key to ENCRYPT to: the exact bytes the gate just evaluated. */
+async function peerKeyToEncryptTo(recipientId) {
+    const { resolveDmPeerKey } = await import('../keys/peer-key-gate.js');
+    const { publicKey } = await resolveDmPeerKey(recipientId);
+    return importX25519(publicKey);
+}
+
+/** Every key of this peer in the pin, `current` first, for choosing how to DECRYPT. */
+async function peerKeysToDecryptWith(peerId) {
+    const { getTrustedPeerKeys } = await import('../keys/peer-key-gate.js');
+    return getTrustedPeerKeys(peerId);
+}
+
+/**
  * Which of the sender's keys opens this envelope, and the fingerprint it had.
  *
- * For a peer's message: the current key if its fingerprint matches, otherwise an
- * ARCHIVED key whose fingerprint matches AND which this device is allowed to try
- * (mayTryRetiredKey - the Phase 2 rule, unchanged).
+ * For a peer's message: the key in this device's PIN whose fingerprint the envelope
+ * names. The server is not asked which keys are the peer's, because it could answer
+ * "the attacker's" and a row it forged under that key would then open as a message
+ * from the peer. A row sealed to any other key has no match, and is refused until
+ * the user accepts that key.
  *
  * For our OWN message: our own CURRENT key. An own rotation therefore makes our
  * older v2 rows unreadable - doc 4.4, and docs/test-baseline.md, say so, and
@@ -430,45 +464,19 @@ async function selectSenderKey(payload, peerId, ownUserId) {
         };
     }
 
-    const candidates = await getPeerKeyCandidates(peerId);
-    const ordered = [candidates.current, ...candidates.history].filter(
-        (k) => typeof k === 'string' && k.length > 0
-    );
+    const match = (await peerKeysToDecryptWith(peerId)).find((k) => k.fingerprint === wantFp);
 
-    for (const publicKey of ordered) {
-        const fp = bytesToBase64(await senderKeyFingerprint(base64ToBytes(publicKey)));
-        if (fp !== wantFp) continue;
-
-        if (publicKey !== candidates.current) {
-            // An archived key is only tried when this device previously accepted
-            // it, or has no pin at all. Unchanged Phase 2 rule.
-            let allowed = true;
-            try {
-                const { getServerEndpoint: endpointOf } = await import('../../core/server.js');
-                const origin = endpointOf();
-                if (origin && Number.isInteger(Number(ownUserId)) && Number(ownUserId) > 0) {
-                    const verdict = await mayTryRetiredKey(peerId, publicKey, {
-                        origin: String(origin),
-                        ownUserId: Number(ownUserId)
-                    });
-                    allowed = !!verdict.allowed;
-                }
-            } catch {
-                allowed = true;
-            }
-            if (!allowed) continue;
-        }
-
+    if (match) {
         return {
-            rawPublicKey: publicKey,
-            fingerprint: fp,
-            imported: await importX25519(publicKey)
+            rawPublicKey: match.publicKey,
+            fingerprint: match.fingerprint,
+            imported: await importX25519(match.publicKey)
         };
     }
 
     const err = new Error(
         'No usable sender key for this message: the key it was encrypted to is ' +
-        'not the peer\'s current key and is not one this device may try.'
+        'not one this device has accepted for this peer.'
     );
     err.code = 'DM_V2_NO_SENDER_KEY';
     throw err;
@@ -495,7 +503,7 @@ export async function buildDmV2Content({ plaintext, senderId, recipientId, reply
     }
 
     const senderFp = await senderKeyFingerprint(base64ToBytes(identity.publicKey));
-    const peerPublicKey = await getPeerPublicKey(recipientId);
+    const peerPublicKey = await peerKeyToEncryptTo(recipientId);
     const key = await deriveDmV2Key(senderId, recipientId, identity.privateKey, peerPublicKey);
 
     const { envelope, msgId } = await encryptDmV2({
@@ -538,7 +546,7 @@ export async function buildDmV2AttachmentMetaContent({ plaintext, senderId, reci
     }
 
     const senderFp = await senderKeyFingerprint(base64ToBytes(identity.publicKey));
-    const peerPublicKey = await getPeerPublicKey(recipientId);
+    const peerPublicKey = await peerKeyToEncryptTo(recipientId);
     const key = await deriveDmV2Key(senderId, recipientId, identity.privateKey, peerPublicKey);
 
     const { envelope, msgId } = await encryptDmAttachmentV2({
@@ -591,49 +599,63 @@ async function openDmV2Payload({ payload, peerId, ownUserId, replyToId = 0, rowI
     // 2. pick the sender key whose fingerprint the envelope names.
     const sender = await selectSenderKey(validated, peerId, ownUserId);
 
-    // 3. derive the directional key for THIS direction and open it.
-    const peerPublicKey = Number(validated.senderId) === Number(ownUserId)
-        ? await getPeerPublicKey(peerId)
-        : sender.imported;
+    // 3. derive the directional key for THIS direction and open it. A peer's row
+    //    names its key, so there is one candidate. Our OWN row was sealed to the
+    //    peer's key at the time and the envelope does not say which that was, so
+    //    every key in the pin is tried. Never the server's answer: it could then
+    //    forge a row that opens as something we sent.
+    const peerPublicKeys = Number(validated.senderId) === Number(ownUserId)
+        ? await Promise.all((await peerKeysToDecryptWith(peerId)).map((k) => importX25519(k.publicKey)))
+        : [sender.imported];
 
-    const key = await deriveDmV2Key(
-        validated.senderId,
-        validated.recipientId,
-        getCurrentIdentity().privateKey,
-        peerPublicKey
-    );
+    let failure = null;
 
-    // decryptDmV2() re-validates and expects the WIRE shape
-    // ({encryption:{...}, senderId, recipientId}). `validated` is the
-    // NORMALISED shape validateDmV2Envelope RETURNS, which is FLAT
-    // ({version, iv, ciphertext, senderFp, msgId, senderId, recipientId}) and has
-    // no `encryption` key - so passing it back in made the second validation
-    // throw "Missing encryption payload" and EVERY real v2 decrypt failed.
-    // Hand decryptDmV2 the ORIGINAL envelope and let it do its own check.
-    // STEP 2A.2: same key, same replay check, same sender-key selection - the
-    // ONLY difference is the AAD label, so a meta envelope cannot be opened as
-    // text and a text envelope cannot be opened as a meta. Two branches rather
-    // than a picked function reference on purpose: the text call below stays
-    // byte-identical, which is what tests/dm-v2-seam.test.mjs pins (it greps
-    // this call to prove the ORIGINAL envelope is passed, not the flat one).
-    if (attachment) {
-        const plaintext = await decryptDmAttachmentV2({
-            envelope: payload,
-            senderKeyFp: base64ToBytes(sender.fingerprint),
-            key,
-            replyToId
-        });
-        return { plaintext, msgId: validated.msgId, replay: verdict };
+    for (const peerPublicKey of peerPublicKeys) {
+        const key = await deriveDmV2Key(
+            validated.senderId,
+            validated.recipientId,
+            getCurrentIdentity().privateKey,
+            peerPublicKey
+        );
+
+        // decryptDmV2() re-validates and expects the WIRE shape
+        // ({encryption:{...}, senderId, recipientId}). `validated` is the
+        // NORMALISED shape validateDmV2Envelope RETURNS, which is FLAT
+        // ({version, iv, ciphertext, senderFp, msgId, senderId, recipientId}) and has
+        // no `encryption` key - so passing it back in made the second validation
+        // throw "Missing encryption payload" and EVERY real v2 decrypt failed.
+        // Hand decryptDmV2 the ORIGINAL envelope and let it do its own check.
+        // STEP 2A.2: same key, same replay check, same sender-key selection - the
+        // ONLY difference is the AAD label, so a meta envelope cannot be opened as
+        // text and a text envelope cannot be opened as a meta. Two branches rather
+        // than a picked function reference on purpose: the text call below stays
+        // byte-identical, which is what tests/dm-v2-seam.test.mjs pins (it greps
+        // this call to prove the ORIGINAL envelope is passed, not the flat one).
+        try {
+            if (attachment) {
+                const plaintext = await decryptDmAttachmentV2({
+                    envelope: payload,
+                    senderKeyFp: base64ToBytes(sender.fingerprint),
+                    key,
+                    replyToId
+                });
+                return { plaintext, msgId: validated.msgId, replay: verdict };
+            }
+
+            const plaintext = await decryptDmV2({
+                envelope: payload,
+                senderKeyFp: base64ToBytes(sender.fingerprint),
+                key,
+                replyToId
+            });
+
+            return { plaintext, msgId: validated.msgId, replay: verdict };
+        } catch (e) {
+            failure = e;
+        }
     }
 
-    const plaintext = await decryptDmV2({
-        envelope: payload,
-        senderKeyFp: base64ToBytes(sender.fingerprint),
-        key,
-        replyToId
-    });
-
-    return { plaintext, msgId: validated.msgId, replay: verdict };
+    throw failure ?? new Error('No usable peer key for this message');
 }
 
 /** Open a received v2 TEXT envelope (docs 4.3). Unchanged entry point. */

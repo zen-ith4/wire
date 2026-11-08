@@ -2,6 +2,7 @@ import { api } from '../core/api.js';
 import { ICONS } from '../icons.js';
 import { showToast, emptyState, loadingState, escapeHtml, formatDate } from '../core/utils.js';
 import { claimRender } from '../core/view-session.js';
+import { registerActions } from '../ui/actions.js';
 
 export async function renderWireguard() {
   const isCurrent = claimRender('admin-wireguard');
@@ -25,9 +26,9 @@ export async function renderWireguard() {
     main.innerHTML = `<div class="card">
       <div class="card-head"><div class="card-title">${ICONS.shield} WireGuard Peers</div></div>
       <div class="toolbar">
-        <input type="text" id="wg-pubkey" placeholder="Peer public key" style="min-width:260px;">
+        <input class="u-min-w-260" type="text" id="wg-pubkey" placeholder="Peer public key">
         <input type="text" id="wg-username" placeholder="Friendly name">
-        <button class="btn btn-primary btn-sm" onclick="window.mapWireguardPeer()">Map name</button>
+        <button class="btn btn-primary btn-sm" data-action="wireguard-map-peer">Map name</button>
       </div>
       <div class="table-scroll">
         <table class="file-table">
@@ -60,3 +61,7 @@ window.mapWireguardPeer = async function() {
     showToast(e.message, 'error');
   }
 };
+
+registerActions({
+  'wireguard-map-peer': () => window.mapWireguardPeer(),
+});

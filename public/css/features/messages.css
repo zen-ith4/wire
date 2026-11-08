@@ -875,6 +875,25 @@ input.conv-search-input:focus{
   font-style:italic;
 }
 
+/* Why it sits where it does: NOT_ENCRYPTED_MARK_HTML in chat/dm-unencrypted.js. The
+   text is --text because --amber alone is too faint on the light theme. */
+.dm-not-encrypted{
+  margin-top:calc(3px * var(--wire-density-scale));
+  font-size:calc(11px * var(--wire-font-scale));
+  font-weight:600;
+  line-height:1.2;
+  color:var(--text);
+}
+
+.dm-not-encrypted::before{
+  content:"\26A0\FE0E\00A0";
+  color:rgb(var(--amber));
+}
+
+.chat-msg.own .dm-not-encrypted{
+  text-align:right;
+}
+
 /* ---------- Read-receipt ticks (own DM messages only) ---------- */
 
 .dm-ticks{
@@ -2312,6 +2331,8 @@ input.conv-search-input:focus{
   font-size:calc(12px * var(--wire-font-scale));
 }
 .dm-key-trust-accept[disabled]{opacity:.55;cursor:default;}
+.group-key-trust-row{display:flex;flex:1 1 100%;flex-wrap:wrap;align-items:center;gap:10px;min-width:0;}
+.group-key-trust-row + .group-key-trust-row{padding-top:10px;border-top:1px solid var(--border);}
 .dm-key-verify{
   margin:8px 12px 0;padding:12px 14px;
   border:1px solid var(--border);border-radius:12px;

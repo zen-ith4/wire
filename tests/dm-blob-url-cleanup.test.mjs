@@ -57,6 +57,8 @@ mock.module(jsPath('core/auth.js'), {
         // Phase B (B4) made settings-security.js import this from core/auth.js.
         // Without it here the module link fails before any assertion runs.
         clearPersistedUnlockKey: async () => {},
+        // P0-3 made settings-security.js import this too (new session token after a password change).
+        setToken: () => {},
     },
 });
 mock.module(jsPath('core/api.js'), {

@@ -19,7 +19,9 @@ import { getAttachmentSecret, fetchDecryptedAttachment } from './attachment-e2ee
 // re-request a token every time.
 // ======================================================
 
-const TOKEN_CACHE_TTL_MS = 60_000; // stay under the ~90s server-side expiry
+// 60 s = the server's 90 s TTL minus a 30 s margin for clock skew and a
+// request already in flight. The worker is told the same expiry.
+const TOKEN_CACHE_TTL_MS = 60_000;
 const tokenCache = new Map(); // key: `${scope}:${id}` -> { token, expiresAt }
 
 function attachmentBaseUrl(scope, id) {
@@ -28,24 +30,32 @@ function attachmentBaseUrl(scope, id) {
     : `/api/chat/attachments/${encodeURIComponent(id)}`;
 }
 
-async function fetchMediaToken(scope, id) {
+/**
+ * Returns the token together with the conservative expiry the Service Worker
+ * needs. It reuses the existing cache; a cached token is returned with its
+ * original expiry, so the worker is never told a token lives longer than it
+ * really does.
+ */
+export async function getMediaToken(scope, id) {
   const key = `${scope}:${id}`;
   const cached = tokenCache.get(key);
 
   if (cached && cached.expiresAt > Date.now()) {
-    return cached.token;
+    return { token: cached.token, expiresAt: cached.expiresAt };
   }
 
   const data = await api(`${attachmentBaseUrl(scope, id)}/media-token`);
   const token = data?.token || null;
 
-  if (token) {
-    tokenCache.set(key, {
-      token,
-      expiresAt: Date.now() + TOKEN_CACHE_TTL_MS,
-    });
-  }
+  if (!token) return { token: null, expiresAt: 0 };
 
+  const expiresAt = Date.now() + TOKEN_CACHE_TTL_MS;
+  tokenCache.set(key, { token, expiresAt });
+  return { token, expiresAt };
+}
+
+async function fetchMediaToken(scope, id) {
+  const { token } = await getMediaToken(scope, id);
   return token;
 }
 

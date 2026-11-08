@@ -204,6 +204,18 @@ function clearLoginAttempts(
 }
 
 
+function clearRegisterAttempts() {
+
+  for (
+    const key of
+    registerAttempts.keys()
+  ) {
+
+    registerAttempts.delete(key);
+  }
+}
+
+
 // ---------------------------------------------------------------
 // General-purpose rate limiter factory
 // ---------------------------------------------------------------
@@ -648,6 +660,7 @@ module.exports = {
   resendVerificationRateLimiter,
   verifyTwoFactorRateLimiter,
   clearLoginAttempts,
+  clearRegisterAttempts,
   apiLimiter,
   chatWriteLimiter,
   uploadLimiter,

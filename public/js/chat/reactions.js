@@ -54,7 +54,7 @@ export function reactionEndpoint(scope, messageId) {
  */
 export function reactButtonHtml(msg, scope) {
   return `<button type="button" class="chat-msg-react" title="React" aria-label="Add reaction"
-    onclick="window.openReactionPicker('${scope}', ${msg.id}, this)">${ICONS.emoji}</button>`;
+    data-action="open-reaction-picker" data-scope="${escapeHtmlAttr(scope)}" data-msg-id="${msg.id}">${ICONS.emoji}</button>`;
 }
 
 /**

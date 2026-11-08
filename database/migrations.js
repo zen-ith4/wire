@@ -1,4 +1,5 @@
 const { ensureCredentialSchema } = require('./credentialSchema');
+const groupsTableSql = require('./tables/groups.tabels');
 
 const VALID_COLUMNS = {
   users: {
@@ -38,11 +39,22 @@ const VALID_COLUMNS = {
     // DM E2EE v2 floor (docs/e2ee-dm-hardening.md 5.1). Default 1 so every
     // existing row stays on v1 with no backfill. Raised only by
     // scripts/dm-e2ee-optin.mjs. 1C makes this a hard ratchet.
-    dm_e2ee_min_version: "dm_e2ee_min_version INTEGER NOT NULL DEFAULT 1"
+    dm_e2ee_min_version: "dm_e2ee_min_version INTEGER NOT NULL DEFAULT 1",
+
+    // Session revocation (utils/jwt.js). Bumped on password change; every
+    // session-token check compares the token's `tv` claim against it.
+    token_version: "token_version INTEGER NOT NULL DEFAULT 0"
   },
 
   folders: {
     owner_id: "owner_id INTEGER"
+  },
+
+  group_members: {
+    // Set (CURRENT_TIMESTAMP, same format as joined_at) whenever a member's
+    // role changes. Auto-succession ranks admins by
+    // COALESCE(role_changed_at, joined_at). NULL = role never changed.
+    role_changed_at: "role_changed_at TEXT"
   },
 
   messages: {
@@ -85,6 +97,33 @@ const VALID_COLUMNS = {
 };
 
 
+/*
+ * The site has exactly one admin (users.is_admin = 1). Older databases may
+ * have several. Keep the oldest admin and demote the rest to normal users, so
+ * the unique index in indexes.js can be created. This is logged loudly
+ * because it changes who holds the role.
+ */
+function enforceSingleAdmin(db) {
+  const admins = db
+    .prepare('SELECT id, username FROM users WHERE is_admin = 1 ORDER BY id')
+    .all();
+
+  if (admins.length <= 1) {
+    return;
+  }
+
+  const [keep, ...demoted] = admins;
+
+  db.prepare('UPDATE users SET is_admin = 0 WHERE is_admin = 1 AND id <> ?')
+    .run(keep.id);
+
+  console.warn(
+    `⚠️  Found ${admins.length} admin accounts; the site allows exactly one. ` +
+      `Kept "${keep.username}" (id ${keep.id}) as admin. ` +
+      `Demoted to normal users: ${demoted.map(a => `"${a.username}" (id ${a.id})`).join(', ')}.`
+  );
+}
+
 function runMigrations(db) {
   for (const [table, columns] of Object.entries(VALID_COLUMNS)) {
     const existing = new Set(
@@ -116,6 +155,9 @@ function runMigrations(db) {
   `);
 
   migrateMessageReactionsToAllowGroup(db);
+
+  // Must run before createIndexes(), which adds the one-admin unique index.
+  enforceSingleAdmin(db);
 
   ensureCredentialSchema(db);
 
@@ -198,6 +240,82 @@ function migrateMessageReactionsToAllowGroup(db) {
 }
 
 
+/*
+ * groups.created_by used to be NOT NULL ... ON DELETE CASCADE, so deleting
+ * the creator's account deleted the whole group even after ownership had
+ * moved to someone else. It is now nullable with ON DELETE SET NULL (see
+ * tables/groups.tabels.js). SQLite cannot alter a FOREIGN KEY, so an
+ * existing database needs the table rebuilt.
+ *
+ * MUST be called OUTSIDE any transaction (database/schema.js does): the
+ * foreign_keys pragma is a no-op inside one, and with foreign keys ON,
+ * DROP TABLE groups would run an implicit DELETE that cascades into
+ * group_members / group_messages / group_key_distributions and wipe them.
+ * Idempotent: detects the old shape from the stored CREATE TABLE sql.
+ */
+function migrateGroupsCreatedByNullable(db) {
+  const row = db.prepare(`
+    SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'groups'
+  `).get();
+
+  // Fresh install (table not created yet / already the new shape).
+  if (!row || !/created_by\s+INTEGER\s+NOT\s+NULL/i.test(row.sql)) return;
+
+  const createNew = groupsTableSql.replace(
+    'CREATE TABLE IF NOT EXISTS groups (',
+    'CREATE TABLE groups_new ('
+  );
+  if (createNew === groupsTableSql) {
+    throw new Error('migrateGroupsCreatedByNullable: could not derive groups_new DDL');
+  }
+
+  const foreignKeysWereOn = db.pragma('foreign_keys', { simple: true }) === 1;
+  db.pragma('foreign_keys = OFF');
+
+  try {
+    const oldSeq = db.prepare(`
+      SELECT seq FROM sqlite_sequence WHERE name = 'groups'
+    `).get();
+
+    db.transaction(() => {
+      db.exec(createNew);
+
+      db.exec(`
+        INSERT INTO groups_new (id, name, avatar_path, created_by, created_at)
+        SELECT id, name, avatar_path, created_by, created_at FROM groups
+      `);
+
+      db.exec('DROP TABLE groups');
+      db.exec('ALTER TABLE groups_new RENAME TO groups');
+
+      // Keep AUTOINCREMENT from ever reusing the id of a deleted group.
+      if (oldSeq) {
+        const cur = db.prepare(`
+          SELECT seq FROM sqlite_sequence WHERE name = 'groups'
+        `).get();
+        if (cur) {
+          db.prepare(`UPDATE sqlite_sequence SET seq = MAX(seq, ?) WHERE name = 'groups'`)
+            .run(oldSeq.seq);
+        } else {
+          db.prepare(`INSERT INTO sqlite_sequence (name, seq) VALUES ('groups', ?)`)
+            .run(oldSeq.seq);
+        }
+      }
+
+      const violations = db.pragma('foreign_key_check');
+      if (violations.length > 0) {
+        throw new Error(
+          `migrateGroupsCreatedByNullable: foreign_key_check found ${violations.length} violation(s)`
+        );
+      }
+    })();
+  } finally {
+    if (foreignKeysWereOn) db.pragma('foreign_keys = ON');
+  }
+}
+
+
 module.exports = {
+  migrateGroupsCreatedByNullable,
   runMigrations
 };

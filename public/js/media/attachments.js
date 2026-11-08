@@ -17,10 +17,12 @@ import {
   showToast,
   escapeAttr,
   escapeHtml,
+  escapeHtmlAttr,
   formatBytes
 } from '../core/utils.js';
 
 import { isAudio, renderAudio } from './audio-player.js';
+import { registerActions } from '../ui/actions.js';
 import { isVideo, renderVideo } from './video-player.js';
 import {
   isVoiceMessage,
@@ -124,36 +126,17 @@ function ensureDownloadProgressUI() {
   container.id =
     'wire-download-progress';
 
-  container.style.cssText = `
-    position:fixed;
-    top:0;
-    left:0;
-    right:0;
-    z-index:2147483647;
-    pointer-events:none;
-    font-family:inherit;
-  `;
+  container.className = 'wire-dl-progress';
 
   const track =
     document.createElement('div');
 
-  track.style.cssText = `
-    width:100%;
-    height:3px;
-    background:rgba(255,255,255,.10);
-    overflow:hidden;
-  `;
+  track.className = 'wire-dl-progress-track';
 
   const fill =
     document.createElement('div');
 
-  fill.style.cssText = `
-    width:0%;
-    height:100%;
-    background:var(--accent,#4da6ff);
-    transition:width:.15s ease;
-    transform-origin:left center;
-  `;
+  fill.className = 'wire-dl-progress-fill';
 
   track.appendChild(
     fill
@@ -162,26 +145,7 @@ function ensureDownloadProgressUI() {
   const info =
     document.createElement('div');
 
-  info.style.cssText = `
-    position:absolute;
-    top:7px;
-    left:50%;
-    transform:translateX(-50%);
-    max-width:calc(100vw - 24px);
-    padding:4px 10px;
-    border-radius:999px;
-    background:rgba(15,15,20,.88);
-    color:rgba(255,255,255,.92);
-    border:1px solid rgba(255,255,255,.10);
-    box-shadow:0 4px 16px rgba(0,0,0,.22);
-    font-size:11px;
-    line-height:1.2;
-    white-space:nowrap;
-    overflow:hidden;
-    text-overflow:ellipsis;
-    opacity:0;
-    transition:opacity:.15s ease;
-  `;
+  info.className = 'wire-dl-progress-info';
 
   container.appendChild(
     track
@@ -888,9 +852,13 @@ export function imageDownloadButtonHtml(
       title="Download ${escapeAttr(
         msg.attachment_name
       )}"
-      onclick="window.downloadAttachment(${msg.id}, '${escapeAttr(
+      data-action="attachment-download"
+      data-msg-id="${msg.id}"
+      data-filename="${escapeHtmlAttr(
         msg.attachment_name
-      )}', '${scope}', '${escapeAttr(msg.attachment_mime || '')}')"
+      )}"
+      data-scope="${escapeHtmlAttr(scope)}"
+      data-mime="${escapeHtmlAttr(msg.attachment_mime || '')}"
     >${ICONS.download}</button>`;
 }
 
@@ -971,7 +939,7 @@ export function renderAttachment(
       <div
         class="chat-attachment-image"
         id="${key}"
-        style="aspect-ratio:${ratio};"
+        data-aspect="${ratio}"
         data-scope="${scope}"
         data-filename="${escapeAttr(
           msg.attachment_name
@@ -989,7 +957,7 @@ export function renderAttachment(
               )}"`
             : ''
         }
-        onclick="window.openImageViewer(this)"
+        data-action="open-image-viewer"
       >${innerHtml}</div>
     </div>`;
   }
@@ -997,9 +965,13 @@ export function renderAttachment(
   return `
   <div
     class="chat-attachment"
-    onclick="window.downloadAttachment(${msg.id}, '${escapeAttr(
+    data-action="attachment-download"
+    data-msg-id="${msg.id}"
+    data-filename="${escapeHtmlAttr(
       msg.attachment_name
-    )}', '${scope}', '${escapeAttr(msg.attachment_mime || '')}')"
+    )}"
+    data-scope="${escapeHtmlAttr(scope)}"
+    data-mime="${escapeHtmlAttr(msg.attachment_mime || '')}"
   >
     ${ICONS.file}
 
@@ -2206,3 +2178,22 @@ export async function downloadAttachment(
 
 window.downloadAttachment =
   downloadAttachment;
+
+registerActions({
+  'audio-player-download': (el) => {
+    const msgId = Number(el.dataset.msgId);
+    const filename = el.dataset.filename;
+    const scope = el.dataset.scope;
+    const mime = el.dataset.mime;
+    if (!Number.isFinite(msgId) || !filename || !scope) return;
+    downloadAttachment(msgId, filename, scope, mime);
+  },
+  'attachment-download': (el) => {
+    const msgId = Number(el.dataset.msgId);
+    const filename = el.dataset.filename;
+    const scope = el.dataset.scope;
+    const mime = el.dataset.mime;
+    if (!Number.isFinite(msgId) || !filename || !scope) return;
+    downloadAttachment(msgId, filename, scope, mime);
+  },
+});

@@ -584,9 +584,11 @@ no HKDF info, no AAD, no envelope field:**
   same number.
 - **Key-change alarm, per peer** (the approved decision): an unrecognised key
   blocks sending and *holds* messages instead of decrypting them under the new
-  key. The thread shows a banner with an explicit "I verified the new key"
-  action; accepting releases every held row through the normal decrypt path, so
-  accepting cannot lose a message.
+  key. The thread shows a banner with an explicit "Accept new key" action;
+  accepting releases every held row through the normal decrypt path, so accepting
+  cannot lose a message. Accepting does not mark the key verified: that is a
+  separate action, taken after comparing the safety number. The banner says so more
+  loudly when the key that changed was one the user had verified.
 - **Interaction with the STEP A archive**: a retired key may be tried only if
   its fingerprint is one this device already accepted, or if no pin exists yet
   (first contact, which preserves the STEP A behaviour exactly). The branch that
@@ -595,6 +597,20 @@ no HKDF info, no AAD, no envelope field:**
   pin with the retired keys the server disclosed in that same response** — see
   §8.1; that is TOFU, and without it a user meeting a peer for the first time
   after a rotation would lose the very history STEP A was built to preserve.
+- **One gate, in the crypto layer** (`keys/peer-key-gate.js`): encryption derives
+  from the exact bytes one gate call fetched and evaluated, and decryption chooses
+  only from keys already in the pin. A check in the thread followed by a separate
+  fetch in the crypto layer is not a race against a hostile server, which picks the
+  answer to each request. It is a bypass.
+- **Rows with nothing sealed** (`chat/dm-unencrypted.js`): the gate has no key to
+  check on a plaintext row, so a server could insert one that appeared to come from
+  a verified contact. The pin now records the lowest row id seen open. On a contact
+  with none yet, an unsealed row is shown and marked "Not encrypted". After that, one
+  that could be older than the recorded id is shown and marked, and anything else is
+  hidden, including everything that arrives live. An id alone proves nothing, because
+  the server picks it, so a row's place in its page counts too. The server refuses new
+  text that is not an envelope, so a hidden row is never something an honest server
+  stored.
 
 **Not shipped, deliberately:** signed pre-keys / XEdDSA / pre-key batches. Those
 all need new server storage and their own design review. Until they exist the
@@ -641,6 +657,19 @@ including a retired key appearing after an alarm — are still refused. What is
 allowed is the pin's own content: the keys disclosed in the pinning response, and
 the pinned current key. What is refused is anything the server introduces after
 the fact.
+
+**(c) Disclosed keys are for reading history, and only until the user verifies.**
+(b) was written as if nothing could go wrong inside the pinning response, but that
+response is the server's word, so it can list a key of its own there. Two rules
+limit that. A disclosed key can never become current without the alarm, because
+nobody has accepted it. And marking the contact verified drops every disclosed key,
+because otherwise the server could still forge rows under one on a contact the user
+believes is verified. The cost is that a row sealed to a genuinely retired key,
+learned only this way, stops opening on that device. Pins saved by an older version
+are held to the same rule when read (`readStoredPin` in `keys/peer-trust.js`): there
+is no migration, because pins live on the device and nothing guarantees one would run.
+That also clears marks the old accept button stamped, which it wrote in the same
+statement as the key, unlike a person who has to compare 60 digits first.
 
 Open questions that must be answered before code: pre-key batch size and refill
 protocol; whether rotation keeps the old key archived and for how long; whether

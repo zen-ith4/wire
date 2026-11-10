@@ -13,9 +13,9 @@ current code cites the line it was read from.
 |---|---|
 | One X25519 identity key per account; `UNIQUE(user_id)` | `database/tables/identity_keys.tabels.js:2-15` |
 | The private key is stored on the server, wrapped under a password-derived key (`encrypted_private_key`, `salt`, `iv`, `kdf`, `kdf_params`), so a second device logs in and gets the SAME key | `database/tables/identity_keys.tabels.js:5-10` |
-| v2 text key: X25519 + HKDF-SHA-256, one key per direction (`Wire-E2EE-DM-v2-a2b` / `-b2a`) | `public/js/crypto/messages/dm-v2.js:52-54`, `:190`, `:231` |
-| v2 AAD: `dm-msg-v2`, version, fromUserId, toUserId, senderKeyFp, direction, iv, replyToId | `public/js/crypto/messages/dm-v2.js:324` |
-| Attachment meta AAD: the same fields under the label `dm-att-v2` | `public/js/crypto/messages/dm-v2.js:715` |
+| v2 text key: X25519 + HKDF-SHA-256, one key per direction (`Wire-E2EE-DM-v2-a2b` / `-b2a`) | `public/js/crypto/messages/dm-v2.js:54-56`, `:192`, `:233` |
+| v2 AAD: `dm-msg-v2`, version, fromUserId, toUserId, senderKeyFp, direction, iv, replyToId | `public/js/crypto/messages/dm-v2.js:326` |
+| Attachment meta AAD: the same fields under the label `dm-att-v2` | `public/js/crypto/messages/dm-v2.js:725` |
 | Replay store keyed on the AAD-bound iv: 2000 per conversation, 50 conversations, per device | `public/js/crypto/messages/dm-v2-wire.js:55`, `:61` |
 | Rotation archives the OLD PUBLIC key (`identity_key_rotations`), never the old private key | `services/identityKeyHistory.service.js:5-9` |
 | Peer trust: every accepted peer key is kept per device (TOFU pin + archive) | `public/js/crypto/keys/peer-trust.js:30` |
@@ -54,7 +54,7 @@ envelope, and forgets `e`.
 | Phase 2 archive | Unchanged for the recipient (static key). The sender cannot re-read its own sent v3 rows from the server after a reload unless it also encrypts a copy to itself (a second ephemeral to its own static key: +48 bytes) - otherwise "my own sent messages" disappear on a new device. |
 | Offline / out-of-order | Unaffected: each row is self-contained. |
 | History / search / export | Unaffected for received rows; sent rows need the self-copy above. |
-| Server | None (one longer `content`; the 2000-character cut at `controllers/dm.controller.js:454` already limits v2 to ~1328 plaintext bytes and would cut v3 further - fix 3.F.2 first). |
+| Server | None (one longer `content`; the 2000-character limit (at the time of writing a silent cut at `controllers/dm.controller.js:454`; **Audit note 2026-11-09:** since replaced by a 413 `DM_CONTENT_TOO_LONG` rejection, see `docs/DM_V2_WIRE.md` and `docs/E2EE_TRIAGE_3I.md` R2) already limits v2 to ~1328 plaintext bytes and would cut v3 further - fix 3.F.2 first). |
 | Migration | v3 alongside v2, same layered pin as v1 -> v2 (`users.dm_e2ee_min_version`, layer-2 pin). Old rows stay readable forever. |
 | Effort / risk | Small (~1-2 weeks with tests). Low risk: no chain, no state. The real risk is the CLAIM - it must be labelled "sender-side forward secrecy" or not advertised at all. |
 
@@ -82,7 +82,7 @@ Ratchet Algorithm", Signal, 2016).
 | | |
 |---|---|
 | Threat gain | None. |
-| Cost of doing nothing | A compromise of one identity private key exposes **every** DM of that account, past and future, until rotation. The key is reachable from: an unlocked device; a browser profile where "remember me" was ticked (the unlock key is then kept in IndexedDB `wire-e2ee-store`, `public/js/crypto/keys/unlock-key-store.js:19`, written only when `rememberMe === true`, `public/js/core/auth.js:492`; the wrapped private key is on the server); the account password plus the server's `identity_keys` row. |
+| Cost of doing nothing | A compromise of one identity private key exposes **every** DM of that account, past and future, until rotation. The key is reachable from: an unlocked device; a browser profile where "remember me" was ticked (the unlock key is then kept in IndexedDB `wire-e2ee-store`, `public/js/crypto/keys/unlock-key-store.js:19`, written only when `rememberMe === true`, `public/js/core/auth.js:546`; the wrapped private key is on the server); the account password plus the server's `identity_keys` row. |
 | Effort | Documentation only: `docs/SECURITY_CLAIMS.md` already states "no forward secrecy for DMs". |
 
 ## 4. Groups

@@ -1,5 +1,7 @@
 # Group E2EE port notes (Y -> X v1.3.6)
 
+> **Audit note (2026-11-09).** Historical port notes (v1.0.0 -> v1.3.6). The correction block below already says which statements are stale; the `file` references here are relative to `public/js/` and still resolve, line numbers are not maintained.
+
 Group E2EE + CSP/XSS hardening were ported from a v1.0.0 tree onto v1.3.6.
 X's own code wins on every conflict. Deliberate deviations and limits:
 
@@ -131,7 +133,7 @@ Automated now
   On a tree without it the test is `todo` and fails with the exact hit (file bytes in
   `dm-uploads/`, caption in `wire.db-wal`). It becomes a hard test automatically when
   `controllers/dm.controller.js` mentions `attachment_iv`, or with `DM_ATTACH_E2EE=1`.
-- `escapeAttr()` JS-string contract: `tests/escape-attr-js-string.test.mjs` (jsdom, no browser needed).
+- `escapeAttr()` JS-string contract: `tests/escape-attr-js-string.test.mjs` (jsdom, no browser needed). **Audit note 2026-11-09:** 3 of its tests currently FAIL (`element has an onclick attribute`): the renderers it drives (`media/attachments.js`) now emit `data-action` handlers, not inline `onclick`. The test needs rewriting for the CSP-clean markup (or an entry in `tests/EXCLUDED_NOT_APPLICABLE.json`); it is not a runtime bug.
 - Group attachments: uploads without a valid `attachment_iv` (missing, non-base64, oversized,
   no session, non-member) are rejected and leave no file behind.
 - Log leak: no JWT / Bearer / base64-or-hex 32-byte key / wrapped-key field / password patterns,
@@ -326,4 +328,4 @@ schema is in `database/credentialSchema.js` (applied by `database/schema.js`), t
 server side in `services/credentialMigration.service.js` and
 `services/credentialAdmin.service.js`, the browser side in
 `public/js/crypto/credentials.js` and `public/js/crypto/credential-migration.js`.
-Plan and rationale: `docs/PHASE_B_PLAN.md`. Tests: `tests/credentials/` (13 files).
+Plan and rationale: `docs/archive/PHASE_B_PLAN.md`. Tests: `tests/credentials/` (13 files).

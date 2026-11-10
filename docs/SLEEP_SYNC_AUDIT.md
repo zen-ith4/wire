@@ -1,5 +1,7 @@
 # `sleep()` used as synchronisation in the tests: inventory
 
+> **Audit note (2026-11-09).** Re-checked mechanically: 144 of 144 `file:line` entries below still point at a line containing `sleep(`. The tests tree now has 185 lines containing `sleep(` (this inventory lists 144; the difference is 41 line(s) not in the inventory). The class column is still the original heuristic; regenerate the table with the script that produced it before relying on counts.
+
 Generated from the tree at `b87c0fb` by a script (STEP 3F follow-up 3.B). The **class** column is a HEURISTIC from the surrounding lines, not a reviewed verdict: treat "SYNC" as "read this site and replace the sleep with a poll on the exact postcondition (rule: never sleep to wait for state)".
 
 Fixed in 3.B (their remaining sleeps are listed below with the reason they stay):

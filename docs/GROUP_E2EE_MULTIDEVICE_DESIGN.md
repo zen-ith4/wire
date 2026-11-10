@@ -1,6 +1,6 @@
 # Group E2EE: multi-device Sender Key design
 
-Status: implemented on branch `fix/group-e2ee-hardening` (not merged).
+Status: implemented, and present in this tree (Audit note 2026-11-09: the earlier text said "on branch `fix/group-e2ee-hardening` (not merged)"; the code is in the checkout - `tests/groups/group-multidevice.test.mjs`, `services/groupKdm.service.js` - but branch state cannot be checked because the repository history is a single commit).
 Tests: `tests/groups/group-multidevice.test.mjs` (MD-1..MD-6),
 `group-audit.test.mjs` (F-I, G), `group-keys-contract.test.mjs` (L-1).
 

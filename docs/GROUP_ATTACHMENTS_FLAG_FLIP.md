@@ -11,12 +11,12 @@ manifest (item 7 of STEP 3D).
 ## 1. What the flag actually gates
 
 The flag is read in **exactly one place**: `renderActiveGroupShell`
-(`public/js/chat/group.js:684`).
+(`public/js/chat/group.js:726`).
 
 | Gated by the flag | Not gated by the flag |
 |---|---|
-| the attach button and the file input in the group composer (`group.js:700-702`) | the RECEIVE path: a received group attachment is decrypted and rendered whatever the flag says (`group.js:310`, `if (attachmentBinding)`) |
-| the composer's `uploadUrl` / `prepareUpload` (`group.js:739-743`) | the crypto, the server, the stored rows |
+| the attach button and the file input in the group composer (`group.js:762-764`) | the RECEIVE path: a received group attachment is decrypted and rendered whatever the flag says (`group.js:310`, `if (attachmentBinding)`) |
+| the composer's `uploadUrl` / `prepareUpload` (`group.js:804-808`) | the crypto, the server, the stored rows |
 
 So the flag is a **sending** switch, not a reading switch. That is what makes
 the rollback in section 2.6 harmless.
@@ -93,8 +93,8 @@ ok 10 - 10 a hostile relay answers with a 100 MB body for a 1 KB file
       revocation)
 - [x] **item 3** (the client upload cap) - **CLOSED in STEP 3E**: the
       endpoint exists now, `GET /api/groups/limits`
-      (`routes/groups.routes.js:68`), served by
-      `controllers/groups.controller.js:126` and read by the client at
+      (`routes/groups.routes.js:72`), served by
+      `controllers/groups.controller.js:148` and read by the client at
       `public/js/chat/group-attachments.js:97` (`getGroupUploadLimitMb`). It
       is fetched once per session, it is the upload pre-check, and it is
       **clamped** to the client's own hard ceiling
@@ -134,7 +134,7 @@ canonical bytes differ and **the signature does not verify**.
 
 An old client therefore shows the group message as an **unverified
 placeholder** - the neutral, static text "Message could not be verified"
-(`public/js/chat/group.js:239`, `UNVERIFIED_HTML`, and `group.js:370`,
+(`public/js/chat/group.js:247`, `UNVERIFIED_HTML`, and `group.js:413`,
 `out.push(unverifiedPlaceholder(raw))`). It is not retried and nothing
 crashes; the message is simply not readable on that client.
 
@@ -175,7 +175,7 @@ Flipping `GROUP_ATTACHMENTS_UI_ENABLED` back to `false` and reloading the
 client:
 
 - the attach button, the file input and the staging area are gone
-  (`group.js:700-702`) - sending is off again;
+  (`group.js:762-764`) - sending is off again;
 - **the already stored attachment messages stay readable**: the receive path
   is not behind the flag (`group.js:310`), so the rows are still decrypted
   and rendered;
@@ -247,9 +247,9 @@ receivers refuse. Three options; **no code changes in this step** (STEP 3F
 item 4).
 
 **(a) Keep 50 MB and refuse above it at the server too.** Cap
-`GROUP_UPLOAD_MAX_MB` at the ceiling in `config/constants.js:144` (one line):
+`GROUP_UPLOAD_MAX_MB` at the ceiling in `config/constants.js:213` (one line):
 
-    // config/constants.js:144 today
+    // config/constants.js:213 today
     GROUP_UPLOAD_MAX_MB: Number(process.env.GROUP_UPLOAD_MAX_MB) || 50,
     // with option (a)
     GROUP_UPLOAD_MAX_MB: Math.min(Number(process.env.GROUP_UPLOAD_MAX_MB) || 50, 50),

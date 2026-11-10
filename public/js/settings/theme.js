@@ -8,7 +8,8 @@ export const ACCENT_PRESETS = [
   { name: 'Emerald', hex: '#5F8B6F', rgb: '95, 139, 111' },
   { name: 'Purple', hex: '#7D6F9A', rgb: '125, 111, 154' },
   { name: 'Orange', hex: '#A8805D', rgb: '168, 128, 93' },
-  { name: 'Red', hex: '#9A5D5D', rgb: '154, 93, 93' }
+  { name: 'Red', hex: '#9A5D5D', rgb: '154, 93, 93' },
+  { name: 'Halloween', hex: '#E0533A', rgb: '224, 83, 58' }
 ];
 
 export const AMBIENT_LEVELS = [
@@ -71,6 +72,10 @@ export const BACKGROUND_PRESETS = [
   { id: 'deep-green', name: 'Deep Green', usesAccent: false },
   { id: 'volcanic', name: 'Volcanic', usesAccent: false },
   { id: 'copper', name: 'Copper', usesAccent: false },
+
+  // Halloween special theme — spooky orange/red/deep-purple glow on the
+  // dark base, kept as a fixed atmosphere (no accent dependency).
+  { id: 'halloween', name: 'Halloween', usesAccent: false },
 
   // Accent atmospheres
   { id: 'custom-accent', name: 'Custom Accent', usesAccent: true },
@@ -2167,6 +2172,50 @@ function buildBackgroundCss(id, { peak, dark }) {
           ellipse 120% 75% at 20% 90%,
           rgba(var(--indigo),${p3}) 0%,
           transparent 72%
+        ),
+        var(--void)
+      `;
+    }
+
+
+    case 'halloween': {
+      const f =
+        backgroundFactor(
+          peak,
+          dark,
+          1.9
+        );
+
+      const p1 =
+        (f * 0.85).toFixed(3);
+
+      const p2 =
+        (f * 0.6).toFixed(3);
+
+      const p3 =
+        (f * 0.32).toFixed(3);
+
+      return `
+        radial-gradient(
+          circle at 50% 38%,
+          rgba(224,83,58,${p1}) 0%,
+          rgba(150,30,40,${p2}) 32%,
+          transparent 72%
+        ),
+        radial-gradient(
+          ellipse 95% 70% at 82% 12%,
+          rgba(120,40,80,${p3}) 0%,
+          transparent 62%
+        ),
+        radial-gradient(
+          circle at 18% 82%,
+          rgba(190,60,50,${p2 * 0.5}) 0%,
+          transparent 45%
+        ),
+        radial-gradient(
+          circle at 82% 78%,
+          rgba(120,30,40,${p3 * 0.6}) 0%,
+          transparent 45%
         ),
         var(--void)
       `;

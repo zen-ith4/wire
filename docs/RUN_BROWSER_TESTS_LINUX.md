@@ -1,5 +1,7 @@
 # Running the browser tests on Linux (the owner's recipe)
 
+> **Audit note (2026-11-09).** Linux browser results DO exist now: `docs/test-baseline.md` section 0 records an isolated browser split run on Linux with `@sparticuz/chromium` (HeadlessChrome 153). That run was not made with this recipe or script, so the status below still applies to the recipe and script themselves. The audit sandbox had no Chromium, so no browser test was re-run for this audit.
+
 **Status: UNVERIFIED.** This recipe and `scripts/run-browser-tests-linux.sh`
 were written on Windows by an agent that could not run Linux. Nothing here
 has been executed on a Linux machine yet. Treat the first run as a debugging

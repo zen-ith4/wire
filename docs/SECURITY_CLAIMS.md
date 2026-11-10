@@ -24,9 +24,9 @@ server delivers, so nothing below holds against a server that changes it.
 
 | feature | protected against the server | how | tests |
 |---|---|---|---|
-| **DM text, v2** (peer at `dm_e2ee_min_version` >= 2) | confidentiality; reflection (a2b vs b2a); relabelling sender/recipient; re-pointing a reply; replay of a stored row under a new id (per device, windowed) | X25519 + HKDF-SHA-256 per direction (`public/js/crypto/messages/dm-v2.js:52-54`, `:231`), AES-256-GCM with AAD `dm-msg-v2` binding version, from, to, senderKeyFp, direction, iv, replyToId (`dm-v2.js:324`); replay store keyed on the iv (`dm-v2-wire.js:55`, `:61`) | `tests/dm-v2.test.mjs` "KAT: a2b AAD, key and ciphertext ...", "direction: a2b and b2a keys differ ...", "bound field: replyToId is bound ...", "rejected: a replayed IV is refused ..." |
+| **DM text, v2** (peer at `dm_e2ee_min_version` >= 2) | confidentiality; reflection (a2b vs b2a); relabelling sender/recipient; re-pointing a reply; replay of a stored row under a new id (per device, windowed) | X25519 + HKDF-SHA-256 per direction (`public/js/crypto/messages/dm-v2.js:54-56`, `:233`), AES-256-GCM with AAD `dm-msg-v2` binding version, from, to, senderKeyFp, direction, iv, replyToId (`dm-v2.js:326`); replay store keyed on the iv (`dm-v2-wire.js:55`, `:61`) | `tests/dm-v2.test.mjs` "KAT: a2b AAD, key and ciphertext ...", "direction: a2b and b2a keys differ ...", "bound field: replyToId is bound ...", "rejected: a replayed IV is refused ..." |
 | **DM text, v1** (peer at 1) | confidentiality only | one direction-blind key, **no AAD** (`docs/e2ee-dm-hardening.md` 1) | - |
-| **DM attachments** | file bytes: confidentiality (STREAM format); meta (name, mime, per-file key) and caption: v2 envelope with AAD label `dm-att-v2` for a peer at >= 2 | `public/js/crypto/messages/attachment-stream.js`; `dm-v2.js:715`; the server stores an opaque name, `application/octet-stream`, voice flag 0 and the ciphertext size (`services/dm.service.js:270-277`) | `tests/dm-v2-attachments-browser.test.mjs` a, e1-e7, e4b, f1, f1b, f2, f2b; `tests/acceptance-no-plaintext.test.mjs` |
+| **DM attachments** | file bytes: confidentiality (STREAM format); meta (name, mime, per-file key) and caption: v2 envelope with AAD label `dm-att-v2` for a peer at >= 2 | `public/js/crypto/messages/attachment-stream.js`; `dm-v2.js:725`; the server stores an opaque name, `application/octet-stream`, voice flag 0 and the ciphertext size (`services/dm.service.js:270-277`) | `tests/dm-v2-attachments-browser.test.mjs` a, e1-e7, e4b, f1, f1b, f2, f2b; `tests/acceptance-no-plaintext.test.mjs` |
 | **DM key continuity (Key gate)** | a key substituted AFTER first contact: nothing is encrypted to it (text, files, voice, captions), and an encrypted row sealed to it does not open under any path, including the conversation list and rows claiming to be our own, whichever key endpoint the server lies on; rows are HELD until the user acts; a key the server only listed at first contact cannot become current without the alarm; safety number to compare out of band; accepting a key does not mark it verified | encryption derives from the exact bytes one gate call evaluated (`resolveDmPeerKey` in `public/js/crypto/keys/peer-key-gate.js`); decryption chooses only from the pin (`getTrustedPeerKeys`, `pinnedPeerKeys` in `public/js/crypto/keys/peer-trust.js`); TOFU pin + archive per device (`public/js/crypto/keys/peer-trust.js:30`); key-change alarm (`public/js/chat/dm-key-trust.js`) | `tests/dm-key-gate.test.mjs`, `tests/peer-trust.test.mjs`, `tests/peer-trust-browser.test.mjs`, `tests/peer-pin-upgrade-browser.test.mjs` |
 | **DM rows with nothing sealed (Key gate)** | a plaintext row, or a file with no sealed metadata, inserted on a conversation this device has seen encrypted: hidden in the thread, the conversation list and reply quotes, with no notification or sound, whatever id or position the row claims; a plaintext edit changes nothing on screen; where such a row is still shown it is marked "Not encrypted", and a system notification gets a fixed text instead of its words | the pin records the lowest row id that has opened (`noteEncryptedRow` in `public/js/crypto/keys/peer-trust.js`); the rule is `public/js/chat/dm-unencrypted.js`; the server refuses text that is not an envelope, so no honest server stores a new one (`DM_E2EE_TEXT_ENFORCED`, `controllers/dm.controller.js`) | `tests/dm-unencrypted-browser.test.mjs`, `tests/dm-unencrypted-row.test.mjs`, `tests/dm-unencrypted-notification.test.mjs`, `tests/dm-text-e2ee-server.test.mjs` |
 | **Group messages** | confidentiality (Sender Keys); per-message sender authentication (signature over group, senderKeyId, counter, iv, ciphertext, replyToId, attachment slot); KDM AAD binds group/from/to/epoch/version | `public/js/crypto/groups/signing.js:93-104`; `docs/GROUP_E2EE_MULTIDEVICE_DESIGN.md` 6 | `tests/groups/group-signing-adversarial.test.mjs` C4-1, C4-3, C4-4, C4-8 |
@@ -41,10 +41,10 @@ server delivers, so nothing below holds against a server that changes it.
 (`GROUP_ATTACHMENTS_UI_ENABLED = false`,
 `public/js/chat/group-attachments-flag.js:17`); receiving is on. Self-registered, admin-created, seeded and first-admin accounts all start at the
 shared default `DM_E2EE_DEFAULT_MIN_VERSION` (default 2; env may set 1)
-(`config/constants.js:7-18`, used at `services/auth.service.js:405`,
-`database/seed.js:55`, `utils/setupWizard.js:632`,
-`services/user.service.js:91`, `:290`); the column `DEFAULT 1`
-(`database/migrations.js:41`) and the triggers (`database/migrations.js:127-140`)
+(`config/constants.js:7-18`, used at `services/auth.service.js:408`,
+`database/seed.js:78`, `utils/setupWizard.js:673`,
+`services/user.service.js:118`, `:322`); the column `DEFAULT 1`
+(`database/migrations.js:42`) and the triggers (`database/migrations.js:169-182`)
 are unchanged, and existing rows are not migrated (triggers only raise; no
 backfill) - see `docs/E2EE_TRIAGE_3I.md` R5. First contact remains TOFU
 regardless of the floor, and the APK shipping an old `public/` is only a
@@ -106,9 +106,9 @@ hypothesis (D13).
   wrapped under a password-derived key (`database/tables/identity_keys.tabels.js:5-10`):
   password + that row = the identity.
 - **A stolen browser profile with "remember me".** The auth token is in
-  localStorage (`public/js/core/auth.js:66`) and the unlock key in IndexedDB
+  localStorage (`public/js/core/auth.js:81`) and the unlock key in IndexedDB
   (`public/js/crypto/keys/unlock-key-store.js:19`, written only when
-  `rememberMe === true`, `auth.js:492`).
+  `rememberMe === true`, `auth.js:546`).
 - **(Item 3) Progressive media is OFF.** `MEDIA_STREAM_ENABLED = false` in
   `public/sw.js:102`; nothing above about streaming applies to a deployment until
   the owner flips it, and flipping it also requires rebuilding
@@ -132,7 +132,7 @@ hypothesis (D13).
   Caddyfile is not rewritten; add `header_up X-Forwarded-For {remote_host}` by
   hand.
 - **Deniability, traffic analysis, an attacker holding the database file** (the
-  `dm_e2ee_min_version` ratchet triggers in `database/migrations.js:127` stop
+  `dm_e2ee_min_version` ratchet triggers in `database/migrations.js:169` stop
   the app from lowering the floor, not someone editing the file).
 
 ## 4. Verification status

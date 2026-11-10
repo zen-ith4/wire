@@ -4,6 +4,8 @@ Status: the design flaw described in §1 is fixed. The current release archive i
 recorded in `docs/test-baseline.md`. Everything else in §4-§6 is
 still open and is documented here rather than worked around.
 
+> **Audit note (2026-11-09).** `docs/test-baseline.md` section 0 now has an isolated browser split measured on Linux with `@sparticuz/chromium`; the Windows numbers below are still the ones this document discusses.
+
 All numbers in this document come from Windows + real local Chrome 155.0.8059.40 driven through
 `puppeteer-core` 24.43.1. Nothing here has been re-measured against the real
 `@sparticuz/chromium` on Linux.

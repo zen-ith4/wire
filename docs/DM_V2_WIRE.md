@@ -12,8 +12,19 @@ document covers only what a deployer/operator needs to know about STEP 1B.
 - Wires `public/js/chat/dm.js` to send v2 when the peer's floor is 2, and to
   decrypt v2 on receive, while v1 keeps working byte-identically.
 
-**Default is 1. With no opt-in, the system behaves EXACTLY as before.** No
-existing message, key or envelope changes.
+**Status as of 2026-11-09 (supersedes the STEP 1B wording that stood here).** The column
+`users.dm_e2ee_min_version` still has `DEFAULT 1`, and existing rows are never
+migrated automatically. But every code path that creates an account now passes
+`constants.DM_E2EE_DEFAULT_MIN_VERSION` (`config/constants.js`), which is **2** when the
+environment variable of the same name is unset, and may be set to `1` (anything else
+stops the server at boot). So a NEW account (self-registered, admin-created, seeded or
+first-admin) starts at 2; an account that existed before stays at 1 until an operator
+raises it with `scripts/dm-e2ee-optin.mjs` or `scripts/dm-e2ee-upgrade-existing.mjs`.
+Tests that pin this: `tests/dm-e2ee-default.test.mjs`, `tests/dm-e2ee-admin-inserts.test.mjs`.
+
+*Original STEP 1B text, kept for the record:* "Default is 1. With no opt-in, the system
+behaves EXACTLY as before. No existing message, key or envelope changes." - this was
+true only for the tree STEP 1B shipped on.
 
 ## Opt-in procedure
 
@@ -117,11 +128,13 @@ the database file.
 2. `tests/dm-blob-url-cleanup.test.mjs`: the two-line mock completion
    (`encryptDmTextV2`, `decryptDmTextV2`) is **ACCEPTED**. It fixes a 1B
    regression; no assertion changed.
-3. A **fifth** `INSERT INTO users` site exists:
-   `utils/setupWizard.js:632` (first-admin wizard). The full list that stays at
-   `DEFAULT 1` is: `database/seed.js:55`, `utils/setupWizard.js:632`,
-   `services/user.service.js:91`, `services/user.service.js:290`.
-   **"Default 2 applies to self-registration only."**
+3. A **fifth** `INSERT INTO users` site exists: `utils/setupWizard.js` (first-admin
+   wizard). At the time of STEP 1B the four sites `database/seed.js`,
+   `utils/setupWizard.js`, `services/user.service.js` (two) stayed at `DEFAULT 1` and
+   "Default 2 applied to self-registration only".
+   **Superseded (Audit note, 2026-11-09):** all four now pass `constants.DM_E2EE_DEFAULT_MIN_VERSION`
+   (`database/seed.js:78`, `utils/setupWizard.js:673`, `services/user.service.js:118` and `:322`,
+   `services/auth.service.js:408`), see `docs/E2EE_TRIAGE_3I.md` R5.
 
 ## Running the DM v2 tests (Linux)
 
@@ -312,3 +325,21 @@ Tests: `tests/dm-v2-attachments.test.mjs` (client, real server, no mocks),
 `tests/dm-v2-attachments-server.test.mjs` (real server),
 `tests/dm-v2.test.mjs` (attachment AAD KATs), `tests/dm-v2-wire.test.mjs`
 (replay). NOT done: `tests/dm-v2-attachments-browser.test.mjs` (real browser).
+
+## Later server and client rules (added 2026-11-09; these postdate STEP 1B and had no section)
+
+All of these are read from the current code and each has a test.
+
+| Rule | Where | Test |
+|---|---|---|
+| DM text and edits must have the encrypted-envelope shape. Default ON; `DM_E2EE_TEXT_ENFORCED=false` rolls back. Error: 400 `DM_NOT_ENCRYPTED`. | `controllers/dm.controller.js` (`e2eeTextEnforced`) | `tests/dm-text-e2ee-server.test.mjs` |
+| Attachment uploads must carry sealed `attachment_meta`. Default ON; `DM_E2EE_ATTACHMENTS_ENFORCED=false` rolls back to the legacy plaintext path. | `controllers/dm.controller.js` | `tests/dm-v2-attachments-server.test.mjs` |
+| The server rejects (never truncates) `content` longer than `DM_MAX_CONTENT_CHARS` = 2000 with `DM_CONTENT_TOO_LONG`; the client measures the serialised envelope (v1 and v2) and refuses before sending. | `config/dm-stream.js:21`, `controllers/dm.controller.js`, `public/js/crypto/messages/dm-v2-wire.js` | `tests/dm-v1-content-cap.test.mjs`, `tests/dm-v2-wire.test.mjs` |
+| A v2 ciphertext above `DM_V2_MAX_CIPHERTEXT_LENGTH` (64 KiB decoded) is rejected; a base64-length pre-check runs before decoding. | `public/js/crypto/messages/dm-v2.js` | `tests/dm-v2-ciphertext-precheck.test.mjs` |
+| A DM to a deactivated account (`is_active = 0`) returns 404 `User not found`, the same answer an unknown id gets (`findActiveUserById`). | `controllers/dm.controller.js`, `services/user.service.js` | `tests/dm-send-inactive-recipient.test.mjs` |
+| Client key continuity (TOFU pin, key-change alarm, rows with nothing sealed hidden). | see `docs/SECURITY_CLAIMS.md` | `tests/dm-key-gate.test.mjs`, `tests/peer-trust.test.mjs`, `tests/dm-unencrypted-*.test.mjs` |
+| The v2 seam used by the chat layer. | `public/js/crypto/messages/dm-v2-wire.js` | `tests/dm-v2-seam.test.mjs` |
+
+Operator scripts: `scripts/dm-e2ee-optin.mjs <user...>` (raise named accounts to 2),
+`scripts/dm-e2ee-upgrade-existing.mjs [--dry-run] [--db path]` (raise every account still at 1;
+explicit, never run at boot, one-way because of the ratchet trigger).

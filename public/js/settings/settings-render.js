@@ -64,7 +64,8 @@ const FEATURED_BACKGROUND_IDS = [
   'accent-orbit',
   'nebula',
   'accent-glow',
-  'accent-mesh'
+  'accent-mesh',
+  'halloween'
 ];
 
 

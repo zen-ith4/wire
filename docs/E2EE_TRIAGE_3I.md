@@ -1,5 +1,7 @@
 # E2EE triage (STEP 3F follow-up 3.I): ranked risks and open items
 
+> **Audit note (2026-11-09).** This is a triage log. Every `file:line` in it is pinned to the tree after `wire-final-39` (the "Before:" text by design, the "Now:" text as of the fix). Line numbers have drifted since and are intentionally NOT re-anchored here: the risk statuses (Done / open) are what to read. Current claims with up-to-date references live in `docs/SECURITY_CLAIMS.md`.
+
 **Read-and-report only.** Nothing in the risk list below was changed in code;
 each entry waits for the owner to pick it. Every entry cites the line it was
 read from (tree after `wire-final-39`). Ranking = impact x likelihood under the
@@ -44,7 +46,7 @@ the CIPHERTEXT size, timestamps, sender/recipient, reply id
 | `tests/dm-v2-attachments-browser.test.mjs` `tamperScenario` (e1-e3) | tampers the NEWEST row (`good-last`), not the file named `to-tamper` | **Reported, not changed**; assertions still meaningful |
 | `tests/groups/group-attachment-browser.test.mjs` test 4 | called `window.replyToGroupMessage`, which does not exist: no quote was ever made | **Fixed** in 3.B (`window.threadReply`, asserts on `.reply-quote`) |
 
-Not read in depth this round: `docs/CSP_TODO.md`, `docs/PHASE_B_PLAN.md`,
+Not read in depth this round: `docs/CSP_TODO.md`, `docs/archive/PHASE_B_PLAN.md`,
 `docs/test-baseline.md` (its numbers predate 3C-3F; the current counts are in the
 follow-up report).
 

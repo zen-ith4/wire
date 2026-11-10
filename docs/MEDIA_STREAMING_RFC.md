@@ -1,6 +1,10 @@
 # MEDIA_STREAMING_RFC — Progressive encrypted DM audio/video via Service Worker + HTTP Range
 
+> **Audit note (2026-11-09).** Line references in sections 0-9 are pinned to the commits named there (design text: `0e61430`) and are not re-anchored. Sections 10.1 and 10.3 describe the state at `13b27e2` and are superseded by the new section 10.4 at the end of this file.
+
 Status: Phase 0, RFC v2 (historical design baseline). Implementation status is tracked in §10: C1 of phase 3C is committed at `13b27e2`; the feature flag is OFF, and the fetch handler, stream registry and client wiring are not implemented. The design text below originates at `0e61430`; later measurements and status are appended in §9.13 and §10.
+
+**Current implementation state (2026-11-09): see section 10.4.** The sentence above ("fetch handler, stream registry and client wiring are not implemented") described commit `13b27e2` only; those pieces are now in the tree, with `MEDIA_STREAM_ENABLED = false` still.
 
 ## 0. Environment and evidence
 
@@ -1047,3 +1051,32 @@ The current Linux baseline table is also recorded in `docs/test-baseline.md` §0
 - No GitHub publication, no server clone, no server-side baseline, no push.
 - `MEDIA_STREAM_ENABLED` must stay `false` until C2+ and the browser/security validation in §9 are complete.
 - The next implementation step is C2, after owner acceptance of the Step 0 report and the current state.
+
+### 10.4 State of the tree as read on 2026-11-09 (supersedes 10.1 and 10.3)
+
+Read from the files, not from commit messages: this repository checkout has a single commit, so the
+commit hashes quoted above (`13b27e2`, `ffa29d2`, ...) cannot be checked against history here.
+
+| Item | State now |
+|---|---|
+| Flag | `const MEDIA_STREAM_ENABLED = false;` at `public/sw.js:102`; the fetch branch returns early when it is off (`public/sw.js:777`) |
+| Stream registry | present: `public/js/sw-media/stream-registry.js` |
+| Fetch handler branch | present in `public/sw.js` (guarded by the flag) |
+| Client wiring | present: `public/js/media/sw-stream-client.js`, `public/js/media/lazy-e2ee-media.js` |
+| `handler-core.js` | unchanged since 10.1: its SHA-256 below still begins `93737f04d788fb26` |
+| Service-worker manifest | `sw-manifest.js is current (version dc786f3db6d1, 190 files)` |
+| Not done | flipping the flag, and the browser/security validation in section 9 as a release gate (`tests/sw-flag-guard.test.mjs` fails if the flag is committed ON) |
+
+Files and hashes (sizes differ from 10.1 where the file changed after C1):
+
+| File | Size | SHA-256 |
+|---|---|---|
+| `public/js/sw-media/handler-core.js` | 7,087 bytes | `93737f04d788fb26b3ac3683d3ae4e94c0d821251841208aa9d7bb43b37390c8` |
+| `public/js/sw-media/bundle-entry.js` | 727 bytes | `43ee1dddd140da8f70000ae3ffdb87655ad44a77e47c1ab1b0952dac60036f66` |
+| `public/js/sw-media/stream-registry.js` | 5,985 bytes | `f1052e41834602127dc6781a9801ff1397858d56833d8bacfffbff77ae67dcb8` |
+| `public/js/sw-media/media-ciphertext.js` | 4,614 bytes | `decb68a884e63b963f140d09f17a627d3539f8bfdebdb3985d6f257e42c60679` |
+| `public/js/media/sw-stream-client.js` | 14,104 bytes | `c9e9291d018c7043d6e6900fa1fc64e60da5446809b2a79e19f79632dea1f2af` |
+| `public/js/media/lazy-e2ee-media.js` | 9,998 bytes | `50512f91ba4d80eb4371aecb915c441d6b6ec7ff4783cd8e3330d0b8ab68ad1c` |
+| `public/sw-media-bundle.js` | 29,768 bytes | `1080b12da0ba950f9c21408aa24ab6acc61dc440ddf5d5545912398b369e4043` |
+
+Tests for this feature (all exist in the tree): `tests/crypto/sw-media-bundle-browser.test.mjs`, `tests/crypto/sw-media-bundle.test.mjs`, `tests/crypto/sw-media-ciphertext-range.test.mjs`, `tests/crypto/sw-media-fetch.test.mjs`, `tests/crypto/sw-media-handler.test.mjs`, `tests/crypto/sw-media-stream-registry.test.mjs`, `tests/media/lazy-e2ee-media-stream.test.mjs`, `tests/media/sw-stream-browser.test.mjs`, `tests/media/sw-stream-client.test.mjs`, `tests/media/sw-stream-purge.test.mjs`, `tests/media/sw-stream-registry-purge.test.mjs`, `tests/sw-flag-guard.test.mjs`.

@@ -1,5 +1,7 @@
 # DM E2EE hardening — design (Phase 0, no code)
 
+> **Audit note (2026-11-09).** `file:line` references in this document are pinned to the trees named in its status paragraph (`wire-final-8` at `b278c2b` for sections 1-2 and 10) and are not re-anchored. Sections 3.5 and 8.0 are the shipped state; for line-accurate references to the current code use `docs/SECURITY_CLAIMS.md`.
+
 **Status:** this began as a design-only document (Phase 0) whose citations were
 read on `wire-final-8` at commit `b278c2b`; sections 1-2 and 10 still describe
 THAT tree. Phase 1 (v2 envelope) and Phase 2 (key continuity) have since shipped:
@@ -245,9 +247,7 @@ the bullet below); for a peer still at `dm_e2ee_min_version` 1 they stay v1.
   windowed (FIFO at the cap, so an attacker can push an entry out), and a
   same-row rollback is not covered.
 - **Server rule and ratchet.** `dm_e2ee_min_version` column on `users`; the
-  default is 2 for self-registration only (the four sites that stay at 1:
-  `database/seed.js:55`, `utils/setupWizard.js:632`, `services/user.service.js:91`,
-  `services/user.service.js:290`). Triggers in `database/migrations.js` reject any
+  default is 2 for every newly created account (self-registration, admin creation, seeding and the first-admin wizard all pass `DM_E2EE_DEFAULT_MIN_VERSION`; **Audit note 2026-11-09:** the earlier wording "self-registration only, four sites stay at 1" is superseded, see `docs/E2EE_TRIAGE_3I.md` R5). Triggers in `database/migrations.js` reject any
   `UPDATE`/`INSERT` that lowers it. `scripts/dm-e2ee-upgrade-existing.mjs` and
   `scripts/dm-e2ee-optin.mjs` for existing accounts.
 - **Layer-2 version pin** per peer per device, in `localStorage`, keyed

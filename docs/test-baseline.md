@@ -1,5 +1,29 @@
 # Test baseline — current Linux results and historical `wire-final-12`
 
+## 0a. Audit run of 2026-11-09 (this checkout, sandbox without Chromium)
+
+Measured while auditing the docs; it does **not** replace section 0 (a different machine, and the reviewer's split definition may differ).
+
+| item | value |
+|---|---|
+| machine | Linux sandbox, Node v22.23.4 (`.node-version` pins 22.23.2), `npm ci` + `npm rebuild better-sqlite3` |
+| command | `node --experimental-test-module-mocks --env-file=tests/test.env --test <every tests/**/*.test.mjs whose path does not contain "browser">` |
+| files run | 135 of 159 test files (the rest have "browser" in their name and need Chromium, which this sandbox did not have: **not measured**) |
+| tests | 1193 |
+| pass | 1162 |
+| fail | **7** |
+| skipped / todo / cancelled | 11 / 13 / 0 |
+| duration | 359 s |
+
+The 7 failures, all understood:
+
+| tests | file | cause |
+|---|---|---|
+| 4 (`A1`-`A4`) | `tests/dm-v2-vanishing-row.test.mjs` | `newUserPage: no Chromium` - this file needs a browser although its name has no "browser", so a split by file name puts it in the wrong group |
+| 3 (`renderAttachment` file card, hostile mime, `imageDownloadButtonHtml`) | `tests/escape-attr-js-string.test.mjs` | **stale test**: asserts `element has an onclick attribute`, but the renderers now emit `data-action`. Already suspected in `docs/archive/csp-and-dm-work-notes.md`; never fixed |
+
+Section 0 below says 0 failures at `13b27e2` with 101 non-browser files; this tree has 159 test files, so those counts are not comparable.
+
 ## 0. Current Linux baseline (2026-10-22, `13b27e2`)
 
 Measured at C1 (`13b27e2`) on Linux, before this docs-only state update. The

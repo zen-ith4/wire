@@ -228,8 +228,10 @@ async function downloadAndInstall(expectedSha256) {
   // Integrity gate — checked BEFORE the native signature check and before
   // install. The server advertised the expected SHA-256 in /api/apk/info; we
   // re-hash exactly what we downloaded and compare. A mismatch aborts here, so
-  // a hostile server that advertised a newer version but served a different
-  // (malicious) build can't get it installed. Fail closed: any failure to read
+  // a server that advertised a newer version but served different bytes than it
+  // advertised is caught before install; the SHA-256 binds the advertised version
+  // to the served bytes, and does not stop a hostile origin that serves both the
+  // bytes and the hash. Fail closed: any failure to read
   // or hash the file is treated as a mismatch. The advertised hash is mandatory
   // (enforced before download above); when present it must match the bytes we
   // actually downloaded.

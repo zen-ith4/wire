@@ -19,15 +19,17 @@
 // booting a whole server. env is set BEFORE requiring the module, because
 // config/constants.js reads APK_PATH/APK_VERSION_NAME at import time and the
 // controller caches the hash at module scope.
-import { test } from 'node:test';
+import { test, mock, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { createHash } from 'node:crypto';
+import { EventEmitter } from 'node:events';
 
 const require = createRequire(import.meta.url);
+const ROOT = path.resolve(import.meta.dirname, '..');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'apk-integrity-'));
 const apkPath = path.join(tmp, 'app-debug.apk');
@@ -117,17 +119,43 @@ test('with no APK file advertised as unavailable and no hash', async () => {
     assert.equal(res.body.sha256, undefined);
 });
 
-test('getApkInfo fails closed to available:false (never sha256:null) when the hash cannot be computed', async () => {
+test('getApkInfo fails closed to available:false (never sha256:null) when the hash cannot be computed', async (t) => {
     fs.writeFileSync(apkPath, FIXTURE_A);
     const { getApkInfo } = requireFreshController();
 
-    // Present file, but unreadable -> async hash fails -> fail closed.
-    fs.chmodSync(apkPath, 0o000);
+    // Keep the file PRESENT on disk (so apkExists() is true) but force the
+    // async hash to fail: stub fs.createReadStream to hand back a stream that
+    // emits an error. (A chmod-based failure is POSIX non-root only and does not
+    // work on Windows, so the stub is the portable way to reach the hash-failure
+    // branch.)
+    const fakeStream = new EventEmitter();
+    mock.method(fs, 'createReadStream', () => fakeStream);
+    t.after(() => mock.restoreAll());
+    process.nextTick(() => fakeStream.emit('error', new Error('stubbed createReadStream failure')));
+
     const res = makeRes();
     await getApkInfo({}, res);
-    fs.chmodSync(apkPath, 0o644);
 
     assert.equal(res.body.available, false);
     assert.notEqual(res.body.sha256, null);
     assert.equal(res.body.sha256, undefined);
+});
+
+test("the client's downloadAndInstall() refuses to install when no SHA-256 was advertised", () => {
+    // public/js/core/appUpdate.js is an ES module written for the browser WebView
+    // (it imports the Capacitor vendor shims and uses window/document), so it
+    // cannot be imported under node:test. Assert on the fail-closed guard source
+    // instead: downloadAndInstall must REFUSE (return before download/install) when
+    // the advertised hash is missing, and must not skip the check via a null check.
+    const src = fs.readFileSync(path.join(ROOT, 'public/js/core/appUpdate.js'), 'utf8');
+    assert.match(
+        src,
+        /if \(!expectedSha256\) \{/,
+        'client must refuse to install when the advertised SHA-256 is missing'
+    );
+    assert.doesNotMatch(
+        src,
+        /expectedSha256 != null &&/,
+        'client must not skip the integrity check when the advertised hash is missing'
+    );
 });

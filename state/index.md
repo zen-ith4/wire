@@ -76,12 +76,15 @@ Nothing here is uncommitted: the tree is clean and everything is pushed to
   server-backed tests could start the real server.
 - `npm audit --omit=dev` — **0 vulnerabilities** (must stay 0).
 - `npm run test:crypto` — **118 tests: 114 pass, 0 fail, 4 skipped, 0 todo**
-  (exit 0). (An initial run failed only the `sw-manifest.js is current` check;
-  fixed by re-running `node scripts/build-sw-manifest.mjs` after the doc-path
-  sweep changed hashed files under `public/js/`.)
+  (exit 0), re-run after the sw-manifest regeneration during this batch;
+  `public/sw-manifest.js` was regenerated (version `231f4ca59dff`) and `--check`
+  passes.
 - New + changed test files together (`tests/apk-integrity.test.mjs`,
-  `tests/cors-config.test.mjs`, `tests/media-auth-deactivated.test.mjs`): **12/12
-  pass** (exit 0).
+  `tests/cors-config.test.mjs`, `tests/media-auth-deactivated.test.mjs`): **13/13
+  pass** (exit 0) — `tests/apk-integrity.test.mjs` now carries 5 tests (hash
+  present + valid, recompute, fail-closed via portable stream stub, client-refusal
+  source test) plus the CORS (5) and media-auth (3) files.
+- `tests/apk-integrity.test.mjs` alone — **5/5 pass** (exit 0).
 - Browser tests requiring `@sparticuz/chromium`: not run in this batch (the
   package is installed externally at `/home/arman/browser-check` and would need
   `CHROMIUM_DIR` pointed there; the earlier "88 browser tests fail because the
@@ -89,8 +92,10 @@ Nothing here is uncommitted: the tree is clean and everything is pushed to
   baseline vs. branch comparison showed the same 88 test names failing in both
   runs (no regressions).
 - Which tests ran / which could not: ran — `npm run test:crypto` (118) and the
-  three new/changed files above (12); could not run — the browser/CDP suites
-  here (no `@sparticuz/chromium` install in the default `CHROMIUM_DIR`).
+  new/changed files above (13 combined); could not run — the browser/CDP suites
+  here (no `@sparticuz/chromium` install in the default `CHROMIUM_DIR`). Runs
+  were as the normal user (uid 1000); a root run was not possible in this
+  environment (no passwordless sudo).
 
 ## 8. APK update integrity — full record (everything done so far for the APK)
 

@@ -87,9 +87,9 @@ async function apkSha256() {
 //
 // Returns a SHA-256 of the exact bytes /api/apk/download streams. The
 // Android client (public/js/core/appUpdate.js) re-hashes what it
-// downloads and refuses to install unless it matches — this is what
-// closes the hole where a server that advertises a newer versionCode
-// could serve a different (malicious) build than it advertised.
+// downloads and refuses to install unless it matches — the SHA-256 binds
+// the advertised version to the served bytes; it does not stop a hostile
+// origin that serves both the bytes and the hash.
 //
 // Fail closed: when the APK's bytes cannot be hashed the server does NOT
 // answer with an update carrying a hash — it answers { available: false }

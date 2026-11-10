@@ -249,7 +249,7 @@ const constants = {
   // rather than guessing.
   APK_PATH:
     process.env.APK_PATH ||
-    path.join(__dirname, '..', 'apk-debug.apk'),
+    path.join(__dirname, '..', 'app-debug.apk'),
 
   APK_VERSION_NAME: process.env.APK_VERSION_NAME || null,
 

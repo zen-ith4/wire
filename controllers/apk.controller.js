@@ -7,8 +7,8 @@
 // APK's version metadata is tracked independently instead of being
 // assumed to match package.json or android/app/build.gradle.
 //
-// GET /api/apk/info      -> version metadata (no file bytes)
-// GET /api/apk/download  -> streams apk-debug.apk itself
+// GET /api/apk/info      -> version metadata + SHA-256 of the APK (no bytes)
+// GET /api/apk/download  -> streams app-debug.apk itself
 //
 // Both are intentionally unauthenticated, mirroring /api/version:
 // the Android client needs to be able to check for (and fetch) an
@@ -19,6 +19,7 @@
 // so there is no path-traversal surface here.
 
 const fs = require('fs');
+const { createHash } = require('crypto');
 const constants = require('../config/constants');
 
 function apkExists() {
@@ -29,12 +30,55 @@ function apkExists() {
   }
 }
 
+// SHA-256 of the shipped APK, hex-encoded. Computed once (on the first
+// /api/apk/info request — i.e. at startup for a running server) and cached by
+// (size, mtimeMs), so it is only re-hashed when the file actually changes.
+// This is the integrity contract the Android client checks before installing:
+// see public/js/core/appUpdate.js. Keying on size+mtimeMs means a hot-swapped
+// build (a new deploy dropped in as app-debug.apk) is caught without re-reading
+// 8 MB on every version check, and a build whose bytes changed but whose mtime
+// resolution happened to coincide is still caught because the size differs. If
+// whose mtime resolution happened to coincide is still caught because the size
+// differs. If recomputation throws, we clear the cache and report null so the
+// client fails closed rather than trusting a stale hash.
+let apkHashCache = null; // { size, mtimeMs, sha256 }
+
+function apkSha256() {
+  let stats;
+  try {
+    stats = fs.statSync(constants.APK_PATH);
+  } catch {
+    return null;
+  }
+
+  if (apkHashCache && apkHashCache.size === stats.size && apkHashCache.mtimeMs === stats.mtimeMs) {
+    return apkHashCache.sha256;
+  }
+
+  try {
+    const buf = fs.readFileSync(constants.APK_PATH);
+    const sha256 = createHash('sha256').update(buf).digest('hex');
+    apkHashCache = { size: stats.size, mtimeMs: stats.mtimeMs, sha256 };
+    return sha256;
+  } catch (err) {
+    apkHashCache = null;
+    console.error(`[apk] failed to hash ${constants.APK_PATH}:`, err.message);
+    return null;
+  }
+}
+
 // GET /api/apk/info
 //
 // Never assumes the APK is present just because APK_VERSION_NAME is
 // configured (or vice versa) — both are checked, so a stale env var
 // left over from a previous deploy can't claim an update is
 // available when the file itself was removed.
+//
+// Returns a SHA-256 of the exact bytes /api/apk/download streams. The
+// Android client (public/js/core/appUpdate.js) re-hashes what it
+// downloads and refuses to install unless it matches — this is what
+// closes the hole where a server that advertises a newer versionCode
+// could serve a different (malicious) build than it advertised.
 function getApkInfo(req, res) {
   const hasFile = apkExists();
   const hasVersion = Boolean(constants.APK_VERSION_NAME);
@@ -58,6 +102,7 @@ function getApkInfo(req, res) {
     versionName: constants.APK_VERSION_NAME,
     versionCode: constants.APK_VERSION_CODE,
     size,
+    sha256: apkSha256(),
   });
 }
 
@@ -75,7 +120,7 @@ function downloadApk(req, res) {
 
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Content-Type', 'application/vnd.android.package-archive');
-  res.setHeader('Content-Disposition', 'attachment; filename="apk-debug.apk"');
+  res.setHeader('Content-Disposition', 'attachment; filename="app-debug.apk"');
   // Cache-busting isn't needed for correctness (the client always
   // compares versionCode before installing anything it downloads),
   // but a shared/CDN cache serving a stale build to everyone would be

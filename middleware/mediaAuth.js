@@ -40,37 +40,25 @@ function resourceTypeFromBaseUrl(baseUrl) {
 
 // sessionPayload is passed only by the Bearer-token paths, so the session
 // token's version can be checked. Media-token paths pass nothing.
+//
+// A deactivated account (users.is_active = 0) is refused here — exactly as
+// authenticate.js refuses it on the normal API routes. loadUserAndContinue()
+// delegates to loadActiveUser() below so there is ONE "is this account
+// allowed" implementation, shared by the Bearer path, the media-token path,
+// and (through folderFileMediaAuth / shareLinkMediaAuth) the My Files and
+// share-link paths. loadActiveUser() returns null for a missing row, a
+// deactivated row, or a session token whose version no longer matches — so
+// both of the checks that used to live here collapse into this single call.
 function loadUserAndContinue(userId, req, res, next, sessionPayload = null) {
-  const user = getDb()
-    .prepare(`
-      SELECT
-        id,
-        username,
-        is_admin,
-        token_version
-      FROM users
-      WHERE id = ?
-    `)
-    .get(userId);
+  const user = loadActiveUser(userId, sessionPayload);
 
   if (!user) {
-    return res.status(401).json({
-      error: 'User not found'
-    });
-  }
-
-  if (sessionPayload && !tokenVersionMatches(sessionPayload, user)) {
     return res.status(401).json({
       error: 'Unauthorized'
     });
   }
 
-  req.user = {
-    id: user.id,
-    username: user.username,
-    is_admin: Boolean(user.is_admin)
-  };
-
+  req.user = user;
   next();
 }
 

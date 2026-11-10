@@ -5,7 +5,7 @@ Put this file at `docs/agent-tasks/STEP_2B_AGENT_TASK.md` and the reference file
 Base: wire-final-31 (sha256 62a326f6...ddfd8, HEAD dbd2fd5). Output zip: `wire-final-32`.
 NO production change. If a test needs one, STOP and report. One commit per item, 5-line report per item.
 
-## 0. What the reviewer verified on Linux (copy into docs/DM_V2_WIRE.md "Observed on Linux")
+## 0. What the reviewer verified on Linux (copy into docs/archive/DM_V2_WIRE.md "Observed on Linux")
 
 wire-final-31, real Chromium, node v22.22.2:
 - non-browser set (74 files): 636 tests, 631 pass, 1 fail, 4 skipped. The 1 fail is the known pre-existing race
@@ -55,7 +55,7 @@ say so, do not claim coverage.
 1. `dm-v2.js` ~315: the doc-comment on `dmMessageAad` still says msgId is a replay hint. A COMMENT-ONLY edit is
    allowed (the code and the 1A known-answer tests must stay byte-identical: show `git diff -U0` containing only
    comment lines) so it says the replay key is now the iv.
-2. `docs/DM_ATTACHMENTS_E2EE.md`: it says the server's `isEncryptedEnvelopeShape` accepts the v2 meta "unchanged".
+2. `docs/archive/DM_ATTACHMENTS_E2EE.md`: it says the server's `isEncryptedEnvelopeShape` accepts the v2 meta "unchanged".
    It was changed in 2A (`dm.controller.js` ~188-221). Correct the sentence.
 3. Update the 3.5 status and `DM_ATTACHMENTS_E2EE.md`: the browser scenarios now exist (or list which ones still
    do not and why). Keep the honest-limits list.

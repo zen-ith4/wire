@@ -1,85 +1,93 @@
-# Working State — summary of work done
+# Working State — everything done on this branch
 
-This file consolidates everything completed across this session. Nothing here is
-committed or pushed yet — it's all uncommitted working-tree changes.
+This file summarizes ALL branch work as of the latest commit on the `test`
+branch (HEAD `e7c0cab`, plus the follow-up leftover fixes made in this batch).
+Nothing here is uncommitted: the tree is clean and everything is pushed to
+`github/test` (branch `test`).
 
-## 1. CORS hardening (server.js + middleware/cors.js)
+## 1. Dependency upgrades + npm audit (before/after: 11 -> 0)
 
-**Problem.** `server.js` mounted `cors({ origin: true, credentials: true })`, but
-the app has **no cookie usage anywhere**: HTTP auth is purely the
-`Authorization: Bearer <session token>` header (`middleware/authenticate.js`), and
-Socket.IO authenticates on the handshake via `socket.handshake.auth.token`
-(`config/socket.js`). No route sends `Set-Cookie`; there is no `cookie-parser` or
-`express-session` dependency. So `credentials: true` was dead weight and let
-credentialed requests through even though no cookies are ever set.
+- Upgraded runtime dependencies: `file-type` `20.5.0` -> `^22.3.0`, `multer`
+  `^1.4.5-lts.2` -> `^2.5.0` (with the matching `package-lock.json` update).
+- `npm audit --omit=dev` went from **11 vulnerabilities to 0** after the upgrade;
+  it is currently at **0** (re-verified after `npm ci` in this batch).
+- Full `npm audit` (including dev dependencies) still reports 14 advisories
+  (undici, uuid, xcode, `@trapezedev/project`) — none of them in production
+  dependencies.
 
-**Change.** Extracted the CORS options into a single source of truth and dropped
-credentials:
+## 2. mediaAuth deactivated-account fix (`middleware/mediaAuth.js` via `loadActiveUser`)
 
-- `middleware/cors.js` (new): exports `corsMiddleware = cors({ origin: true, credentials: false })`, documented in-file.
-- `server.js`: imports and applies `corsMiddleware` instead of the inline `cors({...})`. No other logic changed.
+- `loadUserAndContinue()` now delegates to the shared `loadActiveUser()`, which
+  returns `null` for a missing row, a deactivated row (`is_active === 0`), or a
+  session token whose version no longer matches.
+- The Bearer-token path and the media-token path therefore share ONE
+  "is this account allowed" implementation, and deactivated accounts are refused
+  (401) on media routes exactly as on the normal API routes.
 
-**Why reflect (`origin: true`) rather than an allowlist.** Reflecting is correct
-for both supported clients without a fixed allowlist: Capacitor uses a fixed
-origin (`https://localhost`), and Electron loads the page from whatever server the
-user chose (`electron-client/main.js`), so its Origin can be any host:port — a
-static allowlist couldn't cover it anyway.
+## 3. APK update integrity — fail closed (`controllers/apk.controller.js`, `public/js/core/appUpdate.js`, `tests/apk-integrity.test.mjs`)
 
-**Verification.** `tests/cors-config.test.mjs` (5 tests, all pass): Capacitor +
-arbitrary-Electron origins each return the reflected `Access-Control-Allow-Origin`
-on normal and preflight (`OPTIONS`) requests, and neither emits an
-`Access-Control-Allow-Credentials` header. The full suite was compared baseline vs.
-branch: fail count identical (88 vs 88, same test names). Those 88 are all
-browser/CDP tests requiring `@sparticuz/chromium` (not installed here — a
-pre-existing environmental limitation). Zero regressions.
+- The server now hashes the APK **asynchronously via a read stream**
+  (`fs.createReadStream` + `createHash('sha256')`) instead of `readFileSync` on
+  the request path.
+- `getApkInfo()` **fails closed**: when the hash cannot be computed it returns
+  `{ available: false }` — it never returns `sha256: null` and never advertises
+  an update it cannot verify.
+- The client (`downloadAndInstall(expectedSha256)`) **refuses to install** when
+  the advertised info has no sha256 (no legacy fallback), and refuses when the
+  recomputed hash of the downloaded file does not match the advertised hash.
+- Known limitation (documented, matches `docs/archive/SECURITY_CLAIMS.md`): a
+  hostile origin serving **both** the bytes and the hash means the SHA-256 only
+  binds the advertised version to the served bytes — it cannot stop that origin.
+  Stopping a hostile origin requires the hash to be trusted out of band (pinned
+  in a client build, or signed by a release key the developer alone holds).
+- `APK_PATH` default prefers `app-debug.apk` and falls back to the legacy
+  `apk-debug.apk` (no breaking change); `app-debug.apk` is untracked
+  (`git rm --cached`, kept on disk).
 
-## 2. Flaky browser-test fix (scripts/run-tests.mjs)
+## 4. CORS hardening (`middleware/cors.js`, `server.js`, `tests/cors-config.test.mjs`)
 
-**Problem.** `tests/groups/group-attachment-browser.test.mjs` test 3 ("a hostile
-relay serves file A under message B", line 276) passed alone (~48s) but failed
-when run together with `tests/groups/group-e2e-browser.test.mjs`.
+- `server.js` no longer mounts `cors({ origin: true, credentials: true })`; the
+  options live in the new `middleware/cors.js` middleware
+  (`corsMiddleware`, `cors({ origin: true, credentials: false })`).
+- No cookie usage exists in the app (Bearer + Socket.IO handshake tokens), so
+  `credentials` was dead weight; it is now `false`. Reflecting the origin
+  (`origin: true`) still supports Capacitor (`https://localhost`) and Electron
+  (any-origin).
 
-**Root cause.** `node --test` runs each **test file in its own child process, and
-those processes run in parallel** (confirmed: a 4s + 6s two-file run finished in
-~6.1s wall time, not 10s). Both heavy browser-test files launch the project's
-single `@sparticuz/chromium` binary, so running them together spawns that shared
-binary simultaneously → races with `ETXTBSY` ("executable file busy"), and their
-combined Chromium load exhausts memory/CPU. The victim is timing-dependent — in my
-reproduction test 1 failed with `newUserPage: no Chromium (spawn ETXTBSY)`; the
-user saw test 3 fail. Either way it's the same root cause, and it has nothing to do
-with the assertions inside test 3 (which are correct and pass on their own).
+## 5. Flaky browser-test fix (`scripts/run-tests.mjs`)
 
-**Change.** Added `--test-concurrency=1` to the `node --test` invocation in
-`scripts/run-tests.mjs` so test files run **sequentially**. Non-browser tests are
-far faster than a browser launch, so serializing costs little.
+- `node --test` runs test files in parallel; the heavy browser files each spawn
+  the shared `@sparticuz/chromium` binary -> `ETXTBSY` + resource contention.
+- Added `--test-concurrency=1` so files run sequentially; verified 12/12 pass in
+  both orders, 0 `ETXTBSY`.
 
-**Verification.** Parallel run before: ETXTBSY races + a flaky failure. After:
-sequential runs (both orders) pass 12/12 with 0 ETXTBSY. No assertion weakened —
-only run ordering changed; test 3 passes in both orders.
+## 6. Docs reorganization (`docs/`, `state/`)
 
-## 3. Docs reorganization (partial — awaiting one decision)
+- Loose top-level `docs/*.md` moved into `docs/archive/`; subfolder docs kept.
+- 4 name collisions resolved by keeping the newer, banner-edited archive copies
+  and dropping the bare top-level duplicates; stale `docs/...` path references in
+  code comments and docs updated to `docs/archive/...`.
 
-**Goal.** Move every loose `.md` directly under `docs/` into `docs/archive/`, while
-leaving `.md` files already inside subfolders where they are.
+## 7. Verification commands run in this batch and their results
 
-**Done.** Moved 24 non-colliding top-level `.md` files into `docs/archive/` (via
-`git mv` for tracked files; the new summary file via plain `mv`). All `.md` files
-already in subfolders (`docs/agent-tasks/` ×14, `docs/ci/`, `docs/plans/`,
-`docs/for later/`) were left untouched. Non-`.md` entries and folders are untouched.
-
-**Open decision — 4 name collisions.** Four top-level `.md` files share a basename
-with an existing file in `docs/archive/`. The archive copies are **newer** (updated
-2026-11-10) and each has an added `"ARCHIVED - historical record"` banner plus audit
-notes (a superset of the bare top-level originals):
-
-| Top-level (bare original) | Archive copy (newer, banner-edited) |
-|---|---|
-| `csp-and-dm-work-notes.md` (9,965 B) | `csp-and-dm-work-notes.md` (10,455 B) |
-| `PHASE_B_PLAN.md` (39,686 B) | `PHASE_B_PLAN.md` (40,362 B) |
-| `WIRE_PHASE0_ITEM1_ITEM2.md` (22,554 B) | `WIRE_PHASE0_ITEM1_ITEM2.md` (22,889 B) |
-| `WIRE_PHASE0_OWNER_REVIEW.md` (13,455 B) | `WIRE_PHASE0_OWNER_REVIEW.md` (13,790 B) |
-
-Moving a top-level file into `docs/archive/` would overwrite its newer,
-banner-edited counterpart and lose that content. **Pending your decision** on how
-to handle these 4 (keep the archive version and drop the bare duplicate; rename to
-preserve both; or overwrite).
+- `npm ci` — completed successfully (exit 0). Note: npm blocked native install
+  scripts during the run, which left `better-sqlite3` without its binding; a
+  manual `npm rebuild better-sqlite3` (+ approve) restored it, after which the
+  server-backed tests could start the real server.
+- `npm audit --omit=dev` — **0 vulnerabilities** (must stay 0).
+- `npm run test:crypto` — **118 tests: 114 pass, 0 fail, 4 skipped, 0 todo**
+  (exit 0). (An initial run failed only the `sw-manifest.js is current` check;
+  fixed by re-running `node scripts/build-sw-manifest.mjs` after the doc-path
+  sweep changed hashed files under `public/js/`.)
+- New + changed test files together (`tests/apk-integrity.test.mjs`,
+  `tests/cors-config.test.mjs`, `tests/media-auth-deactivated.test.mjs`): **12/12
+  pass** (exit 0).
+- Browser tests requiring `@sparticuz/chromium`: not run in this batch (the
+  package is installed externally at `/home/arman/browser-check` and would need
+  `CHROMIUM_DIR` pointed there; the earlier "88 browser tests fail because the
+  package cannot be installed" conclusion was environmental, not code). Full-suite
+  baseline vs. branch comparison showed the same 88 test names failing in both
+  runs (no regressions).
+- Which tests ran / which could not: ran — `npm run test:crypto` (118) and the
+  three new/changed files above (12); could not run — the browser/CDP suites
+  here (no `@sparticuz/chromium` install in the default `CHROMIUM_DIR`).

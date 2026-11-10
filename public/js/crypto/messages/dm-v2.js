@@ -5,7 +5,7 @@
 // (encrypt.js, decrypt.js, payload.js, key-derivation.js, session.js) is
 // untouched and stays byte-identical.
 //
-// Implements docs/e2ee-dm-hardening.md section 3 (3.1 directional derivation,
+// Implements docs/archive/e2ee-dm-hardening.md section 3 (3.1 directional derivation,
 // 3.3 AAD layout) and section 4.2 (the v2 envelope) exactly as written there.
 // Two deliberate deviations are listed at the BOTTOM of this file under
 // "DEVIATIONS FROM THE DESIGN DOC"; read them before trusting any of this.
@@ -18,7 +18,7 @@
 //
 // ATTACHMENTS ARE NOT HERE. Section 3.3 also specifies a `dmAttachmentAad` under
 // the label 'dm-att-v2'. It is deliberately NOT implemented: DM attachment
-// encryption is not wired in this project at all (docs/PORT_NOTES.md), so an
+// encryption is not wired in this project at all (docs/archive/PORT_NOTES.md), so an
 // attachment AAD would be unreachable code asserting a guarantee nothing uses.
 // attachment-crypto.js keeps its own key and gains no AAD.
 

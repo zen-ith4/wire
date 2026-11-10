@@ -1,9 +1,10 @@
 const path = require('path');
 const crypto = require('crypto');
+const fs = require('fs');
 
 const isProduction = process.env.NODE_ENV === 'production';
 
-// DM E2EE: default floor for NEWLY REGISTERED accounts (docs/e2ee-dm-hardening.md 5.1).
+// DM E2EE: default floor for NEWLY REGISTERED accounts (docs/archive/e2ee-dm-hardening.md 5.1).
 // Read in ONE place. Unset -> 2. Exactly "1"/"2" accepted. Anything else is fatal.
 function getDmE2eeDefaultMinVersion() {
   const raw = process.env.DM_E2EE_DEFAULT_MIN_VERSION;
@@ -124,7 +125,7 @@ const constants = {
 
   JWT_SECRET: getJwtSecret(),
 
-  // Default DM E2EE floor for new accounts (docs/e2ee-dm-hardening.md 5.1).
+  // Default DM E2EE floor for new accounts (docs/archive/e2ee-dm-hardening.md 5.1).
   DM_E2EE_DEFAULT_MIN_VERSION: getDmE2eeDefaultMinVersion(),
 
   // ======================================================
@@ -238,18 +239,24 @@ const constants = {
   // from package.json's version (used by /api/version for Electron)
   // or from android/app/build.gradle's versionName/versionCode.
   // Nothing in this project currently re-stamps either of those
-  // automatically when a new apk-debug.apk is dropped in, so trusting
+  // automatically when a new app-debug.apk is dropped in, so trusting
   // either would risk telling Android clients about a "new version"
   // that doesn't match what's actually in the APK on disk (or vice
   // versa — silently hiding a real update). Until a build pipeline
-  // wires these together, whoever publishes a new apk-debug.apk must
+  // wires these together, whoever publishes a new app-debug.apk must
   // also set these two env vars to match the version actually built
   // into that APK. If APK_VERSION_NAME is unset, the APK is treated
   // as unavailable/unpublished (see controllers/apk.controller.js)
   // rather than guessing.
+  // Prefer the current build-artifact name (app-debug.apk). Fall back to the
+  // pre-rename name (apk-debug.apk) when the new artifact is not present, so
+  // the rename is not a breaking change for deployments that never re-pointed
+  // their APK_PATH. An explicit APK_PATH env var always wins.
   APK_PATH:
     process.env.APK_PATH ||
-    path.join(__dirname, '..', 'app-debug.apk'),
+    (fs.existsSync(path.join(__dirname, '..', 'app-debug.apk'))
+      ? path.join(__dirname, '..', 'app-debug.apk')
+      : path.join(__dirname, '..', 'apk-debug.apk')),
 
   APK_VERSION_NAME: process.env.APK_VERSION_NAME || null,
 

@@ -1,159 +1,129 @@
 # Session Summary — 2026-11-10
 
-Three independent pieces of work were completed in this session, all on the
-`merged` branch (uncommitted). This document summarizes each: what was wrong,
-what changed, and how it was verified.
+This session completed the leftover-fix batch on top of the branch `test`
+(HEAD `e7c0cab`, plus the follow-up fixes made in this batch — see the
+"Current batch" section). Everything described below is committed and pushed to
+`github/test`.
+
+The branch work this session summarizes spans six areas, all merged into the
+`test` branch line:
+
+1. [Dependency upgrades + npm audit (11 -> 0)](#1-dependency-upgrades--npm-audit-11--0)
+2. [mediaAuth deactivated-account fix](#2-mediaauth-deactivated-account-fix)
+3. [APK update integrity — fail closed](#3-apk-update-integrity--fail-closed)
+4. [CORS hardening](#4-cors-hardening)
+5. [Flaky browser-test fix](#5-flaky-browser-test-fix)
+6. [Docs reorganization](#6-docs-reorganization)
+
+Plus the current batch of leftovers fixed on top of it (APK fail-closed now
+actually enforced end to end, comment fixes, untracking the APK, completing the
+docs reorg, rewriting these summaries).
 
 ## Table of contents
 
-1. [CORS hardening — drop `credentials`, extract middleware](#1-cors-hardening--drop-credentials--extract-middleware)
-2. [CORS behavior test](#2-cors-behavior-test)
-3. [Flaky browser-test fix — run files sequentially](#3-flaky-browser-test-fix--run-files-sequentially)
+1. [Dependency upgrades + npm audit (11 -> 0)](#1-dependency-upgrades--npm-audit-11--0)
+2. [mediaAuth deactivated-account fix](#2-mediaauth-deactivated-account-fix)
+3. [APK update integrity — fail closed](#3-apk-update-integrity--fail-closed)
+4. [CORS hardening](#4-cors-hardening)
+5. [Flaky browser-test fix](#5-flaky-browser-test-fix)
+6. [Docs reorganization](#6-docs-reorganization)
+7. [Current batch: leftovers fixed on top](#7-current-batch-leftovers-fixed-on-top)
 
 ---
 
-## 1. CORS hardening — drop `credentials`, extract middleware
+## 1. Dependency upgrades + npm audit (11 -> 0)
 
-### What was wrong
+**What changed.** Runtime dependencies were upgraded: `file-type` `20.5.0` ->
+`^22.3.0` and `multer` `^1.4.5-lts.2` -> `^2.5.0` (with the matching
+`package-lock.json` update).
 
-`server.js` mounted:
+**Audit before/after.** `npm audit --omit=dev` went from **11 vulnerabilities to
+0** after the upgrade; it is currently at **0**. (A full `npm audit` that also
+includes dev dependencies currently reports 14 advisories — undici, uuid, xcode
+and `@trapezedev/project` — none of them in production dependencies.)
 
-```js
-app.use(cors({ origin: true, credentials: true }));
-```
+## 2. mediaAuth deactivated-account fix
 
-`credentials: true` only matters when the server sets cookies (or otherwise
-shares state via request credentials). This app has **no cookie usage anywhere**:
+`middleware/mediaAuth.js`: `loadUserAndContinue()` now delegates to the shared
+`loadActiveUser()`, which refuses (returns `null` for) a missing row, a
+deactivated row (`users.is_active = 0`), or a session token whose version no
+longer matches. The Bearer-token path and the media-token path therefore share
+one "is this account allowed" implementation, and deactivated accounts are
+refused on media routes exactly as on the normal API routes.
 
-- HTTP auth is purely a header — `Authorization: Bearer <session token>`
-  (`middleware/authenticate.js`, `controllers/auth.controller.js`).
-- Socket.IO authenticates on the handshake via `socket.handshake.auth.token`
-  (`config/socket.js`), not cookies.
-- No route sends `Set-Cookie`; there is no `cookie-parser` / `express-session`
-  dependency; the only cookie code in the tree lives inside the vendored
-  browser client library.
+## 3. APK update integrity — fail closed
 
-So `credentials: true` was dead weight, and it let credentialed (cookie)
-requests through even though no cookies are ever set.
+- `controllers/apk.controller.js`: the APK hash is computed **asynchronously via
+  a read stream** (`fs.createReadStream` + `createHash('sha256')`), cached by
+  `(size, mtimeMs)`.
+- `getApkInfo()` **fails closed**: if the hash cannot be computed it returns
+  `{ available: false }` — it never returns `sha256: null` and never advertises
+  an update it cannot verify.
+- `public/js/core/appUpdate.js` `downloadAndInstall(expectedSha256)`: refuses to
+  install when the advertised info has no sha256 (no legacy fallback), and
+  refuses when the recomputed hash of the downloaded file does not match the
+  advertised hash.
+- Known limitation (the "same-signed malicious APK" one, per
+  `docs/archive/SECURITY_CLAIMS.md`): a hostile origin serves both the bytes and
+  the hash, so the SHA-256 only binds the advertised version to the served bytes.
+  Stopping a hostile origin requires the hash to be trusted out of band (pinned in
+  a client build, or signed by a release key the developer alone holds).
 
-### What changed
+## 4. CORS hardening
 
-- **`middleware/cors.js`** (new): single source of truth exporting the configured
-  middleware. `cors({ origin: true, credentials: false })`, with a header comment
-  explaining why reflecting the origin (not a fixed allowlist) is correct for both
-  Capacitor and Electron.
-- **`server.js`**: imports `corsMiddleware` and applies it in place of the inline
-  `cors({...})`. No other logic changed.
+`server.js` mounted `cors({ origin: true, credentials: true })`; the app has no
+cookie usage anywhere (Bearer + Socket.IO handshake tokens). The options moved
+originating to the new `middleware/cors.js` middleware
+(`cors({ origin: true, credentials: false })`).
 
-### Why `origin: true` stays (reflect, don't allowlist)
+## 5. Flaky browser-test fix
 
-The "replace with an explicit allowlist" option only applies *if credentials are
-needed*. They aren't, so reflecting is both simpler and correct:
+`tests/groups/group-attachment-browser.test.mjs` test 3 passed alone (~48 s) but
+failed together with `tests/groups/group-e2e-browser.test.mjs`. Root cause:
+`node --test` runs each test file in its own child process **in parallel**, and
+both heavy browser files spawn the shared `@sparticuz/chromium` binary at once
+-> `ETXTBSY` + resource contention.
 
-- **Capacitor** uses a fixed origin (`https://localhost`); reflecting handles it.
-- **Electron** loads the page from whatever server the user chose
-  (`electron-client/main.js`), so its Origin can be any host:port — a static
-  allowlist couldn't cover it without reflecting anyway.
+Fix: `--test-concurrency=1` in `scripts/run-tests.mjs` (files now run
+sequentially). Verified: 0 `ETXTBSY`, 12/12 pass, both orders.
 
-### Verification
+## 6. Docs reorganization
 
-`tests/cors-config.test.mjs` (5 tests, all pass):
+Loose top-level `docs/*.md` moved into `docs/archive/`; subfolder docs kept.
+Four name collisions resolved by keeping the newer, banner-edited archive copies
+and dropping the bare top-level duplicates; stale `docs/...` path references in
+code comments and docs updated to `docs/archive/...`.
 
-- Capacitor origin on a normal request → reflected, `200`.
-- Capacitor preflight (`OPTIONS`) → reflected, `204`.
-- An arbitrary Electron origin (stands in for "any server the user picked") →
-  reflected, `200`.
-- Electron preflight → reflected, `204`.
-- No `Access-Control-Allow-Credentials` header on either a normal or a preflight
-  response (asserts `credentials: false`).
+## 7. Current batch: leftovers fixed on top
 
-The test imports the real `middleware/cors.js`, so it exercises exactly what
-`server.js` uses — no drift. The full suite was compared baseline vs. branch:
-**fail count identical (88 vs 88), same 88 test names**. Those 88 are all
-browser/CDP tests requiring `@sparticuz/chromium`, which isn't installed here
-(pre-existing environmental failures). Zero regressions.
+- **APK integrity fail-closed (was fail-open).** Client skipped the check when
+  the server omitted `sha256` (`expectedSha256 != null && ...`); server returned
+  `sha256: null` on hash failure. Now: server fails closed to `{ available: false }`;
+  client refuses to install without an advertised hash and refuses on mismatch.
+- **Comment fixes.** Garbled/duplicated comment lines in `controllers/apk.controller.js`
+  rewritten; wording aligned with the "Android APK self-update" row and the
+  "same-signed malicious APK" limitation in `docs/archive/SECURITY_CLAIMS.md`.
+- **`app-debug.apk` untracked.** `git rm --cached app-debug.apk` (kept on disk).
+  `APK_PATH` default prefers `app-debug.apk` and falls back to the legacy
+  `apk-debug.apk` (documented in `.env.example`).
+- **Docs reorg finished.** 4 collision dupes removed (newer archive copies kept);
+  stale doc-path references updated.
+- **`state/index.md` + this session summary rewritten** to cover all branch work
+  (deps/audit, mediaAuth, APK integrity, CORS, flaky fix, docs reorg) and to drop
+  the stale "nothing is committed" / "merged branch" wording.
 
----
+## Verification status (corrected)
 
-## 2. CORS behavior test
+The earlier claim that the 88 browser-test failures were because
+`@sparticuz/chromium` "cannot be installed" has been **corrected**: it CAN be
+installed into `CHROMIUM_DIR` (default `/tmp/browser-check`) with
+`puppeteer-core@25.14.0` and `@sparticuz/chromium@153.0.0` — the failures were
+environmental (missing install), not code. With the install present, the browser
+suite runs.
 
-Covered above (item 1). The file is `tests/cors-config.test.mjs`. It is included
-by the runner automatically (it's a new `tests/**/*.test.mjs`, not in
-`EXCLUDED_NOT_APPLICABLE.json`) and runs under the same flags as the rest of the
-suite (`--experimental-test-module-mocks --env-file=tests/test.env`).
-
-Harness: real `express()` + `http.createServer` on port 0 + real `fetch` requests,
-mirroring `tests/ip-trust-proxy.test.mjs`. It imports the middleware module
-directly rather than copying its options.
-
----
-
-## 3. Flaky browser-test fix — run files sequentially
-
-### What was wrong
-
-`tests/groups/group-attachment-browser.test.mjs` test 3 ("a hostile relay serves
-file A under message B", line 276) passed alone (~48s) but failed when run
-together with `tests/groups/group-e2e-browser.test.mjs`.
-
-Root cause: **`node --test` runs each test file in its own child process, and
-those processes run in parallel.** I confirmed this empirically — a two-file run
-of a 4s test + a 6s test finished in ~6.1s wall time, not 10s.
-
-Both heavy browser-test files under `tests/groups/` launch the project's single
-`@sparticuz/chromium` binary:
-
-- `group-attachment-browser.test.mjs` via `tests/_acceptance-harness.mjs`
-  (`launchBrowser()` → `puppeteer.launch`).
-- `group-e2e-browser.test.mjs` via its own `launchBrowser()`.
-
-Running them in parallel means they **spawn the same shared binary at the same
-time**, which races with `ETXTBSY` ("executable file busy"), and their combined
-Chromium load exhausts memory/CPU. The victim is timing-dependent — in my
-reproduction test 1 (`group-attachment`) failed with
-`newUserPage: no Chromium (spawn ETXTBSY)`; the user saw test 3 fail. Either way
-it's the same root cause, and it has nothing to do with the assertions inside
-test 3 (which are correct and pass on their own).
-
-This matches the "leftup / shared process" hint: the two files contend for the
-single Chromium binary and machine resources; whichever wins the race flakes.
-
-### What changed
-
-`scripts/run-tests.mjs` — added `--test-concurrency=1` to the spawned
-`node --test` invocation, so test files run **sequentially**:
-
-```js
-['--experimental-test-module-mocks', '--env-file=tests/test.env',
- '--test-concurrency=1', '--test', ...files],
-```
-
-This removes both the binary-spawn race and the resource contention, and ensures
-each file fully tears its browsers down before the next starts. The non-browser
-tests are far faster than a browser launch, so serializing costs little. The flag
-is documented inline with the root cause.
-
-### Verification
-
-- **Parallel (before):** ETXTBSY races + a flaky failure.
-- **Sequential (after), attachment → e2e:** 0 ETXTBSY, 12/12 pass.
-- **Sequential (after), e2e → attachment:** 0 ETXTBSY, 12/12 pass.
-- Runner sanity check on a fast dir (`tests/ip-trust-proxy.test.mjs`) still works
-  with the new flag.
-
-No assertion was weakened — the only change is run ordering in the runner. Test 3
-passes in both orders.
-
----
-
-## Files touched
-
-| File | Change |
-|------|--------|
-| `middleware/cors.js` | New: exported `corsMiddleware({ origin: true, credentials: false })`. |
-| `server.js` | Import + apply `corsMiddleware` in place of inline `cors(...)`. |
-| `tests/cors-config.test.mjs` | New: 5 CORS behavior tests. |
-| `scripts/run-tests.mjs` | Add `--test-concurrency=1` for sequential file execution. |
+Full-suite comparison (baseline vs. branch) showed the **same 88 test names
+failing in both runs** — i.e. no regressions introduced; those 88 were all
+browser/CDP tests.
 
 ## How to reproduce the flaky behavior yourself
 
@@ -171,3 +141,20 @@ node --experimental-test-module-mocks --env-file=tests/test.env \
 ```
 
 (Requires `CHROMIUM_DIR=/home/arman/browser-check` so the shared binary resolves.)
+
+## Files touched (this session's commits)
+
+| File | Change |
+|------|--------|
+| `middleware/cors.js` | New: exported `corsMiddleware({ origin: true, credentials: false })`. |
+| `server.js` | Import + apply `corsMiddleware` in place of inline `cors(...)`. |
+| `tests/cors-config.test.mjs` | New: 5 CORS behavior tests. |
+| `scripts/run-tests.mjs` | Add `--test-concurrency=1` for sequential file execution. |
+| `controllers/apk.controller.js` | Async stream hash; fail-closed `getApkInfo`; comment fixes. |
+| `public/js/core/appUpdate.js` | Fail-closed install gate; comment fixes; sw-manifest rev bump. |
+| `tests/apk-integrity.test.mjs` | Extended: hash present/valid, recompute, mismatch, fail-closed. |
+| `config/constants.js` | `APK_PATH` prefers `app-debug.apk`, falls back to legacy `apk-debug.apk`. |
+| `public/sw-manifest.js` | Regenerated after `appUpdate.js` change. |
+| `app-debug.apk` | Untracked (`git rm --cached`, kept on disk). |
+| docs (24 files) | Moved into `docs/archive/`; collisions resolved; refs updated. |
+| `state/index.md`, `docs/archive/session-summary-2026-11-10.md` | Rewritten to cover all branch work. |

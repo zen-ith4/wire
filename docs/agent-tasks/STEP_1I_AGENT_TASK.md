@@ -13,7 +13,7 @@ Before any run: `node -e "require('better-sqlite3')(':memory:')"` must print not
 "Could not locate the bindings file", run `npm rebuild better-sqlite3` and note it as infrastructure (it
 recurred in 1H).
 
-## Closed by the reviewer (do not redo; copy into `docs/DM_V2_WIRE.md` under "Observed on Linux")
+## Closed by the reviewer (do not redo; copy into `docs/archive/DM_V2_WIRE.md` under "Observed on Linux")
 
 Reviewer probe on Linux, wire-final-25, real Chromium, one stored row mutated through the test's own SQLite
 connection (`changes=1`, read-back confirmed), bob re-login, open DM. Row position among the 3 v2 messages:

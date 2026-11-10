@@ -819,7 +819,7 @@ function toggleGroupReactionHandler(req, res) {
 
 // STEP 3C: the neutral values the server stores for a group file. The real
 // name, mime, dimensions and voice flag travel inside the ENCRYPTED message
-// plaintext (see docs/GROUP_ATTACHMENTS_E2EE.md section "3C"), so the server
+// plaintext (see docs/archive/GROUP_ATTACHMENTS_E2EE.md section "3C"), so the server
 // never learns them and never stores what the client sent.
 const E2EE_GROUP_ATTACHMENT_NAME = 'encrypted-attachment';
 const E2EE_GROUP_ATTACHMENT_MIME = 'application/octet-stream';

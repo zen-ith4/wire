@@ -23,13 +23,13 @@ Not allowed to change: `routes/`, `controllers/`, `services/`, `database/`, `con
 
 ## 1. Goal in one paragraph
 
-Implement the design in `docs/GROUP_ATTACHMENTS_E2EE.md` at the crypto layer only. After this step a signed group message can carry an attachment whose `iv`, ciphertext hash and plaintext length are covered by the existing ECDSA signature, and the receive side refuses a file whose bytes do not match what the sender signed. Group attachment sending is still **not reachable from any UI path**. Wiring the composer, the upload call and the thread rendering is a later step (3C).
+Implement the design in `docs/archive/GROUP_ATTACHMENTS_E2EE.md` at the crypto layer only. After this step a signed group message can carry an attachment whose `iv`, ciphertext hash and plaintext length are covered by the existing ECDSA signature, and the receive side refuses a file whose bytes do not match what the sender signed. Group attachment sending is still **not reachable from any UI path**. Wiring the composer, the upload call and the thread rendering is a later step (3C).
 
 ---
 
 ## 2. Read first
 
-1. `docs/GROUP_ATTACHMENTS_E2EE.md` (the whole file) and `docs/GROUP_E2EE_MULTIDEVICE_DESIGN.md` sections 6 and 7.
+1. `docs/archive/GROUP_ATTACHMENTS_E2EE.md` (the whole file) and `docs/archive/GROUP_E2EE_MULTIDEVICE_DESIGN.md` sections 6 and 7.
 2. `public/js/crypto/groups/signing.js` (`encodeSignedBytes`, the `attachment` slot), `public/js/crypto/groups/message-crypto.js` (`encryptGroupMessage`, `decryptGroupMessageDetailed`, `UNBOUND_ENVELOPE_KEYS`, `UnverifiedMessageError`), `public/js/crypto/messages/attachment-crypto.js` (group half), `public/js/crypto/groups/nonce-lock.js`.
 3. `tests/groups/group-signing-messages.test.mjs` (`C3-4`, `C3-12`), `tests/groups/group-keys-contract.test.mjs` (`K-2`), `tests/groups/group-hardening-f4-replay.test.mjs`, `tests/attachment-crypto.test.mjs`, and the helpers `tests/groups/_roundtrip-helpers.mjs`, `_scenario.mjs`.
 4. `controllers/groups.controller.js` `sendMessageWithAttachmentHandler` and `config/multer.js` `groupUpload` (read only).
@@ -58,7 +58,7 @@ Also record in 3.8 (open questions) two facts the 3A doc got wrong or missed:
 
 ## 4. Items
 
-### Item 1. Docs first: correct `docs/GROUP_ATTACHMENTS_E2EE.md` (docs only, one commit)
+### Item 1. Docs first: correct `docs/archive/GROUP_ATTACHMENTS_E2EE.md` (docs only, one commit)
 Apply C1-C5 and the 3.8 additions. Change the status line from "design only" to "design reviewed; crypto layer implemented in STEP 3B, UI still disabled" only **after** items 2-6 pass (do that edit last, in item 7). Keep every `file:line` citation true: after your code changes the line numbers move, so re-check every citation and update it.
 
 ### Item 2. Slot builder in `signing.js`
@@ -111,8 +111,8 @@ Also add a **real server** test in the style of `tests/acceptance-no-plaintext.t
 
 ### Item 7. Manifest, docs status, zip
 - Public files changed, so run `node scripts/build-sw-manifest.mjs` and commit the regenerated `public/sw-manifest.js`. Then `--check` must say current.
-- Re-check every `file:line` citation in `docs/GROUP_ATTACHMENTS_E2EE.md` and in the doc-consistency edits.
-- Update status in `docs/GROUP_ATTACHMENTS_E2EE.md`, `docs/GROUP_E2EE_MULTIDEVICE_DESIGN.md` (6.7 item 5 and proposal 23) and `docs/e2ee-dm-hardening.md` section 3.5 to: "crypto layer implemented (STEP 3B); UI disabled; composer wiring is STEP 3C".
+- Re-check every `file:line` citation in `docs/archive/GROUP_ATTACHMENTS_E2EE.md` and in the doc-consistency edits.
+- Update status in `docs/archive/GROUP_ATTACHMENTS_E2EE.md`, `docs/archive/GROUP_E2EE_MULTIDEVICE_DESIGN.md` (6.7 item 5 and proposal 23) and `docs/archive/e2ee-dm-hardening.md` section 3.5 to: "crypto layer implemented (STEP 3B); UI disabled; composer wiring is STEP 3C".
 - Build `wire-final-35` the same way as last time (hash, entry count, clean-unzip `manifest --check`, CR check, copy and verify).
 
 ---

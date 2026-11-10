@@ -23,7 +23,7 @@ changes only where item 4 allows (minimal, one finding at a time, each reported)
    `tests/peer-trust-browser.test.mjs`, `tests/mobile-groups-tab-browser.test.mjs`.
    Table: file | run 1/2/3 | first error line.
 2. If `dm-v2-wire-browser` now passes on this machine, say so: the earlier "renderer freeze" label was
-   wrong for it. Then `grep -rn -i "windows" docs/test-baseline.md docs/*.md` and list every claim of the
+   wrong for it. Then `grep -rn -i "windows" docs/archive/test-baseline.md docs/*.md` and list every claim of the
    form "Windows-only freeze" with the evidence given for it. Mark each as `claim, not re-verified` unless
    you re-verify it. Do not edit those docs; report.
 

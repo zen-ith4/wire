@@ -28,7 +28,7 @@ import {
 import { encryptOutgoingGroupMessage, decryptIncomingGroupMessageDetailed, UnverifiedMessageError } from '../crypto/messages/group-message-crypto.js';
 
 /* =========================================================
- * Limits (see docs/GROUP_ATTACHMENTS_E2EE.md, section "3C")
+ * Limits (see docs/archive/GROUP_ATTACHMENTS_E2EE.md, section "3C")
  * ========================================================= */
 
 export const MAX_GROUP_ATTACHMENT_CAPTION = 60000;

@@ -1,6 +1,6 @@
 // tests/peer-trust.test.mjs
 //
-// Unit tests for Phase 2 of docs/e2ee-dm-hardening.md: the safety number, the
+// Unit tests for Phase 2 of docs/archive/e2ee-dm-hardening.md: the safety number, the
 // TOFU pin, the key-change alarm and the retired-key rule.
 //
 // Node-runnable (no server, no browser). The browser-level alarm/accept flow is

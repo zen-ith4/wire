@@ -2,7 +2,7 @@
 
 Put this file at `docs/agent-tasks/STEP_2A_AGENT_TASK.md`.
 Base: wire-final-30 (sha256 41f90f97...31b1, HEAD b777db4). Output zip: `wire-final-31`.
-Authoritative design: `docs/e2ee-dm-hardening.md` section 3.3 (the `dmAttachmentAad` sketch at lines ~207-210),
+Authoritative design: `docs/archive/e2ee-dm-hardening.md` section 3.3 (the `dmAttachmentAad` sketch at lines ~207-210),
 section 4.3, 5.4, 5.5 and 10.1. If anything in it contradicts the code, STOP and say so; do not deviate.
 
 This step DELIBERATELY changes DM attachment encryption. The earlier "do not touch attachments" rule is lifted
@@ -177,13 +177,13 @@ Regression, your own runs pasted: `tests/dm-attachments/*` (all, env=1 and defau
 
 ## 2A.6 Docs, then ship
 
-- `docs/DM_ATTACHMENTS_E2EE.md`: replace "an envelope encrypted with the existing DM session key (...no forward
+- `docs/archive/DM_ATTACHMENTS_E2EE.md`: replace "an envelope encrypted with the existing DM session key (...no forward
   secrecy...)" with the real description (v1 for v1 peers, v2 with AAD for v2 peers, labels, replay key), keep the
   "not covered" list honest.
-- `docs/e2ee-dm-hardening.md`: update the 3.5 status (attachments v2 shipped; `attachmentId` dropped and why;
+- `docs/archive/e2ee-dm-hardening.md`: update the 3.5 status (attachments v2 shipped; `attachmentId` dropped and why;
   replay key is the iv; what is still NOT done: group attachments disabled, Phase 3, no real Safari/Firefox/phone
   run, per-device replay window, the dead DM functions in `attachment-crypto.js`).
-- `docs/DM_V2_WIRE.md`: Observed on Linux section stays reviewer-owned; add yours separately.
+- `docs/archive/DM_V2_WIRE.md`: Observed on Linux section stays reviewer-owned; add yours separately.
 - Rebuild the manifest if `public/` changed and explain why. Suite three ways on the 72-file non-browser set (+ new
   node/server files): (i) wire-final-30 baseline, (ii) `DM_E2EE_DEFAULT_MIN_VERSION=1`, (iii) default; (ii) and
   (iii) 0 fail, 0 cancelled. Say which browser files you ran separately and their counts.

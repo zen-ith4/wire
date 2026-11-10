@@ -90,7 +90,7 @@ function dmTextNotEncrypted(res) {
   });
 }
 
-// STEP 1B: server rule with teeth (docs/e2ee-dm-hardening.md 5.5).
+// STEP 1B: server rule with teeth (docs/archive/e2ee-dm-hardening.md 5.5).
 //
 // After trim(), try JSON.parse. If encryption.version === 2 AND the recipient's
 // dm_e2ee_min_version < 2, refuse to store (4xx, clear message). Unparseable
@@ -133,7 +133,7 @@ function dmContentTooLong(res) {
 
 // STEP 1B: additive enrichment. The reply_to object carries the replied-to
 // message's own content etc., but not its reply_to_id. v2 binds replyToId into
-// the AAD (docs/e2ee-dm-hardening.md 3.3), so the receiver needs it to open a
+// the AAD (docs/archive/e2ee-dm-hardening.md 3.3), so the receiver needs it to open a
 // v2 message that was itself a reply. services/ is frozen, so this is one extra
 // query here, per batch.
 function attachDmReplyToIds(rows) {

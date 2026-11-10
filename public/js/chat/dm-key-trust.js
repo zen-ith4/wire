@@ -1,6 +1,6 @@
 // public/js/chat/dm-key-trust.js
 //
-// The DM-thread side of peer key trust (Phase 2 of docs/e2ee-dm-hardening.md).
+// The DM-thread side of peer key trust (Phase 2 of docs/archive/e2ee-dm-hardening.md).
 //
 // Responsibilities, and nothing else:
 //   - resolve the trust state for the open conversation;

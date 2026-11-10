@@ -116,7 +116,7 @@ SQLite is a good fit for a private single-node deployment. If concurrent users, 
 
 ### 12. Add automated tests
 
-> **Status checked against the tree (2026-11-09):** **Done, extensively:** 159 test files under `tests/` (see `docs/REFERENCE.md`).
+> **Status checked against the tree (2026-11-09):** **Done, extensively:** 159 test files under `tests/` (see `docs/archive/REFERENCE.md`).
 
 Create unit and integration tests for:
 

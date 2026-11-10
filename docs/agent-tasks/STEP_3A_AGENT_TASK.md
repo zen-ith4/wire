@@ -30,7 +30,7 @@ The title says the quote "falls back to the parent attachment label". The assert
 
 ## 1. Why this step exists
 
-`docs/GROUP_E2EE_MULTIDEVICE_DESIGN.md` section 6.7, limitation 5, says:
+`docs/archive/GROUP_E2EE_MULTIDEVICE_DESIGN.md` section 6.7, limitation 5, says:
 
 > Group attachments are disabled and must bind their bytes into the signature before they are ever enabled. The envelope has a reserved, empty attachment slot in the signed bytes; an envelope carrying attachment fields is refused; the attachment bytes themselves are only AEAD-protected under the Sender Key, so any member could forge a file "from" the key's owner.
 
@@ -44,16 +44,16 @@ This step produces the design. Implementation is a later step (3B), after the de
 
 ## 2. Read first (do not skip, and cite what you read)
 
-1. `docs/GROUP_E2EE_MULTIDEVICE_DESIGN.md` sections 6 and 7 (signing format, the 8 signed fields, where the "attachment slot" sits, the limitations list).
+1. `docs/archive/GROUP_E2EE_MULTIDEVICE_DESIGN.md` sections 6 and 7 (signing format, the 8 signed fields, where the "attachment slot" sits, the limitations list).
 2. `tests/groups/group-signing-messages.test.mjs`, especially `C3-12`.
 3. The client crypto for groups: `public/js/crypto/groups/message-crypto.js`, `groups/codec.js`, and the group half of `public/js/crypto/messages/attachment-crypto.js` (`encryptAttachmentForGroup`, `decryptAttachmentForGroup`, `attachmentAad`). Find the exact line numbers yourself.
-4. How DM attachments work today, because the file bytes use a streaming format: `docs/DM_ATTACHMENTS_E2EE.md`, `attachment-stream.js`, `config/dm-stream.js`, and the DM upload/download server paths.
+4. How DM attachments work today, because the file bytes use a streaming format: `docs/archive/DM_ATTACHMENTS_E2EE.md`, `attachment-stream.js`, `config/dm-stream.js`, and the DM upload/download server paths.
 5. The server side for group file upload (routes/controllers for group messages and uploads): what is stored, what the server validates, what `attachment_iv` means there (the existing server test says uploads without a valid `attachment_iv` are rejected).
-6. `docs/DM_ATTACHMENTS_E2EE.md` as the model for how to write the document.
+6. `docs/archive/DM_ATTACHMENTS_E2EE.md` as the model for how to write the document.
 
 ---
 
-## 3. Deliverable: `docs/GROUP_ATTACHMENTS_E2EE.md`
+## 3. Deliverable: `docs/archive/GROUP_ATTACHMENTS_E2EE.md`
 
 Write it in plain English, facts only, no marketing. It must contain these sections in this order.
 
@@ -106,8 +106,8 @@ List decisions only the owner can make (size cap, whether voice messages are inc
 
 ## 4. Doc consistency edits (docs only)
 
-- `docs/GROUP_E2EE_MULTIDEVICE_DESIGN.md`: in section 6.7 item 5 and in the proposals list, add one line pointing to `docs/GROUP_ATTACHMENTS_E2EE.md`. Do not rewrite anything else.
-- `docs/e2ee-dm-hardening.md` section 3.5: change the "NOT done" line about group attachments to point to the new doc and say "design written, not implemented".
+- `docs/archive/GROUP_E2EE_MULTIDEVICE_DESIGN.md`: in section 6.7 item 5 and in the proposals list, add one line pointing to `docs/archive/GROUP_ATTACHMENTS_E2EE.md`. Do not rewrite anything else.
+- `docs/archive/e2ee-dm-hardening.md` section 3.5: change the "NOT done" line about group attachments to point to the new doc and say "design written, not implemented".
 
 ---
 
@@ -128,7 +128,7 @@ List decisions only the owner can make (size cap, whether voice messages are inc
 
 1. Zip block.
 2. Item 0 result (c2b).
-3. Link/summary of `docs/GROUP_ATTACHMENTS_E2EE.md`: the chosen design in five lines, and the open questions for the owner.
+3. Link/summary of `docs/archive/GROUP_ATTACHMENTS_E2EE.md`: the chosen design in five lines, and the open questions for the owner.
 4. Raw acceptance output.
 5. **Verified / Unverified.** Verified means you ran it and saw it. Anything you only read, estimated or inferred goes under Unverified (Linux, non-Chromium and the voice recorder stay unverified unless someone ran them).
 
@@ -136,7 +136,7 @@ List decisions only the owner can make (size cap, whether voice messages are inc
 
 - Do not implement, enable or stub group attachments, and do not change `C3-12`.
 - Do not change `public/` just to make a design look easier. If the design needs a code change, describe it in the document and stop.
-- Do not start forward secrecy (Phase 3 in `docs/e2ee-dm-hardening.md`). That is a separate owner decision; the document's own recommendation is to keep static-static for now.
+- Do not start forward secrecy (Phase 3 in `docs/archive/e2ee-dm-hardening.md`). That is a separate owner decision; the document's own recommendation is to keep static-static for now.
 - Do not weaken any assert or delete a test to keep the suite green.
 
 ## STOP

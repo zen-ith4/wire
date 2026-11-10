@@ -7,6 +7,13 @@
 // a stale env var or a hot-swapped build must not advertise a hash that no
 // longer matches the served bytes.
 //
+// Fail-closed contract under test:
+//   - when the APK is present and versioned, the response MUST carry a real
+//     SHA-256 (64 hex chars, matching the file bytes) — never sha256: null and
+//     never a missing key;
+//   - when the bytes cannot be hashed, the response MUST be { available: false }
+//     — the server never advertises an update it cannot verify.
+//
 // controllers/apk.controller.js touches only fs + config/constants (never the
 // database), so this drives the controller directly with a fake res instead of
 // booting a whole server. env is set BEFORE requiring the module, because
@@ -23,7 +30,7 @@ import { createHash } from 'node:crypto';
 const require = createRequire(import.meta.url);
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'apk-integrity-'));
-const apkPath = path.join(tmp, 'apk-debug.apk');
+const apkPath = path.join(tmp, 'app-debug.apk');
 
 const FIXTURE_A = Buffer.from('AAAAA', 'ascii'); // 5 bytes
 const FIXTURE_B = Buffer.from('BBBBBBBBB', 'ascii'); // 9 bytes — different size,
@@ -61,45 +68,66 @@ function requireFreshController(apkPathOverride) {
     return require(require.resolve('../controllers/apk.controller.js'));
 }
 
-test('reports a SHA-256 that matches the served bytes when the file is present', () => {
+test('getApkInfo reports a SHA-256 that matches the served bytes when the file is present', async () => {
     fs.writeFileSync(apkPath, FIXTURE_A);
     const { getApkInfo } = requireFreshController();
 
     const res = makeRes();
-    getApkInfo({}, res);
+    await getApkInfo({}, res);
 
     assert.equal(res.body.available, true);
     assert.equal(res.body.versionName, '1.2.3');
     assert.equal(res.body.size, FIXTURE_A.length);
+    // The advertised hash must be present and real — never missing, never null.
+    assert.equal(typeof res.body.sha256, 'string');
+    assert.match(res.body.sha256, /^[a-f0-9]{64}$/);
     assert.equal(res.body.sha256, sha256(FIXTURE_A));
 });
 
-test('the advertised hash tracks a changed build (mtime/size cache invalidates)', () => {
+test('the advertised hash tracks a changed build (mtime/size cache invalidates)', async () => {
     // First call hashes FIXTURE_A and caches it.
     fs.writeFileSync(apkPath, FIXTURE_A);
     const { getApkInfo } = requireFreshController();
     const resA = makeRes();
-    getApkInfo({}, resA);
+    await getApkInfo({}, resA);
     assert.equal(resA.body.sha256, sha256(FIXTURE_A));
 
     // Same file again: the cache must still serve the same hash.
     const resAagain = makeRes();
-    getApkInfo({}, resAagain);
+    await getApkInfo({}, resAagain);
     assert.equal(resAagain.body.sha256, sha256(FIXTURE_A));
 
-    // A different build (different size -> stale cache) must be re-hashed.
+    // A different build (different size -> stale cache) must be re-hashed and
+    // the ADVERTISED hash must be the new bytes' hash (a stale/mismatching hash
+    // is exactly the bug the client-side comparison guards against).
     fs.writeFileSync(apkPath, FIXTURE_B);
     const resB = makeRes();
-    getApkInfo({}, resB);
+    await getApkInfo({}, resB);
     assert.equal(resB.body.sha256, sha256(FIXTURE_B));
+    assert.notEqual(resB.body.sha256, sha256(FIXTURE_A));
 });
 
-test('with no APK file advertised as unavailable and no hash', () => {
+test('with no APK file advertised as unavailable and no hash', async () => {
     const missing = path.join(tmp, 'does-not-exist.apk');
     const { getApkInfo } = requireFreshController(missing);
 
     const res = makeRes();
-    getApkInfo({}, res);
+    await getApkInfo({}, res);
     assert.equal(res.body.available, false);
+    assert.equal(res.body.sha256, undefined);
+});
+
+test('getApkInfo fails closed to available:false (never sha256:null) when the hash cannot be computed', async () => {
+    fs.writeFileSync(apkPath, FIXTURE_A);
+    const { getApkInfo } = requireFreshController();
+
+    // Present file, but unreadable -> async hash fails -> fail closed.
+    fs.chmodSync(apkPath, 0o000);
+    const res = makeRes();
+    await getApkInfo({}, res);
+    fs.chmodSync(apkPath, 0o644);
+
+    assert.equal(res.body.available, false);
+    assert.notEqual(res.body.sha256, null);
     assert.equal(res.body.sha256, undefined);
 });

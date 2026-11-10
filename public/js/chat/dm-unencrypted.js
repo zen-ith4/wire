@@ -21,7 +21,7 @@
 // The server also picks row ids and page order, so an id alone cannot make a row
 // history. A row that arrives live, or sits after a sealed row in its page, is new
 // whatever id it claims. What that leaves a server is a row claiming to be older than
-// everything loaded, shown at the top of the page and marked. docs/SECURITY_CLAIMS.md
+// everything loaded, shown at the top of the page and marked. docs/archive/SECURITY_CLAIMS.md
 // states that limit, and the price of the rule: an honest plaintext row newer than
 // the line, which only a client from before encryption could have written, is hidden.
 

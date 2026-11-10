@@ -18,7 +18,7 @@
 // Layer 3 is the one that actually makes a downgrade fail, and it needs nothing
 // from the server. Layer 2 is the only thing that catches a FIRST-CONTACT
 // downgrade, and only if this browser has seen the conversation before - doc 5.3
-// and doc 7.1 say that plainly and so do we; see docs/DM_V2_WIRE.md.
+// and doc 7.1 say that plainly and so do we; see docs/archive/DM_V2_WIRE.md.
 
 import { getServerEndpoint } from '../../core/server.js';
 import { getCurrentUser } from '../../core/auth.js';
@@ -444,7 +444,7 @@ async function peerKeysToDecryptWith(peerId) {
  * the user accepts that key.
  *
  * For our OWN message: our own CURRENT key. An own rotation therefore makes our
- * older v2 rows unreadable - doc 4.4, and docs/test-baseline.md, say so, and
+ * older v2 rows unreadable - doc 4.4, and docs/archive/test-baseline.md, say so, and
  * adding escrow for it is out of scope.
  */
 async function selectSenderKey(payload, peerId, ownUserId) {

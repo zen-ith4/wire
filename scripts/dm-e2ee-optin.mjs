@@ -1,7 +1,7 @@
 // scripts/dm-e2ee-optin.mjs
 //
 // Opt accounts in to DM envelope v2 by raising users.dm_e2ee_min_version from 1
-// to 2 (docs/e2ee-dm-hardening.md section 5.1). The sender reads this value as
+// to 2 (docs/archive/e2ee-dm-hardening.md section 5.1). The sender reads this value as
 // the peer's floor: a peer at 2 gets v2, a peer at 1 keeps receiving exactly the
 // v1 envelope it gets today.
 //

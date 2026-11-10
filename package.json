@@ -47,5 +47,8 @@
     "fake-indexeddb": "^6.2.5",
     "jsdom": "^30.0.1",
     "nodemon": "^3.1.14"
+  },
+  "allowScripts": {
+    "better-sqlite3@11.10.0": true
   }
 }

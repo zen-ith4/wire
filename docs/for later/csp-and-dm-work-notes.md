@@ -89,7 +89,7 @@ The CSP summary reports that `csp-static.test.mjs` passed 9/10 and `CSP header: 
   - `dm.js` inserts the server's message ID into HTML without escaping in five places.
   - One `null` row can blank the whole thread.
   - `package-lock.json` is out of sync with `package.json`; `npm ci` fails.
-  - `docs/WIRE_PHASE0_OWNER_REVIEW.md` and `docs/PHASE3_RFC.md` are outdated.
+  - `docs/archive/WIRE_PHASE0_OWNER_REVIEW.md` and `docs/archive/PHASE3_RFC.md` are outdated.
   - `transition:width:.15s ease` and `transition:opacity:.15s ease` are invalid CSS values retained from before this work.
   - Other reported DM rough edges include held old plaintext staying hidden until reload, a conversation-list/thread mismatch for old plaintext, and a forged row label remaining until reload.
 - An install report listed 21 known vulnerabilities in existing dependencies, including `multer` 1.x, `tar` 6, `glob` 9/10, and `uuid` 7/9. This was not rechecked for this note and was not addressed. Do not run `npm audit fix --force`.

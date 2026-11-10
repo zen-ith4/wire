@@ -30,7 +30,7 @@ Edit this list before running if you disagree. If you change one, tell the agent
 
 ## 1. Read first
 
-1. `docs/GROUP_ATTACHMENTS_E2EE.md` (post-3B version), `docs/DM_ATTACHMENTS_E2EE.md` (how DM hides file name, mime, size class), `docs/BROWSER_TEST_ISOLATION.md`.
+1. `docs/archive/GROUP_ATTACHMENTS_E2EE.md` (post-3B version), `docs/archive/DM_ATTACHMENTS_E2EE.md` (how DM hides file name, mime, size class), `docs/archive/BROWSER_TEST_ISOLATION.md`.
 2. 3B code: `signing.js` `buildAttachmentSlot`, `message-crypto.js` (`encryptGroupMessage` with the attachment argument, `decryptGroupMessageDetailed` and `attachmentBinding`), `attachment-crypto.js` group half.
 3. Composer and thread: `public/js/chat/group.js`, `thread.js`, `composer.js`, `reply.js`, `public/js/media/attachments.js`, `attachment-e2ee.js`, `lazy-e2ee-media.js`, `mediaToken.js`. Find out how the DM path sends a file, shows progress and renders it, and mirror it. Cite what you read.
 4. Server: `routes/groups.routes.js` upload route, `controllers/groups.controller.js` `sendMessageWithAttachmentHandler` and `getAttachmentHandler`, `config/multer.js` `groupUpload` and `createUploader` (`opaqueNames`, `extraBytes`, the mkdir list).
@@ -49,7 +49,7 @@ The 3B task said "a call without a binding must throw; no unbound fallback". The
 - Grep proof: no unbound decrypt path remains.
 
 ### Item 1. Design note, then stop-check (docs only)
-Add section "3C: file metadata and what the server sees" to `docs/GROUP_ATTACHMENTS_E2EE.md`. Today the group upload stores the client's file name, mime, width, height and voice flag in clear (`controllers/groups.controller.js` around `sendMessageWithAttachmentHandler`), and `groupUpload` does not use `opaqueNames`, unlike `dmUpload`. Specify:
+Add section "3C: file metadata and what the server sees" to `docs/archive/GROUP_ATTACHMENTS_E2EE.md`. Today the group upload stores the client's file name, mime, width, height and voice flag in clear (`controllers/groups.controller.js` around `sendMessageWithAttachmentHandler`), and `groupUpload` does not use `opaqueNames`, unlike `dmUpload`. Specify:
 - **What the server sees after 3C:** opaque stored name, `attachment_name = 'encrypted-attachment'`, `mime = 'application/octet-stream'`, width/height null, voice false, ciphertext size, `attachment_iv`. Nothing else.
 - **Where the real metadata lives:** inside the **encrypted message plaintext**. Discriminator: if the verified envelope has `att_*` fields (signed), the plaintext is a JSON object `{"v":1,"text":"<caption>","file":{"name":...,"mime":...,"w":...,"h":...}}`; if it has no `att_*` fields the plaintext is the plain text exactly as today. This needs no ambiguity rule because the discriminator is signed. State the limits: name <= 255 chars, mime <= 127, w/h positive integers <= 20000 or absent, reject unknown `v`, reject extra keys that are not in the list.
 - **Receiver sanitising rules** (write them as testable statements): the file name is shown with `textContent` only, path separators and control/bidi characters are stripped, empty result becomes `file`; inline rendering only for `image/png|jpeg|gif|webp` after the **decrypted bytes** are sniffed to match (never trust `mime` alone), everything else is a download with `application/octet-stream`; SVG is never rendered inline.
@@ -92,7 +92,7 @@ Real Chromium (write them now, mirror `tests/dm-v2-attachments-browser.test.mjs`
 - no key/iv/hash/ciphertext material in the DOM, including in a quote;
 - flag off -> no attach control.
 
-Chromium note: the helper imports `@sparticuz/chromium` (with a **z**). The 3A report wrote `@sparticux` (with an x), which does not exist, so the "registry 404" claim there was probably a typo. Try `npm view @sparticuz/chromium` and paste the raw output. `@sparticuz/chromium` ships a Linux binary, so on Windows it will not run even when installed: use WSL or Docker if available (see `docs/BROWSER_TEST_ISOLATION.md` for `CHROMIUM_DIR`), otherwise report BLOCKED with the exact reason. Do not mark a browser test as passed from reading it.
+Chromium note: the helper imports `@sparticuz/chromium` (with a **z**). The 3A report wrote `@sparticux` (with an x), which does not exist, so the "registry 404" claim there was probably a typo. Try `npm view @sparticuz/chromium` and paste the raw output. `@sparticuz/chromium` ships a Linux binary, so on Windows it will not run even when installed: use WSL or Docker if available (see `docs/archive/BROWSER_TEST_ISOLATION.md` for `CHROMIUM_DIR`), otherwise report BLOCKED with the exact reason. Do not mark a browser test as passed from reading it.
 
 ### Item 6. `C3-12` and the composer guard: update deliberately
 - `C3-12` currently says no module except `attachment-crypto.js` may call `encryptAttachmentForGroup`. Change the allowed list to exactly one new send module (name it in the test), keep the walk over `public/js`, and keep the assertion that `buildAttachmentSlot` is referenced from `message-crypto.js`.
@@ -101,7 +101,7 @@ Chromium note: the helper imports `@sparticuz/chromium` (with a **z**). The 3A r
 
 ### Item 7. Manifest, docs, zip
 - Regenerate `public/sw-manifest.js` (`node scripts/build-sw-manifest.mjs`), `--check` must say current. CR check with a method that really detects `\r` (python), not `grep $'\r'` in `sh`.
-- Update `docs/GROUP_ATTACHMENTS_E2EE.md`, `docs/GROUP_E2EE_MULTIDEVICE_DESIGN.md` (6.7 item 5, proposal 23) and `docs/e2ee-dm-hardening.md` 3.5 to: "implemented behind `GROUP_ATTACHMENTS_UI_ENABLED=false`; browser tests BLOCKED/passed on <platform>". Re-check every `file:line` citation.
+- Update `docs/archive/GROUP_ATTACHMENTS_E2EE.md`, `docs/archive/GROUP_E2EE_MULTIDEVICE_DESIGN.md` (6.7 item 5, proposal 23) and `docs/archive/e2ee-dm-hardening.md` 3.5 to: "implemented behind `GROUP_ATTACHMENTS_UI_ENABLED=false`; browser tests BLOCKED/passed on <platform>". Re-check every `file:line` citation.
 - Build `wire-final-36` the same way as before.
 
 ---

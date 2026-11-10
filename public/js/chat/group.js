@@ -20,7 +20,7 @@
 // signs its bytes into the message envelope (the signed att_iv / att_ct_hash
 // / att_len are the receiver's authority) and the thread renders the
 // decrypted bytes. The server never sees the file name, mime or dimensions:
-// they travel inside the encrypted plaintext (docs/GROUP_ATTACHMENTS_E2EE.md,
+// they travel inside the encrypted plaintext (docs/archive/GROUP_ATTACHMENTS_E2EE.md,
 // section "3C").
 
 import { api } from '../core/api.js';

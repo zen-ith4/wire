@@ -201,6 +201,18 @@ async function downloadAndInstall(expectedSha256) {
     return;
   }
 
+  // Integrity gate — fail closed. The server is supposed to advertise the
+  // SHA-256 it would serve in /api/apk/info, and when it cannot it answers
+  // { available: false } (see controllers/apk.controller.js). This client
+  // therefore REFUSES TO INSTALL an update that has no advertised hash — no
+  // legacy "signature-only" fallback. An install this client cannot verify is
+  // worse than no install at all, so a missing hash is treated like a mismatch.
+  if (!expectedSha256) {
+    console.error('[AppUpdate] Refusing to install: the server advertised no SHA-256.');
+    showToast('Update rejected: no integrity check from this server', 'error');
+    return;
+  }
+
   let apkPath;
   try {
     apkPath = await downloadApk();
@@ -218,10 +230,9 @@ async function downloadAndInstall(expectedSha256) {
   // re-hash exactly what we downloaded and compare. A mismatch aborts here, so
   // a hostile server that advertised a newer version but served a different
   // (malicious) build can't get it installed. Fail closed: any failure to read
-  // or hash the file is treated as a mismatch. Only enforced when the server
-  // sent a hash — an older server without this field falls back to the legacy
-  // signature-only check, so this never breaks updates from servers that have
-  // not been updated yet.
+  // or hash the file is treated as a mismatch. The advertised hash is mandatory
+  // (enforced before download above); when present it must match the bytes we
+  // actually downloaded.
   let actualSha256;
   try {
     actualSha256 = await readApkSha256();
@@ -231,7 +242,7 @@ async function downloadAndInstall(expectedSha256) {
     return;
   }
 
-  if (expectedSha256 != null && actualSha256 !== expectedSha256) {
+  if (actualSha256 !== expectedSha256) {
     console.error(
       `[AppUpdate] SHA-256 mismatch: expected ${expectedSha256}, got ${actualSha256}`
     );

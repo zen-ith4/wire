@@ -1210,6 +1210,9 @@ async function renderGroupVoice(row, container) {
         el.innerHTML = groupAttachmentUnavailableHtml();
         return;
     }
+    // Drop the lazy placeholder so the voice player does not sit next to a
+    // stale download button once the (decrypted) audio has loaded.
+    el.innerHTML = '';
     const blob = new Blob([bytes], { type: mime });
     const url = URL.createObjectURL(blob);
     const voiceMsg = { id: Number(row.id), is_voice_message: true, attachment_mime: mime };

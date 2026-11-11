@@ -422,3 +422,30 @@ test('row 10: 50 attachment messages in one history page -> at most 2 in flight 
         cleanup();
     }
 });
+
+test('voice safety: a row flagged voice:true with a non-audio mime renders as a NORMAL file, never as a voice note', async () => {
+    const PNG_SIG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0];
+    const png = new Uint8Array(PNG_SIG.length + GCM);
+    png.set(PNG_SIG, 0);
+    stubFetch(() => okBody(png));
+    decryptBehaviour = () => png;
+    try {
+        // voice: true on the meta, but the mime is image/png (not an
+        // allowlisted audio type) - the hostile member's flag must be ignored.
+        const el = { isConnected: true, innerHTML: '', dataset: { groupAttachmentId: '77' } };
+        const node = { querySelector: (s) => (s.includes('"77"') ? el : null) };
+        ga.stageGroupAttachment({
+            id: 77, groupId: 7, raw: { id: 77, attachment_iv: 'AAAAAAAAAAAAAAAA' },
+            binding: { iv: 'AAAAAAAAAAAAAAAA', ctHash: 'x', len: PNG_SIG.length }, senderKeyId: 'k',
+            meta: { text: '', file: { name: 'photo.png', mime: 'image/png', voice: true } }, size: PNG_SIG.length,
+        });
+        ga.registerGroupAttachmentRow({ id: 77 }, node);
+        ga.downloadGroupAttachment(77);
+        assert.equal(await settle(77), 'loaded');
+        assert.ok(!el.innerHTML.includes('class="voice-message"'), `must not render a voice player: ${el.innerHTML}`);
+        assert.ok(el.innerHTML.includes('chat-attachment-image') || el.innerHTML.includes('chat-attachment-download'),
+            `must render as a normal (non-voice) attachment: ${el.innerHTML}`);
+    } finally {
+        cleanup();
+    }
+});

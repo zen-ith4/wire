@@ -157,6 +157,75 @@ test('the plaintext meta encodes and decodes, and the decoder is strict', () => 
     }
 });
 
+test('the plaintext meta carries an OPTIONAL voice flag, and the decoder is strict about it', () => {
+    // Voice present and true: round-trips.
+    const plain = ga.buildGroupAttachmentPlaintext({
+        text: 'hello',
+        file: { name: 'voice.webm', mime: 'audio/webm', voice: true },
+    });
+    const meta = ga.parseGroupAttachmentPlaintext(plain);
+    assert.equal(meta.text, 'hello');
+    assert.equal(meta.file.name, 'voice.webm');
+    assert.equal(meta.file.mime, 'audio/webm');
+    assert.equal(meta.file.voice, true, 'the voice flag must survive the round trip');
+
+    // The flag is OPTIONAL: absent when the sender did not flag it (images, pdfs
+    // and text-only messages keep the exact same plaintext as before).
+    const noVoice = ga.parseGroupAttachmentPlaintext(ga.buildGroupAttachmentPlaintext({
+        text: 'pic',
+        file: { name: 'photo.png', mime: 'image/png' },
+    }));
+    assert.equal(noVoice.file.voice, undefined, 'a non-voice file must not carry the voice key');
+
+    // The builder only ever emits the key for the boolean true.
+    const builderOut = JSON.parse(ga.buildGroupAttachmentPlaintext({
+        text: 'x',
+        file: { name: 'a', mime: 'audio/webm', voice: false },
+    }));
+    assert.equal(Object.prototype.hasOwnProperty.call(builderOut.file, 'voice'), false,
+        'voice: false must leave the key out entirely (byte-identical to a non-voice meta)');
+
+    // Strict: only the boolean true is meaningful. Anything else is malformed.
+    const bad = [
+        '{"v":1,"text":"x","file":{"name":"a","mime":"audio/webm","voice":"true"}}',
+        '{"v":1,"text":"x","file":{"name":"a","mime":"audio/webm","voice":0}}',
+        '{"v":1,"text":"x","file":{"name":"a","mime":"audio/webm","voice":null}}',
+        '{"v":1,"text":"x","file":{"name":"a","mime":"audio/webm","voice":1}}',
+    ];
+    for (const b of bad) {
+        assert.equal(ga.parseGroupAttachmentPlaintext(b), null, `must be rejected: ${b}`);
+    }
+
+    // Unknown keys inside `file` are still rejected (strict whitelist).
+    assert.equal(ga.parseGroupAttachmentPlaintext('{"v":1,"text":"x","file":{"name":"a","mime":"b","voice":true,"zz":1}}'), null);
+
+    // Old-receiver behaviour: a meta carrying `voice` is rejected by a parser
+    // built from the pre-change (voice-less) allowlist. This is the documented
+    // compatibility trade-off - see docs/archive/GROUP_ATTACHMENTS_E2EE.md.
+    const oldReceiverKeys = (ga.GROUP_ATTACHMENT_FILE_META_KEYS || ['name', 'mime', 'w', 'h', 'voice']).filter((k) => k !== 'voice');
+    const oldParsed = ga.parseGroupAttachmentPlaintext(plain, { allowedFileKeys: oldReceiverKeys });
+    assert.equal(oldParsed, null, 'a pre-change (voice-less) receiver must reject a meta carrying voice');
+
+    // Tampered plaintext (an extra top-level key) is rejected.
+    assert.equal(ga.parseGroupAttachmentPlaintext('{"v":1,"text":"x","file":{"name":"a","mime":"audio/webm","voice":true},"extra":1}'), null);
+});
+
+test('group voice is only honoured for an allowlisted audio mime (malicious flagging cannot turn a non-audio file into a voice note)', () => {
+    // Allowlisted audio types (the recorder's outputs) are honoured.
+    for (const mime of ga.GROUP_VOICE_MIMES) {
+        assert.equal(ga.isGroupVoiceAttachment({ voice: true, mime }), true, `${mime} must be honoured`);
+    }
+    // Anything else - image, pdf, video, octet-stream, unknown - is NOT a
+    // voice message, even with voice: true (the DM rule, mirrored client-side).
+    for (const mime of ['image/png', 'application/pdf', 'video/mp4', 'application/octet-stream', 'audio/mpeg', 'audio/wav']) {
+        assert.equal(ga.isGroupVoiceAttachment({ voice: true, mime }), false, `${mime} must not be honoured`);
+    }
+    // A falsy / absent flag is never a voice message.
+    assert.equal(ga.isGroupVoiceAttachment({ voice: false, mime: 'audio/webm' }), false);
+    assert.equal(ga.isGroupVoiceAttachment({ voice: undefined, mime: 'audio/webm' }), false);
+    assert.equal(ga.isGroupVoiceAttachment({ mime: 'audio/webm' }), false);
+});
+
 test('the meta builder clamps the name and the mime to the documented limits', () => {
     const long = 'x'.repeat(400);
     const plain = JSON.parse(ga.buildGroupAttachmentPlaintext({

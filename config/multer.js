@@ -277,10 +277,10 @@ const dmUpload = createUploader({
   dir: constants.DM_UPLOAD_DIR,
   maxSizeMB: constants.DM_UPLOAD_MAX_MB,
   opaqueNames: true,
-  // +1: multer/busboy treat `fileSize` as EXCLUSIVE (a body of exactly
-  // that many bytes is rejected), so without it a file of exactly
-  // DM_UPLOAD_MAX_MB could never be sent.
-  extraBytes: dmCiphertextOverheadBytes(constants.DM_UPLOAD_MAX_MB * 1024 * 1024) + 1,
+  // multer 2.x (busboy 1.x) treats `fileSize` as INCLUSIVE: a body of
+  // exactly that many bytes is accepted, one more is refused. The cap here is
+  // the ciphertext size (plaintext + overhead), so no `+1` is needed.
+  extraBytes: dmCiphertextOverheadBytes(constants.DM_UPLOAD_MAX_MB * 1024 * 1024),
   // Same relaxed policy as chatUpload above — see comment there.
 });
 
@@ -318,10 +318,10 @@ const groupUpload = createUploader({
   // message plaintext - so the stored name must not carry it. Same posture as
   // dmUpload (opaqueNames: true).
   opaqueNames: true,
-  // +1: multer/busboy treat fileSize as EXCLUSIVE (a body of exactly that
-  // many bytes is rejected), so without it a file of exactly
-  // GROUP_UPLOAD_MAX_MB could never be sent.
-  extraBytes: GROUP_CIPHERTEXT_OVERHEAD_BYTES + 1,
+  // multer 2.x (busboy 1.x) treats `fileSize` as INCLUSIVE: a body of exactly
+  // that many bytes is accepted, one more is refused. The cap here is the
+  // ciphertext size (plaintext + the 16-byte GCM tag), so no `+1` is needed.
+  extraBytes: GROUP_CIPHERTEXT_OVERHEAD_BYTES,
 });
 
 module.exports = {

@@ -582,7 +582,11 @@ function formatTime(seconds) {
 export async function renderVoiceMessage(
   msg,
   scope,
-  containerEl
+  containerEl,
+  // Group voice: the caller already resolved the media (the DECRYPTED blob of
+  // a group attachment - whole file, no streaming - passed as { src, isBlob }).
+  // When absent the DM/E2EE default (resolveMediaSrc) applies, exactly as before.
+  preResolved = null
 ) {
   const messageId =
     String(msg.id);
@@ -2433,11 +2437,12 @@ export async function renderVoiceMessage(
   try {
     // E2EE voice notes resolve to a decrypted blob: URL this player
     // owns and must revoke; legacy ones keep the token-URL path.
-    const resolved =
-      await resolveMediaSrc(
-        msg,
-        scope
-      );
+    const resolved = preResolved
+      ? { src: preResolved.src, isBlob: !!preResolved.isBlob }
+      : await resolveMediaSrc(
+          msg,
+          scope
+        );
 
     resolvedIsBlob =
       !!(resolved && resolved.isBlob);

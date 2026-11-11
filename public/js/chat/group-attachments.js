@@ -131,6 +131,42 @@ export const INLINE_IMAGE_MIMES = ['image/png', 'image/jpeg', 'image/gif', 'imag
  *  (the same wording the DM path uses). */
 export const GROUP_ATTACHMENT_UNAVAILABLE_NAME = 'Attachment unavailable';
 
+/** The audio/* mime types a voice recording may legitimately use - the base
+ *  forms of the recorder's MIME_CANDIDATES (public/js/media/voice-recorder.js:
+ *  'audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus',
+ *  'audio/ogg', 'audio/mp4') taken after stripping parameters. Ported from
+ *  utils/voiceMime.js's VOICE_CONTAINER_MAP, whose comment explains that the
+ *  client claim is safe only because the map relabels between types that are
+ *  BOTH already inline-safe. A voice flag is honoured ONLY for one of these. */
+export const GROUP_VOICE_MIMES = ['audio/webm', 'audio/ogg', 'audio/mp4'];
+
+/**
+ * Whether a mime is an allowlisted audio type a voice recording may use.
+ * Base form only (parameters such as ';codecs=opus' are stripped), lowercased -
+ * the same normalisation utils/voiceMime.js applies via utils/mediaKind.js's
+ * baseMime().
+ */
+export function isGroupVoiceMime(mime) {
+    const base = String(mime || '').split(';')[0].trim().toLowerCase();
+    return GROUP_VOICE_MIMES.includes(base);
+}
+
+/**
+ * Whether a group attachment row is a VOICE message. The sender flagged it
+ * (`file.voice === true` inside the ENCRYPTED plaintext meta) AND the mime is
+ * an allowlisted audio type; anything else (a flag on an image/PDF/video, a
+ * non-audio mime, a falsy flag) means "render as a normal attachment".
+ * Mirrors the DM rule (controllers/dm.controller.js's isVoiceMessageFlag and
+ * utils/voiceMime.js, ported client-side) - a malicious group member can only
+ * ever make a file RENDER as an audio note if they also chose an allowlisted
+ * audio mime, and the flag still travels inside signed plaintext, so it cannot
+ * be planted by the server.
+ */
+export function isGroupVoiceAttachment({ voice, mime } = {}) {
+    if (voice !== true) return false;
+    return isGroupVoiceMime(mime);
+}
+
 /* =========================================================
  * The envelope limit (STEP 3D item 0)
  *
@@ -313,8 +349,26 @@ export function assertEnvelopeWithinLimit(envelope, fixedMetaBytes = 0) {
 const META_VERSION = 1;
 
 /**
+ * The STRICT allowlist of the `file` object's keys of the group plaintext
+ * meta. An unknown key is a MALFORMED meta object (null) - never something to
+ * ignore (docs/archive/GROUP_ATTACHMENTS_E2EE.md, section 3C, "Receiver
+ * sanitising rules").
+ *
+ * `voice` was added for group VOICE MESSAGES: the flag rides inside the
+ * ENCRYPTED plaintext meta (`file.voice === true`) and never in the signed
+ * envelope, so the server never learns it. The group protocol meta version
+ * STAYS `1` (the design doc keeps the group protocol version unreleased /
+ * changed-in-place; no v3 was ever introduced). The addition is optional and
+ * additive - a file without a voice keeps the exact same plaintext as before -
+ * but the whitelist stays STRICT, so a receiver from BEFORE this addition does
+ * not know the key and rejects a meta carrying it (see the old-receiver test in
+ * tests/groups/group-attachment-ui.test.mjs).
+ */
+export const GROUP_ATTACHMENT_FILE_META_KEYS = ['name', 'mime', 'w', 'h', 'voice'];
+
+/**
  * Builds the plaintext of a group message that carries a file.
- * @param {{text?: string, file?: {name: string, mime: string, w?: number|null, h?: number|null}}} f
+ * @param {{text?: string, file?: {name: string, mime: string, w?: number|null, h?: number|null, voice?: boolean}}} f
  * @returns {string} JSON
  */
 export function buildGroupAttachmentPlaintext({ text = '', file } = {}) {
@@ -327,18 +381,30 @@ export function buildGroupAttachmentPlaintext({ text = '', file } = {}) {
         };
         if (Number.isInteger(file.w) && file.w > 0 && file.w <= MAX_GROUP_ATTACHMENT_DIMENSION) meta.file.w = file.w;
         if (Number.isInteger(file.h) && file.h > 0 && file.h <= MAX_GROUP_ATTACHMENT_DIMENSION) meta.file.h = file.h;
+        // Group voice: the flag is carried ONLY here, inside the encrypted
+        // plaintext. Only the boolean true is ever emitted; a falsy/absent flag
+        // leaves the key out entirely (byte-identical plaintext for every
+        // non-voice file, as before).
+        if (file.voice === true) meta.file.voice = true;
     }
     return JSON.stringify(meta);
 }
 
 /**
  * Parses the plaintext of a group message. STRICT: an unknown version, an
- * unknown key or a bad field is a malformed meta object (null), not
- * something to ignore.
+ * unknown key or a bad field is a malformed meta object (null), not something
+ * to ignore. `allowedFileKeys` defaults to the current strict allowlist
+ * (GROUP_ATTACHMENT_FILE_META_KEYS); a caller building a parser from an OLDER
+ * allowlist (the pre-voice receiver) can pass it to reproduce that receiver's
+ * behaviour - it then rejects a meta carrying `voice` as an unknown key.
  * @param {string} plaintext
- * @returns {{text: string, file: {name: string, mime: string, w?: number, h?: number}|null}|null}
+ * @param {{allowedFileKeys?: string[]}} [opts]
+ * @returns {{text: string, file: {name: string, mime: string, w?: number, h?: number, voice?: boolean}|null}|null}
  */
-export function parseGroupAttachmentPlaintext(plaintext) {
+export function parseGroupAttachmentPlaintext(plaintext, opts = {}) {
+    const allowedFileKeys = opts && Array.isArray(opts.allowedFileKeys) && opts.allowedFileKeys.length
+        ? opts.allowedFileKeys
+        : GROUP_ATTACHMENT_FILE_META_KEYS;
     if (typeof plaintext !== 'string' || !plaintext) return null;
     let obj;
     try {
@@ -359,11 +425,17 @@ export function parseGroupAttachmentPlaintext(plaintext) {
     const f = obj.file;
     if (!f || typeof f !== 'object' || Array.isArray(f)) return null;
     for (const key of Object.keys(f)) {
-        if (key !== 'name' && key !== 'mime' && key !== 'w' && key !== 'h') return null;
+        if (!allowedFileKeys.includes(key)) return null;
     }
     if (typeof f.name !== 'string' || !f.name || f.name.length > MAX_GROUP_ATTACHMENT_NAME) return null;
     if (typeof f.mime !== 'string' || !f.mime || f.mime.length > MAX_GROUP_ATTACHMENT_MIME) return null;
     const out = { name: f.name, mime: f.mime.toLowerCase() };
+    // The voice flag: only the boolean true is meaningful; any other value is a
+    // malformed meta object (strict), and the flag is only ever emitted as true.
+    if (Object.prototype.hasOwnProperty.call(f, 'voice')) {
+        if (f.voice !== true) return null;
+        out.voice = true;
+    }
     for (const dim of ['w', 'h']) {
         if (f[dim] === undefined) continue;
         if (!Number.isInteger(f[dim]) || f[dim] <= 0 || f[dim] > MAX_GROUP_ATTACHMENT_DIMENSION) return null;
@@ -507,9 +579,14 @@ export class GroupAttachmentTooLargeError extends Error {
  * read, (3) the file is encrypted (a fresh counter), (4) the plaintext JSON
  * is built, (5) the message is encrypted and signed with the file binding.
  *
+ * `isVoice` marks a VOICE recording (the group composer's voice path): the
+ * flag travels ONLY as `file.voice` inside the ENCRYPTED plaintext - never in
+ * the signed envelope or in any server-visible field - and only for an
+ * allowlisted audio mime.
+ *
  * @returns {Promise<{file: File, fields: Record<string,string>}>}
  */
-export async function prepareGroupAttachmentUpload({ file, caption = '', replyToId = 0, groupId, ensureKey, maxMb = null }) {
+export async function prepareGroupAttachmentUpload({ file, caption = '', replyToId = 0, groupId, ensureKey, maxMb = null, isVoice = false }) {
     if (!file || typeof file.size !== 'number') throw new Error('No file to encrypt');
     if (file.size <= 0) throw new Error('The file is empty');
     // The cap: the server's, clamped to the client's hard ceiling. The
@@ -556,7 +633,14 @@ export async function prepareGroupAttachmentUpload({ file, caption = '', replyTo
     }
     const plaintext = buildGroupAttachmentPlaintext({
         text: captionText,
-        file: { name: file.name || 'file', mime: file.type || 'application/octet-stream', w: width, h: height },
+        file: {
+            name: file.name || 'file',
+            mime: file.type || 'application/octet-stream',
+            w: width,
+            h: height,
+            // Group voice: the flag rides inside the ENCRYPTED plaintext only.
+            voice: isVoice === true ? true : undefined,
+        },
     });
 
     // (5) the signed envelope.
@@ -809,13 +893,19 @@ export function formatGroupAttachmentSize(bytes) {
 /**
  * Whether the file may be fetched AUTOMATICALLY when its row becomes
  * visible: an image (by the DECLARED type - the sniffed type decides what is
- * rendered later) that is not bigger than the auto-load limit.
+ * rendered later) that is not bigger than the auto-load limit, or a VOICE
+ * message (the signed size bounds the recording, and the waveform needs the
+ * data, exactly as in the DM path).
  */
-export function isAutoLoadableGroupAttachment({ mime, size } = {}) {
-    const type = String(mime || '').toLowerCase();
-    if (!INLINE_IMAGE_MIMES.includes(type)) return false;
+export function isAutoLoadableGroupAttachment({ mime, size, voice } = {}) {
     const bytes = Number(size);
     if (!Number.isFinite(bytes) || bytes < 0) return false;
+    if (voice === true) {
+        // A voice recording: auto-load within the same per-thread budget.
+        return bytes <= GROUP_ATTACHMENT_AUTO_LOAD_MAX_BYTES;
+    }
+    const type = String(mime || '').toLowerCase();
+    if (!INLINE_IMAGE_MIMES.includes(type)) return false;
     return bytes <= GROUP_ATTACHMENT_AUTO_LOAD_MAX_BYTES;
 }
 
@@ -957,7 +1047,11 @@ function ensureObserver() {
             const row = rows.get(id);
             if (!row) continue;
             observer.unobserve(entry.target);
-            if (row.state === 'idle' && isAutoLoadableGroupAttachment({ mime: row.meta?.file?.mime, size: row.size })) {
+            if (row.state === 'idle' && isAutoLoadableGroupAttachment({
+                mime: row.meta?.file?.mime,
+                size: row.size,
+                voice: isGroupVoiceAttachment({ voice: row.meta?.file?.voice, mime: row.meta?.file?.mime }),
+            })) {
                 // The per-thread auto-load budget: past it, the row keeps its
                 // "Download (X MB)" button until the user asks for it.
                 const size = Number(row.size) || 0;
@@ -1067,6 +1161,10 @@ async function runDownload(row) {
         row.bytes = bytes;
         row.inlineMime = inlineMime && INLINE_IMAGE_MIMES.includes(inlineMime) ? inlineMime : null;
         row.name = sanitiseGroupFileName(row.meta?.file?.name);
+        // Group voice: the flag is honoured only when the (decrypted) mime is
+        // an allowlisted audio type - a flag on anything else means "normal
+        // attachment" (the DM rule, mirrored client-side).
+        row.voice = isGroupVoiceAttachment({ voice: row.meta?.file?.voice, mime: row.meta?.file?.mime });
         row.state = 'loaded';
         // The auto-load budget is spent by the bytes that were auto-loaded.
         if (row.autoLoaded) {
@@ -1093,10 +1191,60 @@ async function runDownload(row) {
     }
 }
 
+/**
+ * Renders a VOICE row: the existing voice-message player (public/js/media/
+ * voice-message.js) fed with the DECRYPTED blob of the group attachment - the
+ * whole file, no streaming, the same path as DM voice playback. The blob URL is
+ * handed to the player as a pre-resolved `{ src, isBlob }`, so the player stamps
+ * it on the audio element (`data-blob-url`) and the existing cleanup revokes it.
+ * No keys, ciphertext or plaintext ever reach the DOM; the player only ever
+ * holds the blob URL.
+ */
+async function renderGroupVoice(row, container) {
+    const el = row.el;
+    if (!el || !el.isConnected) return;
+    const metaFile = row.meta?.file || null;
+    const mime = String(metaFile?.mime || 'audio/webm');
+    const bytes = row.bytes;
+    if (!bytes) {
+        el.innerHTML = groupAttachmentUnavailableHtml();
+        return;
+    }
+    const blob = new Blob([bytes], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const voiceMsg = { id: Number(row.id), is_voice_message: true, attachment_mime: mime };
+    const { renderVoiceMessage } = await import('../media/voice-message.js');
+    try {
+        await renderVoiceMessage(voiceMsg, 'group', container, { src: url, isBlob: true });
+    } catch (e) {
+        // Never leave an empty bubble: fall back to the plain download content.
+        el.innerHTML = groupAttachmentContentHtml(row.id, {
+            name: row.name,
+            mime: metaFile?.mime,
+            w: metaFile?.w,
+            h: metaFile?.h,
+            bytes,
+            inlineMime: null,
+        });
+    }
+}
+
 function renderRow(row) {
     const el = row.el;
     if (!el || !el.isConnected) return;
     if (row.state === 'loaded') {
+        if (row.voice) {
+            // Group voice: render the existing voice-message player
+            // (public/js/media/voice-message.js) from the DECRYPTED blob of
+            // this group attachment - whole file, no streaming. The blob URL is
+            // stamped as the audio element's `data-blob-url` and revoked by the
+            // existing group cleanup (thread.js's revokeMediaPlayerBlobUrls), so
+            // no new revoke path is needed here; keys/plaintext never reach the
+            // DOM.
+            const container = (typeof el.closest === 'function' ? el.closest('.chat-msg') : null) || el;
+            void renderGroupVoice(row, container);
+            return;
+        }
         el.innerHTML = groupAttachmentContentHtml(row.id, {
             name: row.name,
             mime: row.meta?.file?.mime,

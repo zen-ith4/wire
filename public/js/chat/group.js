@@ -78,6 +78,7 @@ import {
     registerGroupAttachmentRow,
     groupAttachmentPlaceholderHtml,
     groupAttachmentUnavailableHtml,
+    isGroupVoiceAttachment,
     downloadGroupAttachment,
     revokeAllGroupAttachments,
     abortDetachedGroupAttachments,
@@ -263,6 +264,13 @@ async function decryptReplyPreview(groupId, replyTo) {
             text = meta
                 ? (meta.text || (meta.file ? sanitiseGroupFileName(meta.file.name) : ''))
                 : '';
+            // Mirror the DM applyReplyAttachmentMeta behaviour: the server
+            // column is_voice_message is always 0 for group files, so the
+            // voice flag is taken from the decrypted meta (never from the
+            // server row).
+            if (meta?.file) {
+                replyTo = { ...replyTo, is_voice_message: isGroupVoiceAttachment({ voice: meta.file.voice, mime: meta.file.mime }) };
+            }
         }
         return { ...replyTo, content: text };
     } catch (e) {
@@ -315,8 +323,9 @@ export async function decorateGroupMessages(groupId, rawMessages, { live = false
             // reach the server.
             let content = plaintext;
             let attachmentHtml = null;
+            let meta = null;
             if (attachmentBinding) {
-                const meta = parseGroupAttachmentPlaintext(plaintext);
+                meta = parseGroupAttachmentPlaintext(plaintext);
                 if (!meta || !meta.file) {
                     // A malformed meta object: a per-row placeholder, never a
                     // thrown error out of the thread.
@@ -362,6 +371,11 @@ export async function decorateGroupMessages(groupId, rawMessages, { live = false
                 reply_to_id: replyToId,
                 reply_to: quoted,
                 ...(attachmentHtml ? { __groupAttachmentHtml: attachmentHtml } : {}),
+                // Group voice: the flag lives only in the encrypted plaintext meta
+                // (file.voice). The server column is always 0 for group files, so
+                // the preview/reply path takes it from the verified meta -
+                // mirroring DM's applyAttachmentMeta (attachment-e2ee.js:177).
+                is_voice_message: isGroupVoiceAttachment({ voice: meta?.file?.voice, mime: meta?.file?.mime }),
             });
         } catch (e) {
             // Live arrival: let thread.js see the error so it can show a
@@ -760,11 +774,20 @@ function renderActiveGroupShell(group) {
         <div class="composer-wrapper">
             <div class="reply-preview-bar" id="group-reply-preview"></div>
             ${groupAttachmentsEnabled ? '<div class="attach-staging" id="group-staging-area"></div>' : ''}
+            ${groupAttachmentsEnabled ? `<div class="composer-recording-bar" id="group-recording-bar">
+                <button type="button" class="composer-recording-cancel" id="group-recording-cancel" aria-label="Cancel recording">Cancel</button>
+                <div class="composer-recording-indicator">
+                    <span class="composer-recording-dot" aria-hidden="true"></span>
+                    <span id="group-recording-time">0:00</span>
+                </div>
+                <button type="button" class="composer-recording-stop" id="group-recording-stop" aria-label="Stop recording">${ICONS.stop}</button>
+            </div>` : ''}
             <div class="chat-input-area" id="group-input-area">
                 ${groupAttachmentsEnabled ? `<input type="file" id="group-file-input" class="hidden" multiple>
                 <button class="btn btn-ghost btn-icon" title="Attach" data-action="group-attach">${ICONS.paperclip}</button>` : ''}
                 <button class="btn btn-ghost btn-icon emoji-trigger" title="Emoji" data-action="group-emoji">${ICONS.emoji}</button>
                 <textarea id="group-input" rows="1" placeholder="Message ${escapeHtmlAttr(group?.name || 'group')}…"></textarea>
+                ${groupAttachmentsEnabled ? `<button class="composer-mic-btn" id="group-mic-btn" aria-label="Record a voice message">${ICONS.mic}</button>` : ''}
                 <button type="button" data-action="group-send" class="btn-send" title="Send message (Enter) — Shift+Enter for a new line">${ICONS.send}</button>
             </div>
         </div>
@@ -813,6 +836,7 @@ function renderActiveGroupShell(group) {
                     caption,
                     replyToId,
                     groupId: group.id,
+                    isVoice: !!isVoice,
                 });
             },
         } : {}),
@@ -841,6 +865,11 @@ function renderActiveGroupShell(group) {
         onMessage: () => {}, // the message comes back over the socket (new-group-message) and lands via addGroupMessage; avoids double-adding it here
         typingEmitter: groupTypingEmitter,
         inputAreaId: 'group-input-area',
+        micButtonId: 'group-mic-btn',
+        recordingBarId: 'group-recording-bar',
+        recordingTimeId: 'group-recording-time',
+        recordingCancelId: 'group-recording-cancel',
+        recordingStopId: 'group-recording-stop',
     });
 
     wirePasteImage('group-input', () => {}); // no-op: pasted images aren't supported without an upload path yet

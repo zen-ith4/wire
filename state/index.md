@@ -145,3 +145,50 @@ build pin or release-key-signed hash).
 - `tests/apk-integrity.test.mjs` — 4/4 pass; combined new/changed run
   (apk-integrity + cors-config + media-auth-deactivated) — 12/12 pass; full
   `npm run test:crypto` — 118 tests, 114 pass, 0 fail, 4 skipped.
+
+## 9. Group voice messages (branch `group-voice`)
+
+- Voice messages added to group chats behind the EXISTING
+  `GROUP_ATTACHMENTS_UI_ENABLED` flag (still `false`); no flag flip.
+- Protocol: voice flag travels ONLY inside the encrypted plaintext meta
+  (`meta.file.voice === true`); `META_VERSION` stays `1`; no outer-envelope
+  field, no change to the signed attachment slot, signing, nonce/counter or
+  AAD. Server keeps `is_voice_message = 0` and neutral name/mime.
+- Receiver safety: flag honoured only for allowlisted audio mimes
+  (`audio/webm`/`audio/ogg`/`audio/mp4`); non-audio renders as a normal file.
+- Sender UI: group composer mic control reusing `voice-recorder.js` (same UX,
+  limits, permission handling), through `prepareGroupAttachmentUpload(..., isVoice: true)`,
+  respecting `GROUP_UPLOAD_MAX_MB`.
+- Playback: existing `voice-message.js`/`audio-player.js` from the DECRYPTED blob
+  (whole file, no streaming); no SW changes; CSP `media-src 'self' blob:` already
+  allows blob: playback.
+- Previews: group decorated message's `is_voice_message` taken from the verified
+  meta (mirroring DM's `applyAttachmentMeta`), so reply quotes show
+  "Voice message"; server column stays 0 and nothing is added to push payloads.
+- Docs: `docs/archive/GROUP_ATTACHMENTS_E2EE.md` (3C-voice), `docs/archive/SECURITY_CLAIMS.md`
+  (new row).
+
+### Verification (group voice, branch `group-voice`)
+
+- `npm run test:crypto` — **118 tests: 114 pass, 0 fail, 4 skipped** (exit 0),
+  re-run after `node scripts/build-sw-manifest.mjs` (version `f806d1e93c69`);
+  `node scripts/build-sw-media-bundle.mjs --check` — current.
+- Node group-attachment suite (non-browser): combined run
+  `group-attachment-ui` 10/10, `group-attachment-hostile` 11/11 — plus
+  `group-attachment-binding`, `group-attachment-download`, `group-attachment-envelope`,
+  `group-attachment-filename`, `group-attachment-lazy`, `group-attachment-limits`,
+  `group-attachment-repaint`, `group-attachment-upload-cap` — **71/71 pass**
+  (exit 0).
+- `group-signing-messages` (C3-12) — **12/12 pass** (exit 0); signing/binding
+  tests — **67/67 pass** (exit 0).
+- `group-attachment-server` — 7/8 pass; the single failure (`3C-2b`, one byte
+  over the cap) is PRE-EXISTING on the base `test` tree (verified by stashing),
+  environment/cap behaviour, not introduced by this change.
+- Browser (Chromium): NOT RUN in this environment (no `@sparticuz/chromium`
+  install at the default `CHROMIUM_DIR`); the fake-mic group voice browser test
+  was added to `tests/groups/group-attachment-browser.test.mjs` (test 12) and
+  must be run on Linux per `docs/archive/RUN_BROWSER_TESTS_LINUX.md` with
+  `--use-fake-device-for-media-stream --use-fake-ui-for-media-stream`
+  [NOT VERIFIED].
+- Flag check: `GROUP_ATTACHMENTS_UI_ENABLED` remains `false`
+  (`public/js/chat/group-attachments-flag.js:17`).

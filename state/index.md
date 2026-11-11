@@ -146,7 +146,28 @@ build pin or release-key-signed hash).
   (apk-integrity + cors-config + media-auth-deactivated) — 12/12 pass; full
   `npm run test:crypto` — 118 tests, 114 pass, 0 fail, 4 skipped.
 
-## 9. Group voice messages (branch `group-voice`)
+## 10. Multer 2.x fileSize boundary fix (config/multer.js)
+
+- Root cause: multer 2.x (busboy 1.x) treats `fileSize` as INCLUSIVE, but
+  `dmUpload`/`groupUpload` added `+ 1` to `extraBytes` assuming multer 1.x's
+  EXCLUSIVE behaviour. That admitted one extra byte, making
+  `tests/groups/group-attachment-server.test.mjs` "3C-2b" pass a cap+16+1 file.
+- Fix: removed `+ 1` from BOTH uploaders and rewrote the two comments to
+  describe the multer 2.x inclusive behaviour.
+- Other uploaders (avatar, banner, chat, fileUpload, groupAvatar) were NOT
+  changed (per instruction). They use `fileSize: maxSizeMB * 1024 * 1024`
+  with no `extraBytes`. Under multer 2.x their boundary shifted by one byte:
+  a file of EXACTLY the cap is now ACCEPTED (was rejected under multer 1.x),
+  and cap+1 is still rejected. Reported, not changed.
+- Added a ciphertext-level DM boundary test (exactly cap+overhead accepted,
+  cap+overhead+1 refused) to
+  `tests/dm-attachments/dm-attachments-server-cap.test.mjs`.
+
+### Verification (multer fix)
+- `group-attachment-server` — 8/8 pass (exit 0).
+- `group-attachment-limits` + `group-attachment-upload-cap` — 7/7 pass.
+- `dm-attachments-server-cap` — 5/5 pass.
+- `files-upload-name-length` + `upload-headers` — 9/9 pass.
 
 - Voice messages added to group chats behind the EXISTING
   `GROUP_ATTACHMENTS_UI_ENABLED` flag (still `false`); no flag flip.

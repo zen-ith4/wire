@@ -1210,6 +1210,10 @@ async function renderGroupVoice(row, container) {
         el.innerHTML = groupAttachmentUnavailableHtml();
         return;
     }
+    // Idempotency: a voice player for THIS element is already rendered - never
+    // mint a second blob URL / player for the same row element (the thread
+    // repaints re-render into a NEW element, which is a different key).
+    if (row.voicePlayerEl === el) return;
     // Drop the lazy placeholder so the voice player does not sit next to a
     // stale download button once the (decrypted) audio has loaded.
     el.innerHTML = '';
@@ -1219,7 +1223,20 @@ async function renderGroupVoice(row, container) {
     const { renderVoiceMessage } = await import('../media/voice-message.js');
     try {
         await renderVoiceMessage(voiceMsg, 'group', container, { src: url, isBlob: true });
+        if (!el || !el.isConnected) {
+            // The row went away mid-render (thread repaint / group switch):
+            // drop the blob URL - the player must not keep it.
+            URL.revokeObjectURL(url);
+            row.voicePlayerEl = null;
+            return;
+        }
+        row.voicePlayerEl = el;
     } catch (e) {
+        // The player threw: drop the blob URL we just minted (never leak it)
+        // and fall back to the plain download content. The marker is cleared so
+        // a later render can try again.
+        URL.revokeObjectURL(url);
+        row.voicePlayerEl = null;
         // Never leave an empty bubble: fall back to the plain download content.
         el.innerHTML = groupAttachmentContentHtml(row.id, {
             name: row.name,
@@ -1259,10 +1276,12 @@ function renderRow(row) {
         return;
     }
     if (row.state === 'mismatch') {
+        row.voicePlayerEl = null;
         el.innerHTML = groupAttachmentUnavailableHtml();
         return;
     }
     if (row.state === 'error') {
+        row.voicePlayerEl = null;
         el.innerHTML = groupAttachmentErrorHtml({ id: row.id }, row.error);
     }
 }

@@ -85,9 +85,12 @@ content, plus its own new-on-top commits:
   - `tests/credentials/f12-setup-seed.test.mjs` — failing subtest **3** "setup wizard
     (real prompts, copied tree): creates a scheme-2 admin; refuses < 12 characters";
     error: `a short password is refused by the wizard`.
-  - `tests/csp-handlers-enforced-browser.test.mjs` — failing subtests **1** ("dm-send
-    click created exactly one server message", actual **2 !== 1**) and **2** (emoji
-    picker rendered at least one emoji).
+  - `tests/csp-handlers-enforced-browser.test.mjs` — previously listed as failing
+    subtests **1** and **2** ("dm-send click created exactly one server message",
+    actual **2 !== 1**; "emoji picker rendered at least one emoji"); **re-verified in
+    this session: it PASSES 2/2 on both `github/main` and the branch** (exit 0, both
+    subtests `ok`). It no longer belongs to the failing list; see
+    "Known red tests on main".
   - `tests/dm-csp-handlers-enforced-browser.test.mjs` — failing subtest **1** "CSP_ENFORCE
     =true: DM Send and Delete work with real clicks; Attach is still blocked": error
     `Attach (still an inline onclick) is blocked: expected script-src-attr violation`.
@@ -101,53 +104,109 @@ content, plus its own new-on-top commits:
 - Live multipart uploads at the exact cap for **every** uploader (avatar, banner,
   chat, My Files / fileUpload, groupAvatar, DM, group).
 
-## Also-fails-on-main determination (git worktree on `main`)
+## Also-fails-on-main determination (re-measured on the real `github/main` @ `b24b847`)
 
-Each of the 5 remaining failing files was re-run in a git worktree checked out to
-`main` (same test file as it exists on `main`, `main` code), with
-`CHROMIUM_DIR=/home/arman/browser-check`:
+The previous version of this section was written against a **local `main` that is
+not `github/main`**: the local branch `main` here points at `daad142` ("3.L: fix
+the Linux CI recipe"), an ancestor that is **130 commits behind `github/main`** @
+`b24b847`. Every "passes on `main`" number in the previous version came from that
+stale local `main`, which is why the conclusion did not survive re-measurement on
+the real `github/main`.
 
-- `tests/acceptance-xss-sweep-browser.test.mjs` — **PASSES on `main`** (exit 0; 6
-  pass, 1 skip, 1 todo). The test file is **identical** on `main` and the branch;
-  the branch changed the code it exercises (`public/js/chat/dm.js`,
-  `public/js/media/attachments.js`), so this failure is branch-specific.
-- `tests/credentials/f12-setup-seed.test.mjs` — **PASSES on `main`** (exit 0;
-  3/3 pass). The test file differs slightly (9 lines) between `main` and the branch;
-  the failure is branch-specific.
-- `tests/csp-handlers-enforced-browser.test.mjs` — **does not exist on `main`**
-  (exit 1, `Could not find`); it is a **new test added by the branch** (CSP stage
-  2, `a34efa5`). It cannot fail on `main` by definition.
-- `tests/dm-csp-handlers-enforced-browser.test.mjs` — **PASSES on `main`** (exit
-  0; 2/2 pass). The test file is **identical** on `main` and the branch; the branch
-  changed the code it exercises (`public/js/chat/dm.js`,
-  `public/js/chat/composer.js`), so this failure is branch-specific.
-- `tests/escape-attr-js-string.test.mjs` — **PASSES on `main`** (exit 0; 6/6
-  pass). The test file is **identical** on `main` and the branch; the branch changed
-  the code it exercises (`public/js/media/attachments.js`: inline `onclick` →
-  `data-action`), but the test still asserts the inline `onclick` attribute, so this
-  failure is a branch-specific regression (code changed, test not updated).
+Re-measured on the real `github/main` (clean worktree: `git worktree add
+/tmp/wt-main github/main` @ `b24b847`), same Chromium as before
+(`CHROMIUM_DIR=/home/arman/browser-check`, `@sparticuz/chromium` resolved through
+that dir -> `HeadlessChrome/153.0.8010.0`, puppeteer-core, Node v22.23.4, uid 1000,
+`--test-concurrency=1`, `--env-file=tests/test.env`):
 
-**Determination: none of the 5 remaining failing files also fails on `main`.** All
-4 that exist on `main` pass there; the 1 that does not exist on `main`
-(`csp-handlers-enforced-browser`) is a new test added by the branch. All 5 failures
-are branch-specific, caused by the CSP stage 2 (`a34efa5` and siblings) content.
+- `tests/acceptance-xss-sweep-browser.test.mjs` — **FAILS on `github/main`** (exit 1;
+  subtest 5, error: `alice: DM thread attachments: both hostile attachments were
+  clicked (0)`). The test file and the code it exercises (`public/js/chat/dm.js`,
+  `public/js/media/attachments.js`) are **identical** on `github/main` and on the
+  branch -> **pre-existing on `github/main`**, not branch-specific.
+- `tests/credentials/f12-setup-seed.test.mjs` — **PASSES on `github/main`** (exit 0;
+  3/3 pass across runs); **FAILS on the branch** (subtest 3: `a short password is
+  refused by the wizard`). The test file and the wizard source (`utils/setupWizard.js`)
+  are identical on both trees, so the split is not yet explained here (treat as
+  unverified).
+- `tests/csp-handlers-enforced-browser.test.mjs` — **EXISTS on `github/main`** and
+  **PASSES there** (exit 0; 2/2 pass) as well as on the branch (2/2, exit 0). It is
+  green; it is not one of the failing files.
+- `tests/dm-csp-handlers-enforced-browser.test.mjs` — **FAILS on `github/main`** (exit 1;
+  subtest 1, error: `Attach (still an inline onclick) is blocked: expected
+  script-src-attr violation`; subtest 2 passes). The test file and the code it
+  exercises (`public/js/chat/dm.js`, `public/js/chat/composer.js`) are **identical**
+  on `github/main` and on the branch -> **pre-existing on `github/main`**.
+- `tests/escape-attr-js-string.test.mjs` — **FAILS on `github/main`** (exit 1; subtests
+  1-3, error: `element has an onclick attribute` at `tests/escape-attr-js-string.test.mjs:68`).
+  The test requires an inline `onclick` attribute; the product
+  (`public/js/media/attachments.js`) now emits delegated `data-action` handlers
+  (identical on `main` and the branch) -> **stale test**, **pre-existing on `github/main`**.
+
+Plus `tests/credentials/f12-browser-login.test.mjs` (not among the 5, but decisive):
+**FAILS on `github/main`** (subtest 6, `window.addUser is not a function`, exit 1);
+**PASSES on the branch** after `e0f326f` (delegated `[data-action="admin-add-user"]`
+click). The failure therefore exists on `github/main` as well; `e0f326f` fixes a
+main-present failure.
+
+**Determination (re-measured): the failures are NOT all branch-specific.** The
+`acceptance-xss-sweep-browser`, `escape-attr-js-string` and
+`tests/dm-csp-handlers-enforced-browser` failures **also fail on the real
+`github/main`**, so they are **pre-existing on `github/main`** rather than
+branch-specific regressions introduced by the CSP stage 2 content (`a34efa5` and
+siblings).
+
+## Known red tests on main (@ `b24b847`) — re-measured 2026-11-13
+
+Red tests that reproduce on **`github/main`** itself, with cause:
+
+- `tests/acceptance-xss-sweep-browser.test.mjs` — subtest 5 red (exit 1). Cause: the
+  hostile entity-encoded filename must not break out of the inline onclick JS string;
+  the click-driven assertion got `both hostile attachments were clicked (0)`.
+  Pre-existing on `github/main`; the exercised code is identical on main and branch.
+- `tests/escape-attr-js-string.test.mjs` — subtests 1-3 red (exit 1). Cause: stale test —
+  it requires an inline `onclick` attribute, while the product now renders delegated
+  `data-action` handlers (`public/js/media/attachments.js`). Pre-existing on `github/main`.
+- `tests/dm-csp-handlers-enforced-browser.test.mjs` — subtest 1 red (exit 1; negative
+  control: Attach must still be an inline onclick). Cause: stale negative control —
+  Attach is now delegated, so no `script-src-attr` violation is raised. Pre-existing
+  on `github/main`.
+- `tests/credentials/f12-browser-login.test.mjs` — subtest 6 red on main: `window.addUser
+  is not a function`. Stale test (app uses delegated `[data-action="admin-add-user"]`);
+  **fixed on the branch by `e0f326f`**.
+
+`tests/csp-handlers-enforced-browser.test.mjs` **passes on `github/main`** (2/2, exit 0)
+and on the branch (2/2, exit 0) in this session — it is green, not red.
+
+Outstanding / not yet explained: `tests/credentials/f12-setup-seed.test.mjs` — red on
+the branch (subtest 3), green on `github/main` (3/3); the wizard source and the test
+file are identical on both trees, so the branch/main split is unverified here.
 
 ## Merge-readiness status
 
 - **Merge-ready was NOT claimed.** The full suite (`npm run test`) was killed
   mid-run on request (`FULL_SUITE_EXIT=143`); the per-file run (step 1) finished:
   **163 files → 157 green, 6 red, 0 hung**.
-- After `e0f326f` (f12 admin-UI fix), **5 files remain failing**
+- After `e0f326f` (f12 admin-UI fix), **5 files remained failing**
   (acceptance-xss-sweep-browser, f12-setup-seed,
   csp-handlers-enforced-browser, dm-csp-handlers-enforced-browser,
   escape-attr-js-string) with the exact subtests above; the f12 admin-UI failure was
-  fixed in `e0f326f` and is now green (6/6 alone).
-- **Main-worktree check:** none of the 5 remaining failures also fails on `main`
-  (4 of them pass on `main`; 1 is a new test added by the branch). So all 5 are
-  **branch-specific regressions** introduced by the CSP stage 2 content
-  (`a34efa5` and siblings) — they must be fixed (code or test) before merge.
+  fixed in `e0f326f` and is now green (6/6 alone). NOTE: `csp-handlers-enforced-browser`
+  was re-verified in this session and **passes 2/2**, so it no longer belongs to the
+  failing list (see "Known red tests on main").
+- **Main-worktree check (re-measured on the real `github/main` @ `b24b847`):**
+  - `acceptance-xss-sweep-browser`, `escape-attr-js-string` and
+    `dm-csp-handlers-enforced-browser` **fail on `github/main` too** -> they are
+    **pre-existing** on `main`, not branch-specific regressions; the branch did not
+    change the code they exercise (verified: `git diff github/main test` shows no
+    change to `public/js/chat/dm.js`, `public/js/chat/composer.js`,
+    `public/js/media/attachments.js`, `public/js/settings/admin.js`).
+  - `csp-handlers-enforced-browser` **passes on `github/main`** (2/2).
+  - `f12-setup-seed` **passes on `github/main`** (3/3).
+  - `f12-browser-login` **fails on `github/main`** (subtest 6, `window.addUser is
+    not a function`) and is fixed on the branch by `e0f326f`.
 - Until the remaining failures are fixed and re-verified, the branch is **not**
-  merge-ready.
+  merge-ready. (The earlier "none of the 5 also fails on `main`" statement was wrong.)
 
 ## Rollback notes
 

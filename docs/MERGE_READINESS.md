@@ -101,16 +101,53 @@ content, plus its own new-on-top commits:
 - Live multipart uploads at the exact cap for **every** uploader (avatar, banner,
   chat, My Files / fileUpload, groupAvatar, DM, group).
 
+## Also-fails-on-main determination (git worktree on `main`)
+
+Each of the 5 remaining failing files was re-run in a git worktree checked out to
+`main` (same test file as it exists on `main`, `main` code), with
+`CHROMIUM_DIR=/home/arman/browser-check`:
+
+- `tests/acceptance-xss-sweep-browser.test.mjs` — **PASSES on `main`** (exit 0; 6
+  pass, 1 skip, 1 todo). The test file is **identical** on `main` and the branch;
+  the branch changed the code it exercises (`public/js/chat/dm.js`,
+  `public/js/media/attachments.js`), so this failure is branch-specific.
+- `tests/credentials/f12-setup-seed.test.mjs` — **PASSES on `main`** (exit 0;
+  3/3 pass). The test file differs slightly (9 lines) between `main` and the branch;
+  the failure is branch-specific.
+- `tests/csp-handlers-enforced-browser.test.mjs` — **does not exist on `main`**
+  (exit 1, `Could not find`); it is a **new test added by the branch** (CSP stage
+  2, `a34efa5`). It cannot fail on `main` by definition.
+- `tests/dm-csp-handlers-enforced-browser.test.mjs` — **PASSES on `main`** (exit
+  0; 2/2 pass). The test file is **identical** on `main` and the branch; the branch
+  changed the code it exercises (`public/js/chat/dm.js`,
+  `public/js/chat/composer.js`), so this failure is branch-specific.
+- `tests/escape-attr-js-string.test.mjs` — **PASSES on `main`** (exit 0; 6/6
+  pass). The test file is **identical** on `main` and the branch; the branch changed
+  the code it exercises (`public/js/media/attachments.js`: inline `onclick` →
+  `data-action`), but the test still asserts the inline `onclick` attribute, so this
+  failure is a branch-specific regression (code changed, test not updated).
+
+**Determination: none of the 5 remaining failing files also fails on `main`.** All
+4 that exist on `main` pass there; the 1 that does not exist on `main`
+(`csp-handlers-enforced-browser`) is a new test added by the branch. All 5 failures
+are branch-specific, caused by the CSP stage 2 (`a34efa5` and siblings) content.
+
 ## Merge-readiness status
 
 - **Merge-ready was NOT claimed.** The full suite (`npm run test`) was killed
   mid-run on request (`FULL_SUITE_EXIT=143`); the per-file run (step 1) finished:
   **163 files → 157 green, 6 red, 0 hung**.
-- Five files remain failing (acceptance-xss-sweep-browser, f12-setup-seed,
+- After `e0f326f` (f12 admin-UI fix), **5 files remain failing**
+  (acceptance-xss-sweep-browser, f12-setup-seed,
   csp-handlers-enforced-browser, dm-csp-handlers-enforced-browser,
   escape-attr-js-string) with the exact subtests above; the f12 admin-UI failure was
-  fixed in `e0f326f` and is now green. Until the remaining failures are explained
-  (and re-verified on `main` where applicable), the branch is **not** merge-ready.
+  fixed in `e0f326f` and is now green (6/6 alone).
+- **Main-worktree check:** none of the 5 remaining failures also fails on `main`
+  (4 of them pass on `main`; 1 is a new test added by the branch). So all 5 are
+  **branch-specific regressions** introduced by the CSP stage 2 content
+  (`a34efa5` and siblings) — they must be fixed (code or test) before merge.
+- Until the remaining failures are fixed and re-verified, the branch is **not**
+  merge-ready.
 
 ## Rollback notes
 

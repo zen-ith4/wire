@@ -213,3 +213,40 @@ build pin or release-key-signed hash).
   [NOT VERIFIED].
 - Flag check: `GROUP_ATTACHMENTS_UI_ENABLED` remains `false`
   (`public/js/chat/group-attachments-flag.js:17`).
+
+## 11. Task 5 (pre-merge-fixes): other uploaders - multer 2.x size boundary recorded
+
+- New test `tests/uploaders-boundary.test.mjs` (8/8 pass) records, per uploader
+  in `config/multer.js`, the accepted size cap the multer instance enforces:
+  - avatarUpload (avatar): `limits.fileSize === AVATAR_MAX_MB * 1MB`.
+  - bannerUpload (banner): `limits.fileSize === BANNER_MAX_MB * 1MB`.
+  - chatUpload (chat attachments): `limits.fileSize === CHAT_UPLOAD_MAX_MB * 1MB`.
+  - fileUpload (My Files): `limits.fileSize === UPLOAD_MAX_MB * 1MB`.
+  - groupAvatarUpload (group avatar): `limits.fileSize === AVATAR_MAX_MB * 1MB`.
+  - dmUpload: `limits.fileSize === plaintext cap + stream ciphertext overhead`.
+  - groupUpload: `limits.fileSize === plaintext cap + 16 (GCM tag)`.
+- Behavioural note (multer 2.x, busboy 1.x): `fileSize` is INCLUSIVE, so a file of
+  EXACTLY the cap is accepted and cap+1 is refused - for the plain uploaders this
+  is the semantics they now run under after the Task-2 multer fix (the former
+  `+ 1` hacks only existed because multer 1.x treated the limit as EXCLUSIVE).
+- Result table (as of this task, `pre-merge-fixes` @ `4ea1da0`):
+
+  | Uploader | Cap constant | Exactly-cap behaviour | cap+1 |
+  |---|---|---|---|
+  | avatarUpload | AVATAR_MAX_MB (5) | accepted (inclusive) | refused |
+  | bannerUpload | BANNER_MAX_MB (8) | accepted (inclusive) | refused |
+  | chatUpload | CHAT_UPLOAD_MAX_MB (50) | accepted (inclusive) | refused |
+  | fileUpload | UPLOAD_MAX_MB (2048) | accepted (inclusive) | refused |
+  | groupAvatarUpload | AVATAR_MAX_MB (5) | accepted (inclusive) | refused |
+  | dmUpload | DM_UPLOAD_MAX_MB + stream overhead | accepted | refused |
+  | groupUpload | GROUP_UPLOAD_MAX_MB + 16 | accepted | refused |
+
+- Behavioural half of the record ([NOT VERIFIED]): the EXACT-CAP / CAP+1
+  accept-refuse behaviour was asserted via the configured limits plus the
+  multer-2.x inclusive rule, not via a live multipart round-trip on each of the
+  mounted uploader endpoints (avatar `/api/me/avatar`, banner `/api/me/banner`,
+  file `/api/files/upload/:folderId`, group avatar `/api/groups/:id/avatar`).
+- Asked the owner, pending decision: which size semantics do they want for the
+  plain uploaders - keep the multer-2.x INCLUSIVE boundary (exactly-cap accepted,
+  cap+1 refused; recommended, no code change made) or restore an explicit
+  exclusive-style boundary. No behaviour was changed by this task.

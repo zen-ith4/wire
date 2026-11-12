@@ -338,13 +338,18 @@ test('admin UI "Add user": the temporary password is derived in the browser (aut
 
     await fill('uihire', 'too short');
     const n0 = log.length;
-    await page.evaluate(() => window.addUser());
+    // Drive the REAL admin UI: the "+ Add user" button carries the delegated
+    // data-action="admin-add-user" binding (CSP stage 2 moved the handler off
+    // inline onclick onto the delegated actions registry), so the click is what
+    // must trigger addUser. The handler reads #new-username/#new-email/#new-password
+    // and writes #admin-user-error - all present in the rendered view.
+    await page.click('[data-action="admin-add-user"]');
     await page.waitForFunction(() => /at least 12/.test(document.getElementById('admin-user-error').textContent));
     assert.equal(log.slice(n0).filter((r) => r.url.startsWith('/api/admin/users') && r.method === 'POST').length, 0);
 
     const tempPw = 'ui temporary password';
     await fill('uihire', tempPw);
-    await page.evaluate(() => window.addUser());
+    await page.click('[data-action="admin-add-user"]');
     for (let i = 0; i < 60 && !row("SELECT 1 AS x FROM users WHERE username = 'uihire'"); i++) await sleep(250);
     const u = row("SELECT auth_scheme AS s, must_change_password AS m, kdf_salt FROM users WHERE username = 'uihire'");
     assert.deepEqual({ s: u.s, m: u.m }, { s: 2, m: 1 });

@@ -532,6 +532,30 @@ test('row: the voice blob URL is revoked when the row leaves the DOM mid-render'
     }
 });
 
+test('row: two voice renders IN FLIGHT for the same element build ONE player and mint ONE blob URL', async () => {
+    stubFetch(() => okBody(new Uint8Array(32 + GCM)));
+    const created = [];
+    const origCreate = URL.createObjectURL;
+    URL.createObjectURL = (b) => { const u = origCreate(b); created.push(u); return u; };
+    let playerRenders = 0;
+    // A slow player widens the window in which a second render can start.
+    renderVoiceMessageImpl = async () => { playerRenders++; await new Promise((r) => setTimeout(r, 120)); };
+    try {
+        const { node } = stageVoice(23, { size: 32 });
+        ga.downloadGroupAttachment(23);
+        assert.equal(await settle(23), 'loaded');
+        await new Promise((r) => setTimeout(r, 20));
+        // Re-register the SAME element while the first player is still being built.
+        ga.registerGroupAttachmentRow({ id: 23 }, node);
+        await new Promise((r) => setTimeout(r, 400));
+        assert.equal(created.length, 1, 'a render in flight must not mint a second blob URL');
+        assert.equal(playerRenders, 1, 'a render in flight must not build a second player');
+    } finally {
+        URL.createObjectURL = origCreate;
+        cleanup();
+    }
+});
+
 test('row: a voice row renders the player ONCE - a second render for the same element does not mint a second blob URL', async () => {
     stubFetch(() => okBody(new Uint8Array(32 + GCM)));
     const created = [];

@@ -1214,14 +1214,18 @@ async function renderGroupVoice(row, container) {
     // mint a second blob URL / player for the same row element (the thread
     // repaints re-render into a NEW element, which is a different key).
     if (row.voicePlayerEl === el) return;
+    // Claim the element SYNCHRONOUSLY, before the first await below: two
+    // renders in flight for the same element must not both mint a blob URL and
+    // build a player. The claim is released on failure / detach.
+    row.voicePlayerEl = el;
     // Drop the lazy placeholder so the voice player does not sit next to a
     // stale download button once the (decrypted) audio has loaded.
     el.innerHTML = '';
     const blob = new Blob([bytes], { type: mime });
     const url = URL.createObjectURL(blob);
     const voiceMsg = { id: Number(row.id), is_voice_message: true, attachment_mime: mime };
-    const { renderVoiceMessage } = await import('../media/voice-message.js');
     try {
+        const { renderVoiceMessage } = await import('../media/voice-message.js');
         await renderVoiceMessage(voiceMsg, 'group', container, { src: url, isBlob: true });
         if (!el || !el.isConnected) {
             // The row went away mid-render (thread repaint / group switch):

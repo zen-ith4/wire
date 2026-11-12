@@ -3,7 +3,7 @@
 - Base branch: `test` (pushed to `github/test`), HEAD `4ea1da0`
   (`fix(sw): regenerate sw-manifest.js after c0e30f1 changed public/js`).
 - Working branch: `pre-merge-fixes`, created from that base, pushed to
-  `github/pre-merge-fixes` (now at `135c407`).
+  `github/pre-merge-fixes` (now at `e0f326f` — `135c407` -> `e0f326f` the f12 fix).
 - No feature flag was flipped by this branch. `GROUP_ATTACHMENTS_UI_ENABLED`
   (`public/js/chat/group-attachments-flag.js`) and
   `MEDIA_STREAM_ENABLED` (`public/sw.js:102`) remain `false`.
@@ -46,17 +46,11 @@ content, plus its own new-on-top commits:
 
 ## What is NEW on top of `4ea1da0` (this branch's own commits)
 
-- `106fd6c` — `fix(group-voice): revoke the voice blob URL on render failure and
-  make voice rows render once` (public/js/chat/group-attachments.js, sw-manifest.js,
-  tests/groups/group-attachment-hostile.test.mjs).
-- `135c407` — `fix(group-voice): claim the voice element synchronously so
-  concurrent renders build one player; keep the player import inside try`
-  (public/js/chat/group-attachments.js, sw-manifest.js regenerated → version
-  `597688d15b41`, tests/groups/group-attachment-hostile.test.mjs).
-- `031ed04` — `fix(deps): bump fast-xml-parser to clear the prod audit advisory
-  (GHSA-474x-hrwr-fgx4)` (package-lock.json).
-- `bdfe2ed` — `test(uploaders): record the multer 2.x inclusive size boundary per
-  uploader` (tests/uploaders-boundary.test.mjs, state/index.md).
+- `e0f326f` — `test(credentials): drive the real admin Add-user UI via the delegated data-action click` (tests/credentials/f12-browser-login.test.mjs).
+- `106fd6c` — `fix(group-voice): revoke the voice blob URL on render failure and make voice rows render once` (public/js/chat/group-attachments.js, sw-manifest.js, tests/groups/group-attachment-hostile.test.mjs).
+- `135c407` — `fix(group-voice): claim the voice element synchronously so concurrent renders build one player; keep the player import inside try` (public/js/chat/group-attachments.js, sw-manifest.js regenerated → version `597688d15b41`, tests/groups/group-attachment-hostile.test.mjs).
+- `031ed04` — `fix(deps): bump fast-xml-parser to clear the prod audit advisory (GHSA-474x-hrwr-fgx4)` (package-lock.json).
+- `bdfe2ed` — `test(uploaders): record the multer 2.x inclusive size boundary per uploader` (tests/uploaders-boundary.test.mjs, state/index.md).
 - `e2a5e36` — `docs: add MERGE_READINESS.md for the pre-merge-fixes branch` (docs).
 
 ## What was verified (this branch)
@@ -69,20 +63,54 @@ content, plus its own new-on-top commits:
   group-attachment-limits + upload-cap 7/7; dm-attachments-server-cap 5/5;
   files-upload-name-length + upload-headers 9/9; uploaders-boundary 8/8.
 - `fix(sw)` guard: `tests/sw-manifest.test.mjs` (SW-1…SW-4) **10/10 pass**; runs
-  `node scripts/build-sw-manifest.mjs --check`; CI step exists in
-  `docs/ci/linux-tests.yml`.
+  `node scripts/build-sw-manifest.mjs --check` (current: version `597688d15b41`,
+  190 files); CI step exists in `docs/ci/linux-tests.yml`.
 - Browser (Chromium): group-attachment-browser file — **3 full runs, 12/12 pass
   each**; pair with `group-e2e-browser.test.mjs` — **13/13 pass**.
+- Credentials admin UI: `tests/credentials/f12-browser-login.test.mjs` — **6/6
+  pass** when run alone after `e0f326f` (the admin Add-user test now drives the real
+  delegated `[data-action="admin-add-user"]` button instead of the removed
+  `window.addUser()`).
 
 ## What was NOT verified (this branch)
 
-- Files from the per-file full-suite run that **failed or hung** (step 1): recorded
-  below / to be recorded from `/tmp/suite/summary.txt`.
+- Files from the per-file full-suite run (step 1) that **failed or hung**:
+  - `tests/acceptance-xss-sweep-browser.test.mjs` — failing subtest: **5** "I filename:
+    an entity-encoded quote in a filename cannot break out of the inline onclick JS
+    string (real click)"; error: `alice: DM thread attachments: both hostile
+    attachments were clicked (0)`.
+  - `tests/credentials/f12-browser-login.test.mjs` — failing subtest **6** "admin UI
+    \"Add user\"…": error `window.addUser is not a function`. **FIXED in `e0f326f`**;
+    now green (6/6 alone).
+  - `tests/credentials/f12-setup-seed.test.mjs` — failing subtest **3** "setup wizard
+    (real prompts, copied tree): creates a scheme-2 admin; refuses < 12 characters";
+    error: `a short password is refused by the wizard`.
+  - `tests/csp-handlers-enforced-browser.test.mjs` — failing subtests **1** ("dm-send
+    click created exactly one server message", actual **2 !== 1**) and **2** (emoji
+    picker rendered at least one emoji).
+  - `tests/dm-csp-handlers-enforced-browser.test.mjs` — failing subtest **1** "CSP_ENFORCE
+    =true: DM Send and Delete work with real clicks; Attach is still blocked": error
+    `Attach (still an inline onclick) is blocked: expected script-src-attr violation`.
+  - `tests/escape-attr-js-string.test.mjs` — failing subtests **1–3**: `renderAttachment`
+    / `imageDownloadButtonHtml` — error `element has an onclick attribute` (the test
+    expects inline onclick markup; the delegated-handler migration made these data-action).
+  - No file **hung** in the per-file run (no `timeout 600` exit 124).
 - Device / manual tests (audio playback on real hardware, mic permission UX).
 - Real group attachment row count in production (E2EE bookkeeping).
 - DB migrations.
 - Live multipart uploads at the exact cap for **every** uploader (avatar, banner,
   chat, My Files / fileUpload, groupAvatar, DM, group).
+
+## Merge-readiness status
+
+- **Merge-ready was NOT claimed.** The full suite (`npm run test`) was killed
+  mid-run on request (`FULL_SUITE_EXIT=143`); the per-file run (step 1) finished:
+  **163 files → 157 green, 6 red, 0 hung**.
+- Five files remain failing (acceptance-xss-sweep-browser, f12-setup-seed,
+  csp-handlers-enforced-browser, dm-csp-handlers-enforced-browser,
+  escape-attr-js-string) with the exact subtests above; the f12 admin-UI failure was
+  fixed in `e0f326f` and is now green. Until the remaining failures are explained
+  (and re-verified on `main` where applicable), the branch is **not** merge-ready.
 
 ## Rollback notes
 

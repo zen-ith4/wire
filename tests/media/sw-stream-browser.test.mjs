@@ -342,6 +342,35 @@ function pageLib() {
     seek(t) { state.el.currentTime = t; return state.el.currentTime; },
 
     /**
+     * Deterministic readiness for a real-time PCM capture: the media element must
+     * be playing (not paused), HAVE_FUTURE_DATA (readyState >= 3) and its buffered
+     * range must cover the next `seconds` of playback. Without this the capture
+     * below can starve mid-window while the worker fetches the next ciphertext
+     * chunk, which inserts a zero-filled gap into the ScriptProcessor stream.
+     */
+    async waitForBufferedAhead(seconds, timeoutMs = 20000) {
+      const el = state.el;
+      const started = Date.now();
+      const snap = () => {
+        const b = el.buffered;
+        const end = b.length ? b.end(b.length - 1) : 0;
+        return {
+          paused: el.paused,
+          readyState: el.readyState,
+          currentTime: el.currentTime,
+          bufferedEnd: end,
+          covered: b.length > 0 && end >= el.currentTime + seconds,
+        };
+      };
+      for (;;) {
+        const s = snap();
+        if (!s.paused && s.readyState >= 3 && s.covered) return { ok: true, ...s, elapsedMs: Date.now() - started };
+        if (Date.now() - started > timeoutMs) return { ok: false, ...s, elapsedMs: Date.now() - started };
+        await new Promise((r) => setTimeout(r, 50));
+      }
+    },
+
+    /**
      * Captures the decoded PCM the media element produces (not a byte fetch:
      * the worker only serves audio/video destinations). Web Audio at 44100 Hz
      * means no resampling, so each sample is exactly int16 / 32768.
@@ -351,7 +380,25 @@ function pageLib() {
       const ctx = new AudioContext({ sampleRate: 44100 });
       if (ctx.state !== 'running') { try { await ctx.resume(); } catch {} }
       const source = ctx.createMediaElementSource(el);
-      const proc = ctx.createScriptProcessor(4096, 1, 1);
+      // Readiness, not a sleep: attaching a MediaElementSource to a playing
+      // element takes a moment to deliver real audio, and a capture armed too
+      // early starts with a run of silence. Wait until the analyser sees a
+      // non-zero sample before arming ScriptProcessor.
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 2048;
+      source.connect(analyser);
+      const probe = new Float32Array(analyser.fftSize);
+      await new Promise((resolve) => {
+        const timer = setInterval(() => {
+          analyser.getFloatTimeDomainData(probe);
+          if (probe.some((v) => v !== 0)) { clearInterval(timer); resolve(); }
+        }, 20);
+        setTimeout(() => { clearInterval(timer); resolve(); }, 5000);
+      });
+      // One block for the whole capture (ScriptProcessor allows up to 16384):
+      // fewer graph transitions means fewer chances to drop/duplicate a 128-sample
+      // render quantum in this headless build (see the retry note in test 4).
+      const proc = ctx.createScriptProcessor(Math.min(16384, Math.max(4096, count)), 1, 1);
       const frames = [];
       let got = 0;
       const t0 = el.currentTime;
@@ -720,28 +767,80 @@ test('4. seek: Range request at the seek position, correct time, correct decoded
 
   // (c) decoded content: the PCM the media element produces after the seek is the
   // plaintext, sample for sample. Sample-exact after aligning the capture.
+  //
+  // Readiness, not a sleep: the capture runs in real time for ~0.37 s, so the
+  // element must already hold enough buffered audio for that whole window.
+  // Otherwise a mid-capture underrun inserts a gap and the byte comparison fails
+  // for a reason that has nothing to do with the decrypted bytes.
+  //
+  // The capture itself is a LOSSY measurement: Web Audio's ScriptProcessorNode
+  // delivers rendered quanta from the audio graph, and in this headless build it
+  // occasionally drops or duplicates one (observed: the block-size boundary 65 x
+  // 128 = 8320, with the prefix up to that point byte-identical to the
+  // plaintext). A corrupt capture is therefore retried — bounded, and only the
+  // capture, never the tolerance: every attempt must still align inside the same
+  // +-1 s window AND be byte-identical over all WANT samples. A real
+  // decrypt/stream defect fails every attempt.
   const WANT = 16384;
-  const cap = await call(page, 'capture', WANT);
-  assert.equal(cap.sampleRate, 44100, 'AudioContext must run at 44100 Hz (no resampling)');
-  const capBuf = Buffer.from(cap.b64, 'base64');
-  const capInt16 = new Int16Array(capBuf.buffer, capBuf.byteOffset, capBuf.length / 2);
+  const ready = await call(page, 'waitForBufferedAhead', WANT / 44100 + 0.25);
+  log(`test4 capture readiness: ${JSON.stringify(ready)}`);
+
   const pcm = new Int16Array(seeded.bytes.length / 2 - WAV_HEADER / 2);
   for (let i = 0; i < pcm.length; i += 1) pcm[i] = seeded.bytes.readInt16LE(WAV_HEADER + i * 2);
   const expectStart = Math.floor(targetPlain / 2 - WAV_HEADER / 2) - 44100;
+
+  const attempts = [];
+  let cap = null;
+  let capInt16 = null;
   let aligned = -1;
-  for (let s0 = Math.max(0, expectStart); s0 < Math.min(pcm.length - WANT, expectStart + 88200); s0 += 1) {
-    let ok = true;
-    for (let k = 0; k < 256; k += 1) if (capInt16[k] !== pcm[s0 + k]) { ok = false; break; }
-    if (ok) { aligned = s0; break; }
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    // Ask for a little extra so a leading silent run (a capture artifact) can be
+    // trimmed without losing samples from the compared window. The fixture is a
+    // continuous 440 Hz tone, so 8 consecutive nonzero samples are real audio.
+    cap = await call(page, 'capture', WANT + 4096);
+    assert.equal(cap.sampleRate, 44100, 'AudioContext must run at 44100 Hz (no resampling)');
+    const capBuf = Buffer.from(cap.b64, 'base64');
+    const raw = new Int16Array(capBuf.buffer, capBuf.byteOffset, capBuf.length / 2);
+    let skip = 0;
+    while (skip + 8 <= raw.length && !(raw[skip] !== 0 && raw[skip + 1] !== 0 && raw[skip + 2] !== 0 && raw[skip + 3] !== 0
+      && raw[skip + 4] !== 0 && raw[skip + 5] !== 0 && raw[skip + 6] !== 0 && raw[skip + 7] !== 0)) skip += 1;
+    capInt16 = raw.subarray(Math.min(skip, raw.length), Math.min(skip, raw.length) + WANT);
+    if (capInt16.length < WANT) {
+      attempts.push({ attempt, skip, samples: capInt16.length, placeOk: false, hashOk: false });
+      log(`test4 capture attempt ${attempt}: only ${capInt16.length} usable samples after trimming ${skip} leading silent ones`);
+      continue;
+    }
+    aligned = -1;
+    for (let s0 = Math.max(0, expectStart); s0 < Math.min(pcm.length - WANT, expectStart + 88200); s0 += 1) {
+      let ok = true;
+      for (let k = 0; k < 256; k += 1) if (capInt16[k] !== pcm[s0 + k]) { ok = false; break; }
+      if (ok) { aligned = s0; break; }
+    }
+    let nonzero = 0; for (let k = 0; k < capInt16.length; k += 1) if (capInt16[k] !== 0) nonzero += 1;
+    const placeOk = aligned >= 0 && Math.abs(aligned / 44100 - SEEK_SECONDS) < 1.5;
+    let hashOk = false;
+    let firstBad = -1;
+    let mismatches = 0;
+    if (placeOk) {
+      const wantPcm = Buffer.from(pcm.buffer, pcm.byteOffset + aligned * 2, WANT * 2);
+      const gotPcm = Buffer.from(capInt16.buffer, capInt16.byteOffset, WANT * 2);
+      hashOk = sha256(gotPcm) === sha256(wantPcm);
+      for (let k = 0; k < WANT; k += 1) {
+        if (capInt16[k] !== pcm[aligned + k]) { mismatches += 1; if (firstBad < 0) firstBad = k; }
+      }
+    }
+    attempts.push({ attempt, aligned, nonzero, placeOk, hashOk });
+    log(`test4 capture attempt ${attempt}: samples=${capInt16.length} nonzero=${nonzero} first8=[${Array.from(capInt16.slice(0, 8)).join(',')}] expectStart=${expectStart} pcmLen=${pcm.length} aligned=${aligned} placeOk=${placeOk} hashOk=${hashOk} firstBadSample=${firstBad} mismatches=${mismatches}/${WANT}`);
+    if (placeOk && hashOk) break;
   }
-  let nonzero = 0; for (let k = 0; k < capInt16.length; k += 1) if (capInt16[k] !== 0) nonzero += 1;
-  log(`test4 capture diagnostics: samples=${capInt16.length} nonzero=${nonzero} first8=[${Array.from(capInt16.slice(0, 8)).join(',')}] expectStart=${expectStart} pcmLen=${pcm.length}`);
+  log(`test4 capture attempts: ${JSON.stringify(attempts)}`);
+
   assert.ok(aligned >= 0, 'captured PCM must align with the plaintext within +-1 s of the seek');
   assert.ok(Math.abs(aligned / 44100 - SEEK_SECONDS) < 1.5, `decoded position ${(aligned / 44100).toFixed(3)} s must be within 1.5 s of the seek target`);
   const wantPcm = Buffer.from(pcm.buffer, pcm.byteOffset + aligned * 2, WANT * 2);
   const gotPcm = Buffer.from(capInt16.buffer, capInt16.byteOffset, WANT * 2);
   assert.equal(sha256(gotPcm), sha256(wantPcm), 'decoded PCM must equal the plaintext PCM');
-  log(`test4 decoded PCM: captured ${cap.samples} samples from currentTime~${cap.t0.toFixed(2)}s, aligned at plaintext sample ${aligned} (t=${(aligned / 44100).toFixed(3)}s); sha256(${WANT} samples)=${sha256(gotPcm)} == plaintext`);
+  log(`test4 decoded PCM: captured ${cap.samples} samples from currentTime~${cap.t0.toFixed(2)}s, aligned at plaintext sample ${aligned} (t=${(aligned / 44100).toFixed(3)}s) after ${attempts.length} capture attempt(s); sha256(${WANT} samples)=${sha256(gotPcm)} == plaintext`);
 
   await page.close();
   assertRepoFlagOff();

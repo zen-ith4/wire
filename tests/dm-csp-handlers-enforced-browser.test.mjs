@@ -320,15 +320,26 @@ async function scenario(t, cspEnforce) {
     await waitFor(() => dmRows(bId).length === 1, 'the row to be deleted on the server');
     assert.ok(!dmRows(bId).some((r) => r.id === victim.id), 'the right message was deleted');
 
-    // ---- 5. negative control: a still-inline control is blocked under enforcement ----
-    const beforeAttach = (await violations()).filter((v) => v.directive.startsWith('script-src-attr') && v.disposition === 'enforce').length;
-    await page.click('#dm-input-area button[title="Attach"]');
+    // ---- 5. negative control: an inline onclick handler is blocked under enforcement ----
+    const beforeProbe = (await violations()).filter((v) => v.directive.startsWith('script-src-attr') && v.disposition === 'enforce').length;
+    await page.evaluate(() => {
+      window.__cspProbeRan = false;
+      const btn = document.createElement('button');
+      btn.id = 'csp-inline-probe';
+      btn.setAttribute('onclick', 'window.__cspProbeRan = true');
+      btn.textContent = 'probe';
+      document.body.appendChild(btn);
+    });
+    await page.click('#csp-inline-probe');
     await sleep(500);
+    const probeRan = await page.evaluate(() => window.__cspProbeRan);
     const enforcedAttr = (await violations()).filter((v) => v.directive.startsWith('script-src-attr') && v.disposition === 'enforce').length;
     if (cspEnforce) {
-      assert.ok(enforcedAttr > beforeAttach, 'Attach (still an inline onclick) is blocked: expected script-src-attr violation');
+      assert.ok(enforcedAttr > beforeProbe, 'inline onclick probe is blocked: expected script-src-attr violation');
+      assert.equal(probeRan, false, 'inline onclick probe handler must not run under CSP_ENFORCE=true');
     } else {
       assert.equal(enforcedAttr, 0, 'Report-Only never blocks');
+      assert.equal(probeRan, true, 'inline onclick probe handler runs under Report-Only');
     }
   } finally {
     for (const br of browsers) await br.close().catch(() => {});

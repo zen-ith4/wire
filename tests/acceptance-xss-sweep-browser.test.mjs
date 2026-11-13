@@ -92,9 +92,9 @@ async function sweep(page, label) {
     return { label, ...r };
 }
 
-/** Real click on every attachment control whose inline onclick embeds the filename; report __pwned afterwards. */
+/** Real click on every delegated attachment-download control; report __pwned afterwards. */
 async function clickDownloads(page, label) {
-    const n = await page.evaluate(() => { const els = [...document.querySelectorAll('[onclick*="downloadAttachment"]')]; els.forEach((e) => e.click()); return els.length; });
+    const n = await page.evaluate(() => { const els = [...document.querySelectorAll('[data-action="attachment-download"]')]; els.forEach((e) => e.click()); return els.length; });
     await sleep(1200);
     return { label, clicked: n, pwned: await page.evaluate(() => window.__pwned) };
 }
@@ -311,7 +311,7 @@ test('B username (rendering): a user whose username is markup renders as inert t
     assert.ok(bobView.includes('~hdm'), 'bob rendered the hostile-username user\'s DM');
 });
 
-test('I filename: an entity-encoded quote in a filename cannot break out of the inline onclick JS string (real click)',
+test('I filename: a hostile filename reaches the DOM only via data-filename="${escapeHtmlAttr(name)}", read back through dataset, and cannot execute JS (real click)',
     // Was a confirmed stored XSS (escapeAttr did not escape '&'); fixed in public/js/core/utils.js. Unit-level
     // coverage of the same contract lives in tests/escape-attr-js-string.test.mjs.
     async (t) => {

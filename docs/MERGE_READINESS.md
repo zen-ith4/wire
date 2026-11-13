@@ -84,7 +84,13 @@ content, plus its own new-on-top commits:
     now green (6/6 alone).
   - `tests/credentials/f12-setup-seed.test.mjs` — failing subtest **3** "setup wizard
     (real prompts, copied tree): creates a scheme-2 admin; refuses < 12 characters";
-    error: `a short password is refused by the wizard`.
+    error: `a short password is refused by the wizard`. **Now explained**: the failure
+    was environmental, not a branch regression — the local, gitignored `.env`
+    (`SETUP_COMPLETED=true`) leaked into the wizard's throwaway copy (server.js does
+    `require('dotenv').config()`, which loads the copy's `.env`, skipping the wizard).
+    Re-measured: real `.env` present -> fail (subtest 3); clean worktree (no `.env`) ->
+    3/3 pass. Fixed in the test by skipping local-only entries in the copy
+    (`.env`/`.env.*` except `.env.example`, runtime dirs, `*.apk`).
   - `tests/csp-handlers-enforced-browser.test.mjs` — previously listed as failing
     subtests **1** and **2** ("dm-send click created exactly one server message",
     actual **2 !== 1**; "emoji picker rendered at least one emoji"); **re-verified in
@@ -126,9 +132,10 @@ that dir -> `HeadlessChrome/153.0.8010.0`, puppeteer-core, Node v22.23.4, uid 10
   branch -> **pre-existing on `github/main`**, not branch-specific.
 - `tests/credentials/f12-setup-seed.test.mjs` — **PASSES on `github/main`** (exit 0;
   3/3 pass across runs); **FAILS on the branch** (subtest 3: `a short password is
-  refused by the wizard`). The test file and the wizard source (`utils/setupWizard.js`)
-  are identical on both trees, so the split is not yet explained here (treat as
-  unverified).
+  refused by the wizard`). Now explained: the branch-side red was environmental (local
+  `.env` with `SETUP_COMPLETED=true` leaking into the copied tree), not a branch
+  regression; clean worktree -> 3/3 pass, real `.env` present -> fail. Fixed in the
+  test (skip local-only entries in the copy).
 - `tests/csp-handlers-enforced-browser.test.mjs` — **EXISTS on `github/main`** and
   **PASSES there** (exit 0; 2/2 pass) as well as on the branch (2/2, exit 0). It is
   green; it is not one of the failing files.
@@ -178,9 +185,11 @@ Red tests that reproduce on **`github/main`** itself, with cause:
 `tests/csp-handlers-enforced-browser.test.mjs` **passes on `github/main`** (2/2, exit 0)
 and on the branch (2/2, exit 0) in this session — it is green, not red.
 
-Outstanding / not yet explained: `tests/credentials/f12-setup-seed.test.mjs` — red on
-the branch (subtest 3), green on `github/main` (3/3); the wizard source and the test
-file are identical on both trees, so the branch/main split is unverified here.
+Explained: `tests/credentials/f12-setup-seed.test.mjs` — red on the branch (subtest 3),
+green on `github/main` (3/3); the wizard source and the test file are identical on both
+trees, so the split was environmental (local `.env` with `SETUP_COMPLETED=true` leaking
+into the copied tree). Fixed in the test by skipping local-only entries in the copy;
+re-verified: with the real `.env` present -> 3/3 pass after the fix.
 
 ## Merge-readiness status
 

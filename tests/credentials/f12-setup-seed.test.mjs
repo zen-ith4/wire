@@ -56,8 +56,24 @@ test('setup wizard (real prompts, copied tree): creates a scheme-2 admin; refuse
     const dir = tmpDir('wire-wizard-');
     const tree = path.join(dir, 'app');
     fs.mkdirSync(tree);
+    // Copy the source tree into the throwaway dir, skipping LOCAL-ONLY state so it
+    // cannot leak into the wizard's server (which does require('dotenv').config() and
+    // would honour an operator's .env, e.g. SETUP_COMPLETED=true, skipping the wizard).
+    // Skipped: node_modules/.git/tests/data.db (as before), the operator env file
+    // (.env and .env.* except the tracked .env.example), gitignored runtime dirs and
+    // build artifacts (*.apk). The wizard writes its own .env in the copy.
+    const SKIPPED_DIRS = new Set([
+        'node_modules', '.git', 'tests', 'data.db',
+        'data', 'user-data', 'chat-uploads', 'dm-uploads', 'avatars',
+        'group-uploads', 'logs', 'uploads',
+    ]);
+    const isLocalOnly = (name) =>
+        name === '.env' ||
+        (name.startsWith('.env.') && name !== '.env.example') ||
+        SKIPPED_DIRS.has(name) ||
+        name.endsWith('.apk');
     for (const entry of fs.readdirSync(ROOT)) {
-        if (['node_modules', '.git', 'tests', 'data.db'].includes(entry) || entry.endsWith('.db')) continue;
+        if (isLocalOnly(entry) || entry.endsWith('.db')) continue;
         fs.cpSync(path.join(ROOT, entry), path.join(tree, entry), { recursive: true });
     }
     fs.symlinkSync(path.join(ROOT, 'node_modules'), path.join(tree, 'node_modules'));

@@ -43,6 +43,14 @@ content, plus its own new-on-top commits:
    existing voice player from the decrypted blob; no SW changes; CSP `media-src
    'self' blob:` allows blob:.
 7. **Docs reorg**: loose top-level `docs/*.md` moved into `docs/archive/`.
+8. **Dependency lockfile (npm ci on `npm@12.2.1`)**: `github/main`'s
+   `package-lock.json` fails `npm ci` under npm 12.2.1 — `EUSAGE`: "can only install
+   packages when your package.json and package-lock.json are in sync", and
+   `Missing: fsevents@2.3.3 from lock file` + `Missing: @esbuild/*@0.28.2 from lock
+   file` (all 24 platform packages). This branch's `package-lock.json` passes
+   (`npm ci --dry-run` exit 0). Reproduced with `npx npm@12.2.1 ci --dry-run` in a
+   clean `github/main` worktree (`/tmp/wt-main` @ `b24b847`). No `package-lock.json`
+   change was made; the branch's lockfile is in sync with its `package.json`.
 
 ## What is NEW on top of `4ea1da0` (this branch's own commits)
 
@@ -103,6 +111,18 @@ content, plus its own new-on-top commits:
   - `tests/escape-attr-js-string.test.mjs` — failing subtests **1–3**: `renderAttachment`
     / `imageDownloadButtonHtml` — error `element has an onclick attribute` (the test
     expects inline onclick markup; the delegated-handler migration made these data-action).
+  - `tests/dm-v2-wire-browser-paths.test.mjs` — failing subtest **12** "i. three rows
+    (good, tampered, good): 2 good bubbles + 1 placeholder in order"; error:
+    `Waiting for selector '.nav-link[data-view="messages"]' failed` (puppeteer
+    `waitForSelector` timeout). **Flaky, not a deterministic regression**: 3× on
+    `github/main` @ `b24b847` → **3/3 pass** (14/14 each); on the branch → **2/3**
+    (run2 failed subtest 12). Green on main, intermittently red on the branch.
+  - `tests/media/sw-stream-browser.test.mjs` — failing subtest **4** "seek: Range
+    request at the seek position, correct time, correct decoded bytes"; error:
+    `decoded PCM must equal the plaintext PCM` (hash mismatch on captured PCM).
+    **Flaky on both sides**: 3× on `github/main` → **2/3** (run3 failed subtest 4);
+    on the branch → **2/3**. Both sides show intermittent red, so this is flakiness,
+    not a branch regression.
   - No file **hung** in the per-file run (no `timeout 600` exit 124).
 - Device / manual tests (audio playback on real hardware, mic permission UX).
 - Real group attachment row count in production (E2EE bookkeeping).
@@ -195,7 +215,10 @@ re-verified: with the real `.env` present -> 3/3 pass after the fix.
 
 - **Merge-ready was NOT claimed.** The full suite (`npm run test`) was killed
   mid-run on request (`FULL_SUITE_EXIT=143`); the per-file run (step 1) finished:
-  **163 files → 157 green, 6 red, 0 hung**.
+  **163 files → 158 green, 5 red, 0 hung** (serial, `timeout 600` per file, no
+  timeout/exit-124). Red: `acceptance-xss-sweep-browser` (subtest 5), `dm-csp-handlers-enforced-browser`
+  (subtest 1), `escape-attr-js-string` (subtests 1–3), `dm-v2-wire-browser-paths`
+  (subtest 12), `media/sw-stream-browser` (subtest 4).
 - After `e0f326f` (f12 admin-UI fix), **5 files remained failing**
   (acceptance-xss-sweep-browser, f12-setup-seed,
   csp-handlers-enforced-browser, dm-csp-handlers-enforced-browser,

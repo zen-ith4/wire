@@ -3,7 +3,7 @@ const path = require('path');
 const constants = require('../config/constants');
 
 
-function createUserDrive(db, user) {
+function createUserDrive(db, user, userDataRootOverride) {
 
   const existing = db.prepare(`
     SELECT id
@@ -18,7 +18,7 @@ function createUserDrive(db, user) {
 
 
   const userDataRoot = path.join(
-    constants.USER_DATA_ROOT,
+    userDataRootOverride ?? constants.USER_DATA_ROOT,
     String(user.id)
   );
 

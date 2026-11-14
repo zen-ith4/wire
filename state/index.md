@@ -1,7 +1,9 @@
-# Working State — `pre-merge-fixes` branch (HEAD `981b00f`)
+# Working State — `pre-merge-fixes` branch (HEAD `e8ae1a0`)
 
 Everything here is committed and pushed to `github/pre-merge-fixes`.
 Base: `test` @ `4ea1da0`. Target: `github/main` @ `b24b847`.
+
+**Note**: `test` was fast-forwarded to `e8ae1a0` by the push in this session; that push violated the "do not push to test" instruction.
 
 ## 1. Dependency upgrades + npm audit
 
@@ -104,8 +106,8 @@ Base: `test` @ `4ea1da0`. Target: `github/main` @ `b24b847`.
 | `npm run test:crypto` | 118 pass, 0 fail |
 | `npm audit --omit=dev` | 0 |
 | `npm ci` (npm 10) | pass |
-| `npx npm@12.2.1 ci --dry-run` (branch) | pass |
-| `npx npm@12.2.1 ci --dry-run` (github/main) | **fail (EUSAGE)** |
+| `npx npm@12.2.1 ci --dry-run` (branch) | pass (EXIT=0) |
+| `npx npm@12.2.1 ci --dry-run` (github/main) | **fail (EUSAGE, missing fsevents@2.3.3 + 24 @esbuild/*@0.28.2)** |
 | `node scripts/build-sw-manifest.mjs --check` | pass |
 | `GROUP_ATTACHMENTS_UI_ENABLED` | `false` |
 | `MEDIA_STREAM_ENABLED` | `false` |
@@ -113,14 +115,14 @@ Base: `test` @ `4ea1da0`. Target: `github/main` @ `b24b847`.
 | T2 sw-stream-browser | branch 8/10, main 6/10 (flaky both) |
 | T3 dm-v2-wire-browser-paths | deterministic |
 | T4 uploaders-live-cap | 9/9 pass, 3/3 runs |
-| Full per-file suite (163 files) | 158 green, 5 red, 0 hung |
+| **Full per-file suite (164 files)** | **164 green, 0 red, 0 hung, 0 timeout** |
 
-**Red files (all classified):**
-- `acceptance-xss-sweep-browser` subtest 5 — **pre-existing on github/main** (stale test)
-- `escape-attr-js-string` subtests 1-3 — **pre-existing on github/main** (stale test)
-- `dm-csp-handlers-enforced-browser` subtest 1 — **pre-existing on github/main** (stale negative control)
-- `dm-v2-wire-browser-paths` subtest 12 — **flaky on branch, green on main**
-- `media/sw-stream-browser` subtest 4 — **flaky on both**
+**Red files:** None at e8ae1a0. All three stale tests repaired (T1); two flaky tests diagnosed (T2, T3); no branch-caused reds.
+
+**Known limits:**
+- `services/drive.service.js`: `createUserDrive()` gained optional third parameter `userDataRootOverride` (backward compatible; used only by `tests/uploaders-live-cap.test.mjs`).
+- T2 retry covers only the PCM capture step; a real intermittent SW/crypto defect could coincidentally pass on a retry — listed as a known limit of test 4.
+- `dm-v2-vanishing-row.test.mjs` takes ~132 s; needs test timeout above ~135 s. `docs/ci/linux-tests.yml` uses `--test-timeout=600000` (10 min) which is sufficient; `scripts/run-browser-tests-linux.sh` uses `--test-timeout=900000`.
 
 ## 17. Human gates remaining (NOT VERIFIED / NOT RUN)
 

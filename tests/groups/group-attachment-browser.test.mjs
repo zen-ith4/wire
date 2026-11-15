@@ -671,6 +671,17 @@ test('12 group voice: fake-mic record -> send -> receive -> play; server keeps n
     })();
     assert.ok(player, 'the voice message must render a player for the recipient');
 
+    // The player's <audio> must be fed the DECRYPTED blob that the group code
+    // passes in (renderVoiceMessage ... { src, isBlob }), never a server URL.
+    // Regression guard: once voice-message.js was replaced wholesale and silently
+    // lost that contract, the <audio> pointed at /api/chat/attachments/<id> and
+    // the tests that only checked "a player renders" stayed green.
+    await sleep(1500);
+    const audioSrc = await bobPage.$eval('.voice-message', (el) => {
+        const a = el.querySelector('audio');
+        return a ? (a.getAttribute('src') || a.currentSrc || '') : '';
+    });
+    assert.ok(audioSrc.startsWith('blob:'), `group voice must play the decrypted blob, got: ${audioSrc.slice(0, 60)}`);
     // Play it.
     await bobPage.$eval('.voice-message-play', (el) => el.click());
     await sleep(1000);

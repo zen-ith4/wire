@@ -11,7 +11,7 @@
 ```bash
 git fetch github
 git checkout main
-git tag -s pre-merge-2026-11 -m "Pre-merge baseline before test->main"
+git tag -a pre-merge-2026-11 github/main -m "Pre-merge baseline before test->main"   # -a, not -s: a signed tag needs a GPG key
 git push github pre-merge-2026-11
 ```
 **[NOT RUN]** — run on deploy machine after verifying `main` is at `b24b847`.
@@ -100,77 +100,58 @@ npx npm@12.2.1 ci --dry-run   # expect exit 0
 
 ## 7. Post-deploy smoke tests
 
-Run each and record pass/fail.
+Use `scripts/smoke.mjs` (read-only; see `docs/DEPLOY_COMMANDS.md` section 7):
 
 ```bash
-# 7.1 APK info endpoint
-curl -fsS https://YOUR_SERVER/api/apk/info
-# Expected: JSON with "sha256": "<64 hex chars>", "available": true
-
-# 7.2 Login (register a throwaway account, or use an existing one)
-# This requires the browser; here is the REST equivalent:
-TOKEN=$(curl -fsS -X POST https://YOUR_SERVER/api/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"username":"smoketest","password":"Passw0rd!x"}' | jq -r .token)
-
-# 7.3 DM send (text)
-curl -fsS -X POST https://YOUR_SERVER/api/dm/messages \
-  -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{"recipient_id":2,"content":"smoke test"}' | jq .
-
-# 7.4 Group message (text) — requires a group the user owns or is a member of
-# First list groups:
-curl -fsS -H "Authorization: Bearer $TOKEN" https://YOUR_SERVER/api/groups
-# Pick a groupId and send:
-curl -fsS -X POST https://YOUR_SERVER/api/groups/<groupId>/messages \
-  -H "Authorization: Bearer $TOKEN" \
-  -H 'X-Wire-Group-Proto: 1' \
-  -H 'Content-Type: application/json' \
-  -d '{"content":"smoke test group"}' | jq .
-
-# 7.5 Upload within cap (1 MiB test file)
-dd if=/dev/zero of=/tmp/smoke.bin bs=1M count=1
-curl -fsS -X POST https://YOUR_SERVER/api/me/avatar \
-  -H "Authorization: Bearer $TOKEN" \
-  -F 'file=@/tmp/smoke.bin;type=image/png'
-# Expect 200 {success:true}
-
-# 7.6 Media request with a deactivated user's token returns 401
-# (Create a deactivated account, get its token, then hit a media URL)
-# This is a manual step — see MANUAL_TEST_CHECKLIST.md
+WIRE_URL=https://YOUR_SERVER SMOKE_USER=someuser SMOKE_PASS='...' EXPECT_APK=1 \
+  node scripts/smoke.mjs
 ```
-**[NOT RUN]** — run on deploy machine after deploy.
+
+It was tested against a real local server (valid account and APK: 7 passed;
+no APK: 5 passed + 1 WARN; wrong password: login FAIL, exit 1).
+
+**Corrections to the earlier version of this section** (the old curl examples
+did not match the code):
+
+- Group endpoints require `X-Wire-Group-Proto: 2` or newer (`GROUP_PROTOCOL_MIN`
+  in `middleware/groupProtocol.js`); the old text said `1`, which answers 426.
+- `POST /api/auth/login` with a raw `password` only works for scheme-1
+  accounts. Scheme-2 accounts need an `auth_key` derived with the client KDF, so a
+  plain curl login cannot work for them; the script derives it.
+- DM and group messages are end-to-end encrypted; a plaintext `curl` POST is
+  not a meaningful test. Sending messages and uploads must be tested with a real
+  client (`docs/MANUAL_TEST_CHECKLIST.md`).
+- A deactivated-user media check is manual (`docs/MANUAL_TEST_CHECKLIST.md`).
 
 ---
 
 ## 8. Rollback
 
-If the deploy is broken:
+A fast-forward merge creates **no merge commit**, so `git revert -m 1` does
+not work. Use `docs/DEPLOY_COMMANDS.md` section 9:
 
 ```bash
-# Redeploy the tagged pre-merge baseline
-git checkout pre-merge-2026-11
-# (rebuild + restart server)
+# A. redeploy the tag on the server
+git fetch github --tags && git checkout pre-merge-2026-11 && npm ci   # + your restart command
 
-# OR if already on main and need to revert the merge:
-git revert -m 1 <merge-commit-sha>
+# B. undo on main without rewriting history (never force-push main)
+git switch main
+git revert --no-commit pre-merge-2026-11..main
+git commit -m "Revert pre-merge-fixes merge"
 git push github main
-# (rebuild + restart server)
 ```
 
-**Database migrations:** T5 confirmed **no schema changes** (only comment path
-updates in `database/migrations.js`). The trigger-based ratchet for
-`dm_e2ee_min_version` is idempotent and will not alter data on rollback.
+**Database migrations:** none; only comment paths changed in
+`database/migrations.js`.
 
-**[NOT RUN]** — rollback steps verified by reading code, not executed.
+**[NOT RUN]** — never executed. **[NOT VERIFIED]** what an already-updated
+client does after a rollback to a server that does not advertise `sha256`.
 
 ---
 
 ## 9. What to watch after deploy
 
-- `/api/ap
-k/info` must continue to return the same `sha256` as the file on disk.
+- `/api/apk/info` must continue to return the same `sha256` as the file on disk.
 - Deactivated accounts (if any) now get `401` on media URLs — confirm they
   cannot stream attachments.
 - Group attachments UI stays hidden (`GROUP_ATTACHMENTS_UI_ENABLED=false` in

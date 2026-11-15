@@ -50,6 +50,10 @@ import {
   forgetAttachmentSecret,
   prepareDmAttachmentUpload
 } from '../media/attachment-e2ee.js';
+import {
+  forgetVoiceWaveform,
+  voiceWaveformKey
+} from '../media/voice-waveform.js';
 import { avatarHtml } from '../ui/avatar.js';
 import { getCurrentUser } from '../core/auth.js';
 import { claimRender } from '../core/view-session.js';
@@ -142,6 +146,7 @@ let dmLoadMoreObserver = null;
 
 window.addEventListener('wire:logout', () => {
   dmCache.clear();
+  dmIncoming.clear();
   dmConvMap.clear();
   dmPreparedConvs = [];
   dmConvsLoaded = false;
@@ -149,6 +154,8 @@ window.addEventListener('wire:logout', () => {
   dmEntry = null;
   dmLoadMoreObserver?.disconnect();
   dmLoadMoreObserver = null;
+  dmTopObserver?.disconnect();
+  dmTopObserver = null;
 });
 
 // Keep cached DM messages in step with reaction changes so reopening a
@@ -197,6 +204,55 @@ function getOrCreateDmCacheEntry(peerId, username) {
   }
   return entry;
 }
+
+// ---------- Message identity ----------
+// A DM's identity is its server row id. The composer never draws a row before
+// the server has confirmed it, so there is no client-side temporary id to
+// reconcile - but the SAME row still reaches this cache along independent
+// paths:
+//   - the composer's own HTTP response AND the socket echo of that send
+//     (emitNewDirectMessage fans out to the sender's room as well);
+//   - a live push that arrived before the thread was ever opened, and then
+//     the first history page, which contains it again;
+//   - a resync (syncDmMessagesSince) racing a live push.
+// Appending blindly on each arrival is what duplicated the user's own
+// messages: the live DOM had a guard, the cache did not, and the next render
+// from the cache (returning to the conversation) drew every copy.
+//
+// Every insert therefore goes through putDmMessage(). It keeps `messages`,
+// `ids` and `byId` in lockstep, and turns a second arrival of an id into an
+// update of the row that is already there.
+//
+// Rows stay in ARRIVAL order (the order the thread draws them), never
+// re-sorted by the id a row claims: a forged row can claim any id and must
+// still land after the real rows (tests/dm-unencrypted-browser.test.mjs).
+function dmIdOf(msg) {
+  return Number(msg.id);
+}
+
+/** @returns {boolean} true when `msg` was new to the cache (appended). */
+function putDmMessage(entry, msg) {
+  const id = msg.id;
+
+  if (entry.ids.has(id)) {
+    entry.byId.set(id, msg);
+    const idx = entry.messages.findIndex((m) => m.id === id);
+    if (idx !== -1) entry.messages[idx] = msg;
+    return false;
+  }
+
+  entry.ids.add(id);
+  entry.byId.set(id, msg);
+  entry.messages.push(msg);
+  return true;
+}
+
+// addDmMessage() work in flight, keyed by `${peerId}:${messageId}`. The two
+// deliveries of one send arrive milliseconds apart; without this the second
+// passes the "already cached?" check while the first is still decrypting, and
+// also plays the notification/sound a second time. A later arrival of an id
+// that is still being processed simply joins that work.
+const dmIncoming = new Map();
 
 const DM_NEAR_BOTTOM_PX = 80;
 function isNearBottom(container) {
@@ -933,6 +989,8 @@ export async function renderDm(openPeerId, opts) {
   saveDmScrollState();
   dmActivePeer = null;
   dmEntry = null;
+  dmTopObserver?.disconnect();
+  dmTopObserver = null;
 
   cleanupImageUrls(document.getElementById('dm-messages'), 'dm');
   revokeMediaPlayerBlobUrls(document.getElementById('dm-messages'));
@@ -1389,6 +1447,47 @@ function bindDmThreadBackground() {
   }
 }
 
+// ---------- Floating header stack: message-list clearance ----------
+// The liquid-glass header floats over the top of the thread so the message
+// list can scroll underneath it. The key-change banner and the Verify panel
+// belong to that header, so they live in the same floating stack
+// (.dm-thread-top) and are laid out BELOW the participant info - before, they
+// sat in the list's flow at the very top of the thread, underneath the header,
+// and the participant's avatar/name covered them.
+//
+// The list needs a top clearance equal to wherever that stack ends. A constant
+// cannot know it (a banner wraps, the panel opens, density and font size
+// scale), so the stack's real bottom edge is measured and handed to CSS as
+// --dm-top-clearance (CSSOM custom property: CSP-safe). Without
+// ResizeObserver the CSS fallback is the header-only clearance used before.
+let dmTopObserver = null;
+
+function bindDmTopClearance(thread) {
+  dmTopObserver?.disconnect();
+  dmTopObserver = null;
+
+  const top = thread?.querySelector('.dm-thread-top');
+  if (!top || typeof ResizeObserver !== 'function') return;
+
+  const apply = () => {
+    if (!top.isConnected) return;
+    const list = document.getElementById('dm-messages');
+    // The stack's padding-bottom is the gap kept below it, so its offset box
+    // ends exactly where the list's content may start.
+    const clearance = top.offsetTop + top.offsetHeight;
+    const pinned = list
+      ? (dmEntry ? dmEntry.atBottom : isNearBottom(list))
+      : false;
+    thread.style.setProperty('--dm-top-clearance', `${clearance}px`);
+    // A taller stack must not push the latest message out of view.
+    if (list && pinned) list.scrollTop = list.scrollHeight;
+  };
+
+  dmTopObserver = new ResizeObserver(apply);
+  dmTopObserver.observe(top);
+  apply();
+}
+
 // ---------- DM open / back-button motion ----------
 // The conversation layer (never the messages) gets its own short sideways
 // entrance — see motion-thread-in in core/motion.css; deliberately not the
@@ -1732,34 +1831,36 @@ window.openDmConversation = async function (peerId, username, opts = {}) {
 playDmThreadEnter();
 
 thread.innerHTML = `
-    <div class="chat-top-bar chat-header-glass">
-      <button class="icon-btn dm-back-btn" title="Back" data-action="dm-back-from-thread">${ICONS.arrowLeft}</button>
-      <div class="dm-peer-profile" title="View ${escapeAttr(username)}'s profile" data-action="dm-open-profile-card" data-peer-id="${peerId}">
-        ${avatarHtml(peerId, username, 'chat-top-avatar', false, true)}
-        <div class="dm-peer-meta">
-          <div class="chat-top-name">${escapeHtml(username)}</div>
-          <div class="chat-top-status${
-            isUserOnline(peerId) ? ' online' : ''
-          }" id="dm-thread-status">${
-            getPresenceStatusText(peerId)
-          }</div>
+    <div class="dm-thread-top" id="dm-thread-top">
+      <div class="chat-top-bar chat-header-glass">
+        <button class="icon-btn dm-back-btn" title="Back" data-action="dm-back-from-thread">${ICONS.arrowLeft}</button>
+        <div class="dm-peer-profile" title="View ${escapeAttr(username)}'s profile" data-action="dm-open-profile-card" data-peer-id="${peerId}">
+          ${avatarHtml(peerId, username, 'chat-top-avatar', false, true)}
+          <div class="dm-peer-meta">
+            <div class="chat-top-name">${escapeHtml(username)}</div>
+            <div class="chat-top-status${
+              isUserOnline(peerId) ? ' online' : ''
+            }" id="dm-thread-status">${
+              getPresenceStatusText(peerId)
+            }</div>
+          </div>
         </div>
+        <button type="button" class="dm-verify-btn" id="dm-key-verify-open" data-peer-id="${peerId}" data-verified="false" aria-controls="dm-key-verify" aria-expanded="false" title="Verify encryption keys">Verify</button>
       </div>
-      <button type="button" class="dm-verify-btn" id="dm-key-verify-open" title="Verify encryption keys">Verify</button>
+      <div class="dm-key-trust-host" id="dm-key-trust-banner-host">
+        <div class="dm-key-trust" id="dm-key-trust-banner" role="alert"></div>
+      </div>
+      <section class="dm-key-verify" id="dm-key-verify" aria-label="Safety number" hidden>
+        <div class="dm-key-verify-head">Safety number</div>
+        <p class="dm-key-verify-help">
+          Compare these digits with <span id="dm-key-verify-who"></span> over a channel the server
+          does not control. If they differ, someone is intercepting this conversation.
+        </p>
+        <div class="dm-key-verify-number" id="dm-key-verify-number"></div>
+        <div class="dm-key-verify-state" id="dm-key-verify-marked"></div>
+        <button type="button" class="btn btn-ghost" data-action="mark-verified">Mark as verified</button>
+      </section>
     </div>
-    <div class="dm-key-trust-host" id="dm-key-trust-banner-host">
-      <div class="dm-key-trust" id="dm-key-trust-banner" role="alert"></div>
-    </div>
-    <section class="dm-key-verify" id="dm-key-verify" hidden>
-      <div class="dm-key-verify-head">Safety number</div>
-      <p class="dm-key-verify-help">
-        Compare these digits with <span id="dm-key-verify-who"></span> over a channel the server
-        does not control. If they differ, someone is intercepting this conversation.
-      </p>
-      <div class="dm-key-verify-number" id="dm-key-verify-number"></div>
-      <div class="dm-key-verify-state" id="dm-key-verify-marked"></div>
-      <button type="button" class="btn btn-ghost" data-action="mark-verified">Mark as verified</button>
-    </section>
     <div class="chat-messages-wrap">
       <div class="chat-messages" id="dm-messages">${loadingState()}</div>
       <button type="button" class="jump-to-latest-btn" id="dm-jump-latest" title="Jump to latest" aria-label="Jump to latest messages" data-action="dm-jump-to-latest">
@@ -1884,25 +1985,36 @@ thread.innerHTML = `
 
   // ---------- Peer key trust (Phase 2) ----------
   //
+  // The Verify button toggles the safety-number panel. Its listener is attached
+  // right away, to the element this very function just built (so it cannot
+  // accumulate across conversations), instead of after trust has resolved: a
+  // slow or failed resolution must not leave the button dead.
+  // renderVerifyView() resolves trust itself.
+  const verifyOpenBtn = document.getElementById(KEY_TRUST_IDS.verifyOpen);
+  verifyOpenBtn?.addEventListener('click', async () => {
+    const panel = document.getElementById(KEY_TRUST_IDS.verify);
+    if (!panel) return;
+    const opening = panel.hasAttribute('hidden');
+    if (opening) {
+      await renderVerifyView(peerId, username);
+    }
+    panel.toggleAttribute('hidden', !opening);
+    verifyOpenBtn.setAttribute('aria-expanded', String(opening));
+  });
+
+  // The floating header stack (header + banner + Verify panel) changes height
+  // when a panel opens or the banner appears; the message list's top clearance
+  // follows it so nothing ever sits underneath the header.
+  bindDmTopClearance(thread);
+
   // Resolve the peer's key trust once the thread exists, then paint the banner
-  // if the key is unrecognised. The Verify button toggles the safety-number
-  // panel. Every listener is attached to an element this very function just
-  // built, so none of them can accumulate across conversations.
+  // if the key is unrecognised. resolveTrust() also paints the Verify button
+  // from the stored verification state ("Verified" for a contact verified on
+  // this device, earlier or in another visit).
   (async () => {
     try {
       await resolveTrust(peerId);
       renderKeyTrustBanner(peerId, username);
-
-      document.getElementById(KEY_TRUST_IDS.verify)?.setAttribute('hidden', '');
-      document.getElementById('dm-key-verify-open')?.addEventListener('click', async () => {
-        const panel = document.getElementById(KEY_TRUST_IDS.verify);
-        if (!panel) return;
-        const opening = panel.hasAttribute('hidden');
-        if (opening) {
-          await renderVerifyView(peerId, username);
-        }
-        panel.toggleAttribute('hidden', !opening);
-      });
     } catch (e) {
       console.error('DM key trust init failed:', e);
     }
@@ -2130,6 +2242,8 @@ async function syncDmMessagesSince() {
     const currentUser = getCurrentUser();
     const frag = document.createDocumentFragment();
 
+    // Rows a live push already put into the cache while this request was in
+    // flight are the same rows (by id): only the others are new.
     const fresh = decryptedMessages.filter((m) => !dmEntry.ids.has(m.id));
     if (fresh.length === 0) return;
 
@@ -2138,6 +2252,8 @@ async function syncDmMessagesSince() {
     }
 
     const prevMsg = dmEntry.messages[dmEntry.messages.length - 1] || null;
+    for (const msg of fresh) putDmMessage(dmEntry, msg);
+
     const lastEl = container ? container.lastElementChild : null;
     const layout = createLayoutBuilder(frag, {
       prevMsg,
@@ -2150,9 +2266,6 @@ async function syncDmMessagesSince() {
     });
 
     for (const msg of fresh) {
-      dmEntry.ids.add(msg.id);
-      dmEntry.byId.set(msg.id, msg);
-      dmEntry.messages.push(msg);
       if (container) layout.add(msg, buildDmMessageEl(msg, currentUser));
     }
     if (layout.unreadInserted) dmEntry.unreadShown = true;
@@ -2192,7 +2305,28 @@ async function loadRecentDm() {
     container.innerHTML = '';
     entry.initialized = true;
 
-    if (decryptedMessages.length === 0) {
+    // This page is the server's latest history, and it becomes the cache.
+    // Rows the cache already holds arrived LIVE - before this thread was ever
+    // opened (addDmMessage caches every conversation, open or not), or while
+    // this page was in flight. The page's copy of a row it contains replaces
+    // the live one (same id, same message); live rows NEWER than the page are
+    // kept after it; older live rows are history this page does not reach,
+    // and loadOlderDm() brings them back in their proper place.
+    const pageIds = new Set(decryptedMessages.map((m) => m.id));
+    const newestPageId = decryptedMessages.length
+      ? Math.max(...decryptedMessages.map(dmIdOf))
+      : -Infinity;
+    const liveNewer = entry.messages.filter(
+      (m) => !pageIds.has(m.id) && dmIdOf(m) > newestPageId
+    );
+
+    entry.messages = [];
+    entry.ids.clear();
+    entry.byId.clear();
+    for (const msg of decryptedMessages) putDmMessage(entry, msg);
+    for (const msg of liveNewer) putDmMessage(entry, msg);
+
+    if (entry.messages.length === 0) {
       container.innerHTML = emptyState(
         ICONS.mail,
         'No messages yet',
@@ -2208,8 +2342,8 @@ async function loadRecentDm() {
     // early. entry.oldest is only meaningful when at least one row rendered;
     // an empty decrypted set means the page was all held/undecryptable and the
     // previous oldest stays correct.
-    if (decryptedMessages.length > 0) {
-      entry.oldest = decryptedMessages[0].timestamp;
+    if (entry.messages.length > 0) {
+      entry.oldest = entry.messages[0].timestamp;
     }
     entry.hasMore = messages.length >= 50;
 
@@ -2219,17 +2353,14 @@ async function loadRecentDm() {
     }
 
     const currentUser = getCurrentUser();
-    const unreadId = findFirstUnreadId(decryptedMessages, currentUserId());
+    const unreadId = findFirstUnreadId(entry.messages, currentUserId());
     if (unreadId != null) entry.unreadFromId = unreadId;
 
     const layout = createLayoutBuilder(frag, {
       boundaryId: entry.unreadFromId,
       myId: currentUserId()
     });
-    for (const msg of decryptedMessages) {
-      entry.ids.add(msg.id);
-      entry.byId.set(msg.id, msg);
-      entry.messages.push(msg);
+    for (const msg of entry.messages) {
       layout.add(msg, buildDmMessageEl(msg, currentUser));
     }
     if (layout.unreadInserted) entry.unreadShown = true;
@@ -2656,9 +2787,12 @@ function bindDmMessageActions(container) {
 }
 
 // ---------- Incoming / outgoing messages ----------
+// Reached for every live row: the Socket.IO 'new-dm-message' event, the
+// composer's own successful send, and held rows released after a key accept.
+// One row id is processed once at a time (see dmIncoming above).
 export async function addDmMessage(msg) {
   const currentUser = getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser || !msg) return;
 
   const peerId =
     Number(msg.sender_id) === Number(currentUser.id)
@@ -2670,155 +2804,182 @@ export async function addDmMessage(msg) {
     return;
   }
 
-  const entry = getOrCreateDmCacheEntry(
-    peerId,
-    dmActivePeer?.id === peerId ? dmActivePeer.username : undefined
-  );
+  // The other delivery of this row is already being processed: wait for it
+  // instead of decrypting and inserting the same message a second time.
+  const incomingKey = `${peerId}:${msg.id}`;
+  const running = dmIncoming.get(incomingKey);
+  if (running) {
+    await running;
+    return;
+  }
 
-  if (entry.ids.has(msg.id)) return;
+  // Registered synchronously, before the first await below, so a second
+  // delivery arriving while this one decrypts always finds it.
+  let finishIncoming;
+  const incoming = new Promise((resolve) => { finishIncoming = resolve; });
+  dmIncoming.set(incomingKey, incoming);
 
-  let decrypted;
   try {
-    decrypted = await decryptLiveDmMessage(msg);
-  } catch (e) {
-    console.error(`Failed to process DM ${msg.id}:`, e);
+    const entry = getOrCreateDmCacheEntry(
+      peerId,
+      dmActivePeer?.id === peerId ? dmActivePeer.username : undefined
+    );
 
-    /*
-     * IMPORTANT:
-     * Failed encrypted messages are NOT inserted into the normal
-     * message cache and are NOT passed to buildDmMessageEl().
-     *
-     * This prevents ciphertext from ever reaching .chat-bubble.
-     */
+    if (entry.ids.has(msg.id)) return;
+
+    let decrypted;
+    try {
+      decrypted = await decryptLiveDmMessage(msg);
+    } catch (e) {
+      console.error(`Failed to process DM ${msg.id}:`, e);
+
+      /*
+       * IMPORTANT:
+       * Failed encrypted messages are NOT inserted into the normal
+       * message cache and are NOT passed to buildDmMessageEl().
+       *
+       * This prevents ciphertext from ever reaching .chat-bubble.
+       */
+      const isActiveConversation =
+        dmActivePeer && Number(dmActivePeer.id) === peerId;
+
+      if (isActiveConversation) {
+        const container = document.getElementById('dm-messages');
+
+        if (container) {
+          const errorEl = document.createElement('div');
+          errorEl.className = 'chat-msg';
+          errorEl.dataset.msgId = msg.id;
+
+          errorEl.innerHTML = `
+            <div class="chat-msg-content">
+              <div class="chat-bubble">Unable to decrypt</div>
+            </div>
+          `;
+
+          const emptyEl = container.querySelector('.empty-state');
+          if (emptyEl) container.innerHTML = '';
+
+          container.appendChild(errorEl);
+        }
+      }
+
+      return;
+    }
+
+    // Held by the key-change guard: the raw row is kept in dm-key-trust.js and
+    // released once the user accepts the new key, so nothing is lost.
+    if (decrypted === null) {
+      return;
+    }
+
+    // The cache was reset (logout) while this row was being decrypted.
+    if (dmCache.get(peerId) !== entry) return;
+
+    // Re-checked AFTER the await: a history load or a resync may have put this
+    // very row into the cache while it was being decrypted. It is the same
+    // message, already accounted for (and already drawn, if the thread is open)
+    // - inserting it again is exactly the duplicate this guards against.
+    if (entry.ids.has(msg.id)) return;
+
+    putDmMessage(entry, decrypted);
+
     const isActiveConversation =
       dmActivePeer && Number(dmActivePeer.id) === peerId;
 
-    if (isActiveConversation) {
-      const container = document.getElementById('dm-messages');
+    // A row hidden for having nothing sealed announces nothing: a server must not be
+    // able to make the user's device ring for words it will never show them.
+    if (!decrypted.undecryptable) {
+      // Decision + platform dispatch for a system notification lives
+      // entirely in notification-manager.js. It already knows how to
+      // ignore the current user's own messages, so it's safe to call
+      // unconditionally here rather than threading a "was this from
+      // the socket" flag through — the composer's own optimistic-add
+      // path lands here too, and is simply a no-op for that module.
+      maybeNotifyDM(decrypted, isActiveConversation);
 
-      if (container) {
-        const errorEl = document.createElement('div');
-        errorEl.className = 'chat-msg';
-        errorEl.dataset.msgId = msg.id;
-
-        errorEl.innerHTML = `
-          <div class="chat-msg-content">
-            <div class="chat-bubble">Unable to decrypt</div>
-          </div>
-        `;
-
-        const emptyEl = container.querySelector('.empty-state');
-        if (emptyEl) container.innerHTML = '';
-
-        container.appendChild(errorEl);
+      // In-app "message received" sound. addDmMessage() is only reached
+      // for live messages (the Socket.IO 'new-dm-message' event and the
+      // composer's own send) — initial load, history sync and pagination
+      // fill the cache directly and never come through here. Reaching this
+      // point also means the message passed the entry.ids dedupe above and
+      // decrypted successfully; the manager additionally dedupes by id to
+      // cover two concurrent calls racing past that check.
+      if (Number(decrypted.sender_id) !== Number(currentUser.id)) {
+        messageSoundManager.playReceived(decrypted.id);
       }
     }
 
-    return;
-  }
+    if (!isActiveConversation) {
+      // Arrived while this thread is closed: remember where the unread
+      // run starts so the marker is drawn when the thread is opened.
+      if (
+        entry.unreadFromId == null &&
+        Number(decrypted.sender_id) !== Number(currentUser.id)
+      ) {
+        entry.unreadFromId = decrypted.id;
+      }
+      return;
+    }
 
-  // Held by the key-change guard: the raw row is kept in dm-key-trust.js and
-  // released once the user accepts the new key, so nothing is lost.
-  if (decrypted === null) {
-    return;
-  }
-
-  entry.ids.add(msg.id);
-  entry.byId.set(msg.id, decrypted);
-  entry.messages.push(decrypted);
-
-  const isActiveConversation =
-    dmActivePeer && Number(dmActivePeer.id) === peerId;
-
-  // A row hidden for having nothing sealed announces nothing: a server must not be
-  // able to make the user's device ring for words it will never show them.
-  if (!decrypted.undecryptable) {
-    // Decision + platform dispatch for a system notification lives
-    // entirely in notification-manager.js. It already knows how to
-    // ignore the current user's own messages, so it's safe to call
-    // unconditionally here rather than threading a "was this from
-    // the socket" flag through — the composer's own optimistic-add
-    // path lands here too, and is simply a no-op for that module.
-    maybeNotifyDM(decrypted, isActiveConversation);
-
-    // In-app "message received" sound. addDmMessage() is only reached
-    // for live messages (the Socket.IO 'new-dm-message' event and the
-    // composer's own send) — initial load, history sync and pagination
-    // fill the cache directly and never come through here. Reaching this
-    // point also means the message passed the entry.ids dedupe above and
-    // decrypted successfully; the manager additionally dedupes by id to
-    // cover two concurrent calls racing past that check.
+    // This message just arrived while its conversation is the one the
+    // user is actively viewing — the recipient has, in effect, already
+    // read it. Tell the server now rather than waiting for the thread
+    // to be closed and reopened (openDmConversation()'s call to
+    // syncDmMessagesSince() below is the only other place that does
+    // this, which is exactly why it previously only ever caught up on
+    // reopen). Skipped for our own outgoing messages, which don't need
+    // marking read against our own inbox.
     if (Number(decrypted.sender_id) !== Number(currentUser.id)) {
-      messageSoundManager.playReceived(decrypted.id);
+      void markActiveConversationReadLive(peerId);
     }
-  }
 
-  if (!isActiveConversation) {
-    // Arrived while this thread is closed: remember where the unread
-    // run starts so the marker is drawn when the thread is opened.
-    if (
-      entry.unreadFromId == null &&
-      Number(decrypted.sender_id) !== Number(currentUser.id)
-    ) {
-      entry.unreadFromId = decrypted.id;
+    const container = document.getElementById('dm-messages');
+    if (!container) return;
+
+    if (container.querySelector(`.chat-msg[data-msg-id="${msg.id}"]`)) return;
+
+    const el = buildDmMessageEl(decrypted, currentUser);
+    // New-message entrance — only for a message arriving/sent live
+    // here, never the initial history load, so scrollback never
+    // animates in all at once.
+    el.classList.add('msg-enter');
+    const emptyEl = container.querySelector('.empty-state');
+    if (emptyEl) container.innerHTML = '';
+
+    // `entry.messages` already ends with this message; the one before it
+    // is what it may group with / get a date separator against.
+    const prevMsg =
+      entry.messages.length > 1
+        ? entry.messages[entry.messages.length - 2]
+        : null;
+    const lastEl = container.lastElementChild;
+    createLayoutBuilder(container, {
+      prevMsg,
+      prevEl:
+        lastEl && prevMsg && lastEl.dataset?.msgId === String(prevMsg.id)
+          ? lastEl
+          : null,
+      boundaryId: null,
+      myId: currentUserId()
+    }).add(decrypted, el);
+
+    const isOwnMessage = Number(msg.sender_id) === Number(currentUser.id);
+    const wasAtBottom = dmEntry ? dmEntry.atBottom : true;
+
+    if (wasAtBottom || isOwnMessage) {
+      container.scrollTop = container.scrollHeight;
+      if (dmEntry) dmEntry.atBottom = true;
+      refreshJumpToLatestButton();
+    } else {
+      // User is reading scrollback — leave their position alone (don't
+      // forcibly scroll them down) but flag the jump-to-latest button so
+      // they know something new arrived below.
+      document.getElementById('dm-jump-latest')?.classList.add('has-new');
     }
-    return;
-  }
-
-  // This message just arrived while its conversation is the one the
-  // user is actively viewing — the recipient has, in effect, already
-  // read it. Tell the server now rather than waiting for the thread
-  // to be closed and reopened (openDmConversation()'s call to
-  // syncDmMessagesSince() below is the only other place that does
-  // this, which is exactly why it previously only ever caught up on
-  // reopen). Skipped for our own outgoing messages, which don't need
-  // marking read against our own inbox.
-  if (Number(decrypted.sender_id) !== Number(currentUser.id)) {
-    void markActiveConversationReadLive(peerId);
-  }
-
-  const container = document.getElementById('dm-messages');
-  if (!container) return;
-
-  if (container.querySelector(`.chat-msg[data-msg-id="${msg.id}"]`)) return;
-
-  const el = buildDmMessageEl(decrypted, currentUser);
-  // New-message entrance — only for a message arriving/sent live
-  // here, never the initial history load, so scrollback never
-  // animates in all at once.
-  el.classList.add('msg-enter');
-  const emptyEl = container.querySelector('.empty-state');
-  if (emptyEl) container.innerHTML = '';
-
-  // `entry.messages` already ends with this message; the one before it
-  // is what it may group with / get a date separator against.
-  const prevMsg =
-    entry.messages.length > 1
-      ? entry.messages[entry.messages.length - 2]
-      : null;
-  const lastEl = container.lastElementChild;
-  createLayoutBuilder(container, {
-    prevMsg,
-    prevEl:
-      lastEl && prevMsg && lastEl.dataset?.msgId === String(prevMsg.id)
-        ? lastEl
-        : null,
-    boundaryId: null,
-    myId: currentUserId()
-  }).add(decrypted, el);
-
-  const isOwnMessage = Number(msg.sender_id) === Number(currentUser.id);
-  const wasAtBottom = dmEntry ? dmEntry.atBottom : true;
-
-  if (wasAtBottom || isOwnMessage) {
-    container.scrollTop = container.scrollHeight;
-    if (dmEntry) dmEntry.atBottom = true;
-    refreshJumpToLatestButton();
-  } else {
-    // User is reading scrollback — leave their position alone (don't
-    // forcibly scroll them down) but flag the jump-to-latest button so
-    // they know something new arrived below.
-    document.getElementById('dm-jump-latest')?.classList.add('has-new');
+  } finally {
+    if (dmIncoming.get(incomingKey) === incoming) dmIncoming.delete(incomingKey);
+    finishIncoming();
   }
 }
 
@@ -2988,6 +3149,8 @@ export function removeDmMessage(id) {
 
   revokeAttachmentImage(id, 'dm');
   forgetAttachmentSecret('dm', id);
+  // The voice envelope is derived from the decrypted audio: it goes with it.
+  forgetVoiceWaveform(voiceWaveformKey('dm', id));
 
   const container = document.getElementById('dm-messages');
   if (!container) return;

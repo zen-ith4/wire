@@ -54,41 +54,11 @@ const downloadProgressState = {
   info: null
 };
 
-function ensureDownloadProgressStyle() {
-  if (
-    document.getElementById(
-      'wire-download-progress-style'
-    )
-  ) {
-    return;
-  }
-
-  const style =
-    document.createElement('style');
-
-  style.id =
-    'wire-download-progress-style';
-
-  style.textContent = `
-    @keyframes wire-download-progress-indeterminate {
-      0% {
-        transform:translateX(-100%);
-      }
-
-      50% {
-        transform:translateX(80%);
-      }
-
-      100% {
-        transform:translateX(280%);
-      }
-    }
-  `;
-
-  document.head.appendChild(
-    style
-  );
-}
+// The indeterminate animation's @keyframes (wire-download-progress-
+// indeterminate) live in css/utilities.css with the rest of this UI's
+// styles. They used to be injected here as a <style> element, which a
+// strict style-src (no 'unsafe-inline') refuses - every download then
+// reported a CSP violation.
 
 // Native modal <dialog>s (My Files viewer/share dialogs) render in the
 // top layer, above any z-index, so the progress bar has to live inside
@@ -281,7 +251,6 @@ function updateDownloadSpeed(
 }
 
 function updateDownloadProgressUI() {
-  ensureDownloadProgressStyle();
   ensureDownloadProgressUI();
 
   const {
@@ -495,7 +464,6 @@ function startDownloadProgress(
   id,
   name
 ) {
-  ensureDownloadProgressStyle();
   ensureDownloadProgressUI();
 
   downloadProgressState.activeDownloads.set(

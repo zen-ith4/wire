@@ -528,6 +528,17 @@
 
 .audio-player.loading {
   opacity: 0.7;
+}
+
+/*
+ * While the file is being fetched/decrypted there is nothing to play or
+ * seek yet, so only those two controls are inert. The download button
+ * (and volume) never depend on playback and stay usable - blocking the
+ * whole player here is what left encrypted audio with no working
+ * download button.
+ */
+.audio-player.loading .audio-player-play,
+.audio-player.loading .audio-player-waveform {
   pointer-events: none;
 }
 

@@ -263,6 +263,41 @@ input.conv-search-input:focus{
     border-color var(--ease-fast);
 }
 
+/* ---------- DM: floating header stack ----------
+   The glass header and the panels it controls (the key-change banner and the
+   Verify panel) float TOGETHER over the top of the thread, so the panels are
+   laid out below the participant info instead of in the list's flow under it
+   (where the header used to cover them). The stack itself lets clicks through;
+   only its children take them. Its padding-bottom is the gap kept above the
+   first message: dm.js measures where the stack ends and passes it to the list
+   as --dm-top-clearance (the fallback is the header-only clearance). */
+.dm-thread-top{
+  position:absolute;
+  top:14px;
+  left:16px;
+  right:16px;
+  z-index:30;
+  display:flex;
+  flex-direction:column;
+  padding-bottom:calc(14px * var(--wire-density-scale));
+  pointer-events:none;
+}
+
+.dm-thread-top > *{
+  pointer-events:auto;
+}
+
+.dm-thread-top > .chat-top-bar.chat-header-glass{
+  position:relative;
+  top:auto;
+  left:auto;
+  right:auto;
+}
+
+.dm-thread-top + .chat-messages-wrap > .chat-messages{
+  padding-top:var(--dm-top-clearance, calc(76px * var(--wire-density-scale)));
+}
+
 .dm-peer-profile{
   display:flex;
   align-items:center;
@@ -2315,13 +2350,42 @@ input.conv-search-input:focus{
   font-size:calc(12px * var(--wire-font-scale));line-height:1.6;
 }
 .dm-verify-btn:hover{color:var(--text);border-color:var(--accent);}
+/* Verified: painted by dm-key-trust.js renderVerifyButton() from the STORED
+   verification of the key in use, never from the click. Same success green as
+   the rest of the app (--green: .toast.success, .fs-owner-badge). */
+.dm-verify-btn.is-verified{
+  color:rgb(var(--green));
+  border-color:rgba(var(--green),.4);
+  background:rgba(var(--green),.14);
+}
+.dm-verify-btn.is-verified:hover{color:rgb(var(--green));border-color:rgb(var(--green));}
 .dm-key-trust-host:empty{display:none;}
 .dm-key-trust{
+  --dm-key-trust-tint:rgba(200,146,42,.10);
   display:flex;flex-wrap:wrap;align-items:center;gap:10px;
   padding:10px 14px;margin:8px 12px 0;
   border:1px solid var(--warn,#c8922a);border-radius:12px;
-  background:rgba(200,146,42,.10);
+  background:var(--dm-key-trust-tint);
   font-size:calc(12.5px * var(--wire-font-scale));
+}
+/* Inside the floating header stack the banner and the Verify panel sit over
+   the scrolling message list, so they get the Appearance "Menus & popovers"
+   surface (its alpha and blur settings) under their own colours, and the
+   stack's width instead of the in-flow side margins. */
+.dm-thread-top .dm-key-trust{
+  margin:calc(8px * var(--wire-density-scale)) 0 0;
+  background:
+    linear-gradient(var(--dm-key-trust-tint),var(--dm-key-trust-tint)),
+    rgba(var(--ink2-rgb),var(--sf-popover-alpha, .95));
+  backdrop-filter:var(--sf-popover-filter,blur(16px));-webkit-backdrop-filter:var(--sf-popover-filter,blur(16px));
+}
+.dm-thread-top .dm-key-verify{
+  margin:calc(8px * var(--wire-density-scale)) 0 0;
+  background:rgba(var(--ink2-rgb),var(--sf-popover-alpha, .95));
+  backdrop-filter:var(--sf-popover-filter,blur(16px));-webkit-backdrop-filter:var(--sf-popover-filter,blur(16px));
+  max-height:60vh;
+  overflow-y:auto;
+  overscroll-behavior:contain;
 }
 .dm-key-trust:empty{display:none;}
 .dm-key-trust-text{flex:1 1 220px;min-width:0;}

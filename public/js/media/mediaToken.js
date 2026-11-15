@@ -79,6 +79,100 @@ export async function getMediaSrcUrl(scope, id) {
   }
 }
 
+// ======================================================
+// PLAYBACK TYPE OF A DECRYPTED AUDIO BLOB
+//
+// An encrypted attachment's MIME type is whatever the SENDER's browser put on
+// the File (attachment-e2ee.js seals file.type into the metadata), and
+// browsers disagree: Chrome on Windows labels .m4a "audio/x-m4a", other
+// platforms say "audio/mp3" or "audio/x-wav", and an extension the OS does not
+// know arrives as "" - which parseAttachmentMeta() turns into
+// "application/octet-stream". Chromium sniffs past all of that, but Safari and
+// Firefox choose the decoder from the type, so the same file could play in one
+// browser and fail in another. The aliases map to the registered type, and
+// the extension recovers the type when the label says nothing.
+//
+// Playback only: nothing stored, sent or downloaded changes, and a non-audio
+// type (video, image, ...) is never touched. Kept in this module (rather than
+// a new one) because it is exactly the "what does the element get" decision
+// resolveMediaSrc() makes.
+// ======================================================
+
+const AUDIO_TYPE_ALIASES = Object.freeze({
+  'audio/x-m4a': 'audio/mp4',
+  'audio/m4a': 'audio/mp4',
+  'audio/x-mp4': 'audio/mp4',
+  'audio/mp3': 'audio/mpeg',
+  'audio/x-mp3': 'audio/mpeg',
+  'audio/mpeg3': 'audio/mpeg',
+  'audio/x-mpeg': 'audio/mpeg',
+  'audio/x-mpeg-3': 'audio/mpeg',
+  'audio/x-wav': 'audio/wav',
+  'audio/wave': 'audio/wav',
+  'audio/vnd.wave': 'audio/wav',
+  'audio/x-pn-wav': 'audio/wav',
+  'audio/x-flac': 'audio/flac',
+  'audio/x-aac': 'audio/aac',
+  'audio/aacp': 'audio/aac',
+  'audio/opus': 'audio/ogg',
+  'audio/x-ogg': 'audio/ogg',
+  'audio/vorbis': 'audio/ogg',
+});
+
+// The extensions audio-player.js's isAudio() treats as audio, minus the one no
+// browser decodes (wma).
+const AUDIO_TYPE_BY_EXTENSION = Object.freeze({
+  mp3: 'audio/mpeg',
+  wav: 'audio/wav',
+  flac: 'audio/flac',
+  ogg: 'audio/ogg',
+  oga: 'audio/ogg',
+  opus: 'audio/ogg',
+  aac: 'audio/aac',
+  m4a: 'audio/mp4',
+  weba: 'audio/webm',
+});
+
+const GENERIC_TYPES = new Set(['', 'application/octet-stream', 'binary/octet-stream']);
+
+function fileExtension(name) {
+  const value = String(name || '');
+  const dot = value.lastIndexOf('.');
+  if (dot <= 0 || dot === value.length - 1) return '';
+  return value.slice(dot + 1).toLowerCase();
+}
+
+/**
+ * The registered audio type to play `mime`/`name` as, or null when this is not
+ * audio (the caller then keeps whatever type it had).
+ */
+export function playbackAudioType(mime, name) {
+  const base = String(mime || '').split(';')[0].trim().toLowerCase();
+
+  if (base.startsWith('audio/')) return AUDIO_TYPE_ALIASES[base] || base;
+  if (base === 'application/ogg') return 'audio/ogg';
+
+  if (GENERIC_TYPES.has(base)) {
+    return AUDIO_TYPE_BY_EXTENSION[fileExtension(name)] || null;
+  }
+
+  return null;
+}
+
+/**
+ * `blob` labelled with its playback audio type. A Blob built from another Blob
+ * references the same bytes (nothing is copied); `blob` itself comes back when
+ * there is nothing to change.
+ */
+export function withPlaybackAudioType(blob, { mime, name } = {}) {
+  if (!blob || typeof Blob === 'undefined') return blob;
+
+  const type = playbackAudioType(mime || blob.type, name);
+  if (!type || type === blob.type) return blob;
+
+  return new Blob([blob], { type });
+}
+
 /**
  * Resolves what an <audio>/<video> element should use as its src.
  *
@@ -92,13 +186,22 @@ export async function getMediaSrcUrl(scope, id) {
  *
  * Rejects (AttachmentDecryptError) when an encrypted file fails
  * authentication, so callers show their normal "failed to load" state.
+ *
+ * Audio is labelled with its registered type for playback (see
+ * media-mime.js): the sender's browser may have sealed an alias such as
+ * "audio/x-m4a", or no type at all, and only Chromium sniffs past that.
  */
 export async function resolveMediaSrc(msg, scope = 'dm') {
   const id = msg && msg.id;
+  const secret = getAttachmentSecret(scope, id);
 
-  if (getAttachmentSecret(scope, id)) {
+  if (secret) {
     const blob = await fetchDecryptedAttachment(scope, id);
-    return { src: URL.createObjectURL(blob), isBlob: true };
+    const playable = withPlaybackAudioType(blob, {
+      mime: secret.mime,
+      name: secret.name || (msg && msg.attachment_name),
+    });
+    return { src: URL.createObjectURL(playable), isBlob: true };
   }
 
   return { src: await getMediaSrcUrl(scope, id), isBlob: false };

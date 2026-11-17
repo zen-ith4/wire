@@ -670,13 +670,27 @@ async function scenario(t, cspEnforce) {
             );
             await page.type('#dm-input', `click send ${tag}`);
             await clickVisible('[data-action="dm-send"]');
-            const sendAfter = await pollApi(
+            // Wait for the click-send to reach the server, then let the count
+            // stabilize so any late-landing row from an earlier step (e.g. an
+            // attachment from composer-cancel-upload) is also captured before
+            // we count total new rows ("exactly one new row").
+            await pollApi(
                 `/api/dm/messages/${bobSession.id}/recent`,
                 (rows) => rows.some((m) => !sendBefore.has(m.id)),
                 'dm-send click did not create a server message'
             );
+            let stableCount = -1;
+            let stableRounds = 0;
+            while (stableRounds < 2) {
+                await sleep(250);
+                const rows = await aliceSession.api(`/api/dm/messages/${bobSession.id}/recent`);
+                const count = rows.body.length;
+                if (count === stableCount) stableRounds++;
+                else { stableRounds = 0; stableCount = count; }
+            }
+            const finalRows = await aliceSession.api(`/api/dm/messages/${bobSession.id}/recent`);
             assert.equal(
-                sendAfter.filter((m) => !sendBefore.has(m.id)).length,
+                finalRows.body.filter((m) => !sendBefore.has(m.id)).length,
                 1,
                 'dm-send click created exactly one server message'
             );

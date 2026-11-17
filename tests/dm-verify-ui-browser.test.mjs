@@ -322,19 +322,29 @@ test('B: the Verify button turns "Verified" (success green) only on a stored ver
 
   // 2. Failed: the mark cannot be stored (a storage error on the pin store).
   //    The click happened, but nothing was verified - so nothing may say so.
+  //    The old code waited for the panel text "/Not yet marked/", but that text
+  //    may already be on screen before the click is processed, so the wait
+  //    returned immediately and put was restored before the handler reached it,
+  //    letting the storage succeed and verifiedAt become non-null.
+  //    New condition: count put attempts inside the page and wait until the
+  //    handler has actually tried to write (>= 1) before restoring put.
   await openPanel(A.page);
   await A.page.evaluate(() => {
     const put = IDBObjectStore.prototype.put;
     window.__restorePut = () => { IDBObjectStore.prototype.put = put; };
+    window.__putAttempts = 0;
     IDBObjectStore.prototype.put = function (...args) {
-      if (this.name === 'peer-pins') throw new DOMException('simulated storage failure', 'QuotaExceededError');
+      if (this.name === 'peer-pins') {
+        window.__putAttempts++;
+        throw new DOMException('simulated storage failure', 'QuotaExceededError');
+      }
       return put.apply(this, args);
     };
   });
   await A.page.click('#dm-key-verify [data-action="mark-verified"]');
   await pollUntil(
-    () => A.page.evaluate(() => /Not yet marked/.test(document.getElementById('dm-key-verify-marked')?.textContent || '')),
-    { what: 'the panel to show the mark was not stored' }
+    () => A.page.evaluate(() => window.__putAttempts >= 1),
+    { what: 'the mark-verified handler to attempt IDB put' }
   );
   await A.page.evaluate(() => window.__restorePut());
   btn = await verifyButton(A.page);

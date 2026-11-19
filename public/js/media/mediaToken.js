@@ -25,9 +25,16 @@ const TOKEN_CACHE_TTL_MS = 60_000;
 const tokenCache = new Map(); // key: `${scope}:${id}` -> { token, expiresAt }
 
 function attachmentBaseUrl(scope, id) {
-  return scope === 'dm'
-    ? `/api/dm/attachments/${encodeURIComponent(id)}`
-    : `/api/chat/attachments/${encodeURIComponent(id)}`;
+  if (scope !== 'dm') {
+    const name = String(scope);
+    if (scope === 'group') {
+      throw new Error(
+        'Unsupported media scope "group": group media is not served through mediaToken; caller must pass a pre-resolved { src, isBlob }'
+      );
+    }
+    throw new Error(`Unsupported media scope "${name}"`);
+  }
+  return `/api/dm/attachments/${encodeURIComponent(id)}`;
 }
 
 /**
@@ -193,6 +200,9 @@ export function withPlaybackAudioType(blob, { mime, name } = {}) {
  */
 export async function resolveMediaSrc(msg, scope = 'dm') {
   const id = msg && msg.id;
+  // Validate before looking up/decrypting so unsupported scopes fail loudly
+  // even if a stale attachment secret happens to exist for that scope.
+  attachmentBaseUrl(scope, id);
   const secret = getAttachmentSecret(scope, id);
 
   if (secret) {

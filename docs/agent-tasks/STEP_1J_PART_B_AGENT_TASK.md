@@ -77,7 +77,7 @@ still passes), and the whole new browser files. Paste the output.
 Suite three ways on the 72-file set + new files, (ii) and (iii) 0 fail 0 cancelled, no `todo` left on e1-e4.
 Verify the ZIP from a clean directory (manifest `--check`, `grep -rlc $'\r' public/` empty, sw-manifest test, the
 new browser file). Report: the exact `git diff` of `dm.js`, changed files, `public/` diff names, planted-violation
-output, suite counts, zip sha256/bytes/entries. Note the behaviour change plainly in `docs/DM_V2_WIRE.md`:
+output, suite counts, zip sha256/bytes/entries. Note the behaviour change plainly in `docs/archive/DM_V2_WIRE.md`:
 "an undecryptable row shows a placeholder; previously the whole history failed to load". STOP. No Phase 3.
 
 Work in committed steps (commit after the change, after the tests, after the plants) so a budget stop never leaves

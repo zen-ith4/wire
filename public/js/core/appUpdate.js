@@ -189,7 +189,7 @@ async function downloadApk() {
   }
 }
 
-async function downloadAndInstall() {
+async function downloadAndInstall(expectedSha256) {
   const plugin = getCapacitorPlugin('WireApkUpdate');
 
   if (!plugin) {
@@ -198,6 +198,18 @@ async function downloadAndInstall() {
   }
 
   if (!(await ensureInstallPermission(plugin))) {
+    return;
+  }
+
+  // Integrity gate — fail closed. The server is supposed to advertise the
+  // SHA-256 it would serve in /api/apk/info, and when it cannot it answers
+  // { available: false } (see controllers/apk.controller.js). This client
+  // therefore REFUSES TO INSTALL an update that has no advertised hash — no
+  // legacy "signature-only" fallback. An install this client cannot verify is
+  // worse than no install at all, so a missing hash is treated like a mismatch.
+  if (!expectedSha256) {
+    console.error('[AppUpdate] Refusing to install: the server advertised no SHA-256.');
+    showToast('Update rejected: no integrity check from this server', 'error');
     return;
   }
 
@@ -210,6 +222,33 @@ async function downloadAndInstall() {
       'Update download failed: ' + (error?.message || 'network error'),
       'error'
     );
+    return;
+  }
+
+  // Integrity gate — checked BEFORE the native signature check and before
+  // install. The server advertised the expected SHA-256 in /api/apk/info; we
+  // re-hash exactly what we downloaded and compare. A mismatch aborts here, so
+  // a server that advertised a newer version but served different bytes than it
+  // advertised is caught before install; the SHA-256 binds the advertised version
+  // to the served bytes, and does not stop a hostile origin that serves both the
+  // bytes and the hash. Fail closed: any failure to read
+  // or hash the file is treated as a mismatch. The advertised hash is mandatory
+  // (enforced before download above); when present it must match the bytes we
+  // actually downloaded.
+  let actualSha256;
+  try {
+    actualSha256 = await readApkSha256();
+  } catch (hashError) {
+    console.error('[AppUpdate] Could not hash the downloaded update:', hashError);
+    showToast('Could not verify the update', 'error');
+    return;
+  }
+
+  if (actualSha256 !== expectedSha256) {
+    console.error(
+      `[AppUpdate] SHA-256 mismatch: expected ${expectedSha256}, got ${actualSha256}`
+    );
+    showToast('Update rejected: integrity check failed', 'error');
     return;
   }
 
@@ -237,6 +276,33 @@ async function downloadAndInstall() {
     console.error('[AppUpdate] Failed to launch installer:', error);
     showToast('Could not launch the installer', 'error');
   }
+}
+
+// SHA-256 of a byte array, hex-encoded, via Web Crypto. The group crypto in
+// this repo already relies on crypto.subtle in the same WebView, so it is
+// available here.
+async function sha256Hex(bytes) {
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+// Read the downloaded APK back from the app-private cache and return its
+// SHA-256. On native Capacitor Filesystem.readFile returns the bytes
+// base64-encoded by default; decode to raw bytes before hashing.
+async function readApkSha256() {
+  const { data } = await Filesystem.readFile({
+    path: `${UPDATE_DIR}/${APK_FILENAME}`,
+    directory: Directory.Cache,
+  });
+
+  const binary = atob(data);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return sha256Hex(bytes);
 }
 
 /**
@@ -278,7 +344,7 @@ export async function checkForAndroidUpdate() {
 
   if (!accepted) return;
 
-  await downloadAndInstall();
+  await downloadAndInstall(remote.sha256);
 }
 
 /** Entry point for core/app.js — fires the check without blocking bootstrap. */

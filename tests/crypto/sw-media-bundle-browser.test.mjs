@@ -3,7 +3,7 @@
 // public/sw.js imports public/sw-media-bundle.js with importScripts() and the
 // bundle is listed in public/sw-manifest.js, so the worker verifies the
 // bundle's SHA-256 while precaching and refuses to install when the served
-// bytes do not match (docs/MEDIA_STREAMING_RFC.md 8.2 - 8.4).
+// bytes do not match (docs/archive/MEDIA_STREAMING_RFC.md 8.2 - 8.4).
 //
 // What is checked here (a real Chromium, a real service worker):
 //   1. a matching bundle activates and the worker really uses it

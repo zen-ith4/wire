@@ -91,15 +91,32 @@ async function reloadUser(page, password) {
     const locked = await page.waitForSelector('#unlock-password', { timeout: 20000 })
         .then(() => true, () => false);
     if (locked) {
+        // Readiness, not a sleep: the unlock card is in the DOM before
+        // public/js/core/auth.js has assigned `form.onsubmit` (the card is
+        // rendered, then wired). Clicking the type="submit" button in that gap
+        // performs a NATIVE form submission, which navigates the page and leaves
+        // the app locked - after which the shell never renders and the next wait
+        // times out looking like a broken unlock. So wait until the handler is
+        // really attached, then submit the form through it.
+        await page.waitForFunction(() => {
+            const f = document.getElementById('unlock-form');
+            return !!f && typeof f.onsubmit === 'function';
+        }, { timeout: 20000 });
         await page.type('#unlock-password', password);
-        await page.evaluate(() => {
-            const btn = [...document.querySelectorAll('button')]
-                .find((b) => b.classList.contains('btn-primary') && /unlock/i.test(b.textContent || ''));
-            if (!btn) throw new Error('the unlock button is not on the page');
-            btn.click();
-        });
+        await page.evaluate(() => document.getElementById('unlock-form').requestSubmit());
     }
-    await page.waitForSelector('.nav-link[data-view="messages"]', { timeout: 60000 });
+    try {
+        await page.waitForSelector('.nav-link[data-view="messages"]', { timeout: 60000 });
+    } catch (e) {
+        // Make a future failure self-explanatory instead of a bare selector timeout.
+        const diag = await page.evaluate(() => ({
+            url: location.href,
+            unlockForm: !!document.getElementById('unlock-form'),
+            unlockError: (document.getElementById('unlock-error') || {}).textContent || '',
+            bodyStart: (document.body.innerText || '').slice(0, 200),
+        })).catch(() => null);
+        throw new Error(`the app shell did not render after ${locked ? 'unlock' : 'reload'}: ${JSON.stringify(diag)}`);
+    }
     // The shell mounts before the identity lands; nothing below may be asserted
     // until the CryptoKey is really back.
     await pollUntil(

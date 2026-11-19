@@ -12,6 +12,14 @@ resources/
 perf-harness/
 benchmark/
 
+# Binary build artifact — the Android self-update payload served by
+# GET /api/apk/download and hashed by GET /api/apk/info.
+# Built by CI / Gradle (`./gradlew assembleDebug`) or fetched from a release
+# asset and placed at $APK_PATH (config/constants.js:250). It is not source,
+# so it is not committed; see the SHA-256 integrity contract in
+# controllers/apk.controller.js for what validates the bytes that are served.
+app-debug.apk
+
 # Environment / secrets
 .env
 .env.*

@@ -1,7 +1,7 @@
 // tests/dm-v2-wire-browser.test.mjs
 //
 // STEP 1B: real browsers, one process per account. v2 happy path.
-// Planted-violation cases are Linux-only (see docs/DM_V2_WIRE.md).
+// Planted-violation cases are Linux-only (see docs/archive/DM_V2_WIRE.md).
 
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';

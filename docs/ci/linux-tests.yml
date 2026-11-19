@@ -14,7 +14,7 @@
 #   Chromium. Now the pinned pair is installed into CHROMIUM_DIR.
 # - the suite runs in BOTH modes (DM_E2EE_DEFAULT_MIN_VERSION unset and =1),
 #   as a matrix, at --test-concurrency=4.
-# - Node 22 (npm 10): npm 11 refuses this package-lock (docs/RUN_BROWSER_TESTS_LINUX.md).
+# - Node 22 (npm 10): npm 11 refuses this package-lock (docs/archive/RUN_BROWSER_TESTS_LINUX.md).
 
 name: linux-tests
 
@@ -52,7 +52,7 @@ jobs:
           npm ci
           node -e "require('better-sqlite3')(':memory:')" || npm rebuild better-sqlite3
 
-      # The browser pair the reviewer verified together (docs/RUN_BROWSER_TESTS_LINUX.md).
+      # The browser pair the reviewer verified together (docs/archive/RUN_BROWSER_TESTS_LINUX.md).
       # `npm install`, never `npm ci <pkg>` (npm ci takes no package names).
       - name: Install the project's Chromium where the harness looks for it
         run: |

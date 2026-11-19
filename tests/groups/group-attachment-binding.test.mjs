@@ -7,7 +7,7 @@
 // Real WebCrypto, real fake-indexeddb; only the pairwise-session provider is
 // in-memory. No server, no browser - pure crypto layer.
 //
-// Attacks covered (see docs/GROUP_ATTACHMENTS_E2EE.md sections 3.2/3.6):
+// Attacks covered (see docs/archive/GROUP_ATTACHMENTS_E2EE.md sections 3.2/3.6):
 //   1 member forges file "from" another member
 //   2 splice/swap: file A's bytes served under message B
 //   4 server swaps stored file bytes

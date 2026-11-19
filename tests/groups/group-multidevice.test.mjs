@@ -13,7 +13,7 @@
 //   MD-5  two tabs racing to create the first key do not corrupt each other
 //   MD-6  a failed KDM POST is retried instead of leaving an orphan key
 //
-// See docs/GROUP_E2EE_MULTIDEVICE_DESIGN.md for the protocol analysis.
+// See docs/archive/GROUP_E2EE_MULTIDEVICE_DESIGN.md for the protocol analysis.
 
 import './_env.mjs';
 

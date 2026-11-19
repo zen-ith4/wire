@@ -368,7 +368,7 @@ test('CSP: group UI markup contains no inline on* handlers and buttons work via 
 
 // ---------------------------------------------------------------
 // F-I / G: multi-device (formerly OPEN todo tests; now enforced -- see
-// docs/GROUP_E2EE_MULTIDEVICE_DESIGN.md and group-multidevice.test.mjs)
+// docs/archive/GROUP_E2EE_MULTIDEVICE_DESIGN.md and group-multidevice.test.mjs)
 // ---------------------------------------------------------------
 test('F-I (was OPEN, fixed by key-derived senderKeyId): a second device of the same user must not make earlier messages unreadable', async (t) => {
     const { server, users } = await boot(t, ['alice', 'bob']);

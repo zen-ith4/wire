@@ -819,7 +819,7 @@ function toggleGroupReactionHandler(req, res) {
 
 // STEP 3C: the neutral values the server stores for a group file. The real
 // name, mime, dimensions and voice flag travel inside the ENCRYPTED message
-// plaintext (see docs/GROUP_ATTACHMENTS_E2EE.md section "3C"), so the server
+// plaintext (see docs/archive/GROUP_ATTACHMENTS_E2EE.md section "3C"), so the server
 // never learns them and never stores what the client sent.
 const E2EE_GROUP_ATTACHMENT_NAME = 'encrypted-attachment';
 const E2EE_GROUP_ATTACHMENT_MIME = 'application/octet-stream';
@@ -882,8 +882,11 @@ async function sendMessageWithAttachmentHandler(req, res) {
   }
 
   const replyToId = normalizeGroupReplyToId(req.body?.reply_to_id, groupId);
-  // Voice is out of scope in STEP 3C: the flag is always false, whatever the
-  // client sent.
+  // Voice flag is OUT of scope for the server: it travels inside the ENCRYPTED
+  // plaintext meta (meta.file.voice) and is never sent in any server-visible
+  // field. The server therefore stores the neutral value 0, whatever the
+  // client sent (which is nothing - the composer never sends is_voice_message
+  // for groups). Same posture as the DM E2EE path.
   const isVoiceMessage = false;
   const timestamp = new Date().toISOString();
 

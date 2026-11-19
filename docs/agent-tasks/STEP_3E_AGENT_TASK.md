@@ -65,14 +65,14 @@ Write `tests/groups/group-attachment-hostile.test.mjs`. Each row is a test; ever
 The last row is a small behaviour change allowed in this item: implement the per-thread auto-load budget in the loader, test it, and document it. A flooding group member must not be able to make every other member's client download 5 MB for each of hundreds of messages.
 
 ### Item 3. Doc corrections from the 3D review
-- `docs/GROUP_ATTACHMENTS_FLAG_FLIP.md`: tick the two items that 3E closes (limits endpoint, bounded download) and keep the Linux browser run as the open item.
+- `docs/archive/GROUP_ATTACHMENTS_FLAG_FLIP.md`: tick the two items that 3E closes (limits endpoint, bounded download) and keep the Linux browser run as the open item.
 - State in the flip doc, in plain words, that the **receive path is not behind the flag**: a group member on a flagged-off build can still make receivers download small images (that is why item 2 bounds auto-load). Cite `group.js:309`.
 - Re-check every `file:line` citation in the three docs that mention group attachments; update the ones that moved.
 
 ### Item 4. A Linux browser-run recipe for a Windows owner (docs + one script; cannot be verified here)
-The owner has Windows only, so the project's Chromium (`@sparticuz/chromium`, a Linux binary) has never run. Write `docs/RUN_BROWSER_TESTS_LINUX.md` with two routes, each a copy-paste command list:
+The owner has Windows only, so the project's Chromium (`@sparticuz/chromium`, a Linux binary) has never run. Write `docs/archive/RUN_BROWSER_TESTS_LINUX.md` with two routes, each a copy-paste command list:
 1. **WSL2 (Ubuntu)**: install Node 22, clone/copy the tree to the Linux filesystem (not `/mnt/c`), `npm ci`, run the nine+ group browser tests with the exact command from the flip doc, and what the first TAP lines must say (`# browser: chromium (@sparticuz/chromium) ...`).
-2. **Docker**: a `docker run` one-liner (official `node:22` image, bind-mount the tree read-only to a copy, `npm ci`, run the tests) and the system libraries the Chromium binary needs on a slim image if any (check `docs/BROWSER_TEST_ISOLATION.md` and the harness for what it already assumes; cite it).
+2. **Docker**: a `docker run` one-liner (official `node:22` image, bind-mount the tree read-only to a copy, `npm ci`, run the tests) and the system libraries the Chromium binary needs on a slim image if any (check `docs/archive/BROWSER_TEST_ISOLATION.md` and the harness for what it already assumes; cite it).
 Add `scripts/run-browser-tests-linux.sh` that does the Docker route in one command and exits non-zero on any failure. The script and the doc are **Unverified** in your report unless you actually ran them on Linux; say so. Do not claim they work.
 
 ### Item 5. Manifest, docs, zip
@@ -116,4 +116,4 @@ Add `scripts/run-browser-tests-linux.sh` that does the Docker route in one comma
 - Do not weaken or delete a test.
 
 ## STOP
-After the zip and the report, stop. Flipping the flag happens only after the checklist in `docs/GROUP_ATTACHMENTS_FLAG_FLIP.md` is ticked, including the Linux browser run (see `docs/RUN_BROWSER_TESTS_LINUX.md`).
+After the zip and the report, stop. Flipping the flag happens only after the checklist in `docs/archive/GROUP_ATTACHMENTS_FLAG_FLIP.md` is ticked, including the Linux browser run (see `docs/archive/RUN_BROWSER_TESTS_LINUX.md`).

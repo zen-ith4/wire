@@ -50,9 +50,22 @@ if (!onlyExcluded && excluded.length) {
     console.log(`# excluded as not applicable to this tree (${excluded.length}): ${excluded.map((e) => e.file).join(', ')}`);
 }
 
+// --test-concurrency=1: the browser-test files under tests/ each launch the
+// project's single @sparticuz/chromium binary (tests/_acceptance-harness.mjs and
+// tests/groups/group-e2e-browser.test.mjs) and drive heavy full-page flows. Node's
+// test runner launches test FILES IN PARALLEL by default, so two of them spawn that
+// shared binary at the same time: the exec races with ETXTBSY ("executable file
+// busy"), and the combined Chromium load exhausts memory/CPU. Either surfaces as a
+// flaky failure that depends only on which file happens to win the race - e.g.
+// tests/groups/group-attachment-browser.test.mjs:276 ("3 a hostile relay serves
+// file A under message B") passes on its own but fails when run together with
+// tests/groups/group-e2e-browser.test.mjs. Running files sequentially removes both
+// the binary race and the contention, and means each file fully tears its browsers
+// down before the next starts, so it passes in either order. The non-browser tests
+// are far faster than a browser launch, so serialising the whole run costs little.
 const r = spawnSync(
     process.execPath,
-    ['--experimental-test-module-mocks', '--env-file=tests/test.env', '--test', ...files],
+    ['--experimental-test-module-mocks', '--env-file=tests/test.env', '--test-concurrency=1', '--test', ...files],
     { cwd: ROOT, stdio: 'inherit' }
 );
 process.exit(r.status ?? 1);

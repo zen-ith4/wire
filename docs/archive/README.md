@@ -1,5 +1,12 @@
 # Wire docs: index
 
+> **Note**: This directory (`docs/archive/`) contains documents moved from the
+> top-level `docs/` during the docs reorganisation. Links inside these archived
+> documents may still point to pre-reorganisation paths (e.g. `../docs/FOO.md`
+> instead of `../archive/FOO.md`). There are ~200 such links; they were not
+> rewritten to preserve history. When following a link that 404s, try the same
+> path under `docs/archive/`.
+
 Audited against the code on 2026-11-09; see `docs/AUDIT_REPORT.md` for exactly what was checked, changed and left open.
 Rule of thumb: **if a doc and the code disagree, the code is right.**
 

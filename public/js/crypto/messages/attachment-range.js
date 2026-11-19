@@ -9,7 +9,7 @@
 // Cached chunks: this module does not cache. The future Service Worker
 // cache will hold plaintext chunks only, in SW memory (a Map keyed by
 // stream id + chunk index). It must never put plaintext or ciphertext in
-// Cache Storage or IndexedDB. See docs/MEDIA_STREAMING_RFC.md Q4 and Q9.
+// Cache Storage or IndexedDB. See docs/archive/MEDIA_STREAMING_RFC.md Q4 and Q9.
 //
 // Read-ahead is 8 chunks (512 KiB): at a typical 4 Mbps 1080p bitrate
 // (500 KiB/s) that is about 1.0 s of playback; at 128 kbps audio

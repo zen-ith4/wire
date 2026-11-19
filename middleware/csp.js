@@ -8,7 +8,7 @@ const crypto = require('crypto');
 // `Content-Security-Policy-Report-Only`: the browser logs violations to
 // the console but blocks nothing. That is the safe default while parts of
 // the legacy UI still use inline handlers / style="" attributes (see
-// docs/CSP_TODO.md). The policy itself is never weakened -- no
+// docs/archive/CSP_TODO.md). The policy itself is never weakened -- no
 // 'unsafe-inline' / 'unsafe-eval' in either mode.
 //
 // No 'unsafe-inline' and no 'unsafe-eval' anywhere in this policy.

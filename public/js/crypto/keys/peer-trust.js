@@ -2,7 +2,7 @@
 //
 // TOFU pinning, safety numbers and the key-change alarm for 1:1 DMs.
 //
-// Phase 2 of docs/e2ee-dm-hardening.md. Deliberately ships BEFORE Phase 1
+// Phase 2 of docs/archive/e2ee-dm-hardening.md. Deliberately ships BEFORE Phase 1
 // (envelope v2 / directional keys / AAD) because it changes no wire format: no
 // HKDF info, no AAD, no envelope field. A DM written before this file existed
 // decrypts exactly as it did, and one written after is byte-identical to one

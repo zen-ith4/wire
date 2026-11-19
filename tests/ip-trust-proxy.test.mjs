@@ -13,7 +13,11 @@ import express from 'express';
 process.env.ALLOWED_SUBNET = '10.10.0.0/24';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const { ipRestrict, trustProxySetting } = await import(
+const {
+  ipRestrict,
+  checkClientAddress,
+  trustProxySetting,
+} = await import(
   pathToFileURL(path.join(ROOT, 'middleware', 'ipRestrict.js')).href
 );
 
@@ -96,4 +100,66 @@ test('direct WireGuard peer is allowed without any forwarded header', () => {
     headers: {},
   });
   assert.equal(out.nextCalled, true);
+});
+
+// ---------------------------------------------------------------------------
+// IPv4-mapped IPv6 loopback peers (::ffff:127.0.0.1).
+//
+// On a dual-stack / IPv6-first deployment the TCP peer of a loopback connection
+// presents as an IPv4-mapped IPv6 address rather than plain 127.0.0.1.
+// proxy-addr 2.0.8 (GHSA-jqcg-44mw-7w3h, "IP spoofing via IPv4-mapped IPv6
+// trust subnet") fixed the trust-subnet comparison for exactly these addresses,
+// and ipRestrict must still resolve req.ip correctly over them: the ::ffff:
+// prefix is stripped before the ALLOWED_SUBNET test, and Express trusts
+// X-Forwarded-For only when the TCP peer itself is loopback.
+// ---------------------------------------------------------------------------
+
+test('checkClientAddress strips the ::ffff: IPv4-mapped prefix before the subnet test', () => {
+  // Normalized to 127.0.0.1 (loopback) -> not in ALLOWED_SUBNET -> denied.
+  assert.equal(checkClientAddress('::ffff:127.0.0.1'), 'Access denied');
+
+  // Normalized to 10.10.0.5 -> in ALLOWED_SUBNET -> allowed.
+  assert.equal(checkClientAddress('::ffff:10.10.0.5'), null);
+
+  // A public IPv4-mapped address is denied, not silently treated as loopback.
+  assert.equal(checkClientAddress('::ffff:8.8.8.8'), 'Access denied');
+});
+
+test('trust proxy loopback trusts XFF over an IPv4-mapped IPv6 loopback peer', async () => {
+  const app = express();
+  app.set('trust proxy', 'loopback');
+
+  // Force the socket peer to be an IPv4-mapped IPv6 loopback, as a dual-stack
+  // kernel reports it. req.ip is a lazy getter, so overriding remoteAddress here
+  // is what ipRestrict observes when it reads req.ip below.
+  app.use((req, res, next) => {
+    Object.defineProperty(req.socket, 'remoteAddress', {
+      value: '::ffff:127.0.0.1',
+      configurable: true,
+    });
+    next();
+  });
+
+  app.use(ipRestrict);
+  app.get('/', (req, res) => res.json({ ok: true }));
+
+  const srv = http.createServer(app);
+  await new Promise((resolve) => srv.listen(0, '127.0.0.1', resolve));
+  const { port } = srv.address();
+
+  try {
+    // A forwarded WireGuard client wins over the loopback peer -> allowed.
+    const ok = await fetch(`http://127.0.0.1:${port}/`, {
+      headers: { 'X-Forwarded-For': '10.10.0.5' },
+    });
+    assert.equal(ok.status, 200);
+
+    // A public forwarded address is honored by req.ip and then denied.
+    const deny = await fetch(`http://127.0.0.1:${port}/`, {
+      headers: { 'X-Forwarded-For': '8.8.8.8' },
+    });
+    assert.equal(deny.status, 403);
+  } finally {
+    await new Promise((resolve) => srv.close(resolve));
+  }
 });

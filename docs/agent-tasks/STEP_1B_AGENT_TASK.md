@@ -5,7 +5,7 @@ touch `public/`, so it does not affect the manifest).
 
 Base tree: the uploaded `wire_test.zip` = STEP 1A state (new `public/js/crypto/messages/dm-v2.js`
 and `tests/dm-v2.test.mjs` exist; nothing else of DM v2 exists). Output zip: `wire-final-21`.
-Authoritative design: `docs/e2ee-dm-hardening.md` sections 3, 4, 5 (read them first, follow them
+Authoritative design: `docs/archive/e2ee-dm-hardening.md` sections 3, 4, 5 (read them first, follow them
 exactly). If anything in it contradicts the code, STOP and say so instead of deviating.
 
 ---------------------------------------------------------------------------------------------
@@ -14,20 +14,20 @@ exactly). If anything in it contradicts the code, STOP and say so instead of dev
 
 - `tests/dm-v2.test.mjs`: 21 tests, 21 pass, on node v22.22.2 (no browser needed).
 - `node scripts/build-sw-manifest.mjs --check`: current (version a35a13b85a5a, 174 files).
-- `grep -rn dm_e2ee_min_version` finds it ONLY in `docs/e2ee-dm-hardening.md`. There is no column,
+- `grep -rn dm_e2ee_min_version` finds it ONLY in `docs/archive/e2ee-dm-hardening.md`. There is no column,
   no server rule, no client switch. So 1B has not been started in this tree.
 - Not verified by me: any browser test, the full suite (no `node_modules`, no Chromium here).
 
 ## 1. READ-FIRST contradictions (report these at the top of your report; do not silently "fix")
 
-1. **DM attachment E2EE IS wired in this tree.** The task text and `docs/PORT_NOTES.md` say it is
+1. **DM attachment E2EE IS wired in this tree.** The task text and `docs/archive/PORT_NOTES.md` say it is
    not. The code says otherwise:
    - `controllers/dm.controller.js:112` `e2eeAttachmentsEnforced()` defaults to `true`
      (`DM_E2EE_ATTACHMENTS_ENFORCED`), `sendEncryptedAttachment()` is the default path.
    - `public/js/media/attachment-e2ee.js:341,349` calls `encryptOutgoingMessage()` for the
      attachment meta and the caption; `:110` calls `decryptIncomingMessage()`.
-   - `docs/DM_ATTACHMENTS_E2EE.md` and `tests/dm-attachments/*` (60 tests) exist.
-   `docs/PORT_NOTES.md` is therefore stale. Do NOT edit it. Report the contradiction.
+   - `docs/archive/DM_ATTACHMENTS_E2EE.md` and `tests/dm-attachments/*` (60 tests) exist.
+   `docs/archive/PORT_NOTES.md` is therefore stale. Do NOT edit it. Report the contradiction.
    **Consequence for you:** `encryptOutgoingMessage` and `decryptIncomingMessage` in
    `public/js/crypto/messages/message-crypto.js` are shared with attachments. Their v1 behaviour
    must stay byte-identical. v2 text goes through NEW functions (section 4.3), never through a
@@ -49,8 +49,8 @@ exactly). If anything in it contradicts the code, STOP and say so instead of dev
 ## 2. Paths
 
 READ before coding:
-- `docs/e2ee-dm-hardening.md` sections 3.3, 4.2, 4.3, 5.1-5.6, 8 (Phase 2)
-- `docs/BROWSER_TEST_ISOLATION.md` (one process per account; why)
+- `docs/archive/e2ee-dm-hardening.md` sections 3.3, 4.2, 4.3, 5.1-5.6, 8 (Phase 2)
+- `docs/archive/BROWSER_TEST_ISOLATION.md` (one process per account; why)
 - `public/js/crypto/messages/dm-v2.js` (the module you will call; 711 lines, exports listed in 4.3)
 - `public/js/crypto/messages/{payload,message-crypto,encrypt,decrypt}.js`
 - `public/js/crypto/keys/{peer-keys,peer-trust,session}.js`, `public/js/chat/dm-key-trust.js`
@@ -73,14 +73,14 @@ NEW files:
 - `tests/dm-v2-wire.test.mjs` (node-runnable units)
 - `tests/dm-v2-wire-server.test.mjs` (real server, no browser)
 - `tests/dm-v2-wire-browser.test.mjs` (real browsers)
-- `docs/DM_V2_WIRE.md` (opt-in procedure, replay-store sizing, honest limits)
+- `docs/archive/DM_V2_WIRE.md` (opt-in procedure, replay-store sizing, honest limits)
 
 MUST NOT TOUCH: `public/js/crypto/messages/{encrypt,decrypt}.js` and
 `public/js/crypto/keys/{key-derivation,session}.js` (v1, byte-identical), all of `services/`
 (including `auth.service.js`), `database/seed.js`,
 `tests/fixtures/*` (copy `legacy-x.db` to a temp dir, never edit it),
 `public/js/media/*`, `public/js/crypto/groups/*`, `controllers/groups.controller.js`,
-`public/js/crypto/messages/attachment-*.js`, `docs/PORT_NOTES.md`, `scripts/run-tests.mjs`.
+`public/js/crypto/messages/attachment-*.js`, `docs/archive/PORT_NOTES.md`, `scripts/run-tests.mjs`.
 
 ## 3. Step 0 - baseline, BEFORE the first edit
 
@@ -114,7 +114,7 @@ MUST NOT TOUCH: `public/js/crypto/messages/{encrypt,decrypt}.js` and
    the stored content. Do not apply this rule to the attachment route (`sendEncryptedAttachment`,
    whose `isEncryptedEnvelopeShape` requires version 1 and stays that way).
 4. Opt-in, admin-only, not a UI: `scripts/dm-e2ee-optin.mjs <username|id>... [--dry-run]`.
-   Needs filesystem access to the DB (that is the admin boundary; say so in `docs/DM_V2_WIRE.md`).
+   Needs filesystem access to the DB (that is the admin boundary; say so in `docs/archive/DM_V2_WIRE.md`).
    Idempotent, logs each change, prints `changed N of M rows`, ONLY raises (1 -> 2): implement as
    `UPDATE users SET dm_e2ee_min_version = 2 WHERE id = ? AND dm_e2ee_min_version < 2`. Do not add
    a "lower" option (1C makes this a hard ratchet; do not build anything that has to be removed).
@@ -169,7 +169,7 @@ senderKeyFp,key,replyToId})`, `decryptDmV2({envelope,senderKeyFp,key,replyToId})
   scroll, held-message release after accepting a changed key, an edit re-render) is NOT a replay.
 - Store: per conversation, `msgId -> serverRowId`, bounded, FIFO eviction, keyed
   `${serverEndpoint}|${localUserId}|${peerUserId}` so accounts and origins cannot collide.
-- Proposed numbers (justify or change them in `docs/DM_V2_WIRE.md`, as named constants):
+- Proposed numbers (justify or change them in `docs/archive/DM_V2_WIRE.md`, as named constants):
   `DM_V2_REPLAY_PER_CONV_MAX = 2000`, `DM_V2_REPLAY_MAX_CONVERSATIONS = 50`. One entry is about
   16 + ~8 + JSON overhead = ~50 bytes, so 2000 entries is ~100 KB per conversation (~200 KB if
   the browser counts UTF-16), and localStorage is ~5 MB per origin shared with pins and everything
@@ -220,7 +220,7 @@ treat same-row as replay, let the server accept v2 for a min-1 recipient, make t
 3. Changed files + reason, one line each. New files likewise. Confirm the MUST-NOT-TOUCH list is untouched
    (`git diff --stat` or a `diff -rq` against the base zip, pasted).
 4. After-change suite counts in the baseline format; zero new failures against baseline.
-5. Replay-store numbers and the honest limits (docs/DM_V2_WIRE.md).
+5. Replay-store numbers and the honest limits (docs/archive/DM_V2_WIRE.md).
 6. Verified-by-me (what you executed, with output) vs Unverified-until-Linux (what you could not run).
 7. Manifest rebuilt: why, `--check` output.
 8. Zip `wire-final-21`: sha256, bytes, entries, and `unzip -l | grep` of every new file.

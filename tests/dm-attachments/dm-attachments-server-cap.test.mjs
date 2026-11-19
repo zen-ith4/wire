@@ -1,6 +1,6 @@
 // Server upload cap vs. the client format: a file of EXACTLY the
-// configured maximum must be accepted (multer's limit is exclusive, so
-// the cap needs +1), and one plaintext byte more must be refused.
+// configured maximum must be accepted (multer 2.x treats fileSize as
+// inclusive), and one byte more must be refused.
 // Built directly with the stream module, independent of any client gate.
 import './_limit-1mb.mjs';
 import { TEST_ROOT } from './_env.mjs';
@@ -42,12 +42,34 @@ test('a file of exactly the maximum plaintext size is accepted', async () => {
   assert.equal(res.status, 200, JSON.stringify(res.body));
 });
 
+test('a ciphertext of exactly cap + overhead is accepted', async () => {
+  // A valid encrypted stream whose ciphertext is exactly the multer cap
+  // (cap + overhead). multer 2.x treats the limit as inclusive.
+  const res = await uploadSized(MB);
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  // Confirm we exercised the ciphertext boundary, not just a plaintext one.
+  assert.equal(res.body.attachment_size, MB + dmCiphertextOverheadBytes(MB));
+});
+
+test('one ciphertext byte over the cap is refused and leaves no file behind', async () => {
+  const before = fs.readdirSync(process.env.DM_UPLOAD_DIR).length;
+  const small = await prepareAsClient(alice, bob, { bytes: new Uint8Array(10), name: 's.bin' });
+  const capCipher = MB + dmCiphertextOverheadBytes(MB) + 1;
+  const res = await postUpload(server, alice, bob.id, {
+    file: new File([new Uint8Array(capCipher)], 'attachment.bin'),
+    fields: small.fields,
+  });
+  assert.equal(res.status, 400);
+  const deadline = Date.now() + 3000;
+  while (fs.readdirSync(process.env.DM_UPLOAD_DIR).length !== before && Date.now() < deadline) await new Promise((r) => setTimeout(r, 25));
+  assert.equal(fs.readdirSync(process.env.DM_UPLOAD_DIR).length, before);
+});
+
 test('one plaintext byte over the maximum is refused and leaves no file behind', async () => {
   const before = fs.readdirSync(process.env.DM_UPLOAD_DIR).length;
   const res = await uploadSized(MB + 1);
   assert.equal(res.status, 400);
   assert.equal(res.body.error, 'Upload failed');
-  // the server unlinks the rejected upload just after answering: let it settle
   const deadline = Date.now() + 3000;
   while (fs.readdirSync(process.env.DM_UPLOAD_DIR).length !== before && Date.now() < deadline) await new Promise((r) => setTimeout(r, 25));
   assert.equal(fs.readdirSync(process.env.DM_UPLOAD_DIR).length, before);

@@ -392,6 +392,62 @@ upload leaves no orphan file on disk.
 
 ---
 
+## 3C-voice: group voice messages (added later, META_VERSION stays 1)
+
+Group voice messages reuse the existing group attachment path end to end. The
+voice flag travels ONLY inside the ENCRYPTED message plaintext meta
+(`meta.file.voice === true`), exactly the way the DM path carries it in
+`buildAttachmentMeta` (`public/js/crypto/messages/attachment-stream.js:299`).
+No outer-envelope field is added, the signed attachment slot, signing.js,
+nonce/counter handling and the AAD are untouched, and the server still stores
+`is_voice_message = 0` plus the neutral `application/octet-stream` name/mime.
+
+What changed:
+- `public/js/chat/group-attachments.js` `buildGroupAttachmentPlaintext`/`parseGroupAttachmentPlaintext`:
+  `file.voice` is an OPTIONAL, strictly-validated key (only the boolean
+  `true` is accepted; any other type/value is malformed -> `null`). It is only
+  emitted when the sender flags it, so every non-voice file keeps byte-identical
+  plaintext.
+- `META_VERSION` stays `1`. The group protocol meta version is deliberately
+  NOT bumped (the design doc keeps the group protocol version unreleased /
+  changed-in-place; no v3 was ever introduced); the addition is additive and
+  optional. A receiver from BEFORE this addition does not know the key and,
+  because the whitelist stays STRICT, rejects a meta carrying it - the row
+  renders as "Attachment unavailable". That is acceptable: the group
+  attachments UI is behind `GROUP_ATTACHMENTS_UI_ENABLED` (false) and the group
+  protocol is documented as unreleased, so there is no mixed-version fleet to
+  protect.
+- Receiver safety: `isGroupVoiceAttachment()` honours `voice === true` ONLY when
+  the decrypted mime is one of `audio/webm`, `audio/ogg`, `audio/mp4` (the
+  recorder's outputs, ported from `utils/voiceMime.js`'s `VOICE_CONTAINER_MAP`).
+  A flag on an image/PDF/video/non-allowlisted type renders as a normal
+  attachment. Mirrors `controllers/dm.controller.js`'s `isVoiceMessageFlag` and
+  `utils/voiceMime.js`, ported client-side.
+- Sender UI: the group composer gained the same mic control as DM
+  (`public/js/chat/composer.js`'s `createVoiceRecorder`-based flow), gated on
+  `GROUP_ATTACHMENTS_UI_ENABLED`. The recorded blob goes through
+  `prepareGroupAttachmentUpload(..., isVoice: true)`, respecting
+  `GROUP_UPLOAD_MAX_MB`. Limits: `MAX_RECORDING_MS` (5 min) from the shared
+  recorder; the upload cap; no new duration limit beyond DM's (DM has none).
+- Playback: the existing `voice-message.js`/`audio-player.js` components render
+  the player from the DECRYPTED blob of the group attachment (whole file, no
+  streaming), using the group lazy-download + decrypt flow. Blob URLs are stamped
+  `data-blob-url` and revoked by `thread.js`'s `revokeMediaPlayerBlobUrls`.
+  No new Service Worker routes; CSP `media-src 'self' blob:` already allows
+  blob: playback (`middleware/csp.js:44`).
+- Previews: the group decorated message's `is_voice_message` is taken from the
+  verified meta (mirroring DM's `applyAttachmentMeta`), so reply quotes show
+  "Voice message"; the server column stays 0 and nothing is added to push
+  payloads.
+- Server: `controllers/groups.controller.js` `sendMessageWithAttachmentHandler`
+  keeps `is_voice_message = 0` and the neutral name/mime; the misleading
+  "Voice is out of scope in STEP 3C" comment was updated.
+
+Tests: `tests/groups/group-attachment-ui.test.mjs` (meta round trip + strict
+validation + old-receiver rejection + allowlist), `tests/groups/group-attachment-hostile.test.mjs`
+(voice flag on a non-audio mime renders as a normal file).
+
+---
 ## Doc consistency
 
 - `docs/GROUP_E2EE_MULTIDEVICE_DESIGN.md`: section 6.7 item 5 and proposal 23 each gained one sentence pointing to `docs/GROUP_ATTACHMENTS_E2EE.md`; nothing else rewritten.

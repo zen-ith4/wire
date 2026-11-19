@@ -13,7 +13,7 @@ Do not touch: `tests/fixtures/*`, attachments, groups, `PORT_NOTES.md`, `scripts
 the wire format. Production code changes are NOT part of this step except where item 1 says; if a test
 needs a production change, STOP and report.
 
-## 0. Decisions recorded by me (the reviewer) - copy into `docs/DM_V2_WIRE.md` under "Decisions"
+## 0. Decisions recorded by me (the reviewer) - copy into `docs/archive/DM_V2_WIRE.md` under "Decisions"
 
 1. `services/auth.service.js`: the extra `const constants = require('../config/constants')` line is
    ACCEPTED (option a). It is the smallest way to keep the default in one place. Nothing else in that file.
@@ -96,7 +96,7 @@ rule accept v2 for min-1 (4), make the pin fall back silently (11).
 Write `docs/ci/linux-tests.yml`: a GitHub Actions workflow for `ubuntu-latest` that installs deps, sets
 `CHROMIUM_DIR`, runs `node scripts/build-sw-manifest.mjs --check`, then the full suite with
 `--test-timeout=60000`. Do NOT put it under `.github/`. State which command inside it you could not
-test here. Add one paragraph to `docs/DM_V2_WIRE.md`: "browser tests for DM v2 are
+test here. Add one paragraph to `docs/archive/DM_V2_WIRE.md`: "browser tests for DM v2 are
 Unverified-until-Linux; run this workflow before relying on the UI path".
 
 ## 4. Report, then STOP

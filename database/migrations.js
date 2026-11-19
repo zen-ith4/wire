@@ -36,7 +36,7 @@ const VALID_COLUMNS = {
     must_change_password: "must_change_password INTEGER NOT NULL DEFAULT 0",
     legacy_login_closed: "legacy_login_closed INTEGER NOT NULL DEFAULT 0",
     legacy_login_closed_at: "legacy_login_closed_at TEXT",
-    // DM E2EE v2 floor (docs/e2ee-dm-hardening.md 5.1). Default 1 so every
+    // DM E2EE v2 floor (docs/archive/e2ee-dm-hardening.md 5.1). Default 1 so every
     // existing row stays on v1 with no backfill. Raised only by
     // scripts/dm-e2ee-optin.mjs. 1C makes this a hard ratchet.
     dm_e2ee_min_version: "dm_e2ee_min_version INTEGER NOT NULL DEFAULT 1",
@@ -161,7 +161,7 @@ function runMigrations(db) {
 
   ensureCredentialSchema(db);
 
-  // DM E2EE v2 ratchet (docs/e2ee-dm-hardening.md 5.1-5.5, STEP 1C).
+  // DM E2EE v2 ratchet (docs/archive/e2ee-dm-hardening.md 5.1-5.5, STEP 1C).
   // Only raises, never lowers. Both triggers idempotent (IF NOT EXISTS).
   // Explicit IS NULL + typeof checks: NULL NOT IN (1,2) is NULL in SQLite,
   // and INTEGER affinity must not coerce '2' silently.

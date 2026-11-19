@@ -320,13 +320,13 @@ export function browserEngineTapLine(launched) {
  *
  * @returns {Promise<{browser: object|null, reason: string|null, engine: string}>}
  */
-export async function launchBrowser() {
+export async function launchBrowser(extraArgs = []) {
     const dir = process.env.CHROMIUM_DIR || '/tmp/browser-check';
     try {
         const req = createRequire(path.join(dir, 'noop.js'));
         const chromium = (await import(pathToFileURL(req.resolve('@sparticuz/chromium')).href)).default;
         const puppeteer = (await import(pathToFileURL(req.resolve('puppeteer-core')).href)).default;
-        const browser = await puppeteer.launch({ args: [...chromium.args, '--no-sandbox'], executablePath: await chromium.executablePath(), headless: 'shell', protocolTimeout: 90000 });
+        const browser = await puppeteer.launch({ args: [...chromium.args, ...extraArgs, '--no-sandbox'], executablePath: await chromium.executablePath(), headless: 'shell', protocolTimeout: 90000 });
         const engine = `chromium (@sparticuz/chromium) ${await browser.version()}`;
         console.log(browserEngineTapLine({ engine }));
         return { browser, reason: null, engine };
@@ -349,7 +349,7 @@ export async function launchBrowser() {
             const LINUX_ONLY = /--single-process|--no-zygote|--in-process-gpu|--use-gl=angle|--use-angle=swiftshader|--disable-setuid-sandbox/;
             const args = chromium.args.filter((a) => !LINUX_ONLY.test(a));
             const browser = await puppeteer.launch({
-                args: [...args, '--no-sandbox', '--headless=new', '--disable-gpu'],
+                args: [...args, ...extraArgs, '--no-sandbox', '--headless=new', '--disable-gpu'],
                 executablePath: decision.path,
                 headless: 'shell',
                 protocolTimeout: 90000,
@@ -424,8 +424,8 @@ export async function closeUserBrowsers() {
     await Promise.all(open.map((b) => b.close().catch(() => {})));
 }
 
-export async function newUserPage({ viewport = { width: 1280, height: 900 }, timeout = 30000, onNewDocument } = {}) {
-    const launched = await launchBrowser();
+export async function newUserPage({ viewport = { width: 1280, height: 900 }, timeout = 30000, onNewDocument, extraArgs = [] } = {}) {
+    const launched = await launchBrowser(extraArgs);
     if (!launched.browser) throw new Error(`newUserPage: no Chromium (${launched.reason})`);
     userBrowsers.add(launched.browser);
     const page = await launched.browser.newPage();

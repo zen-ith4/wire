@@ -45,7 +45,7 @@ import {
 } from '../media/attachments.js';
 
 // Group attachments are not wired in the client in this port (see
-// docs/PORT_NOTES.md): the composer has no file input here and
+// docs/archive/PORT_NOTES.md): the composer has no file input here and
 // media/attachments.js -- left untouched, it serves chat/DM -- has no 'group'
 // branch. Its shared card (renderAttachment) carries an inline onclick=""
 // download handler, which a strict CSP drops, and would try to fetch an

@@ -636,3 +636,53 @@ test('11 a download clicked just before a thread repaint still finishes (STEP 3F
     const link = await waitFor(async () => w.bobPage.$('#group-messages a.chat-attachment-download'), 15000, 100);
     assert.ok(link, 'the loaded file is rendered into the repainted row');
 });
+
+test('12 group voice: fake-mic record -> send -> receive -> play; server keeps neutral row', async (t) => {
+    const w = await world();
+    // Alice needs a fake mic: relaunch her browser with the fake-device flags.
+    // (Bob only plays back, so a normal browser is fine.)
+    await closeUserBrowsers();
+    const { page: alicePage } = await newUserPage({ extraArgs: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] });
+    await loginUi(alicePage, w.origin, w.names.alice);
+    await enableFlag(alicePage);
+    const { page: bobPage } = await newUserPage();
+    await loginUi(bobPage, w.origin, w.names.bob);
+    await enableFlag(bobPage);
+
+    await openGroupUi(alicePage, w.gid);
+    await alicePage.waitForSelector('#group-mic-btn', { timeout: 15000 });
+    await alicePage.$eval('#group-mic-btn', (el) => el.click());
+    await alicePage.waitForSelector('#group-recording-bar.active', { timeout: 15000 });
+    await alicePage.$eval('#group-recording-stop', (el) => el.click());
+
+    const before = await alicePage.$$eval('#group-messages .chat-msg', (e) => e.length);
+    await alicePage.waitForFunction((n0) => document.querySelectorAll('#group-messages .chat-msg').length > n0, { timeout: 60000 }, before);
+    await sleep(1000);
+
+    await openGroupUi(bobPage, w.gid);
+    const player = await (async () => {
+        const start = Date.now();
+        while (Date.now() - start < 60000) {
+            const el = await bobPage.$('.voice-message');
+            if (el) return el;
+            await sleep(250);
+        }
+        return null;
+    })();
+    assert.ok(player, 'the voice message must render a player for the recipient');
+
+    // Play it.
+    await bobPage.$eval('.voice-message-play', (el) => el.click());
+    await sleep(1000);
+
+    // Server row stays neutral.
+    const d = db();
+    const row = d.prepare('SELECT attachment_name, attachment_mime, is_voice_message FROM group_messages WHERE group_id = ? AND attachment_path IS NOT NULL ORDER BY id DESC LIMIT 1').get(w.gid);
+    d.close();
+    assert.equal(row.attachment_name, 'encrypted-attachment');
+    assert.equal(row.attachment_mime, 'application/octet-stream');
+    assert.equal(row.is_voice_message, 0, 'the server must never see the voice flag');
+
+    const html = await bobPage.evaluate(() => document.body.innerHTML);
+    assert.ok(!/att_ct_hash/.test(html), 'no binding field names in the DOM');
+});

@@ -26,6 +26,7 @@ const { setupSocketIO } = require('./config/socket');
 const ensureDirectories = require('./utils/ensureDirectories');
 const runSetupWizard = require('./utils/setupWizard');
 
+const { corsMiddleware } = require('./middleware/cors');
 const { ipRestrict, trustProxySetting } = require('./middleware/ipRestrict');
 const { csp } = require('./middleware/csp');
 const { logger } = require('./middleware/logger');
@@ -60,15 +61,13 @@ async function startServer() {
     app.use(ipRestrict);
 
     // HTTP CORS for browser-based clients, Electron, and Capacitor.
-    // Reflect the requesting Origin instead of maintaining a fixed
-    // allowlist. This also supports Capacitor's https://localhost
-    // origin and Electron's origin without special cases.
-    app.use(
-      cors({
-        origin: true,
-        credentials: true,
-      })
-    );
+    // Auth is header-based (Authorization: Bearer) and Socket.IO handshake
+    // tokens — no cookies are used anywhere — so credentials are dropped and
+    // the requesting Origin is reflected instead of maintaining a fixed
+    // allowlist. Reflecting also supports Capacitor's https://localhost
+    // origin and Electron's origin without special cases (Electron loads the
+    // page from whatever server the user chose, so its Origin can be any host).
+    app.use(corsMiddleware);
 
     app.use(express.json());
 

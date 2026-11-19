@@ -7,7 +7,7 @@ Linux distro on it. Treat those outputs as expected, not observed.
 **Everything else in this file has Linux evidence.** The reviewer ran the
 unmodified `wire-final-25` zip on Linux (node v22.22.2, `npm ci`, Chromium via
 `@sparticuz/chromium`, `CHROMIUM_DIR=/tmp/browser-check`); the numbers are in
-section 0 of `docs/DM_V2_WIRE.md`. Those are the reviewer's results, recorded
+section 0 of `docs/archive/DM_V2_WIRE.md`. Those are the reviewer's results, recorded
 here — not claims made by this tree.
 
 ## (a) WSL2 Ubuntu on Windows
@@ -33,7 +33,7 @@ cd ~/wire
 npm ci                                   # observed on Linux by the reviewer, see DM_V2_WIRE.md section 0
 
 # Chromium for @sparticuz/chromium / puppeteer-core.
-# docs/test-baseline.md documents CHROMIUM_DIR=/tmp/browser-check.
+# docs/archive/test-baseline.md documents CHROMIUM_DIR=/tmp/browser-check.
 #
 # NOTE: `npm install`, NOT `npm ci`. The command shipped here in wire-final-25 read
 # `npm ci @sparticuz/chromium puppeteer-core`, which is wrong: `npm ci` takes no
@@ -107,7 +107,7 @@ runner — it is still documentation, not a live workflow. The reviewer's run wa
 ## What is browser-only and no longer needs this
 
 Everything below was Unverified-until-Linux until the reviewer ran the unmodified
-wire-final-25 zip. It now has Linux evidence (section 0 of `docs/DM_V2_WIRE.md`):
+wire-final-25 zip. It now has Linux evidence (section 0 of `docs/archive/DM_V2_WIRE.md`):
 
 - DM v2 threads end to end (`dm-v2-wire-browser`).
 - Held messages under a key-change alarm, the key-trust banner

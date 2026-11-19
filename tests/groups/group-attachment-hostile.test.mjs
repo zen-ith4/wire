@@ -82,6 +82,18 @@ mock.module(js('crypto/messages/attachment-crypto.js'), {
     },
 });
 
+// The voice player renderer is controllable: the Task 1 tests drive whether
+// it throws / resolves / is skipped, without the real WebAudio/canvas player.
+let renderVoiceMessageImpl = null;
+mock.module(js('media/voice-message.js'), {
+    namedExports: {
+        isVoiceMessage: () => false,
+        renderVoiceMessage: async (...args) => {
+            if (renderVoiceMessageImpl) return renderVoiceMessageImpl(...args);
+        },
+    },
+});
+
 const ga = await import(js('chat/group-attachments.js'));
 
 const GCM = 16;
@@ -155,6 +167,19 @@ function stage(id, { size = 32, mime = 'image/png', name = 'a.png' } = {}) {
     return { el, node };
 }
 
+/** Stages and registers one VOICE row (the group voice rendering path). */
+function stageVoice(id, { size = 32, mime = 'audio/webm', name = 'v.webm', voice = true } = {}) {
+    const el = { isConnected: true, innerHTML: '', dataset: { groupAttachmentId: String(id) } };
+    const node = { querySelector: (s) => (s.includes(`"${id}"`) ? el : null) };
+    ga.stageGroupAttachment({
+        id, groupId: 7, raw: { id, attachment_iv: 'AAAAAAAAAAAAAAAA' },
+        binding: { iv: 'AAAAAAAAAAAAAAAA', ctHash: 'x', len: size }, senderKeyId: 'k',
+        meta: { text: '', file: { name, mime, voice } }, size,
+    });
+    ga.registerGroupAttachmentRow({ id }, node);
+    return { el, node };
+}
+
 /** Waits until the row leaves the 'loading' state. */
 async function settle(id, ms = 2000) {
     const end = Date.now() + ms;
@@ -172,6 +197,7 @@ function cleanup() {
     restoreFetch();
     decryptBehaviour = null;
     decryptCalls = 0;
+    renderVoiceMessageImpl = null;
 }
 
 /* ------------------------------------------------------------------ the rows */
@@ -422,3 +448,141 @@ test('row 10: 50 attachment messages in one history page -> at most 2 in flight 
         cleanup();
     }
 });
+
+test('voice safety: a row flagged voice:true with a non-audio mime renders as a NORMAL file, never as a voice note', async () => {
+    const PNG_SIG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0];
+    const png = new Uint8Array(PNG_SIG.length + GCM);
+    png.set(PNG_SIG, 0);
+    stubFetch(() => okBody(png));
+    decryptBehaviour = () => png;
+    try {
+        // voice: true on the meta, but the mime is image/png (not an
+        // allowlisted audio type) - the hostile member's flag must be ignored.
+        const el = { isConnected: true, innerHTML: '', dataset: { groupAttachmentId: '77' } };
+        const node = { querySelector: (s) => (s.includes('"77"') ? el : null) };
+        ga.stageGroupAttachment({
+            id: 77, groupId: 7, raw: { id: 77, attachment_iv: 'AAAAAAAAAAAAAAAA' },
+            binding: { iv: 'AAAAAAAAAAAAAAAA', ctHash: 'x', len: PNG_SIG.length }, senderKeyId: 'k',
+            meta: { text: '', file: { name: 'photo.png', mime: 'image/png', voice: true } }, size: PNG_SIG.length,
+        });
+        ga.registerGroupAttachmentRow({ id: 77 }, node);
+        ga.downloadGroupAttachment(77);
+        assert.equal(await settle(77), 'loaded');
+        assert.ok(!el.innerHTML.includes('class="voice-message"'), `must not render a voice player: ${el.innerHTML}`);
+        assert.ok(el.innerHTML.includes('chat-attachment-image') || el.innerHTML.includes('chat-attachment-download'),
+            `must render as a normal (non-voice) attachment: ${el.innerHTML}`);
+    } finally {
+        cleanup();
+    }
+});
+
+/* ---------------------------------------------- Task 1: the voice blob leak */
+
+test('row: the voice blob URL is revoked when the player render throws, and the download content is shown', async () => {
+    stubFetch(() => okBody(new Uint8Array(32 + GCM)));
+    const created = [];
+    const revoked = [];
+    const origCreate = URL.createObjectURL;
+    const origRevoke = URL.revokeObjectURL;
+    URL.createObjectURL = (b) => { const u = origCreate(b); created.push(u); return u; };
+    URL.revokeObjectURL = (u) => { revoked.push(u); return origRevoke(u); };
+    renderVoiceMessageImpl = async () => { throw new Error('player boom'); };
+    try {
+        const row = stageVoice(20, { size: 32 });
+        ga.downloadGroupAttachment(20);
+        assert.equal(await settle(20), 'loaded');
+        assert.equal(created.length, 2, 'the player minted one blob URL and the fallback content minted one');
+        assert.equal(revoked.length, 1, `the minted player blob URL must be revoked when the player render throws, revoked: ${revoked.length}`);
+        assert.ok(revoked[0] === created[0], 'the revoked URL must be the one the failed player minted');
+        assert.ok(row.el.innerHTML.includes('chat-attachment-download'),
+            `the failed player must fall back to the download content: ${row.el.innerHTML}`);
+        assert.ok(!row.el.innerHTML.includes('voice-message'), `no player may be left behind: ${row.el.innerHTML}`);
+    } finally {
+        URL.createObjectURL = origCreate;
+        URL.revokeObjectURL = origRevoke;
+        cleanup();
+    }
+});
+
+test('row: the voice blob URL is revoked when the row leaves the DOM mid-render', async () => {
+    stubFetch(() => okBody(new Uint8Array(32 + GCM)));
+    const created = [];
+    const revoked = [];
+    const origCreate = URL.createObjectURL;
+    const origRevoke = URL.revokeObjectURL;
+    URL.createObjectURL = (b) => { const u = origCreate(b); created.push(u); return u; };
+    URL.revokeObjectURL = (u) => { revoked.push(u); return origRevoke(u); };
+    let resolveRender = null;
+    renderVoiceMessageImpl = () => new Promise((res) => { resolveRender = res; });
+    try {
+        const row = stageVoice(21, { size: 32 });
+        ga.downloadGroupAttachment(21);
+        await new Promise((r) => setTimeout(r, 60));
+        assert.equal(ga.groupAttachmentRowState(21), 'loaded');
+        assert.equal(created.length, 1, 'the blob URL is minted before the player render');
+        // The row goes away while the player render is still pending.
+        row.el.isConnected = false;
+        resolveRender();
+        await new Promise((r) => setTimeout(r, 150));
+        assert.equal(revoked.length, 1, `the detached row's blob URL must be revoked, revoked: ${revoked.length}`);
+    } finally {
+        URL.createObjectURL = origCreate;
+        URL.revokeObjectURL = origRevoke;
+        cleanup();
+    }
+});
+
+test('row: two voice renders IN FLIGHT for the same element build ONE player and mint ONE blob URL', async () => {
+    stubFetch(() => okBody(new Uint8Array(32 + GCM)));
+    const created = [];
+    const origCreate = URL.createObjectURL;
+    URL.createObjectURL = (b) => { const u = origCreate(b); created.push(u); return u; };
+    let playerRenders = 0;
+    // A slow player widens the window in which a second render can start.
+    renderVoiceMessageImpl = async () => { playerRenders++; await new Promise((r) => setTimeout(r, 120)); };
+    try {
+        const { node } = stageVoice(23, { size: 32 });
+        ga.downloadGroupAttachment(23);
+        assert.equal(await settle(23), 'loaded');
+        await new Promise((r) => setTimeout(r, 20));
+        // Re-register the SAME element while the first player is still being built.
+        ga.registerGroupAttachmentRow({ id: 23 }, node);
+        await new Promise((r) => setTimeout(r, 400));
+        assert.equal(created.length, 1, 'a render in flight must not mint a second blob URL');
+        assert.equal(playerRenders, 1, 'a render in flight must not build a second player');
+    } finally {
+        URL.createObjectURL = origCreate;
+        cleanup();
+    }
+});
+
+test('row: a voice row renders the player ONCE - a second render for the same element does not mint a second blob URL', async () => {
+    stubFetch(() => okBody(new Uint8Array(32 + GCM)));
+    const created = [];
+    const origCreate = URL.createObjectURL;
+    const origRevoke = URL.revokeObjectURL;
+    URL.createObjectURL = (b) => { const u = origCreate(b); created.push(u); return u; };
+    URL.revokeObjectURL = (u) => origRevoke(u);
+    let playerRenders = 0;
+    renderVoiceMessageImpl = async () => { playerRenders++; };
+    try {
+        const { el, node } = stageVoice(22, { size: 32 });
+        ga.downloadGroupAttachment(22);
+        assert.equal(await settle(22), 'loaded');
+        await new Promise((r) => setTimeout(r, 150));
+        assert.equal(created.length, 1, 'exactly one blob URL for the first render');
+        assert.equal(playerRenders, 1, 'the player renders once');
+
+        // A re-register of the SAME element (the same row, same bubble) must not
+        // mint a second blob URL / render a second player.
+        ga.registerGroupAttachmentRow({ id: 22 }, node);
+        await new Promise((r) => setTimeout(r, 150));
+        assert.equal(created.length, 1, 'the idempotent re-render must not mint a second blob URL');
+        assert.equal(playerRenders, 1, 'the idempotent re-render must not render a second player');
+    } finally {
+        URL.createObjectURL = origCreate;
+        URL.revokeObjectURL = origRevoke;
+        cleanup();
+    }
+});
+

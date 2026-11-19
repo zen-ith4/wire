@@ -58,49 +58,45 @@ const HOSTILE = [
 ];
 const BENIGN = ['report.pdf', 'Tom and Jerry.pdf', "O'Brien notes.txt", 'a "quoted" name.txt', 'back\\slash.txt', 'résumé 2026 (final).docx', '日本語のファイル.txt', 'a<b>.txt', 'x=1;y=2.txt', ''];
 
-/** HTML step (jsdom) then JS step (Function): returns what the handler called downloadAttachment with. */
-function runHandler(html, selector) {
+/** Parse rendered markup, assert no inline on* attributes exist anywhere, and read delegated data-* attributes. */
+function readDelegatedData(html, selector) {
     const host = document.createElement('div');
     host.innerHTML = html;
+    for (const node of host.querySelectorAll('*')) {
+        for (const attr of node.attributes) {
+            assert.ok(!attr.name.toLowerCase().startsWith('on'), `unexpected inline handler attribute ${attr.name} on <${node.tagName.toLowerCase()}>`);
+        }
+    }
     const el = host.querySelector(selector);
     assert.ok(el, `${selector} not found in rendered markup`);
-    const code = el.getAttribute('onclick');
-    assert.ok(code, 'element has an onclick attribute');
-    globalThis.__pwned = 0;
-    const calls = [];
-    new Function('window', code)({ downloadAttachment: (...a) => calls.push(a) });
-    const pwned = globalThis.__pwned;
-    globalThis.__pwned = 0;
-    return { calls, pwned };
+    assert.equal(el.dataset.action, 'attachment-download', 'expected delegated data-action="attachment-download"');
+    return [Number(el.dataset.msgId), el.dataset.filename, el.dataset.scope, el.dataset.mime];
 }
 
 const norm = (s) => s.replace(/\r\n|[\r\n\u2028\u2029]/g, ' '); // newlines are deliberately flattened to a space
+const normHtmlAttr = (s) => s.replace(/\r\n|\r/g, '\n'); // HTML5 parser normalises CR / CRLF in attribute values to LF
 
-test('renderAttachment (file card, attachments.js:995): handler receives exactly the filename and mime; nothing else runs', () => {
+test('renderAttachment (file card, attachments.js:968): data-* attributes round-trip filename and mime exactly; no inline on* attribute', () => {
     for (const name of [...HOSTILE, ...BENIGN]) {
         const html = renderAttachment({ id: 7, attachment_name: name, attachment_mime: 'application/pdf', attachment_size: 12 }, 'dm');
-        const { calls, pwned } = runHandler(html, '.chat-attachment');
-        assert.equal(pwned, 0, `payload executed for filename ${JSON.stringify(name)}`);
-        assert.equal(calls.length, 1, `handler made exactly one call for ${JSON.stringify(name)}`);
-        assert.deepEqual(calls[0], [7, norm(name), 'dm', 'application/pdf'], `arguments for ${JSON.stringify(name)}`);
+        const args = readDelegatedData(html, '.chat-attachment');
+        assert.deepEqual(args, [7, normHtmlAttr(name), 'dm', 'application/pdf'], `arguments for ${JSON.stringify(name)}`);
     }
 });
 
-test('renderAttachment: hostile mime type cannot break out either', () => {
+test('renderAttachment: hostile mime type round-trips through data-mime and cannot add attributes or break out', () => {
     for (const mime of HOSTILE) {
         const html = renderAttachment({ id: 8, attachment_name: 'a.bin', attachment_mime: mime, attachment_size: 1 }, 'group');
-        const { calls, pwned } = runHandler(html, '.chat-attachment');
-        assert.equal(pwned, 0, `payload executed for mime ${JSON.stringify(mime)}`);
-        assert.deepEqual(calls[0], [8, 'a.bin', 'group', norm(mime)]);
+        const args = readDelegatedData(html, '.chat-attachment');
+        assert.deepEqual(args, [8, 'a.bin', 'group', normHtmlAttr(mime)]);
     }
 });
 
-test('imageDownloadButtonHtml (attachments.js:886): handler receives exactly the filename; nothing else runs', () => {
+test('imageDownloadButtonHtml (attachments.js:856): data-* attributes round-trip filename exactly; no inline on* attribute', () => {
     for (const name of [...HOSTILE, ...BENIGN]) {
         const html = imageDownloadButtonHtml({ id: 9, has_attachment: 1, attachment_name: name, attachment_mime: 'image/png' }, 'dm');
-        const { calls, pwned } = runHandler(html, '.chat-msg-download');
-        assert.equal(pwned, 0, `payload executed for filename ${JSON.stringify(name)}`);
-        assert.deepEqual(calls[0], [9, norm(name), 'dm', 'image/png']);
+        const args = readDelegatedData(html, '.chat-msg-download');
+        assert.deepEqual(args, [9, normHtmlAttr(name), 'dm', 'image/png']);
     }
 });
 

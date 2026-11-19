@@ -313,7 +313,7 @@ export async function deleteAllSenderKeysForGroup(groupId) {
 // Replay window at eviction: a hostile server can re-post the stored ciphertext of an
 // EVICTED nonce under a fresh message id and it is accepted once as new. Rows among
 // the newest ~90,000 of a key are never affected, and no eviction ever rejects a
-// legitimate message. (See docs/GROUP_E2EE_MULTIDEVICE_DESIGN.md.)
+// legitimate message. (See docs/archive/GROUP_E2EE_MULTIDEVICE_DESIGN.md.)
 export const SEEN_CAP_PER_KEY = 100000;
 
 function deleteSeenInTx(seenStore, senderKeyId) {

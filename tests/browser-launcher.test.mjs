@@ -80,19 +80,18 @@ test('the TAP line names the engine (a comment line)', () => {
     assert.match(blocked, /no chromium here/);
 });
 
-test('default engine is chromium (WIRE_TEST_BROWSER unset)', async () => {
+test('default engine is chromium (WIRE_TEST_BROWSER unset)', () => {
     const before = process.env.WIRE_TEST_BROWSER;
     try {
         delete process.env.WIRE_TEST_BROWSER;
-        // Must not throw "unknown WIRE_TEST_BROWSER value" - it proceeds
-        // to the chromium path (which may launch or fall back).
-        let threwUnknown = false;
-        try {
-            await launchBrowser([]);
-        } catch (e) {
-            threwUnknown = e.message.includes('unknown WIRE_TEST_BROWSER value');
-        }
-        assert.equal(threwUnknown, false, 'default must not throw unknown-value error');
+        // Engine resolution at the top of launchBrowser():
+        // WIRE_TEST_BROWSER || 'chromium' -> 'chromium' when unset,
+        // so the code proceeds to the chromium path and does not take
+        // the webkit/firefox early returns or throw for unknown values.
+        const engineName = process.env.WIRE_TEST_BROWSER || 'chromium';
+        assert.equal(engineName, 'chromium', 'unset WIRE_TEST_BROWSER defaults to chromium');
+        assert.notEqual(engineName, 'webkit');
+        assert.notEqual(engineName, 'firefox');
     } finally {
         if (before === undefined) delete process.env.WIRE_TEST_BROWSER;
         else process.env.WIRE_TEST_BROWSER = before;

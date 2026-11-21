@@ -318,9 +318,50 @@ export function browserEngineTapLine(launched) {
  * locally installed Chrome/Edge is used instead - and the run says so, in
  * the console and (through browserEngineTapLine) in the TAP output.
  *
+ * The engine is selected by WIRE_TEST_BROWSER (chromium | firefox | webkit),
+ * defaulting to chromium. With no env var set, behaviour is exactly as
+ * before.
+ *
  * @returns {Promise<{browser: object|null, reason: string|null, engine: string}>}
  */
 export async function launchBrowser(extraArgs = []) {
+    const engineName = process.env.WIRE_TEST_BROWSER || 'chromium';
+
+    if (engineName === 'webkit') {
+        const reason = 'webkit engine not implemented in this harness (use manual Safari checklist)';
+        console.log(browserEngineTapLine({ engine: 'none', reason }));
+        return { browser: null, reason, engine: 'none' };
+    }
+
+    if (engineName === 'firefox') {
+        try {
+            const puppeteer = (await import('puppeteer-core')).default;
+            const firefoxPath = process.env.FIREFOX_PATH;
+            const launchOpts = {
+                browser: 'firefox',
+                protocol: 'webDriverBiDi',
+                headless: true,
+                args: [...extraArgs],
+            };
+            if (firefoxPath) {
+                launchOpts.executablePath = firefoxPath;
+            }
+            const browser = await puppeteer.launch(launchOpts);
+            const engine = `firefox (puppeteer-core) ${await browser.version()}`;
+            console.log(browserEngineTapLine({ engine }));
+            return { browser, reason: null, engine };
+        } catch (e) {
+            const reason = `firefox not available: ${e.message}`;
+            console.log(browserEngineTapLine({ engine: 'none', reason }));
+            return { browser: null, reason, engine: 'none' };
+        }
+    }
+
+    if (engineName !== 'chromium') {
+        throw new Error(`unknown WIRE_TEST_BROWSER value: ${engineName}. Expected chromium, firefox or webkit.`);
+    }
+
+    // chromium: EXACTLY today's code path, unchanged.
     const dir = process.env.CHROMIUM_DIR || '/tmp/browser-check';
     try {
         const req = createRequire(path.join(dir, 'noop.js'));

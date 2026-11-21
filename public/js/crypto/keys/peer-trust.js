@@ -282,6 +282,10 @@ async function writeRecordIfAbsent(origin, ownUserId, peerId, value) {
 /**
  * Replace an existing record with `change(record)`, in ONE transaction. No record,
  * or a falsy answer from `change`, writes nothing.
+ *
+ * Resolves to the record that was written, or null when nothing was written. A
+ * caller that has to report the new state reads it from THIS transaction: a
+ * separate read after the write can miss a change made in between.
  */
 async function updateRecord(origin, ownUserId, peerId, change) {
     const db = await openDb();
@@ -290,13 +294,17 @@ async function updateRecord(origin, ownUserId, peerId, change) {
         const tx = db.transaction(STORE_NAME, 'readwrite');
         const store = tx.objectStore(STORE_NAME);
         const existing = store.get(key);
+        let written = null;
 
         existing.onsuccess = () => {
             const next = existing.result ? change(existing.result) : null;
-            if (next) store.put(next, key);
+            if (next) {
+                store.put(next, key);
+                written = next;
+            }
         };
 
-        tx.oncomplete = () => resolve();
+        tx.oncomplete = () => resolve(written);
         tx.onerror = () => reject(tx.error);
     });
 }
@@ -541,19 +549,32 @@ export async function acceptPeerKey(peerId, newPublicKeyB64, ctx) {
  * @returns {Promise<object|null>} the updated pin, or null when nothing was marked
  */
 export async function markPeerVerified(peerId, ctx, expectedFingerprint = null) {
-    const pin = await getPeerPin(peerId, ctx);
-    if (!pin) return null;
-    if (expectedFingerprint !== null && pin.current?.fingerprint !== expectedFingerprint) {
-        return null;
-    }
-    const next = {
-        ...pin,
-        accepted: normaliseAccepted(pin).filter((k) => !k.viaFirstContact),
-        verifiedAt: Date.now(),
-        verifiedKey: pin.current?.fingerprint,
-    };
-    await writeRecord(ctx.origin, ctx.ownUserId, Number(peerId), next);
-    return next;
+    // ONE transaction. A read (getPeerPin) followed by a separate writeRecord
+    // let a double click store two marks, and let a concurrent noteEncryptedRow()
+    // lower encryptedFloor between the read and the write only for this stale
+    // pin to overwrite it. Both were real: the second is security relevant
+    // because encryptedFloor is what chat/dm-unencrypted.js trusts.
+    return updateRecord(ctx.origin, ctx.ownUserId, Number(peerId), (pin) => {
+        // The digits on screen belong to a key that is no longer pinned: mark
+        // nothing rather than stamp the wrong key.
+        if (expectedFingerprint !== null && pin.current?.fingerprint !== expectedFingerprint) {
+            return null;
+        }
+
+        // Already marked for the key in use: keep the original verifiedAt. A
+        // second click is not a second comparison.
+        if (pin.verifiedAt && pin.verifiedKey === pin.current?.fingerprint) {
+            return pin;
+        }
+
+        // Preserve every other field, including encryptedFloor.
+        return {
+            ...pin,
+            accepted: normaliseAccepted(pin).filter((k) => !k.viaFirstContact),
+            verifiedAt: Date.now(),
+            verifiedKey: pin.current?.fingerprint,
+        };
+    });
 }
 
 /**

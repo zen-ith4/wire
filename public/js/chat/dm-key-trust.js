@@ -521,36 +521,52 @@ export async function renderVerifyView(peerId, username, { ids = IDS } = {}) {
             markBtn.title = '';
 
             const listener = async () => {
+                // A double click is ONE comparison. Without this guard both
+                // click handlers run, both read the old pin and both store a
+                // fresh verifiedAt. The flag is set synchronously, before the
+                // first await, so the second click cannot get past it; the
+                // disabled button is the visual counterpart.
+                if (markBtn.dataset.markInFlight === '1') return;
+                markBtn.dataset.markInFlight = '1';
+                markBtn.disabled = true;
+
                 let marked = null;
                 try {
-                    marked = await markPeerVerified(peerId, context, trust.fingerprint);
-                } catch (e) {
-                    // Not saved, so not verified: the redraw below says so.
-                    console.error('Could not mark the contact as verified:', e);
-                }
+                    try {
+                        marked = await markPeerVerified(peerId, context, trust.fingerprint);
+                    } catch (e) {
+                        // Not saved, so not verified: the redraw below says so.
+                        console.error('Could not mark the contact as verified:', e);
+                    }
 
-                // The pinned key moved after these digits were drawn, or the mark
-                // could not be stored. Nothing was marked, so show the user what is
-                // true now (this re-resolves trust, which repaints the button).
-                if (!marked) {
-                    await renderVerifyView(peerId, username, { ids });
-                    return;
-                }
+                    // The pinned key moved after these digits were drawn, or the mark
+                    // could not be stored. Nothing was marked, so show the user what is
+                    // true now (this re-resolves trust, which repaints the button).
+                    if (!marked) {
+                        await renderVerifyView(peerId, username, { ids });
+                        return;
+                    }
 
-                await forgetDerivedKeys(peerId);
+                    await forgetDerivedKeys(peerId);
 
-                // Read back what was stored instead of trusting the click: the
-                // panel line and the header button both follow that result.
-                try {
-                    await resolveTrust(peerId);
-                } catch (e) {
-                    // resolveTrust() already cleared the verified state.
-                    console.error('Could not re-read the contact\'s trust state:', e);
-                }
-                if (markedEl) {
-                    markedEl.textContent = isPeerVerified(peerId)
-                        ? 'Marked as verified on this device.'
-                        : 'Not yet marked as verified on this device.';
+                    // Read back what was stored instead of trusting the click: the
+                    // panel line and the header button both follow that result.
+                    try {
+                        await resolveTrust(peerId);
+                    } catch (e) {
+                        // resolveTrust() already cleared the verified state.
+                        console.error('Could not re-read the contact\'s trust state:', e);
+                    }
+                    if (markedEl) {
+                        markedEl.textContent = isPeerVerified(peerId)
+                            ? 'Marked as verified on this device.'
+                            : 'Not yet marked as verified on this device.';
+                    }
+                } finally {
+                    delete markBtn.dataset.markInFlight;
+                    // A failed mark re-rendered the panel (which sets the button's
+                    // state); only the success path keeps this button enabled.
+                    if (marked) markBtn.disabled = false;
                 }
             };
 

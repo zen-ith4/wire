@@ -326,6 +326,7 @@ export function browserEngineTapLine(launched) {
  */
 export async function launchBrowser(extraArgs = []) {
     const engineName = process.env.WIRE_TEST_BROWSER || 'chromium';
+    const dir = process.env.CHROMIUM_DIR || '/tmp/browser-check';
 
     if (engineName === 'webkit') {
         const reason = 'webkit engine not implemented in this harness (use manual Safari checklist)';
@@ -335,7 +336,8 @@ export async function launchBrowser(extraArgs = []) {
 
     if (engineName === 'firefox') {
         try {
-            const puppeteer = (await import('puppeteer-core')).default;
+            const req = createRequire(path.join(dir, 'noop.js'));
+            const puppeteer = (await import(pathToFileURL(req.resolve('puppeteer-core')).href)).default;
             const firefoxPath = process.env.FIREFOX_PATH;
             const launchOpts = {
                 browser: 'firefox',
@@ -362,7 +364,6 @@ export async function launchBrowser(extraArgs = []) {
     }
 
     // chromium: EXACTLY today's code path, unchanged.
-    const dir = process.env.CHROMIUM_DIR || '/tmp/browser-check';
     try {
         const req = createRequire(path.join(dir, 'noop.js'));
         const chromium = (await import(pathToFileURL(req.resolve('@sparticuz/chromium')).href)).default;

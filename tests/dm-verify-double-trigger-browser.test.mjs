@@ -44,6 +44,7 @@ import {
   cspViolations,
   openThreadByRow,
   sendTextViaComposer,
+  currentEngine,
 } from './_dm-ui-helpers.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -190,30 +191,32 @@ test('K6: Verify marks once per double click, keeps one listener, and never rese
   assert.equal((await readPin(A.page, bob.id)).verifiedAt, null, 'nothing verified yet');
 
   // ---------------------------------------------------------------- (b)
-  // Open/close the panel 30 times, then open it once more and count the click
-  // listeners CDP sees on the Mark button. The render path must replace, not
-  // stack, its listener.
-  for (let i = 0; i < 30; i++) {
+  // Open/close the panel 30 times, then count the click listeners CDP sees
+  // on the Mark button. CDP is chromium-only; on other engines this check
+  // is skipped and the double-click / encryptedFloor assertions still run.
+  if (currentEngine() === 'chromium') {
+    for (let i = 0; i < 30; i++) {
+      await openPanel(A.page);
+      await A.page.click('#dm-key-verify-open');
+      await pollUntil(() => panelHidden(A.page), { what: `the Verify panel to close (cycle ${i + 1})` });
+    }
     await openPanel(A.page);
-    await A.page.click('#dm-key-verify-open');
-    await pollUntil(() => panelHidden(A.page), { what: `the Verify panel to close (cycle ${i + 1})` });
-  }
-  await openPanel(A.page);
 
-  const cdp = await A.page.target().createCDPSession();
-  await cdp.send('Runtime.enable');
-  const { result } = await cdp.send('Runtime.evaluate', {
-    expression: 'document.querySelector(\'#dm-key-verify [data-action="mark-verified"]\')',
-  });
-  assert.ok(result.objectId, 'the Mark button must exist in the DOM');
-  const { listeners } = await cdp.send('DOMDebugger.getEventListeners', { objectId: result.objectId, depth: -1, pierce: true });
-  const clickListeners = listeners.filter((l) => l.type === 'click');
-  assert.equal(
-    clickListeners.length,
-    1,
-    `exactly one click listener must remain on the Mark button after 30 open/close cycles; got ${clickListeners.length}`
-  );
-  await cdp.detach().catch(() => {});
+    const cdp = await A.page.target().createCDPSession();
+    await cdp.send('Runtime.enable');
+    const { result } = await cdp.send('Runtime.evaluate', {
+      expression: 'document.querySelector(\'#dm-key-verify [data-action="mark-verified"]\')',
+    });
+    assert.ok(result.objectId, 'the Mark button must exist in the DOM');
+    const { listeners } = await cdp.send('DOMDebugger.getEventListeners', { objectId: result.objectId, depth: -1, pierce: true });
+    const clickListeners = listeners.filter((l) => l.type === 'click');
+    assert.equal(
+      clickListeners.length,
+      1,
+      `exactly one click listener must remain on the Mark button after 30 open/close cycles; got ${clickListeners.length}`
+    );
+    await cdp.detach().catch(() => {});
+  }
 
   // ---------------------------------------------------------------- (a)
   // A real double click: two separate mouse clicks at the button's centre, so

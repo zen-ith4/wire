@@ -26,6 +26,7 @@ import crypto from 'node:crypto';
 
 import { launchBrowser, startRealServer, registerUser, restLogin } from '../_acceptance-harness.mjs';
 import { createFlagOnPublicCopy, assertRepoFlagOff, regenerateCopyManifest } from '../helpers/sw-flag-on-copy.mjs';
+import { currentEngine, skipUnlessChromium } from '../_dm-ui-helpers.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -711,16 +712,15 @@ test('4. seek: Range request at the seek position, correct time, correct decoded
   await poll(async () => (await snap(page)).readyState >= 2);
   const mark = proxy.requests.length;
 
-  // Network events for the media element's own requests: the response headers
-  // the worker sent to the media pipeline (a script fetch cannot see them).
-  const cdp = await page.target().createCDPSession();
-  await cdp.send('Network.enable');
+  // Media-element response headers observed via page.on('response') (portable
+  // across engines; replaces CDP Network.enable).
   const mediaResponses = [];
-  cdp.on('Network.responseReceived', (e) => {
-    if (e.response && e.response.url.includes('/__wire_media_stream/')) {
-      mediaResponses.push({ status: e.response.status, contentRange: e.response.headers['content-range'] || e.response.headers['Content-Range'] || null, type: e.type });
+  function onMediaResponse(response) {
+    if (response.url().includes('/__wire_media_stream/')) {
+      mediaResponses.push({ status: response.status(), contentRange: response.headers()['content-range'] || response.headers()['Content-Range'] || null, type: 'response' });
     }
-  });
+  }
+  page.on('response', onMediaResponse);
 
   await call(page, 'seek', SEEK_SECONDS);
   // Wait for the playback to really arrive at the target (not just the seek
@@ -757,7 +757,7 @@ test('4. seek: Range request at the seek position, correct time, correct decoded
     assert.ok(m, 'Content-Range must be bytes a-b/total, got ' + r.contentRange);
     assert.equal(Number(m[3]), seeded.bytes.length, 'Content-Range total must be the PLAIN size ' + seeded.bytes.length + ', got ' + m[3]);
   }
-  await cdp.detach();
+  // page.off('response', onMediaResponse) — page is closed right after, listener is dropped.
 
   // (c0) a script fetch of the stream URL must not read the bytes (by design:
   // the worker serves only audio/video destinations; a fetch has destination "empty").
@@ -920,7 +920,8 @@ test('6. logout: streams purged, old URL dead, other client cannot read, key nee
   assertRepoFlagOff();
 });
 
-test('7. SW restart (CDP stopAllWorkers): observed page behaviour, no plaintext from the old URL', async () => {
+test('7. SW restart (CDP stopAllWorkers): observed page behaviour, no plaintext from the old URL', async (t) => {
+  skipUnlessChromium(t, 'CDP ServiceWorker.enable/stopAllWorkers (chromium-only)');
   const seeded = await seedAttachment(await startRealServerWrapped(), {
     bytes: makeWav(WAV_SIZE, 'WIREC5MARKER-7'), marker: 'WIREC5MARKER-7',
   });

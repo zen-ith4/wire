@@ -56,6 +56,7 @@ import {
   recordVoiceViaComposer,
   captureDownloads,
   corruptStoredAttachment,
+  skipUnlessChromium,
 } from './_dm-ui-helpers.mjs';
 
 let server = null;
@@ -227,7 +228,8 @@ test('audio attachments play in the app across formats: ready state, play, pause
   assert.deepEqual(errors.filter((e) => /pageerror/.test(e)), [], errors.join(' | '));
 });
 
-test('every audio attachment and a voice message have a working download: original bytes, name and extension, existing auth', async () => {
+test('every audio attachment and a voice message have a working download: original bytes, name and extension, existing auth', async (t) => {
+  skipUnlessChromium(t, 'captureDownloads uses CDP Browser.setDownloadBehavior (chromium-only)');
   if (!server) server = await startRealServer({ csp: 'true' });
   await registerUser(server.origin, 'dl-alice');
   await registerUser(server.origin, 'dl-bob');

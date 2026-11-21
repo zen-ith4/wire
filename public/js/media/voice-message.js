@@ -3,16 +3,43 @@
 // ------------------------------------------------------------
 // Separate compact player for voice messages.
 //
+// Lifecycle (nothing here waits for a first playback):
+//   1. render     the pill appears at once; a waveform and duration
+//                 already analysed for this message (voice-waveform.js
+//                 cache) are drawn immediately, otherwise a flat
+//                 placeholder and "--:--".
+//   2. source     the audio is resolved (E2EE: download + decrypt into a
+//                 blob: URL this player owns). Until then play/seek are
+//                 inert; download never is.
+//   3. ready      src is set and the player is playable right away. The
+//                 element's own metadata loads in the background, but
+//                 the UI does not depend on it: browsers that defer media
+//                 loading until play() would otherwise show 0:00 and stay
+//                 "loading" forever.
+//   4. analysis   the same decrypted bytes are decoded ONCE (cached per
+//                 message) into the real duration and a 32-bar loudness
+//                 envelope, which replace the placeholder.
+// Playback progress, seeking and the visualizer all use one duration:
+// the element's when it knows it, the analysed one otherwise.
+//
 // Waveform:
-// - Deterministic per-message bars.
+// - Real per-message loudness bars (voice-waveform.js); the old
+//   deterministic pseudo-random bars remain only as the fallback for
+//   audio this browser cannot decode.
 // - Rendered to a canvas instead of dozens of DOM elements.
-// - Does not block the player from appearing while the media URL
-//   is being resolved.
 // ============================================================
 
 import { ICONS } from '../icons.js';
+import { escapeHtmlAttr } from '../core/utils.js';
 import { getMediaSrcUrl, refreshMediaSrcUrl, resolveMediaSrc } from './mediaToken.js';
+import { fetchDecryptedAttachment } from './attachment-e2ee.js';
 import { resolveServerUrl } from '../core/server.js';
+import {
+  VOICE_WAVEFORM_BARS,
+  getCachedVoiceWaveform,
+  loadVoiceWaveform,
+  voiceWaveformKey,
+} from './voice-waveform.js';
 
 // ======================================================
 // DETECTION
@@ -83,8 +110,21 @@ let closeOpenVolumePanel = null;
 // WAVEFORM
 // ======================================================
 
-const BAR_COUNT = 32;
+const BAR_COUNT = VOICE_WAVEFORM_BARS;
 
+// Drawn until the real envelope is known: a flat, low row of bars, so
+// nothing on screen pretends to describe audio that was not read yet.
+const PLACEHOLDER_BAR = 12;
+
+function placeholderBars(count) {
+  return new Array(count).fill(PLACEHOLDER_BAR);
+}
+
+// Shown in the time label while the duration is not known yet.
+const UNKNOWN_TIME = '--:--';
+
+// Decorative bars for audio this browser cannot decode: the previous
+// (seeded, deterministic) look, kept only as that fallback.
 function seededBars(seed, count) {
   let state = (Number(seed) >>> 0) || 1;
 
@@ -115,6 +155,44 @@ function seededBars(seed, count) {
   }
 
   return bars;
+}
+
+// Played vs unplayed bars must be told apart at a glance. Their colours
+// come from two independent tokens - the viewer's accent and --muted2 -
+// and with the default "Neutral" accent both are nearly the same grey
+// (|dR|+|dG|+|dB| = 37), so the playback position was practically
+// invisible. When the two are that close, the UNPLAYED bars are drawn
+// translucent; themes whose colours already differ draw exactly as before.
+const MIN_PLAYED_CONTRAST = 96;
+const UNPLAYED_ALPHA_WHEN_CLOSE = 0.42;
+
+function parseRgb(color) {
+  const match =
+    /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/i.exec(
+      String(color || '').trim()
+    );
+
+  return match
+    ? [Number(match[1]), Number(match[2]), Number(match[3])]
+    : null;
+}
+
+function unplayedAlphaFor(activeColor, inactiveColor) {
+  const a = parseRgb(activeColor);
+  const b = parseRgb(inactiveColor);
+
+  if (!a || !b) {
+    return 1;
+  }
+
+  const distance =
+    Math.abs(a[0] - b[0]) +
+    Math.abs(a[1] - b[1]) +
+    Math.abs(a[2] - b[2]);
+
+  return distance < MIN_PLAYED_CONTRAST
+    ? UNPLAYED_ALPHA_WHEN_CLOSE
+    : 1;
 }
 
 function drawWaveform(
@@ -182,6 +260,11 @@ function drawWaveform(
   const activeColor =
     colors?.active ||
     'rgb(99,102,241)';
+
+  const inactiveAlpha =
+    Number.isFinite(colors?.inactiveAlpha)
+      ? colors.inactiveAlpha
+      : 1;
 
   const normalizedProgress = Math.min(
     1,
@@ -287,6 +370,10 @@ function drawWaveform(
       ? activeColor
       : inactiveColor;
 
+    ctx.globalAlpha = active
+      ? 1
+      : inactiveAlpha;
+
     if (
       typeof ctx.roundRect === 'function'
     ) {
@@ -310,19 +397,25 @@ function drawWaveform(
       );
     }
   }
+
+  ctx.globalAlpha = 1;
 }
 
 function setupWaveformCanvas(
   canvas,
-  bars
+  initialBars
 ) {
   if (!canvas) {
     return {
       setProgress: () => {},
+      setBars: () => {},
       redraw: () => {},
       destroy: () => {},
     };
   }
+
+  // Replaced once the real envelope is known (setBars below).
+  let bars = initialBars;
 
   const waveEl =
     canvas.closest(
@@ -398,6 +491,12 @@ function setupWaveformCanvas(
       inactive:
         inactiveColor ||
         'transparent',
+
+      inactiveAlpha:
+        unplayedAlphaFor(
+          activeColor,
+          inactiveColor
+        ),
     };
   };
 
@@ -460,8 +559,19 @@ function setupWaveformCanvas(
     redraw
   );
 
+  const setBars = (nextBars) => {
+    if (!Array.isArray(nextBars) || nextBars.length === 0) {
+      return;
+    }
+
+    bars = nextBars;
+    redraw();
+  };
+
   return {
     setProgress,
+
+    setBars,
 
     redraw,
 
@@ -618,16 +728,34 @@ export async function renderVoiceMessage(
     return;
   }
 
-  const bars =
-    seededBars(
-      msg.id,
-      BAR_COUNT
+  // A message whose audio was already analysed (an earlier render of
+  // this thread, before a tab switch) draws its real waveform and
+  // duration immediately, without decoding anything again.
+  const analysisKey =
+    voiceWaveformKey(
+      scope,
+      msg.id
     );
+
+  const cachedAnalysis =
+    getCachedVoiceWaveform(
+      analysisKey
+    );
+
+  const bars =
+    cachedAnalysis
+      ? cachedAnalysis.peaks
+      : placeholderBars(BAR_COUNT);
+
+  const filename =
+    msg.attachment_name ||
+    'voice-message';
 
   const template = `
     <div
       class="voice-message loading"
       id="${playerId}"
+      data-waveform="${cachedAnalysis ? 'ready' : 'pending'}"
     >
       <button
         type="button"
@@ -657,9 +785,11 @@ export async function renderVoiceMessage(
         ></canvas>
       </div>
 
-      <span class="voice-message-time">
-        0:00
-      </span>
+      <span class="voice-message-time">${
+        cachedAnalysis
+          ? formatTime(cachedAnalysis.duration)
+          : UNKNOWN_TIME
+      }</span>
 
       <button
         type="button"
@@ -696,6 +826,18 @@ export async function renderVoiceMessage(
           >
         </div>
       </div>
+
+      <button
+        type="button"
+        class="voice-message-download"
+        title="Download ${escapeHtmlAttr(filename)}"
+        aria-label="Download voice message"
+        data-action="audio-player-download"
+        data-msg-id="${Number(msg.id)}"
+        data-filename="${escapeHtmlAttr(filename)}"
+        data-scope="${escapeHtmlAttr(scope)}"
+        data-mime="${escapeHtmlAttr(msg.attachment_mime || '')}"
+      >${ICONS.download}</button>
 
       <div
         class="voice-message-error"
@@ -850,7 +992,7 @@ export async function renderVoiceMessage(
   let attachmentUrl = '';
 
   // ====================================================
-  // WAVEFORM
+  // WAVEFORM + DURATION (independent of playback)
   // ====================================================
 
   const waveform =
@@ -858,6 +1000,38 @@ export async function renderVoiceMessage(
       waveCanvas,
       bars
     );
+
+  // Duration read from the decoded audio (voice-waveform.js). Used
+  // whenever the <audio> element does not know its own duration yet -
+  // before metadata loaded, in browsers that only load media on play(),
+  // or for a MediaRecorder file whose header carries no duration.
+  let analysisDuration =
+    cachedAnalysis &&
+    Number.isFinite(cachedAnalysis.duration)
+      ? cachedAnalysis.duration
+      : NaN;
+
+  function effectiveDuration() {
+    const elementDuration =
+      audio.duration;
+
+    if (
+      Number.isFinite(elementDuration) &&
+      elementDuration > 0
+    ) {
+      return elementDuration;
+    }
+
+    return analysisDuration > 0
+      ? analysisDuration
+      : NaN;
+  }
+
+  function playbackPosition() {
+    return Number.isFinite(audio.currentTime)
+      ? Math.max(0, audio.currentTime)
+      : 0;
+  }
 
   // ====================================================
   // HELPERS
@@ -869,8 +1043,18 @@ export async function renderVoiceMessage(
         'loading',
         !!isLoading
       );
+
+      playerEl.setAttribute(
+        'aria-busy',
+        isLoading ? 'true' : 'false'
+      );
     };
 
+  // 'loading'   the source is being resolved (nothing to play yet)
+  // 'idle'      ready - playable even before the element has metadata
+  // 'buffering' playing but waiting for data: purely visual, every
+  //             control stays usable (pause must work while buffering)
+  // 'playing' | 'paused' | 'ended' | 'error'
   function setPlayerState(state) {
     playerEl.dataset.state =
       state;
@@ -879,7 +1063,20 @@ export async function renderVoiceMessage(
       state === 'loading'
     );
 
-    if (state !== 'error') {
+    // Nothing can play after a failed load; the error text says why and
+    // the download button stays available.
+    const failed =
+      state === 'error';
+
+    playBtn.disabled =
+      failed;
+
+    playBtn.setAttribute(
+      'aria-disabled',
+      failed ? 'true' : 'false'
+    );
+
+    if (!failed) {
       errorEl.style.display =
         'none';
     }
@@ -940,17 +1137,10 @@ export async function renderVoiceMessage(
   const updateProgress =
     () => {
       const duration =
-        audio.duration;
+        effectiveDuration();
 
       const currentTime =
-        Number.isFinite(
-          audio.currentTime
-        )
-          ? Math.max(
-              0,
-              audio.currentTime
-            )
-          : 0;
+        playbackPosition();
 
       const pct =
         Number.isFinite(duration) &&
@@ -979,35 +1169,33 @@ export async function renderVoiceMessage(
       );
     };
 
+  // Position while started/paused mid-way, the duration while at the
+  // start (before playback, after it ended), "--:--" while the duration
+  // is genuinely not known yet - never a made-up "0:00".
   const updateTimeLabel =
     () => {
       const duration =
-        audio.duration;
+        effectiveDuration();
 
       const currentTime =
-        Number.isFinite(
-          audio.currentTime
-        )
-          ? Math.max(
-              0,
-              audio.currentTime
-            )
-          : 0;
+        playbackPosition();
 
-      if (
-        currentTime > 0 ||
-        !Number.isFinite(duration) ||
-        duration <= 0
-      ) {
+      if (currentTime > 0) {
         timeEl.textContent =
           formatTime(
             currentTime
           );
-      } else {
+      } else if (
+        Number.isFinite(duration) &&
+        duration > 0
+      ) {
         timeEl.textContent =
           formatTime(
             duration
           );
+      } else {
+        timeEl.textContent =
+          UNKNOWN_TIME;
       }
     };
 
@@ -1064,7 +1252,7 @@ export async function renderVoiceMessage(
   const seekToRatio =
     (ratio) => {
       const duration =
-        audio.duration;
+        effectiveDuration();
 
       if (
         !Number.isFinite(duration) ||
@@ -1161,6 +1349,16 @@ export async function renderVoiceMessage(
     intendedPlaying =
       true;
 
+    // The background duration fix (resolveRealDuration) has the element
+    // parked at its far end; playing now would end at once. It resumes
+    // this request as soon as it has rewound.
+    if (fixingDuration) {
+      playAfterDurationFix =
+        true;
+
+      return;
+    }
+
     const promise =
       audio.play();
 
@@ -1185,6 +1383,9 @@ export async function renderVoiceMessage(
 
   function pause() {
     intendedPlaying =
+      false;
+
+    playAfterDurationFix =
       false;
 
     try {
@@ -1250,12 +1451,14 @@ export async function renderVoiceMessage(
     }
   );
 
+  // Mid-playback buffering is shown, but never blocks the controls the
+  // way 'loading' does: the user must still be able to pause.
   audio.addEventListener(
     'waiting',
     () => {
       if (intendedPlaying) {
         setPlayerState(
-          'loading'
+          'buffering'
         );
       }
 
@@ -1312,7 +1515,7 @@ export async function renderVoiceMessage(
     'keydown',
     (event) => {
       const duration =
-        audio.duration;
+        effectiveDuration();
 
       if (
         !Number.isFinite(duration) ||
@@ -1383,6 +1586,10 @@ export async function renderVoiceMessage(
   let fixingDuration =
     false;
 
+  // play() pressed while the fix below was running (see play()).
+  let playAfterDurationFix =
+    false;
+
   function resolveRealDuration(
     done
   ) {
@@ -1432,6 +1639,13 @@ export async function renderVoiceMessage(
           false;
 
         done(resolved);
+
+        if (playAfterDurationFix) {
+          playAfterDurationFix =
+            false;
+
+          play();
+        }
       };
 
     const onDurationChange =
@@ -1487,13 +1701,21 @@ export async function renderVoiceMessage(
             return;
           }
 
-          setPlayerState(
-            'idle'
-          );
+          // The player is usually already 'idle' (playable since its src
+          // was set) or further along - e.g. playing, in a browser that
+          // only loads media on play(). Only a stale 'loading' moves.
+          if (
+            playerEl.dataset.state ===
+            'loading'
+          ) {
+            setPlayerState(
+              'idle'
+            );
+          }
 
           if (savedState) {
             const duration =
-              audio.duration;
+              effectiveDuration();
 
             let restoreTime =
               Number.isFinite(
@@ -2052,6 +2274,9 @@ export async function renderVoiceMessage(
       errorTextEl.textContent =
         userMessage;
 
+      errorEl.title =
+        userMessage;
+
       errorEl.style.display =
         'flex';
 
@@ -2212,6 +2437,11 @@ export async function renderVoiceMessage(
     );
 
     errorTextEl.textContent =
+      userMessage;
+
+    // The pill is narrow: the text may be cut with an ellipsis, the
+    // full message stays available as the tooltip.
+    errorEl.title =
       userMessage;
 
     errorEl.style.display =
@@ -2422,6 +2652,79 @@ export async function renderVoiceMessage(
   updateTimeLabel();
 
   // ====================================================
+  // WAVEFORM + DURATION ANALYSIS
+  //
+  // Decodes the message's audio once (cached per message by
+  // voice-waveform.js; a cached result was already drawn above) and
+  // replaces the placeholder bars and "--:--" with the real envelope and
+  // duration. Never tied to playback, and never repeated per render.
+  // ====================================================
+
+  function applyAnalysis(analysis) {
+    if (!analysis || !playerEl.isConnected) {
+      return;
+    }
+
+    if (
+      Number.isFinite(analysis.duration) &&
+      analysis.duration > 0
+    ) {
+      analysisDuration =
+        analysis.duration;
+    }
+
+    waveform.setBars(
+      analysis.peaks
+    );
+
+    playerEl.dataset.waveform =
+      'ready';
+
+    updateProgress();
+    updateTimeLabel();
+  }
+
+  function startAnalysis(loadBytes) {
+    if (cachedAnalysis) {
+      return;
+    }
+
+    loadVoiceWaveform(
+      analysisKey,
+      loadBytes
+    ).then(
+      applyAnalysis,
+      (error) => {
+        if (!playerEl.isConnected) {
+          return;
+        }
+
+        // This browser cannot decode the file (or the bytes could not be
+        // read). Playback may still work through the media element, so
+        // fall back to the decorative bars and the element's own
+        // duration rather than leaving the placeholder up.
+        console.warn(
+          'Voice message waveform unavailable:',
+          {
+            messageId,
+            reason: error?.message || String(error)
+          }
+        );
+
+        waveform.setBars(
+          seededBars(
+            msg.id,
+            BAR_COUNT
+          )
+        );
+
+        playerEl.dataset.waveform =
+          'fallback';
+      }
+    );
+  }
+
+  // ====================================================
   // RESOLVE MEDIA URL
   // ====================================================
 
@@ -2507,12 +2810,64 @@ export async function renderVoiceMessage(
     audio.src =
       resolvedUrl;
 
+    // Playable from here on. Not waiting for 'loadedmetadata': browsers
+    // that only load media once play() is called would otherwise keep
+    // the player "loading" (and its play button inert) forever.
+    setPlayerState(
+      'idle'
+    );
+
+    // A player rebuilt for a message the user had already started (tab
+    // switch, reopened conversation) resumes where they left off: before
+    // metadata this sets the element's default playback start position,
+    // and loadedmetadata applies the same saved state again.
+    if (
+      savedState &&
+      Number.isFinite(savedState.currentTime) &&
+      savedState.currentTime > 0
+    ) {
+      try {
+        audio.currentTime =
+          savedState.currentTime;
+      } catch {
+        // Applied on loadedmetadata instead.
+      }
+    }
+
+    updateProgress();
+    updateTimeLabel();
+
+    // The bytes behind this source, for the one-time analysis. An
+    // encrypted note is already decrypted and cached by
+    // attachment-e2ee.js (resolveMediaSrc() just used it), so this costs
+    // no second download; a legacy one is fetched with its media token.
+    startAnalysis(
+      resolvedIsBlob
+        ? async () =>
+            (await fetchDecryptedAttachment(scope, msg.id)).arrayBuffer()
+        : async () => {
+            const response =
+              await fetch(resolvedUrl);
+
+            if (!response.ok) {
+              throw new Error(
+                `Voice message download failed (${response.status})`
+              );
+            }
+
+            return response.arrayBuffer();
+          }
+    );
+
   } catch (error) {
     console.error(
       'Failed to resolve voice attachment URL:',
       error
     );
 
+    // Fallback UI: the decorative bars are not drawn for audio that
+    // could not be read; the pill says it failed, play is disabled, and
+    // the download button stays available.
     waveform.destroy();
 
     setPlayerState(
@@ -2520,6 +2875,9 @@ export async function renderVoiceMessage(
     );
 
     errorTextEl.textContent =
+      'Failed to load voice message';
+
+    errorEl.title =
       'Failed to load voice message';
 
     errorEl.style.display =

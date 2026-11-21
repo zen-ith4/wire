@@ -188,6 +188,8 @@
   .chat-top-bar.chat-header-glass + .chat-messages,
   .chat-top-bar.chat-header-glass + .chat-messages-wrap > .chat-messages{padding-top:calc(70px * var(--wire-density-scale));}
   .chat-top-bar.chat-header-glass{left:12px;right:12px;}
+  .dm-thread-top{left:12px;right:12px;padding-bottom:calc(8px * var(--wire-density-scale));}
+  .dm-thread-top + .chat-messages-wrap > .chat-messages{padding-top:var(--dm-top-clearance, calc(70px * var(--wire-density-scale)));}
   .chat-msg{max-width:88%;}
   .dm-thread-header,.chat-top-bar{padding:calc(10px * var(--wire-density-scale)) calc(14px * var(--wire-density-scale));}
 }

@@ -58,11 +58,15 @@ const IDS = {
 };
 
 /**
- * peerId -> { held: Array<{id, msg}>, state, pending, wasVerified }
+ * peerId -> { held: Array<{id, msg}>, state, pending, wasVerified, verified }
  *
  * `held` keeps the RAW server rows, not decrypted text, so releasing after an
  * accept re-runs the normal decrypt+render path and nothing is lost or rendered
  * from a cache of half-decrypted values.
+ *
+ * `verified` is the outcome of the LAST resolution: the key in use is the one
+ * this device pinned AND that pin carries the user's own verification mark. It
+ * is never set from a click - see renderVerifyButton().
  */
 const held = new Map();
 
@@ -80,9 +84,24 @@ export function trustState(peerId) {
 function slot(peerId) {
     const id = Number(peerId);
     if (!held.has(id)) {
-        held.set(id, { held: [], state: 'unknown', pending: null, wasVerified: false });
+        held.set(id, { held: [], state: 'unknown', pending: null, wasVerified: false, verified: false });
     }
     return held.get(id);
+}
+
+/**
+ * Is this contact verified, as of the last trust resolution on this device?
+ *
+ * Exactly the condition the panel uses for "Marked as verified on this device"
+ * (renderVerifyView): in any state but 'ok' the key in use is not pin.current,
+ * so a mark on the pin describes a different key and must not count.
+ */
+export function isPeerVerified(peerId) {
+    return held.get(Number(peerId))?.verified === true;
+}
+
+function verifiedFromEvaluation(state, pin) {
+    return state === 'ok' && Boolean(pin?.verifiedAt);
 }
 
 function ctx() {
@@ -134,17 +153,29 @@ export async function resolveTrust(peerId) {
     try {
         publicKey = await getPeerPublicKeyBase64(Number(peerId));
     } catch {
+        // Nothing could be checked, so nothing may be shown as verified.
+        slot(peerId).verified = false;
+        renderVerifyButton(peerId);
         return { state: 'no-key', publicKey: null, fingerprint: null, pending: null, pin: null };
     }
 
     // TOFU: the very first time we meet this peer we pin what we see and carry
     // on. Never overwrites an existing pin.
-    const evaluated = await evaluateAndPin(peerId, publicKey, context);
+    let evaluated;
+    try {
+        evaluated = await evaluateAndPin(peerId, publicKey, context);
+    } catch (e) {
+        slot(peerId).verified = false;
+        renderVerifyButton(peerId);
+        throw e;
+    }
 
     const s = slot(peerId);
     s.state = evaluated.state;
     s.pending = evaluated.state === 'changed' ? (s.pending ?? evaluated.pending) : null;
     s.wasVerified = evaluated.state === 'changed' && Boolean(evaluated.pin?.verifiedAt);
+    s.verified = verifiedFromEvaluation(evaluated.state, evaluated.pin);
+    renderVerifyButton(peerId);
 
     // The pin is shared with the group gate. If this resolution sees a known
     // or re-known key, any group "not receiving" marker for the peer is stale.
@@ -251,6 +282,9 @@ export async function acceptNewKey(peerId) {
     s.state = 'ok';
     s.pending = null;
     s.wasVerified = false;
+    // Accepting is not verifying: acceptPeerKey() stored verifiedAt: null.
+    s.verified = verifiedFromEvaluation('ok', pin);
+    renderVerifyButton(peerId);
 
     // The group banner reads the same changed-peer list; clear it here so a DM
     // accept and a group accept cannot leave different views disagreeing.
@@ -273,6 +307,35 @@ function el(tag, className, text) {
     if (className) node.className = className;
     if (text !== undefined && text !== null) node.textContent = String(text);
     return node;
+}
+
+/**
+ * The header's Verify button, painted from the stored verification state.
+ *
+ * It reads isPeerVerified(), which only resolveTrust() and acceptNewKey() write,
+ * from what is actually stored on this device - never from the click. So a mark
+ * that was refused (the pinned key moved), a mark that failed to save, a key that
+ * changed later, or a key lookup that failed all leave the button on "Verify";
+ * and a contact verified earlier shows "Verified" as soon as the thread resolves
+ * its trust again, after navigating away and back or after a reload.
+ *
+ * The button belongs to ONE conversation (data-peer-id). Trust is also resolved
+ * for other peers while a thread is open (sending, decrypting, the group gate),
+ * and those must not paint this button.
+ */
+export function renderVerifyButton(peerId) {
+    if (typeof document === 'undefined') return;
+
+    const btn = document.getElementById(IDS.verifyOpen);
+    if (!btn || Number(btn.dataset.peerId) !== Number(peerId)) return;
+
+    const verified = isPeerVerified(peerId);
+    btn.classList.toggle('is-verified', verified);
+    btn.dataset.verified = verified ? 'true' : 'false';
+    btn.textContent = verified ? 'Verified' : 'Verify';
+    btn.title = verified
+        ? 'Encryption keys verified on this device. View the safety number'
+        : 'Verify encryption keys';
 }
 
 export function renderKeyTrustBanner(peerId, username) {
@@ -458,17 +521,53 @@ export async function renderVerifyView(peerId, username, { ids = IDS } = {}) {
             markBtn.title = '';
 
             const listener = async () => {
-                const marked = await markPeerVerified(peerId, context, trust.fingerprint);
+                // A double click is ONE comparison. Without this guard both
+                // click handlers run, both read the old pin and both store a
+                // fresh verifiedAt. The flag is set synchronously, before the
+                // first await, so the second click cannot get past it; the
+                // disabled button is the visual counterpart.
+                if (markBtn.dataset.markInFlight === '1') return;
+                markBtn.dataset.markInFlight = '1';
+                markBtn.disabled = true;
 
-                // The pinned key moved after these digits were drawn. Nothing was
-                // marked, so show the user what is true now.
-                if (!marked) {
-                    await renderVerifyView(peerId, username, { ids });
-                    return;
+                let marked = null;
+                try {
+                    try {
+                        marked = await markPeerVerified(peerId, context, trust.fingerprint);
+                    } catch (e) {
+                        // Not saved, so not verified: the redraw below says so.
+                        console.error('Could not mark the contact as verified:', e);
+                    }
+
+                    // The pinned key moved after these digits were drawn, or the mark
+                    // could not be stored. Nothing was marked, so show the user what is
+                    // true now (this re-resolves trust, which repaints the button).
+                    if (!marked) {
+                        await renderVerifyView(peerId, username, { ids });
+                        return;
+                    }
+
+                    await forgetDerivedKeys(peerId);
+
+                    // Read back what was stored instead of trusting the click: the
+                    // panel line and the header button both follow that result.
+                    try {
+                        await resolveTrust(peerId);
+                    } catch (e) {
+                        // resolveTrust() already cleared the verified state.
+                        console.error('Could not re-read the contact\'s trust state:', e);
+                    }
+                    if (markedEl) {
+                        markedEl.textContent = isPeerVerified(peerId)
+                            ? 'Marked as verified on this device.'
+                            : 'Not yet marked as verified on this device.';
+                    }
+                } finally {
+                    delete markBtn.dataset.markInFlight;
+                    // A failed mark re-rendered the panel (which sets the button's
+                    // state); only the success path keeps this button enabled.
+                    if (marked) markBtn.disabled = false;
                 }
-
-                await forgetDerivedKeys(peerId);
-                if (markedEl) markedEl.textContent = 'Marked as verified on this device.';
             };
 
             markListeners.set(markBtn, listener);

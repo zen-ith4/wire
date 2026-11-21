@@ -26,6 +26,10 @@ import { resolveServerUrl } from '../core/server.js';
 
 const audioPlaybackState = new Map();
 
+// Shown until the element knows the real duration. "0:00" read as a real
+// (zero) length; an encrypted file is not even downloaded before play.
+const UNKNOWN_DURATION = '--:--';
+
 function saveAudioState(messageId, audio, playing) {
   audioPlaybackState.set(messageId, {
     currentTime: audio.currentTime,
@@ -222,8 +226,10 @@ export async function renderAudio(msg, scope, containerEl) {
   // into memory just because the message rendered.
   // ====================================================
 
+  // A lazy encrypted player starts READY, not loading: it has no source
+  // to load until the first play (see LOADING / METADATA below).
   const template = `
-    <div class="audio-player loading" id="${playerId}">
+    <div class="audio-player${lazyE2ee ? '' : ' loading'}" id="${playerId}" aria-busy="${lazyE2ee ? 'false' : 'true'}">
       <div class="audio-player-header">
         <div
           class="audio-player-title"
@@ -231,7 +237,7 @@ export async function renderAudio(msg, scope, containerEl) {
         >${escapeHtml(filename)}</div>
 
         <span class="audio-player-current-time">0:00</span>
-        <span class="audio-player-duration">0:00</span>
+        <span class="audio-player-duration">${UNKNOWN_DURATION}</span>
       </div>
 
       <div class="audio-player-controls">
@@ -275,11 +281,12 @@ export async function renderAudio(msg, scope, containerEl) {
           type="button"
           class="audio-player-download"
           title="Download ${escapeAttr(filename)}"
+          aria-label="Download ${escapeAttr(filename)}"
           data-action="audio-player-download"
           data-msg-id="${Number(msg.id)}"
           data-filename="${escapeHtmlAttr(filename)}"
           data-scope="${escapeHtmlAttr(scope)}"
-          data-mime="${escapeHtmlAttr(msg.attachment_mime || '')}">
+          data-mime="${escapeHtmlAttr(msg.attachment_mime || '')}"
         >${ICONS.download}</button>
       </div>
 
@@ -464,10 +471,44 @@ export async function renderAudio(msg, scope, containerEl) {
       'loading',
       isLoading
     );
+    playerEl.setAttribute(
+      'aria-busy',
+      isLoading ? 'true' : 'false'
+    );
+  };
+
+  const showDuration = () => {
+    const duration =
+      audio.duration;
+
+    durationEl.textContent =
+      Number.isFinite(duration) &&
+      duration > 0
+        ? formatTime(duration)
+        : UNKNOWN_DURATION;
+  };
+
+  // Failed to load (network, decryption, unsupported data): leave the
+  // loading state, put the button back on "play" and say so. A later
+  // press of play is a retry (lazy-e2ee-media.js allows one).
+  const showError = () => {
+    setLoading(false);
+    playerEl.dataset.state = 'error';
+    iconPlay.style.display = 'block';
+    iconPause.style.display = 'none';
+    errorEl.style.display = 'flex';
+  };
+
+  const clearError = () => {
+    if (playerEl.dataset.state === 'error') {
+      delete playerEl.dataset.state;
+    }
+    errorEl.style.display = 'none';
   };
 
   // Encrypted audio has no src yet: the first play() downloads and
-  // decrypts it (see lazy-e2ee-media.js).
+  // decrypts it (see lazy-e2ee-media.js). onLoading marks exactly that
+  // download/decrypt as "loading"; nothing else does.
   if (lazyE2ee) {
     installLazySource(
       audio,
@@ -477,10 +518,7 @@ export async function renderAudio(msg, scope, containerEl) {
         isAlive: () =>
           document.body.contains(playerEl),
         onLoading: setLoading,
-        onError: () => {
-          errorEl.style.display =
-            'flex';
-        }
+        onError: showError
       }
     );
   }
@@ -564,6 +602,13 @@ export async function renderAudio(msg, scope, containerEl) {
 
     updateProgressFill();
 
+    // The label follows the seek at once, not only on the next
+    // 'timeupdate' (which a paused element fires only after seeking).
+    currentTimeEl.textContent =
+      formatTime(
+        audio.currentTime
+      );
+
     saveAudioState(
       messageId,
       audio,
@@ -597,6 +642,8 @@ export async function renderAudio(msg, scope, containerEl) {
     () => {
       if (audio.paused) {
         intendedPlaying = true;
+
+        clearError();
 
         audio.play().catch(
           (error) => {
@@ -679,9 +726,19 @@ export async function renderAudio(msg, scope, containerEl) {
 
   // ====================================================
   // LOADING / METADATA
+  //
+  // Only an element that is actually fetching its metadata is
+  // "loading". A lazy encrypted player has no source until the first
+  // play (preload="none", no src), so no media event would ever clear
+  // the state: starting it as loading left `.audio-player.loading`
+  // (which blocks the play button) on forever and the file could never
+  // be played. Its loading state is driven by installLazySource()'s
+  // onLoading above, around the download + decrypt.
   // ====================================================
 
-  setLoading(true);
+  if (!lazyE2ee) {
+    setLoading(true);
+  }
 
   // Restore playback position/volume left over from before this
   // player was torn down and rebuilt.
@@ -691,6 +748,11 @@ export async function renderAudio(msg, scope, containerEl) {
     );
 
   audio.addEventListener(
+    'durationchange',
+    showDuration
+  );
+
+  audio.addEventListener(
     'loadedmetadata',
     () => {
       setLoading(false);
@@ -698,13 +760,7 @@ export async function renderAudio(msg, scope, containerEl) {
       const duration =
         audio.duration;
 
-      if (
-        Number.isFinite(duration) &&
-        duration > 0
-      ) {
-        durationEl.textContent =
-          formatTime(duration);
-      }
+      showDuration();
 
       if (savedState) {
         audio.currentTime =
@@ -1101,8 +1157,7 @@ export async function renderAudio(msg, scope, containerEl) {
         attemptTokenRefreshAndRetry().then(
           (recovered) => {
             if (!recovered) {
-              errorEl.style.display =
-                'flex';
+              showError();
             }
           }
         );
@@ -1110,8 +1165,7 @@ export async function renderAudio(msg, scope, containerEl) {
         return;
       }
 
-      errorEl.style.display =
-        'flex';
+      showError();
     }
   );
 }

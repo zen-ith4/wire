@@ -13,6 +13,30 @@ const GROUP_PROTOCOL = 2;
 
 let isHandlingUnauthorized = false;
 
+/*
+ * Did a 401 end THIS session?
+ *
+ * The explicit codes/messages always do. A bare `{error: 'Unauthorized'}` is what
+ * the auth middleware answers when the bearer token is valid-looking but the
+ * account no longer accepts it (token_version bumped by a password change,
+ * account deactivated, user gone). Credential errors on login/change-password
+ * carry their own messages ('Invalid credentials', ...), so a bare Unauthorized
+ * on a request that SENT a token is a dead session. Without this the client kept
+ * the revoked token, never ran logout(), and wire:logout never cleared the held
+ * key-trust state for the next account on the same page.
+ */
+function isSessionError(data, token) {
+  return (
+    data?.code === 'TOKEN_EXPIRED' ||
+    data?.code === 'INVALID_TOKEN' ||
+    data?.code === 'AUTH_REQUIRED' ||
+    data?.error === 'Session expired' ||
+    data?.error === 'Invalid token' ||
+    data?.error === 'Authentication required' ||
+    (Boolean(token) && data?.error === 'Unauthorized')
+  );
+}
+
 /* =========================================================
 
 * API
@@ -97,13 +121,7 @@ const errorMessage =
  * when the server explicitly tells us that authentication
  * failed because of the session/token.
  */
-const sessionError =
-  data?.code === 'TOKEN_EXPIRED' ||
-  data?.code === 'INVALID_TOKEN' ||
-  data?.code === 'AUTH_REQUIRED' ||
-  data?.error === 'Session expired' ||
-  data?.error === 'Invalid token' ||
-  data?.error === 'Authentication required';
+const sessionError = isSessionError(data, token);
 
 if (sessionError && !isHandlingUnauthorized) {
   isHandlingUnauthorized = true;
@@ -206,13 +224,7 @@ try {
   data = null;
 }
 
-const sessionError =
-  data?.code === 'TOKEN_EXPIRED' ||
-  data?.code === 'INVALID_TOKEN' ||
-  data?.code === 'AUTH_REQUIRED' ||
-  data?.error === 'Session expired' ||
-  data?.error === 'Invalid token' ||
-  data?.error === 'Authentication required';
+const sessionError = isSessionError(data, token);
 
 if (sessionError && !isHandlingUnauthorized) {
   isHandlingUnauthorized = true;

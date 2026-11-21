@@ -332,6 +332,20 @@ export function createComposer(
   let sendInProgress =
     false;
 
+  // Duplicate-trigger guard for send(). sendInProgress above only covers the
+  // Enter path (beginSendFromInput); the Send button and any programmatic
+  // caller reach send() directly. send() clears the input only AFTER it has
+  // sealed and posted the message, so a second trigger inside that window
+  // re-read the SAME input text and posted it again (two rapid clicks on Send
+  // = two messages).
+  //
+  // The guard is keyed on the input text a send took, not "one send at a time":
+  // concurrent sends of DIFFERENT texts are legitimate (the F9 web-locks tests
+  // fire several at once and every message must arrive), only a second send of
+  // text that is already in flight is the same message pressed twice.
+  const sendsInFlight =
+    new Set();
+
   // ==========================================================
   // INPUT
   // ==========================================================
@@ -2667,6 +2681,34 @@ export function createComposer(
   }
 
   async function send() {
+    const input =
+      getInput();
+
+    // Same synchronous read sendOnce() makes first thing, so the key is the
+    // text this very call is about to send.
+    const key =
+      input
+        ? input.value
+        : '';
+
+    if (sendsInFlight.has(key)) {
+      debugText(
+        'SEND IGNORED duplicate | same input text already being sent'
+      );
+
+      return;
+    }
+
+    sendsInFlight.add(key);
+
+    try {
+      return await sendOnce();
+    } finally {
+      sendsInFlight.delete(key);
+    }
+  }
+
+  async function sendOnce() {
     debugInputState(
       inputId,
       'SEND START'

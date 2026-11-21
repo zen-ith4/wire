@@ -295,17 +295,28 @@ async function updateRecord(origin, ownUserId, peerId, change) {
         const store = tx.objectStore(STORE_NAME);
         const existing = store.get(key);
         let written = null;
+        let failure = null;
 
         existing.onsuccess = () => {
-            const next = existing.result ? change(existing.result) : null;
-            if (next) {
-                store.put(next, key);
-                written = next;
+            // The request's own error events do not cover a throw from `change`
+            // or from put(); without this the promise would never settle and a
+            // caller waiting on it (the Verify button's in-flight guard) would
+            // stay stuck. Abort, and reject in onabort below.
+            try {
+                const next = existing.result ? change(existing.result) : null;
+                if (next) {
+                    store.put(next, key);
+                    written = next;
+                }
+            } catch (e) {
+                failure = e;
+                try { tx.abort(); } catch { /* already finishing */ }
             }
         };
 
         tx.oncomplete = () => resolve(written);
         tx.onerror = () => reject(tx.error);
+        tx.onabort = () => reject(failure || tx.error || new Error('Peer pin transaction aborted'));
     });
 }
 

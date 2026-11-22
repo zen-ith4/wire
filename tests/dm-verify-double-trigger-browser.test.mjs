@@ -200,7 +200,6 @@ test('K6: Verify marks once per double click, keeps one listener, and never rese
       await A.page.click('#dm-key-verify-open');
       await pollUntil(() => panelHidden(A.page), { what: `the Verify panel to close (cycle ${i + 1})` });
     }
-    await openPanel(A.page);
 
     const cdp = await A.page.target().createCDPSession();
     await cdp.send('Runtime.enable');
@@ -217,6 +216,9 @@ test('K6: Verify marks once per double click, keeps one listener, and never rese
     );
     await cdp.detach().catch(() => {});
   }
+
+  // Ensure the Verify panel is open before part (a) on every engine.
+  await openPanel(A.page);
 
   // ---------------------------------------------------------------- (a)
   // A real double click: two separate mouse clicks at the button's centre, so

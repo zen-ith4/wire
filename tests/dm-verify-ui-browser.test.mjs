@@ -121,6 +121,23 @@ async function panelHidden(page) {
   return page.evaluate(() => document.getElementById('dm-key-verify').hidden);
 }
 
+/** After a failed mark (step 2), wait until the Mark button is enabled, not in
+ * flight, and the panel shows "Not yet marked" before the step-3 click. This
+ * avoids clicking while the step-2 handler is still in flight (guard drops it). */
+async function waitForMarkButtonReady(page) {
+  return pollUntil(async () => {
+    const ready = await page.evaluate(() => {
+      const markBtn = document.querySelector('#dm-key-verify [data-action="mark-verified"]');
+      const markedEl = document.getElementById('dm-key-verify-marked');
+      if (!markBtn || markBtn.disabled) return null;
+      if (markBtn.dataset.markInFlight === '1') return null;
+      if (!markedEl || !markedEl.textContent.includes('Not yet marked')) return null;
+      return true;
+    });
+    return ready;
+  }, { what: 'the Mark button to be enabled, not in flight, and the panel to show "Not yet marked"' });
+}
+
 /**
  * Geometry + hit-testing of the open panel. Every probe point lies on the
  * panel's OWN content; `elementFromPoint` there must be the panel (or a child),
@@ -347,6 +364,7 @@ test('B: the Verify button turns "Verified" (success green) only on a stored ver
     { what: 'the mark-verified handler to attempt IDB put' }
   );
   await A.page.evaluate(() => window.__restorePut());
+  await waitForMarkButtonReady(A.page);
   btn = await verifyButton(A.page);
   assert.equal(btn.text, 'Verify', 'a verification that failed to save must not show as verified');
   assert.equal(btn.verifiedClass, false);

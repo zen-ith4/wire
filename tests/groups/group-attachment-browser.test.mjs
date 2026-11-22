@@ -34,6 +34,7 @@ import {
     openGroupUi,
     registerUser,
 } from '../_acceptance-harness.mjs';
+import { currentEngine } from '../_dm-ui-helpers.mjs';
 
 const require = createRequire(import.meta.url);
 const Database = require('better-sqlite3');
@@ -641,8 +642,13 @@ test('12 group voice: fake-mic record -> send -> receive -> play; server keeps n
     const w = await world();
     // Alice needs a fake mic: relaunch her browser with the fake-device flags.
     // (Bob only plays back, so a normal browser is fine.)
+    // --use-fake-device-for-media-stream / --use-fake-ui-for-media-stream are
+    // Chromium-only launch args; only pass them on the chromium engine.
     await closeUserBrowsers();
-    const { page: alicePage } = await newUserPage({ extraArgs: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] });
+    const fakeMediaArgs = currentEngine() === 'chromium'
+        ? ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream']
+        : [];
+    const { page: alicePage } = await newUserPage({ extraArgs: fakeMediaArgs });
     await loginUi(alicePage, w.origin, w.names.alice);
     await enableFlag(alicePage);
     const { page: bobPage } = await newUserPage();

@@ -17,7 +17,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { browserFallbackDecision, systemBrowserAllowed, browserEngineTapLine } from './_acceptance-harness.mjs';
+import { browserFallbackDecision, systemBrowserAllowed, browserEngineTapLine, launchBrowser } from './_acceptance-harness.mjs';
 
 test('without the opt-in the system browser is NOT used (the old behaviour: BLOCKED with the reason)', () => {
     const decision = browserFallbackDecision({
@@ -78,4 +78,69 @@ test('the TAP line names the engine (a comment line)', () => {
     const blocked = browserEngineTapLine({ engine: 'none', reason: 'no chromium here' });
     assert.ok(blocked.startsWith('# browser: '));
     assert.match(blocked, /no chromium here/);
+});
+
+test('default engine is chromium (WIRE_TEST_BROWSER unset)', () => {
+    const before = process.env.WIRE_TEST_BROWSER;
+    try {
+        delete process.env.WIRE_TEST_BROWSER;
+        // Engine resolution at the top of launchBrowser():
+        // WIRE_TEST_BROWSER || 'chromium' -> 'chromium' when unset,
+        // so the code proceeds to the chromium path and does not take
+        // the webkit/firefox early returns or throw for unknown values.
+        const engineName = process.env.WIRE_TEST_BROWSER || 'chromium';
+        assert.equal(engineName, 'chromium', 'unset WIRE_TEST_BROWSER defaults to chromium');
+        assert.notEqual(engineName, 'webkit');
+        assert.notEqual(engineName, 'firefox');
+    } finally {
+        if (before === undefined) delete process.env.WIRE_TEST_BROWSER;
+        else process.env.WIRE_TEST_BROWSER = before;
+    }
+});
+
+test('webkit yields the not-implemented skip reason', async () => {
+    const before = process.env.WIRE_TEST_BROWSER;
+    try {
+        process.env.WIRE_TEST_BROWSER = 'webkit';
+        const launched = await launchBrowser([]);
+        assert.equal(launched.browser, null);
+        assert.equal(launched.engine, 'none');
+        assert.equal(launched.reason, 'webkit engine not implemented in this harness (use manual Safari checklist)');
+    } finally {
+        if (before === undefined) delete process.env.WIRE_TEST_BROWSER;
+        else process.env.WIRE_TEST_BROWSER = before;
+    }
+});
+
+test('firefox missing yields a skip reason', async () => {
+    const before = process.env.WIRE_TEST_BROWSER;
+    try {
+        process.env.WIRE_TEST_BROWSER = 'firefox';
+        delete process.env.FIREFOX_PATH;
+        const launched = await launchBrowser([]);
+        assert.equal(launched.browser, null);
+        assert.equal(launched.engine, 'none');
+        assert.ok(launched.reason.startsWith('firefox not available:'), `expected firefox-not-available reason, got: ${launched.reason}`);
+    } finally {
+        if (before === undefined) delete process.env.WIRE_TEST_BROWSER;
+        else process.env.WIRE_TEST_BROWSER = before;
+    }
+});
+
+test('unknown WIRE_TEST_BROWSER value throws', async () => {
+    const before = process.env.WIRE_TEST_BROWSER;
+    try {
+        process.env.WIRE_TEST_BROWSER = 'notanengine';
+        let threw = false;
+        try {
+            await launchBrowser([]);
+        } catch (e) {
+            threw = true;
+            assert.ok(e.message.includes('unknown WIRE_TEST_BROWSER value'), `expected unknown-value error, got: ${e.message}`);
+        }
+        assert.equal(threw, true, 'unknown value must throw');
+    } finally {
+        if (before === undefined) delete process.env.WIRE_TEST_BROWSER;
+        else process.env.WIRE_TEST_BROWSER = before;
+    }
 });

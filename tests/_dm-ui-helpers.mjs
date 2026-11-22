@@ -289,3 +289,35 @@ export function corruptStoredAttachment(dirs, attachmentPath, offset = 8 + 100) 
   fs.writeFileSync(file, data);
   return file;
 }
+
+// ---------------------------------------------------------------- engine guards
+
+/**
+ * The engine selected for this run, mirroring launchBrowser() in
+ * tests/_acceptance-harness.mjs. Defaults to 'chromium'.
+ */
+export function currentEngine() {
+  return process.env.WIRE_TEST_BROWSER || 'chromium';
+}
+
+/**
+ * Assert that the current engine matches `engine`. Throws if not - use this
+ * inside a test body when the test fundamentally requires a specific engine
+ * and cannot proceed without it.
+ */
+export function requireEngine(t, engine) {
+  if (currentEngine() !== engine) {
+    throw new Error(`this test requires the ${engine} engine (current: ${currentEngine()})`);
+  }
+}
+
+/**
+ * Skip this test unless the current engine is 'chromium', printing an
+ * explicit `# SKIP <reason>` line into the TAP output. The skip triggers
+ * only when WIRE_TEST_BROWSER is not 'chromium'.
+ */
+export function skipUnlessChromium(t, reason) {
+  if (currentEngine() !== 'chromium') {
+    t.skip(`needs Chromium: ${reason}`);
+  }
+}

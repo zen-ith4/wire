@@ -639,67 +639,75 @@ test('11 a download clicked just before a thread repaint still finishes (STEP 3F
 });
 
 test('12 group voice: fake-mic record -> send -> receive -> play; server keeps neutral row', async (t) => {
-    const w = await world();
-    // Alice needs a fake mic: relaunch her browser with the fake-device flags.
-    // (Bob only plays back, so a normal browser is fine.)
-    // --use-fake-device-for-media-stream / --use-fake-ui-for-media-stream are
-    // Chromium-only launch args; only pass them on the chromium engine.
-    await closeUserBrowsers();
-    const fakeMediaArgs = currentEngine() === 'chromium'
-        ? ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream']
-        : [];
-    const { page: alicePage } = await newUserPage({ extraArgs: fakeMediaArgs });
-    await loginUi(alicePage, w.origin, w.names.alice);
-    await enableFlag(alicePage);
-    const { page: bobPage } = await newUserPage();
-    await loginUi(bobPage, w.origin, w.names.bob);
-    await enableFlag(bobPage);
+  // --use-fake-device-for-media-stream / --use-fake-ui-for-media-stream are
+  // Chromium-only launch args; Firefox has no equivalent fake-microphone flags.
+  // Skip on non-Chromium and verify manually with a real microphone.
+  if (currentEngine() !== 'chromium') {
+    t.skip('no fake-microphone launch flags for Firefox - verify manually with a real microphone');
+    return;
+  }
 
-    await openGroupUi(alicePage, w.gid);
-    await alicePage.waitForSelector('#group-mic-btn', { timeout: 15000 });
-    await alicePage.$eval('#group-mic-btn', (el) => el.click());
-    await alicePage.waitForSelector('#group-recording-bar.active', { timeout: 15000 });
-    await alicePage.$eval('#group-recording-stop', (el) => el.click());
+  const w = await world();
+  // Alice needs a fake mic: relaunch her browser with the fake-device flags.
+  // (Bob only plays back, so a normal browser is fine.)
+  // --use-fake-device-for-media-stream / --use-fake-ui-for-media-stream are
+  // Chromium-only launch args; only pass them on the chromium engine.
+  await closeUserBrowsers();
+  const fakeMediaArgs = currentEngine() === 'chromium'
+    ? ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream']
+    : [];
+  const { page: alicePage } = await newUserPage({ extraArgs: fakeMediaArgs });
+  await loginUi(alicePage, w.origin, w.names.alice);
+  await enableFlag(alicePage);
+  const { page: bobPage } = await newUserPage();
+  await loginUi(bobPage, w.origin, w.names.bob);
+  await enableFlag(bobPage);
 
-    const before = await alicePage.$$eval('#group-messages .chat-msg', (e) => e.length);
-    await alicePage.waitForFunction((n0) => document.querySelectorAll('#group-messages .chat-msg').length > n0, { timeout: 60000 }, before);
-    await sleep(1000);
+  await openGroupUi(alicePage, w.gid);
+  await alicePage.waitForSelector('#group-mic-btn', { timeout: 15000 });
+  await alicePage.$eval('#group-mic-btn', (el) => el.click());
+  await alicePage.waitForSelector('#group-recording-bar.active', { timeout: 15000 });
+  await alicePage.$eval('#group-recording-stop', (el) => el.click());
 
-    await openGroupUi(bobPage, w.gid);
-    const player = await (async () => {
-        const start = Date.now();
-        while (Date.now() - start < 60000) {
-            const el = await bobPage.$('.voice-message');
-            if (el) return el;
-            await sleep(250);
-        }
-        return null;
-    })();
-    assert.ok(player, 'the voice message must render a player for the recipient');
+  const before = await alicePage.$$eval('#group-messages .chat-msg', (e) => e.length);
+  await alicePage.waitForFunction((n0) => document.querySelectorAll('#group-messages .chat-msg').length > n0, { timeout: 60000 }, before);
+  await sleep(1000);
 
-    // The player's <audio> must be fed the DECRYPTED blob that the group code
-    // passes in (renderVoiceMessage ... { src, isBlob }), never a server URL.
-    // Regression guard: once voice-message.js was replaced wholesale and silently
-    // lost that contract, the <audio> pointed at /api/chat/attachments/<id> and
-    // the tests that only checked "a player renders" stayed green.
-    await sleep(1500);
-    const audioSrc = await bobPage.$eval('.voice-message', (el) => {
-        const a = el.querySelector('audio');
-        return a ? (a.getAttribute('src') || a.currentSrc || '') : '';
-    });
-    assert.ok(audioSrc.startsWith('blob:'), `group voice must play the decrypted blob, got: ${audioSrc.slice(0, 60)}`);
-    // Play it.
-    await bobPage.$eval('.voice-message-play', (el) => el.click());
-    await sleep(1000);
+  await openGroupUi(bobPage, w.gid);
+  const player = await (async () => {
+    const start = Date.now();
+    while (Date.now() - start < 60000) {
+      const el = await bobPage.$('.voice-message');
+      if (el) return el;
+      await sleep(250);
+    }
+    return null;
+  })();
+  assert.ok(player, 'the voice message must render a player for the recipient');
 
-    // Server row stays neutral.
-    const d = db();
-    const row = d.prepare('SELECT attachment_name, attachment_mime, is_voice_message FROM group_messages WHERE group_id = ? AND attachment_path IS NOT NULL ORDER BY id DESC LIMIT 1').get(w.gid);
-    d.close();
-    assert.equal(row.attachment_name, 'encrypted-attachment');
-    assert.equal(row.attachment_mime, 'application/octet-stream');
-    assert.equal(row.is_voice_message, 0, 'the server must never see the voice flag');
+  // The player's <audio> must be fed the DECRYPTED blob that the group code
+  // passes in (renderVoiceMessage ... { src, isBlob }), never a server URL.
+  // Regression guard: once voice-message.js was replaced wholesale and silently
+  // lost that contract, the <audio> pointed at /api/chat/attachments/<id> and
+  // the tests that only checked "a player renders" stayed green.
+  await sleep(1500);
+  const audioSrc = await bobPage.$eval('.voice-message', (el) => {
+    const a = el.querySelector('audio');
+    return a ? (a.getAttribute('src') || a.currentSrc || '') : '';
+  });
+  assert.ok(audioSrc.startsWith('blob:'), `group voice must play the decrypted blob, got: ${audioSrc.slice(0, 60)}`);
+  // Play it.
+  await bobPage.$eval('.voice-message-play', (el) => el.click());
+  await sleep(1000);
 
-    const html = await bobPage.evaluate(() => document.body.innerHTML);
-    assert.ok(!/att_ct_hash/.test(html), 'no binding field names in the DOM');
+  // Server row stays neutral.
+  const d = db();
+  const row = d.prepare('SELECT attachment_name, attachment_mime, is_voice_message FROM group_messages WHERE group_id = ? AND attachment_path IS NOT NULL ORDER BY id DESC LIMIT 1').get(w.gid);
+  d.close();
+  assert.equal(row.attachment_name, 'encrypted-attachment');
+  assert.equal(row.attachment_mime, 'application/octet-stream');
+  assert.equal(row.is_voice_message, 0, 'the server must never see the voice flag');
+
+  const html = await bobPage.evaluate(() => document.body.innerHTML);
+  assert.ok(!/att_ct_hash/.test(html), 'no binding field names in the DOM');
 });

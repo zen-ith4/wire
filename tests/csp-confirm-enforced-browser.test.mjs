@@ -49,6 +49,7 @@
 
 import './groups/_env.mjs';
 import { sessionFromPage, groupProtocolHeaders, newUserPage, closeUserBrowsers } from './_acceptance-harness.mjs';
+import { sendComposerMessage } from './_dm-ui-helpers.mjs';
 
 import path from 'node:path';
 import http from 'node:http';
@@ -219,7 +220,7 @@ async function runFlows(origin, enforce) {
     await page.type('#dm-input', `ZXQ-dm-${n}`);
     // The DM send BUTTON is an inline onclick too (dm.js:1503, blocked when enforced),
     // so send with Enter; if the textarea still holds the text, call what the button calls.
-    await page.keyboard.press('Enter');
+    await sendComposerMessage(page);
     if (await waitFor(async () => (await page.$eval('#dm-input', (e) => e.value)) !== '', 1500, 150)) await page.evaluate(() => window.sendDm());
     await page.waitForSelector('#dm-thread .chat-msg-delete', { timeout: 15000 });
     const dmIds = async () => ids(await sess.bob.api(`/api/dm/messages/${sess.alice.id}/recent?limit=50`));

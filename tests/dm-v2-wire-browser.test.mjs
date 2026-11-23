@@ -17,6 +17,7 @@ import {
 } from './_acceptance-harness.mjs';
 import { ROOT } from './_acceptance-harness.mjs';
 import { Database, cleanupTmp, tmpDir, FIXTURE_DB } from './credentials/_fixture.mjs';
+import { sendComposerMessage } from './_dm-ui-helpers.mjs';
 
 const ALICE_NAME = 'alice';
 const BOB_NAME = 'bob';
@@ -69,7 +70,7 @@ test('v2 text end to end', async () => {
     // alice opens DM to bob
     await openDmUi(a.page, BOB_ID, 'bob');
     await a.page.type('#dm-input', 'hello v2');
-    await a.page.keyboard.press('Enter');
+    await sendComposerMessage(a.page);
     await a.page.waitForFunction(() => document.querySelectorAll('#dm-thread .chat-msg').length > 0, { timeout: 30000 });
 
     // bob opens DM to alice and should see the decrypted text

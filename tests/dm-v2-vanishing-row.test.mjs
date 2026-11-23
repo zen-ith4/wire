@@ -33,6 +33,7 @@ import {
 } from './_acceptance-harness.mjs';
 import { PASSWORD } from './_acceptance-harness.mjs';
 import { Database, cleanupTmp, tmpDir, FIXTURE_DB } from './credentials/_fixture.mjs';
+import { sendComposerMessage } from './_dm-ui-helpers.mjs';
 
 const PLACEHOLDER = 'Unable to decrypt';
 
@@ -74,17 +75,8 @@ async function makePair(origin, tag) {
 
 /** Send ONE message, never twice (see the 1F note on the harness double-send). */
 async function sendOnce(page, text) {
-    const deadline = Date.now() + 20000;
     await page.type('#dm-input', text);
-    await page.keyboard.press('Enter');
-    for (;;) {
-        const v = await page.evaluate(() => document.getElementById('dm-input')?.value ?? null);
-        if (v === '') return;
-        if (Date.now() > deadline) {
-            throw new Error(`the composer never cleared after ${JSON.stringify(text)}: ${JSON.stringify(v)}`);
-        }
-        await new Promise((r) => setTimeout(r, 200));
-    }
+    await sendComposerMessage(page);
 }
 
 const rendered = (page) => page.evaluate((ph) => {

@@ -344,6 +344,7 @@ export async function launchBrowser(extraArgs = []) {
                 protocol: 'webDriverBiDi',
                 headless: true,
                 args: [...extraArgs],
+                extraPrefsFirefox: { 'media.volume_scale': '0.0' },
             };
             if (firefoxPath) {
                 launchOpts.executablePath = firefoxPath;
@@ -368,7 +369,7 @@ export async function launchBrowser(extraArgs = []) {
         const req = createRequire(path.join(dir, 'noop.js'));
         const chromium = (await import(pathToFileURL(req.resolve('@sparticuz/chromium')).href)).default;
         const puppeteer = (await import(pathToFileURL(req.resolve('puppeteer-core')).href)).default;
-        const browser = await puppeteer.launch({ args: [...chromium.args, ...extraArgs, '--no-sandbox'], executablePath: await chromium.executablePath(), headless: 'shell', protocolTimeout: 90000 });
+        const browser = await puppeteer.launch({ args: [...chromium.args, ...extraArgs, '--no-sandbox', '--mute-audio'], executablePath: await chromium.executablePath(), headless: 'shell', protocolTimeout: 90000 });
         const engine = `chromium (@sparticuz/chromium) ${await browser.version()}`;
         console.log(browserEngineTapLine({ engine }));
         return { browser, reason: null, engine };

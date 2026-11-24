@@ -1,0 +1,11 @@
+{
+  "origin": "wire-bundled://app",
+  "isSecureContext": true,
+  "serviceWorker": {
+    "supported": true,
+    "controller": "none"
+  },
+  "isNativeApp": false,
+  "locationProtocol": "wire-bundled:",
+  "locationOrigin": "wire-bundled://app"
+}

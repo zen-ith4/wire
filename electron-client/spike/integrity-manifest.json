@@ -1,0 +1,830 @@
+{
+  "version": "1.0",
+  "algorithm": "SHA-256",
+  "files": {
+    "audio/classic-received.wav": {
+      "hash": "sha256-2f7eac907732580eed73ce2ccc3a7f156da9621af235f190cb14b3764d1e50d2",
+      "rawHash": "2f7eac907732580eed73ce2ccc3a7f156da9621af235f190cb14b3764d1e50d2"
+    },
+    "audio/classic-sent.wav": {
+      "hash": "sha256-d401accfc6c2d8dbac08c7162113c968c2bb23b37cfca6a8907b002ce4b4e488",
+      "rawHash": "d401accfc6c2d8dbac08c7162113c968c2bb23b37cfca6a8907b002ce4b4e488"
+    },
+    "audio/digital-received.wav": {
+      "hash": "sha256-d381458bda42e3ec2df9fabfd9ef0fedff7ae8000a0a0b61e4842f64502a294a",
+      "rawHash": "d381458bda42e3ec2df9fabfd9ef0fedff7ae8000a0a0b61e4842f64502a294a"
+    },
+    "audio/digital-sent.wav": {
+      "hash": "sha256-d8115b93c686729e9e464567813e92a2854ba693d07e3f36d3f82be692503b65",
+      "rawHash": "d8115b93c686729e9e464567813e92a2854ba693d07e3f36d3f82be692503b65"
+    },
+    "audio/message-received.wav": {
+      "hash": "sha256-76fd4bd9fdcb37cb96832c140158c3c20b6a4a904e49d8159906d28dac5fa2f3",
+      "rawHash": "76fd4bd9fdcb37cb96832c140158c3c20b6a4a904e49d8159906d28dac5fa2f3"
+    },
+    "audio/message-sent.wav": {
+      "hash": "sha256-d80305ed038c155e6b1de399bdfbc432112584da364054bb4a0ef6d8339b0022",
+      "rawHash": "d80305ed038c155e6b1de399bdfbc432112584da364054bb4a0ef6d8339b0022"
+    },
+    "audio/minimal-received.wav": {
+      "hash": "sha256-f9b431d05f5113163a8f94b54389b2c5a5075fa4f10620529a1fe025c658222e",
+      "rawHash": "f9b431d05f5113163a8f94b54389b2c5a5075fa4f10620529a1fe025c658222e"
+    },
+    "audio/minimal-sent.wav": {
+      "hash": "sha256-ccf5215c5fff553cd129836e0b9b235c029ca3b5b879c6a3c5d1ba00d4c0f0c6",
+      "rawHash": "ccf5215c5fff553cd129836e0b9b235c029ca3b5b879c6a3c5d1ba00d4c0f0c6"
+    },
+    "audio/soft-received.wav": {
+      "hash": "sha256-e7547eab63dd0c213aa8ff0da4e19ab455bfb9e74f4d590f89b53916a74365dd",
+      "rawHash": "e7547eab63dd0c213aa8ff0da4e19ab455bfb9e74f4d590f89b53916a74365dd"
+    },
+    "audio/soft-sent.wav": {
+      "hash": "sha256-9670b18d44092835a88cfd0faa13d8db084539f28c92be785e2d2e4c11683ecf",
+      "rawHash": "9670b18d44092835a88cfd0faa13d8db084539f28c92be785e2d2e4c11683ecf"
+    },
+    "audio/subtle-received.wav": {
+      "hash": "sha256-2fe183b6f193f1b480ea72652878b006c28177f784bdeac154726cddd880fb5a",
+      "rawHash": "2fe183b6f193f1b480ea72652878b006c28177f784bdeac154726cddd880fb5a"
+    },
+    "audio/subtle-sent.wav": {
+      "hash": "sha256-4af962b7c1a383bbd8f87e33b9fecf8bb720785efc71ef7c6a99b7ae8cff2d3c",
+      "rawHash": "4af962b7c1a383bbd8f87e33b9fecf8bb720785efc71ef7c6a99b7ae8cff2d3c"
+    },
+    "css/components/badges.css": {
+      "hash": "sha256-4564e694f1acba17b148884c0f5fef873e338dcee19d26c4c9e34816d2130292",
+      "rawHash": "4564e694f1acba17b148884c0f5fef873e338dcee19d26c4c9e34816d2130292"
+    },
+    "css/components/buttons.css": {
+      "hash": "sha256-5a639cc75ebe2ed750c93fb3f53e22d3170148f194e29c0724e1604a6a037d0a",
+      "rawHash": "5a639cc75ebe2ed750c93fb3f53e22d3170148f194e29c0724e1604a6a037d0a"
+    },
+    "css/components/cards.css": {
+      "hash": "sha256-98ad5fbe4ff1862ae3f608d6bdc9ecaf626b8bbff20dcab263a2153147a400c3",
+      "rawHash": "98ad5fbe4ff1862ae3f608d6bdc9ecaf626b8bbff20dcab263a2153147a400c3"
+    },
+    "css/components/common.css": {
+      "hash": "sha256-e1d67767733b7434cb7b43a6fb1ba8ee9ffd4da034bec98319c21a3d1d4e06d6",
+      "rawHash": "e1d67767733b7434cb7b43a6fb1ba8ee9ffd4da034bec98319c21a3d1d4e06d6"
+    },
+    "css/components/forms.css": {
+      "hash": "sha256-4bb5d9951eaf58359982c299b8b65ccf75d16ddbb2798cba43f4187fb2adf0fe",
+      "rawHash": "4bb5d9951eaf58359982c299b8b65ccf75d16ddbb2798cba43f4187fb2adf0fe"
+    },
+    "css/components/modal.css": {
+      "hash": "sha256-80b157f9f315a116393dbee46d79f7dda41b28a3d893b7327bbb5a927f174f36",
+      "rawHash": "80b157f9f315a116393dbee46d79f7dda41b28a3d893b7327bbb5a927f174f36"
+    },
+    "css/components/toast.css": {
+      "hash": "sha256-7fbaaa98819e4570c093944063bab2bc98fe76c935d69ce6600a8b31eb4f90ff",
+      "rawHash": "7fbaaa98819e4570c093944063bab2bc98fe76c935d69ce6600a8b31eb4f90ff"
+    },
+    "css/core/base.css": {
+      "hash": "sha256-9e5eee0455ed1d9250e099738c817a12be291395911f2c997ad98bc42f5b086d",
+      "rawHash": "9e5eee0455ed1d9250e099738c817a12be291395911f2c997ad98bc42f5b086d"
+    },
+    "css/core/motion.css": {
+      "hash": "sha256-3d8d4f515aba7f09a9f2ce269f0afa50ba2e4b087708accd0f83ded793806e26",
+      "rawHash": "3d8d4f515aba7f09a9f2ce269f0afa50ba2e4b087708accd0f83ded793806e26"
+    },
+    "css/core/reset.css": {
+      "hash": "sha256-faf577302916c365748d548691f4b508c051bdb6be9e19046966167b9a8fd023",
+      "rawHash": "faf577302916c365748d548691f4b508c051bdb6be9e19046966167b9a8fd023"
+    },
+    "css/core/tokens.css": {
+      "hash": "sha256-30cc1e3a0b986df76ef4fe87e4d107f44e48e67fc7cd1bc50835e3b8b6dd9636",
+      "rawHash": "30cc1e3a0b986df76ef4fe87e4d107f44e48e67fc7cd1bc50835e3b8b6dd9636"
+    },
+    "css/features/audio-player.css": {
+      "hash": "sha256-d1a2b45811ae62ac6f4178529e610db991d6b68a7c2b6857fd182a0d42df5313",
+      "rawHash": "d1a2b45811ae62ac6f4178529e610db991d6b68a7c2b6857fd182a0d42df5313"
+    },
+    "css/features/bubble-gradient.css": {
+      "hash": "sha256-18ea146a478cdc1cf4089cff4b745fc917059cddbc6ec93a470d43f4964a482a",
+      "rawHash": "18ea146a478cdc1cf4089cff4b745fc917059cddbc6ec93a470d43f4964a482a"
+    },
+    "css/features/custom-background.css": {
+      "hash": "sha256-250dfe15b353fc24ffd3ac54434e78e4a3e52e27267350c4c4346d48219e5935",
+      "rawHash": "250dfe15b353fc24ffd3ac54434e78e4a3e52e27267350c4c4346d48219e5935"
+    },
+    "css/features/emoji-picker.css": {
+      "hash": "sha256-11ce72ed722a3a0b7eff106df45ba765483232209aa005c9d47d559115d68d06",
+      "rawHash": "11ce72ed722a3a0b7eff106df45ba765483232209aa005c9d47d559115d68d06"
+    },
+    "css/features/files-viewer.css": {
+      "hash": "sha256-d01d24e919c24d2f2489b3645e9c59bfa857eba480014cd17682ac87fef9d2bf",
+      "rawHash": "d01d24e919c24d2f2489b3645e9c59bfa857eba480014cd17682ac87fef9d2bf"
+    },
+    "css/features/files.css": {
+      "hash": "sha256-6923efedf94bf52be3cceef7ecd8f7b3f209951d833912b3686ae6077afda82b",
+      "rawHash": "6923efedf94bf52be3cceef7ecd8f7b3f209951d833912b3686ae6077afda82b"
+    },
+    "css/features/groups.css": {
+      "hash": "sha256-09b7597a6178d50c8c3e4b17a6f6dd1c30c8ed3e11b3a368af9c0ad2d80953f9",
+      "rawHash": "09b7597a6178d50c8c3e4b17a6f6dd1c30c8ed3e11b3a368af9c0ad2d80953f9"
+    },
+    "css/features/image-viewer.css": {
+      "hash": "sha256-75366e1100b9ddef22fe0f594718ebfaa78f37cbc8c8bddf9c0dfd054c613b0e",
+      "rawHash": "75366e1100b9ddef22fe0f594718ebfaa78f37cbc8c8bddf9c0dfd054c613b0e"
+    },
+    "css/features/messages.css": {
+      "hash": "sha256-a20f802dd63a525641123544127eb64d8f1a451bc9cf645ee1a593bf96752fb2",
+      "rawHash": "a20f802dd63a525641123544127eb64d8f1a451bc9cf645ee1a593bf96752fb2"
+    },
+    "css/features/profile.css": {
+      "hash": "sha256-9a2eb147afc542f930d2254c85a171f2b096302cd7240e685e7b6854abdf3858",
+      "rawHash": "9a2eb147afc542f930d2254c85a171f2b096302cd7240e685e7b6854abdf3858"
+    },
+    "css/features/settings.css": {
+      "hash": "sha256-2949ebb7c39191fcdc54ac96c2bd41c42b258aa7997014c668d2fdacd80f3014",
+      "rawHash": "2949ebb7c39191fcdc54ac96c2bd41c42b258aa7997014c668d2fdacd80f3014"
+    },
+    "css/features/sharing.css": {
+      "hash": "sha256-a909a5428be856f3c64074b5896af0a31a8a959327f88a8d65fc2acbe9f76097",
+      "rawHash": "a909a5428be856f3c64074b5896af0a31a8a959327f88a8d65fc2acbe9f76097"
+    },
+    "css/features/upload.css": {
+      "hash": "sha256-c6b24bb7a3c5b614da7a42ca82a4cf98ff4e883a6e535093e870d10528eb6514",
+      "rawHash": "c6b24bb7a3c5b614da7a42ca82a4cf98ff4e883a6e535093e870d10528eb6514"
+    },
+    "css/features/video-player.css": {
+      "hash": "sha256-9e88e7ef96819ec5c27727ce447dd8e29a4418a76fa3588d6834f9a368d2d1ea",
+      "rawHash": "9e88e7ef96819ec5c27727ce447dd8e29a4418a76fa3588d6834f9a368d2d1ea"
+    },
+    "css/features/voice-message.css": {
+      "hash": "sha256-2c0d67e77cfa95221760133a8fa3285f9cc6cae060e4275496821afe4bf1e403",
+      "rawHash": "2c0d67e77cfa95221760133a8fa3285f9cc6cae060e4275496821afe4bf1e403"
+    },
+    "css/fonts.css": {
+      "hash": "sha256-76c5bc4d1d02e1313299f8aea3675b135f853e17708520ec9a3247a7e807a624",
+      "rawHash": "76c5bc4d1d02e1313299f8aea3675b135f853e17708520ec9a3247a7e807a624"
+    },
+    "css/layout/app.css": {
+      "hash": "sha256-c65aac64a783df4e5c3e877140c85c4800449f759629d0504a4376d2d4edb8f9",
+      "rawHash": "c65aac64a783df4e5c3e877140c85c4800449f759629d0504a4376d2d4edb8f9"
+    },
+    "css/layout/bottom-nav.css": {
+      "hash": "sha256-f7c66844cb1c506226df2de0cfac9684fa0f3f56ec36916bcbdf3844145823ec",
+      "rawHash": "f7c66844cb1c506226df2de0cfac9684fa0f3f56ec36916bcbdf3844145823ec"
+    },
+    "css/layout/content.css": {
+      "hash": "sha256-3a5af89e95451a6700c58ec6190e4ae47eeb77f1ca747558c0be34db08de25f8",
+      "rawHash": "3a5af89e95451a6700c58ec6190e4ae47eeb77f1ca747558c0be34db08de25f8"
+    },
+    "css/layout/sidebar.css": {
+      "hash": "sha256-292039b575edc7eca9137bbd8b924d81bf5be7280e024c41d5aea2263d61c4a9",
+      "rawHash": "292039b575edc7eca9137bbd8b924d81bf5be7280e024c41d5aea2263d61c4a9"
+    },
+    "css/layout/topbar.css": {
+      "hash": "sha256-22fc3f3b51d4b1de386c3633ff7a29092c16c4c7429c9911e523ef19ea7762e0",
+      "rawHash": "22fc3f3b51d4b1de386c3633ff7a29092c16c4c7429c9911e523ef19ea7762e0"
+    },
+    "css/main.css": {
+      "hash": "sha256-d2c6317f5284b181411dc8c8bf2ea09c1334f1954c118feb0593b2f75b2239f2",
+      "rawHash": "d2c6317f5284b181411dc8c8bf2ea09c1334f1954c118feb0593b2f75b2239f2"
+    },
+    "css/pages/login.css": {
+      "hash": "sha256-fa638402499f66160bdae4e57537f338a99b826a346335deb9af9369a058d95b",
+      "rawHash": "fa638402499f66160bdae4e57537f338a99b826a346335deb9af9369a058d95b"
+    },
+    "css/responsive.css": {
+      "hash": "sha256-c86877a53d3ec94531b8b18aa97d97673127f6a5c5cb90aeaa969d55cdf979d2",
+      "rawHash": "c86877a53d3ec94531b8b18aa97d97673127f6a5c5cb90aeaa969d55cdf979d2"
+    },
+    "css/utilities.css": {
+      "hash": "sha256-786b94420b83504424506bdbab36c9936733649258a7121f87921f97003a7558",
+      "rawHash": "786b94420b83504424506bdbab36c9936733649258a7121f87921f97003a7558"
+    },
+    "favicon.ico": {
+      "hash": "sha256-df66b0e8875aa801bbed8f03410e32131846891b8c67f9de559abdffd4a91549",
+      "rawHash": "df66b0e8875aa801bbed8f03410e32131846891b8c67f9de559abdffd4a91549"
+    },
+    "fonts/AnthropicSansDisplay/AnthropicSans-Display-Bold-Static.woff2": {
+      "hash": "sha256-cdba52dcab48ab7221e43d48fd916c0ad3ed6cefdcede3dadf75c6cb01746786",
+      "rawHash": "cdba52dcab48ab7221e43d48fd916c0ad3ed6cefdcede3dadf75c6cb01746786"
+    },
+    "fonts/AnthropicSansDisplay/AnthropicSans-Display-Medium-Static.woff2": {
+      "hash": "sha256-273e961eda2a0d5eb7aafa3e4dfbf550511c1b36d84e98e9db61156b44650ce6",
+      "rawHash": "273e961eda2a0d5eb7aafa3e4dfbf550511c1b36d84e98e9db61156b44650ce6"
+    },
+    "fonts/AnthropicSansDisplay/AnthropicSans-Display-Regular-Static.woff2": {
+      "hash": "sha256-0dc5c28fcebd16fd806d91fb3d32e2ea1900fd6797e9cb5a32a61ff2824dcdfe",
+      "rawHash": "0dc5c28fcebd16fd806d91fb3d32e2ea1900fd6797e9cb5a32a61ff2824dcdfe"
+    },
+    "fonts/AnthropicSansDisplay/AnthropicSans-Display-Semibold-Static.woff2": {
+      "hash": "sha256-24d003a5724e463d346d7646a44db5848d212bb045fb02d8598b94b22742d48b",
+      "rawHash": "24d003a5724e463d346d7646a44db5848d212bb045fb02d8598b94b22742d48b"
+    },
+    "fonts/AnthropicSansText/AnthropicSans-Text-Bold-Static.woff2": {
+      "hash": "sha256-0b487d1bf42b87ccd1366fd763ef6dd289e8a45c41b9d2e9b5e24deb660a507a",
+      "rawHash": "0b487d1bf42b87ccd1366fd763ef6dd289e8a45c41b9d2e9b5e24deb660a507a"
+    },
+    "fonts/AnthropicSansText/AnthropicSans-Text-Medium-Static.woff2": {
+      "hash": "sha256-bdcea4957b14fb24f528c865380d5780ca086d962360d45a3d43e0b0815d38b8",
+      "rawHash": "bdcea4957b14fb24f528c865380d5780ca086d962360d45a3d43e0b0815d38b8"
+    },
+    "fonts/AnthropicSansText/AnthropicSans-Text-Regular-Static.woff2": {
+      "hash": "sha256-1d537c7e5d92228d2c33c0db0fd8bc3c6c71d4f32472357d5a1b102aed8c1005",
+      "rawHash": "1d537c7e5d92228d2c33c0db0fd8bc3c6c71d4f32472357d5a1b102aed8c1005"
+    },
+    "fonts/AnthropicSansText/AnthropicSans-Text-Semibold-Static.woff2": {
+      "hash": "sha256-124e5adac0e31486a2a12ccb69035058716f3815cf8357d9545df17da720c83c",
+      "rawHash": "124e5adac0e31486a2a12ccb69035058716f3815cf8357d9545df17da720c83c"
+    },
+    "fonts/Inter/Inter-Variable.woff2": {
+      "hash": "sha256-23bcaa58fa90cdc9f4a7e24a31fec6a8afaf4d6aa11cade65e8c76773d73fb43",
+      "rawHash": "23bcaa58fa90cdc9f4a7e24a31fec6a8afaf4d6aa11cade65e8c76773d73fb43"
+    },
+    "fonts/NotoSans/NotoSans-Regular.woff2": {
+      "hash": "sha256-e0907759b235a014bf8f0ba817c973ed35d9e47d3ae51b368734c9e77a1bb8b9",
+      "rawHash": "e0907759b235a014bf8f0ba817c973ed35d9e47d3ae51b368734c9e77a1bb8b9"
+    },
+    "fonts/OpenSans/OpenSans-Variable.woff2": {
+      "hash": "sha256-60629c8ad2cdd0269735d21feb19990a49d7341bc360acb36d8a4e3608de4982",
+      "rawHash": "60629c8ad2cdd0269735d21feb19990a49d7341bc360acb36d8a4e3608de4982"
+    },
+    "fonts/Poppins/Poppins-Regular.woff2": {
+      "hash": "sha256-168aae2bf5b20ff9931b7463deea95c2ea02d4dcad2128ad609575244a369a24",
+      "rawHash": "168aae2bf5b20ff9931b7463deea95c2ea02d4dcad2128ad609575244a369a24"
+    },
+    "fonts/Roboto/Roboto-Variable.woff2": {
+      "hash": "sha256-c921b490a7e1eb27ef58ea4426204db861d47cc664b96689d527d8b744d83d66",
+      "rawHash": "c921b490a7e1eb27ef58ea4426204db861d47cc664b96689d527d8b744d83d66"
+    },
+    "fonts/Vazirmatn/Vazirmatn-Regular.woff2": {
+      "hash": "sha256-ce58edf0377c327417034a10ba7274cc61b61999552fcb992c33f87539942bbf",
+      "rawHash": "ce58edf0377c327417034a10ba7274cc61b61999552fcb992c33f87539942bbf"
+    },
+    "img/logo.jpg": {
+      "hash": "sha256-71b2407577a40755760fcfefc467e110abd1025fbe9a2c38fa45a82561220182",
+      "rawHash": "71b2407577a40755760fcfefc467e110abd1025fbe9a2c38fa45a82561220182"
+    },
+    "index.html": {
+      "hash": "sha256-116485b41ed53ce6e875ed7a1958fdf8a9a609ccd6c2d976e8fb805ef3b5431a",
+      "rawHash": "116485b41ed53ce6e875ed7a1958fdf8a9a609ccd6c2d976e8fb805ef3b5431a"
+    },
+    "js/chat/composer.js": {
+      "hash": "sha256-cf98cfcc41ecbbc33ad25477cba863906295bc3555a7c9c958bfd41bc9b4338b",
+      "rawHash": "cf98cfcc41ecbbc33ad25477cba863906295bc3555a7c9c958bfd41bc9b4338b"
+    },
+    "js/chat/dm-key-trust.js": {
+      "hash": "sha256-8419fec1fbe5956688d545ff19d40b355f92454ecd4ce1f21109f5a2717f706e",
+      "rawHash": "8419fec1fbe5956688d545ff19d40b355f92454ecd4ce1f21109f5a2717f706e"
+    },
+    "js/chat/dm-layout.js": {
+      "hash": "sha256-dbd00ee54eed4687be3cb3d0f51448aa2b5882fe8f0ede97b2ff736cce90bd86",
+      "rawHash": "dbd00ee54eed4687be3cb3d0f51448aa2b5882fe8f0ede97b2ff736cce90bd86"
+    },
+    "js/chat/dm-unencrypted.js": {
+      "hash": "sha256-7e190fade6fc69560c80a89e29c99a9e5428f5b814a74aeb3b8c66d52dd22682",
+      "rawHash": "7e190fade6fc69560c80a89e29c99a9e5428f5b814a74aeb3b8c66d52dd22682"
+    },
+    "js/chat/dm.js": {
+      "hash": "sha256-d7c5bc2a98250b4c27383cda6a2b5f74de0247b2c8cbc1a5261b99d4a908f628",
+      "rawHash": "d7c5bc2a98250b4c27383cda6a2b5f74de0247b2c8cbc1a5261b99d4a908f628"
+    },
+    "js/chat/group-attachments-flag.js": {
+      "hash": "sha256-c4f398ca22bba69c585f94b201dce006e469ae87f804f11a6293ba6b7c8cae8e",
+      "rawHash": "c4f398ca22bba69c585f94b201dce006e469ae87f804f11a6293ba6b7c8cae8e"
+    },
+    "js/chat/group-attachments.js": {
+      "hash": "sha256-91e06747bfd06b2d6591329c0b22f3ba58229a9ee5062719569c5f6111a9cd58",
+      "rawHash": "91e06747bfd06b2d6591329c0b22f3ba58229a9ee5062719569c5f6111a9cd58"
+    },
+    "js/chat/group-key-trust.js": {
+      "hash": "sha256-3ab8a6663cb55cb00f07308f4764ec9379936437294ecf5393cb9418c89a2392",
+      "rawHash": "3ab8a6663cb55cb00f07308f4764ec9379936437294ecf5393cb9418c89a2392"
+    },
+    "js/chat/group.js": {
+      "hash": "sha256-9bb78744a0b38aa02faa02b618ac81c37dba8fab1c3953f7007699d587be7a35",
+      "rawHash": "9bb78744a0b38aa02faa02b618ac81c37dba8fab1c3953f7007699d587be7a35"
+    },
+    "js/chat/message-accent.js": {
+      "hash": "sha256-33106313749d2ba0e0dd1942b26e76268c5f16ad2594dcc2d930faf2ec815825",
+      "rawHash": "33106313749d2ba0e0dd1942b26e76268c5f16ad2594dcc2d930faf2ec815825"
+    },
+    "js/chat/presence.js": {
+      "hash": "sha256-268f3fbb92165b46f8dc8fe0118d45c0283f9e4063e9f90a487d18e9561be4ba",
+      "rawHash": "268f3fbb92165b46f8dc8fe0118d45c0283f9e4063e9f90a487d18e9561be4ba"
+    },
+    "js/chat/reactions.js": {
+      "hash": "sha256-d1e796dd059a4bd7a99554112aaa70041ee269206899f1d09e3c2d348ca8a3e3",
+      "rawHash": "d1e796dd059a4bd7a99554112aaa70041ee269206899f1d09e3c2d348ca8a3e3"
+    },
+    "js/chat/reply.js": {
+      "hash": "sha256-ebd02afe2c1430b664157dc961c92641e40b30567fb04da733133bfda4d8e304",
+      "rawHash": "ebd02afe2c1430b664157dc961c92641e40b30567fb04da733133bfda4d8e304"
+    },
+    "js/chat/swipe-reply.js": {
+      "hash": "sha256-1fa81f342f7860691c1f67318b4f96420fe3dbf560aee0aa52d6170a5b4782c2",
+      "rawHash": "1fa81f342f7860691c1f67318b4f96420fe3dbf560aee0aa52d6170a5b4782c2"
+    },
+    "js/chat/tap-reveal.js": {
+      "hash": "sha256-11596130dbfff8bc3af1c37418f58f67ad11f19e51a17b9d403868d5b0b208dc",
+      "rawHash": "11596130dbfff8bc3af1c37418f58f67ad11f19e51a17b9d403868d5b0b208dc"
+    },
+    "js/chat/thread.js": {
+      "hash": "sha256-f5ed4bfa86a122735d86a9671234831845b8532f7dcdeaaf2a5103c47abce448",
+      "rawHash": "f5ed4bfa86a122735d86a9671234831845b8532f7dcdeaaf2a5103c47abce448"
+    },
+    "js/chat/typing.js": {
+      "hash": "sha256-8c23463cb12dac048ce53ac6709de428eb8e64554883c038bc392b63013878fa",
+      "rawHash": "8c23463cb12dac048ce53ac6709de428eb8e64554883c038bc392b63013878fa"
+    },
+    "js/core/api.js": {
+      "hash": "sha256-9cb72d611dbc1d0159444a4088235e0b7ccf071fca467c28e7e65dc315aa76ed",
+      "rawHash": "9cb72d611dbc1d0159444a4088235e0b7ccf071fca467c28e7e65dc315aa76ed"
+    },
+    "js/core/app.js": {
+      "hash": "sha256-90e56c53b56317a112ba72fd06a5592e6eee05fa5b8872bbb6e84d74316a53fa",
+      "rawHash": "90e56c53b56317a112ba72fd06a5592e6eee05fa5b8872bbb6e84d74316a53fa"
+    },
+    "js/core/appUpdate.js": {
+      "hash": "sha256-72322082349a5d32146dd3240ede0841ec677dfa43c6d0c94467b4035e29492b",
+      "rawHash": "72322082349a5d32146dd3240ede0841ec677dfa43c6d0c94467b4035e29492b"
+    },
+    "js/core/auth.js": {
+      "hash": "sha256-6a373c789f126be60b491b5bf62cad6ecb5358ea4d0682d95a337f6b8b747151",
+      "rawHash": "6a373c789f126be60b491b5bf62cad6ecb5358ea4d0682d95a337f6b8b747151"
+    },
+    "js/core/navigation.js": {
+      "hash": "sha256-6115aeb0e9ce09086c564170dc3dd14d88f60e3a3e341ae20a30fe967a9a83e6",
+      "rawHash": "6115aeb0e9ce09086c564170dc3dd14d88f60e3a3e341ae20a30fe967a9a83e6"
+    },
+    "js/core/perf.js": {
+      "hash": "sha256-64f74e76ad2c11a00b6a849f0fd0d8e8e99ea7f6bc34d51fb754c2a3701bb1ed",
+      "rawHash": "64f74e76ad2c11a00b6a849f0fd0d8e8e99ea7f6bc34d51fb754c2a3701bb1ed"
+    },
+    "js/core/pwa.js": {
+      "hash": "sha256-5e3b2db9601dd230abd71933c1b991e61c554af8fe80c3de1be497751e5a4d86",
+      "rawHash": "5e3b2db9601dd230abd71933c1b991e61c554af8fe80c3de1be497751e5a4d86"
+    },
+    "js/core/router.js": {
+      "hash": "sha256-9ca7e090a5d7d70648bf702e079e024e07aa0a6c9fd68047078a392ef1e28e3c",
+      "rawHash": "9ca7e090a5d7d70648bf702e079e024e07aa0a6c9fd68047078a392ef1e28e3c"
+    },
+    "js/core/server.js": {
+      "hash": "sha256-9f537f109835b3da273f5e7398e30ef51587ce51024f68e3f2472f5fbe71050f",
+      "rawHash": "9f537f109835b3da273f5e7398e30ef51587ce51024f68e3f2472f5fbe71050f"
+    },
+    "js/core/shortcuts.js": {
+      "hash": "sha256-17794b7d34375510ae706fae861c9bbfd5465fb131bcddbba3f7d17c493f12ec",
+      "rawHash": "17794b7d34375510ae706fae861c9bbfd5465fb131bcddbba3f7d17c493f12ec"
+    },
+    "js/core/socket.js": {
+      "hash": "sha256-00790c225c3bc0de99b4323f5f81b58e5d6ec81a1ade22e2405c4150b0e89d85",
+      "rawHash": "00790c225c3bc0de99b4323f5f81b58e5d6ec81a1ade22e2405c4150b0e89d85"
+    },
+    "js/core/utils.js": {
+      "hash": "sha256-8a7200b567421d5e2de263d371e1ed318036b16091b34d3dc7d4b3ca9c30bb7f",
+      "rawHash": "8a7200b567421d5e2de263d371e1ed318036b16091b34d3dc7d4b3ca9c30bb7f"
+    },
+    "js/core/view-session.js": {
+      "hash": "sha256-89c840edda550fe21964af4e9b2d1be0b65622cae4ca23a06e70a61b500460c9",
+      "rawHash": "89c840edda550fe21964af4e9b2d1be0b65622cae4ca23a06e70a61b500460c9"
+    },
+    "js/core/viewport-fix.js": {
+      "hash": "sha256-7630a61faf32111ecfa9e082a4fee7c9e502563b2ec30ad201af04614cefde53",
+      "rawHash": "7630a61faf32111ecfa9e082a4fee7c9e502563b2ec30ad201af04614cefde53"
+    },
+    "js/crypto/account-kdf.js": {
+      "hash": "sha256-b966f390555d4d49116a8c4857fb2df24998d532280f9b78c64213386c546c3d",
+      "rawHash": "b966f390555d4d49116a8c4857fb2df24998d532280f9b78c64213386c546c3d"
+    },
+    "js/crypto/credential-migration.js": {
+      "hash": "sha256-9a16e3abfa816808d3eca24f939cbcd7bd64dca11127c4a48a34e6529cba3858",
+      "rawHash": "9a16e3abfa816808d3eca24f939cbcd7bd64dca11127c4a48a34e6529cba3858"
+    },
+    "js/crypto/credentials.js": {
+      "hash": "sha256-97f845c81e30ba2cf8decf3509d0753da6c098c742b7c54f9d5006fc7f4bbc1a",
+      "rawHash": "97f845c81e30ba2cf8decf3509d0753da6c098c742b7c54f9d5006fc7f4bbc1a"
+    },
+    "js/crypto/groups/aead.js": {
+      "hash": "sha256-045ecd7fedcabbfab35dd46f0f3555677783781212aca7b805f5d58bc30d7fdf",
+      "rawHash": "045ecd7fedcabbfab35dd46f0f3555677783781212aca7b805f5d58bc30d7fdf"
+    },
+    "js/crypto/groups/codec.js": {
+      "hash": "sha256-1a83b1b3d363196007647da3403a3eeda6687b36e994f741399f7dfdc5b1e643",
+      "rawHash": "1a83b1b3d363196007647da3403a3eeda6687b36e994f741399f7dfdc5b1e643"
+    },
+    "js/crypto/groups/kdm.js": {
+      "hash": "sha256-00d293dccaacb9497b3525cc701a17a12dd04a6946aace65a9816ec6d3d952f2",
+      "rawHash": "00d293dccaacb9497b3525cc701a17a12dd04a6946aace65a9816ec6d3d952f2"
+    },
+    "js/crypto/groups/local-wrap-key.js": {
+      "hash": "sha256-9dc1f39a1e08d70fec51ea03c9e615b0de8de5bf8d478e82e58e526a33de9023",
+      "rawHash": "9dc1f39a1e08d70fec51ea03c9e615b0de8de5bf8d478e82e58e526a33de9023"
+    },
+    "js/crypto/groups/message-crypto.js": {
+      "hash": "sha256-928d36642b82e39191096d9580f49e7d40c24c90c5266587584fb7c23c20273e",
+      "rawHash": "928d36642b82e39191096d9580f49e7d40c24c90c5266587584fb7c23c20273e"
+    },
+    "js/crypto/groups/nonce-lock.js": {
+      "hash": "sha256-c5ab9b1dc61f56ce9fd9d2c145efe2d59cd1fa3cb7b62348cb3e5973e4056bf7",
+      "rawHash": "c5ab9b1dc61f56ce9fd9d2c145efe2d59cd1fa3cb7b62348cb3e5973e4056bf7"
+    },
+    "js/crypto/groups/rotation.js": {
+      "hash": "sha256-1fadc9e99d6e21896999aa73c4ba438ff332a388639a4743759b9a0cf949a558",
+      "rawHash": "1fadc9e99d6e21896999aa73c4ba438ff332a388639a4743759b9a0cf949a558"
+    },
+    "js/crypto/groups/sender-key-id.js": {
+      "hash": "sha256-0804d1c7b1ee412b8f4f4709df2ee2e60b25a93cc35e06625efe0ea8c9e36603",
+      "rawHash": "0804d1c7b1ee412b8f4f4709df2ee2e60b25a93cc35e06625efe0ea8c9e36603"
+    },
+    "js/crypto/groups/sender-key-store.js": {
+      "hash": "sha256-e5e1780267e3434c0f6c1984df153ba73bd45a88575e55643d2463a9ccf8fa67",
+      "rawHash": "e5e1780267e3434c0f6c1984df153ba73bd45a88575e55643d2463a9ccf8fa67"
+    },
+    "js/crypto/groups/sender-key.js": {
+      "hash": "sha256-0985a2c220796eedac7239bef8cfb5bf9bbfa4dcd7db8196cf6b744af8ad4ff0",
+      "rawHash": "0985a2c220796eedac7239bef8cfb5bf9bbfa4dcd7db8196cf6b744af8ad4ff0"
+    },
+    "js/crypto/groups/signing.js": {
+      "hash": "sha256-bfd195d566945eeb46138dde1cbe72a64ed0955c51effb7146bebc1a73622c47",
+      "rawHash": "bfd195d566945eeb46138dde1cbe72a64ed0955c51effb7146bebc1a73622c47"
+    },
+    "js/crypto/identity-passphrase.js": {
+      "hash": "sha256-616855c17f06c26d8d7d90e16d88b0cc25393e078d3d8fb268d91696bb0f00c9",
+      "rawHash": "616855c17f06c26d8d7d90e16d88b0cc25393e078d3d8fb268d91696bb0f00c9"
+    },
+    "js/crypto/identity-service.js": {
+      "hash": "sha256-8d4091e8e6a501802728cfadd509d51013c8402c52ad8f958d4a13a59630d441",
+      "rawHash": "8d4091e8e6a501802728cfadd509d51013c8402c52ad8f958d4a13a59630d441"
+    },
+    "js/crypto/identity.js": {
+      "hash": "sha256-389fd2ca725b2f67c2de6ca4e2c363a41a9a69c443f0aca73b572c9ba69b7371",
+      "rawHash": "389fd2ca725b2f67c2de6ca4e2c363a41a9a69c443f0aca73b572c9ba69b7371"
+    },
+    "js/crypto/keys/key-derivation.js": {
+      "hash": "sha256-23250f0e56da1975fc700c4b1391a7ee433a42332f7cd692ecaa5ded0ad2e63d",
+      "rawHash": "23250f0e56da1975fc700c4b1391a7ee433a42332f7cd692ecaa5ded0ad2e63d"
+    },
+    "js/crypto/keys/key-storage.js": {
+      "hash": "sha256-13fe2613ef527607ee6151641b58aa380f09281b447692ffefe51488500e118f",
+      "rawHash": "13fe2613ef527607ee6151641b58aa380f09281b447692ffefe51488500e118f"
+    },
+    "js/crypto/keys/peer-key-gate.js": {
+      "hash": "sha256-582407bf4e024d2a83df92ca862ce4c92401ec16c0cd21615eb31f4343f87901",
+      "rawHash": "582407bf4e024d2a83df92ca862ce4c92401ec16c0cd21615eb31f4343f87901"
+    },
+    "js/crypto/keys/peer-keys.js": {
+      "hash": "sha256-0526e6052276e14462c9bd2ddbdf27934965eb5cd2469061989697149342e90a",
+      "rawHash": "0526e6052276e14462c9bd2ddbdf27934965eb5cd2469061989697149342e90a"
+    },
+    "js/crypto/keys/peer-trust.js": {
+      "hash": "sha256-5f1b5ef791623056dffdfa45fe82283607aac5ae4a644bef8195438415d7531a",
+      "rawHash": "5f1b5ef791623056dffdfa45fe82283607aac5ae4a644bef8195438415d7531a"
+    },
+    "js/crypto/keys/session.js": {
+      "hash": "sha256-18a60ca6c58241fb300230a6e435298d48757d643bd0a20a26fbefcaf790a9b0",
+      "rawHash": "18a60ca6c58241fb300230a6e435298d48757d643bd0a20a26fbefcaf790a9b0"
+    },
+    "js/crypto/keys/unlock-key-store.js": {
+      "hash": "sha256-33029d896d1ae2c5993fe1d01242df316788d8d153b0ce002b4261da5ff73d77",
+      "rawHash": "33029d896d1ae2c5993fe1d01242df316788d8d153b0ce002b4261da5ff73d77"
+    },
+    "js/crypto/messages/attachment-crypto.js": {
+      "hash": "sha256-653746417ef4a02ab631bd9e486122109bf9cd817be9c02bbfff96c418187206",
+      "rawHash": "653746417ef4a02ab631bd9e486122109bf9cd817be9c02bbfff96c418187206"
+    },
+    "js/crypto/messages/attachment-range.js": {
+      "hash": "sha256-2f16f7b083e740245d43b5ae61fd17fa24949f327985bd1e952bd37642f473d3",
+      "rawHash": "2f16f7b083e740245d43b5ae61fd17fa24949f327985bd1e952bd37642f473d3"
+    },
+    "js/crypto/messages/attachment-stream.js": {
+      "hash": "sha256-0fdfd4d335e4c7eeba5f8096f82421157e68ad7808a4f9eb223d1608405b9ed6",
+      "rawHash": "0fdfd4d335e4c7eeba5f8096f82421157e68ad7808a4f9eb223d1608405b9ed6"
+    },
+    "js/crypto/messages/decrypt.js": {
+      "hash": "sha256-6733b24ff6d26281a255c988db4d84615e8d4f8572b524d83281e956ea75aa3a",
+      "rawHash": "6733b24ff6d26281a255c988db4d84615e8d4f8572b524d83281e956ea75aa3a"
+    },
+    "js/crypto/messages/dm-v2-wire.js": {
+      "hash": "sha256-10639d0cb8a23b75d41a697d6444b19ff558d309a8babae474d8e471b0536b99",
+      "rawHash": "10639d0cb8a23b75d41a697d6444b19ff558d309a8babae474d8e471b0536b99"
+    },
+    "js/crypto/messages/dm-v2.js": {
+      "hash": "sha256-94dcae620512f89fe0f317ff2b2b9b07d6707132c912be98673c666666bcf5a2",
+      "rawHash": "94dcae620512f89fe0f317ff2b2b9b07d6707132c912be98673c666666bcf5a2"
+    },
+    "js/crypto/messages/encrypt.js": {
+      "hash": "sha256-5894fdd5688715c1aa96e654299b09c1127a8105f2127acea1ce9a95aab3ad7d",
+      "rawHash": "5894fdd5688715c1aa96e654299b09c1127a8105f2127acea1ce9a95aab3ad7d"
+    },
+    "js/crypto/messages/group-message-crypto.js": {
+      "hash": "sha256-686544467b9720e105191ab349a2536168f5b99148a58cee4545abe8b21d4e2b",
+      "rawHash": "686544467b9720e105191ab349a2536168f5b99148a58cee4545abe8b21d4e2b"
+    },
+    "js/crypto/messages/message-crypto.js": {
+      "hash": "sha256-95f148add5213790fbc1aa5d86ccaa814f26896113f6feb63a3fc3de09eaf28f",
+      "rawHash": "95f148add5213790fbc1aa5d86ccaa814f26896113f6feb63a3fc3de09eaf28f"
+    },
+    "js/crypto/messages/payload.js": {
+      "hash": "sha256-91ec8d50461d5040aa287e1a92b1ae7d813da2a24e78599c11d5d83c57069a5e",
+      "rawHash": "91ec8d50461d5040aa287e1a92b1ae7d813da2a24e78599c11d5d83c57069a5e"
+    },
+    "js/crypto/storage.js": {
+      "hash": "sha256-d0a49c0337c376e8c02463a16d22ac193ad3256323aae728e1e7d35dd220aef2",
+      "rawHash": "d0a49c0337c376e8c02463a16d22ac193ad3256323aae728e1e7d35dd220aef2"
+    },
+    "js/files/audio-ui.js": {
+      "hash": "sha256-3ccf890475784716bd54e40dad3168f9c6ce5c62fe89bca5c385ccbf08170f99",
+      "rawHash": "3ccf890475784716bd54e40dad3168f9c6ce5c62fe89bca5c385ccbf08170f99"
+    },
+    "js/files/delete.js": {
+      "hash": "sha256-de13aa18f2aedf07a1340d51f9ca00b415da6b7a995d9838d66e0e27de9e0215",
+      "rawHash": "de13aa18f2aedf07a1340d51f9ca00b415da6b7a995d9838d66e0e27de9e0215"
+    },
+    "js/files/dialog.js": {
+      "hash": "sha256-2e4dd977ef049147d5d19ee33b1b77013d756fb67c6bab33a50a4ccc1239e4d8",
+      "rawHash": "2e4dd977ef049147d5d19ee33b1b77013d756fb67c6bab33a50a4ccc1239e4d8"
+    },
+    "js/files/download.js": {
+      "hash": "sha256-74dd00348ae298a537a5675f4c2572a7e78d2b05136dd51f8eb793465d9ed3ad",
+      "rawHash": "74dd00348ae298a537a5675f4c2572a7e78d2b05136dd51f8eb793465d9ed3ad"
+    },
+    "js/files/downloadDestination.js": {
+      "hash": "sha256-cefb99f7a117793841065c7eb21d60d27f3678fa9d7cf1cad2f0eb2d9917a38c",
+      "rawHash": "cefb99f7a117793841065c7eb21d60d27f3678fa9d7cf1cad2f0eb2d9917a38c"
+    },
+    "js/files/dragdrop.js": {
+      "hash": "sha256-c89c1da864ed712e49573f70c8ee45ab13acb2b66ccfc695dbf03a40edfa42a0",
+      "rawHash": "c89c1da864ed712e49573f70c8ee45ab13acb2b66ccfc695dbf03a40edfa42a0"
+    },
+    "js/files/files.js": {
+      "hash": "sha256-2e6fa4e27fbca2648e9b34a8b7a783408f9b6c62c0fe6e1e8314e4126982419c",
+      "rawHash": "2e6fa4e27fbca2648e9b34a8b7a783408f9b6c62c0fe6e1e8314e4126982419c"
+    },
+    "js/files/html.js": {
+      "hash": "sha256-dd58582241538ab4956b18f9b290f7b1c6eb373362455339b43647ee9387b551",
+      "rawHash": "dd58582241538ab4956b18f9b290f7b1c6eb373362455339b43647ee9387b551"
+    },
+    "js/files/kinds.js": {
+      "hash": "sha256-a58776ef6ea681844a6fa02e2b474b3270fb0f8475ccfd3f88f9178a7b175dbc",
+      "rawHash": "a58776ef6ea681844a6fa02e2b474b3270fb0f8475ccfd3f88f9178a7b175dbc"
+    },
+    "js/files/links.js": {
+      "hash": "sha256-96e27e6852185a3b3f4cb0aa0c68663a8adbc2e89ef9ab68d36f71378d79c8cf",
+      "rawHash": "96e27e6852185a3b3f4cb0aa0c68663a8adbc2e89ef9ab68d36f71378d79c8cf"
+    },
+    "js/files/share-view.js": {
+      "hash": "sha256-dd00d9cb078cc51cddd10d621c1c3ac39a00556d833f24a93672deed09e453a0",
+      "rawHash": "dd00d9cb078cc51cddd10d621c1c3ac39a00556d833f24a93672deed09e453a0"
+    },
+    "js/files/share.js": {
+      "hash": "sha256-f42e4d934742683640c90f36fe8841dca272b34a587778c9dc14730b7143d503",
+      "rawHash": "f42e4d934742683640c90f36fe8841dca272b34a587778c9dc14730b7143d503"
+    },
+    "js/files/upload.js": {
+      "hash": "sha256-46d360295c20083362bc83d861dc5f8c76c8860be9df6333effa08e19e071d5b",
+      "rawHash": "46d360295c20083362bc83d861dc5f8c76c8860be9df6333effa08e19e071d5b"
+    },
+    "js/files/viewer.js": {
+      "hash": "sha256-753ff3f72f76aebcda1625455e4365335d64498733a8ad9fc6784207d581258f",
+      "rawHash": "753ff3f72f76aebcda1625455e4365335d64498733a8ad9fc6784207d581258f"
+    },
+    "js/icons.js": {
+      "hash": "sha256-711ec36a994784c599424fcd041a0db95146484728b4217719fe6770a73383ae",
+      "rawHash": "711ec36a994784c599424fcd041a0db95146484728b4217719fe6770a73383ae"
+    },
+    "js/media/attachment-e2ee.js": {
+      "hash": "sha256-ed68df8d568fe400e2b6774e72dead35251623194b8ed420a3d4b999f40d7e4d",
+      "rawHash": "ed68df8d568fe400e2b6774e72dead35251623194b8ed420a3d4b999f40d7e4d"
+    },
+    "js/media/attachments.js": {
+      "hash": "sha256-c57e76d40d44359179bad006815219de85816ba7df374a2dfa3ca1056d9ab09d",
+      "rawHash": "c57e76d40d44359179bad006815219de85816ba7df374a2dfa3ca1056d9ab09d"
+    },
+    "js/media/audio-player.js": {
+      "hash": "sha256-d2b78ea51ebf57c503c9aed6490dd7d9e4d7717ce8e3235045c370f87e1835f1",
+      "rawHash": "d2b78ea51ebf57c503c9aed6490dd7d9e4d7717ce8e3235045c370f87e1835f1"
+    },
+    "js/media/image-viewer.js": {
+      "hash": "sha256-2036392b780b5ba396b760ad49ee878da1dd5edd50cfc6b9cd5fae0dad200954",
+      "rawHash": "2036392b780b5ba396b760ad49ee878da1dd5edd50cfc6b9cd5fae0dad200954"
+    },
+    "js/media/lazy-e2ee-media.js": {
+      "hash": "sha256-50512f91ba4d80eb4371aecb915c441d6b6ec7ff4783cd8e3330d0b8ab68ad1c",
+      "rawHash": "50512f91ba4d80eb4371aecb915c441d6b6ec7ff4783cd8e3330d0b8ab68ad1c"
+    },
+    "js/media/mediaToken.js": {
+      "hash": "sha256-195800a3c979ff31b19e32447951e3a78e94c60579702668bccbfe05e453a51c",
+      "rawHash": "195800a3c979ff31b19e32447951e3a78e94c60579702668bccbfe05e453a51c"
+    },
+    "js/media/preview.js": {
+      "hash": "sha256-031a8cdc27ce837b766c4e14d3e66dd15e2fc3a4f1f41d51c237c9aca8180c79",
+      "rawHash": "031a8cdc27ce837b766c4e14d3e66dd15e2fc3a4f1f41d51c237c9aca8180c79"
+    },
+    "js/media/sw-stream-client.js": {
+      "hash": "sha256-c9e9291d018c7043d6e6900fa1fc64e60da5446809b2a79e19f79632dea1f2af",
+      "rawHash": "c9e9291d018c7043d6e6900fa1fc64e60da5446809b2a79e19f79632dea1f2af"
+    },
+    "js/media/video-player.js": {
+      "hash": "sha256-f198577be3a235b81b57bfd7206354f864e46a65232b40ac9d1d0ad3aa5c02c1",
+      "rawHash": "f198577be3a235b81b57bfd7206354f864e46a65232b40ac9d1d0ad3aa5c02c1"
+    },
+    "js/media/voice-message.js": {
+      "hash": "sha256-080d886c2f8707604dfd2fa8c0c96c01c9da322d5cf8e7a7b1fd640649e13dff",
+      "rawHash": "080d886c2f8707604dfd2fa8c0c96c01c9da322d5cf8e7a7b1fd640649e13dff"
+    },
+    "js/media/voice-recorder.js": {
+      "hash": "sha256-c04db9a9d6dded85f6058588e7996e473a2a27c06e7ffa38e23b460036cf60e6",
+      "rawHash": "c04db9a9d6dded85f6058588e7996e473a2a27c06e7ffa38e23b460036cf60e6"
+    },
+    "js/media/voice-waveform.js": {
+      "hash": "sha256-0ae44c3a9309e35ae29c7a999754bc1d0c41fc1d89fea896d483ebaf87ebe700",
+      "rawHash": "0ae44c3a9309e35ae29c7a999754bc1d0c41fc1d89fea896d483ebaf87ebe700"
+    },
+    "js/notifications/PLATFORM-NOTES.md": {
+      "hash": "sha256-607706513ab68f7512b75ae739bd53a643bd08f13c1ada2cbc8540430abf6e4e",
+      "rawHash": "607706513ab68f7512b75ae739bd53a643bd08f13c1ada2cbc8540430abf6e4e"
+    },
+    "js/notifications/message-sounds.js": {
+      "hash": "sha256-5149387e04ce9a132fe5b042ab9c582db0959dccdd8015d0bc8713931b1296f1",
+      "rawHash": "5149387e04ce9a132fe5b042ab9c582db0959dccdd8015d0bc8713931b1296f1"
+    },
+    "js/notifications/notification-manager.js": {
+      "hash": "sha256-e82737410e2a4f66c8466aee28f3b9b3d18910b12d8427bceaf40713eaa08a98",
+      "rawHash": "e82737410e2a4f66c8466aee28f3b9b3d18910b12d8427bceaf40713eaa08a98"
+    },
+    "js/notifications/push-registration.js": {
+      "hash": "sha256-054f9e6b617d0fcd2c73c31ea375627be272716c4293ed645acc06660cd6cd17",
+      "rawHash": "054f9e6b617d0fcd2c73c31ea375627be272716c4293ed645acc06660cd6cd17"
+    },
+    "js/notifications/web-notifications.js": {
+      "hash": "sha256-0d14ba9db15a1c5d55613c547b969135bf06c6d826c3be2756c66bf498d7be6b",
+      "rawHash": "0d14ba9db15a1c5d55613c547b969135bf06c6d826c3be2756c66bf498d7be6b"
+    },
+    "js/settings/admin.js": {
+      "hash": "sha256-47ec5e7b6673afeed251cc5fd1c23ec8684c4c8df9939a45470c5a934c36595d",
+      "rawHash": "47ec5e7b6673afeed251cc5fd1c23ec8684c4c8df9939a45470c5a934c36595d"
+    },
+    "js/settings/appearance-surfaces.js": {
+      "hash": "sha256-d98f14afcce809cc89ed541f0e44a5a9492a54eec74870992480ceac99a6dd66",
+      "rawHash": "d98f14afcce809cc89ed541f0e44a5a9492a54eec74870992480ceac99a6dd66"
+    },
+    "js/settings/custom-background.js": {
+      "hash": "sha256-03ce442fdc12ad40c58be27a3245e82c8ef9fe5558514fdee1a3b30d70a002ab",
+      "rawHash": "03ce442fdc12ad40c58be27a3245e82c8ef9fe5558514fdee1a3b30d70a002ab"
+    },
+    "js/settings/dynamic-style.js": {
+      "hash": "sha256-cdaf4e03eada0ef69f805aaaed1d6b368bc9ceb9e12b2eb6bc709c430ccc61bf",
+      "rawHash": "cdaf4e03eada0ef69f805aaaed1d6b368bc9ceb9e12b2eb6bc709c430ccc61bf"
+    },
+    "js/settings/settings-account.js": {
+      "hash": "sha256-807f46885833bfc71697f9e207667f6c9aa56a1b109b7840573a2622e61e222a",
+      "rawHash": "807f46885833bfc71697f9e207667f6c9aa56a1b109b7840573a2622e61e222a"
+    },
+    "js/settings/settings-appearance-custom.js": {
+      "hash": "sha256-adb8d1aa58185879d0970ed874a6b0799464edb779d32d26217501e0527f379e",
+      "rawHash": "adb8d1aa58185879d0970ed874a6b0799464edb779d32d26217501e0527f379e"
+    },
+    "js/settings/settings-appearance.js": {
+      "hash": "sha256-c45d728f123ebe669625145412c1e0206882a6fd60a9033ce681aef8907acf2e",
+      "rawHash": "c45d728f123ebe669625145412c1e0206882a6fd60a9033ce681aef8907acf2e"
+    },
+    "js/settings/settings-bubble-gradient.js": {
+      "hash": "sha256-55379b83064fb8705cf9c6d259ac95046168f80cca0128701eb027bd151f3df1",
+      "rawHash": "55379b83064fb8705cf9c6d259ac95046168f80cca0128701eb027bd151f3df1"
+    },
+    "js/settings/settings-media.js": {
+      "hash": "sha256-e4645d5db9eaee91977f16b81242fdaf509d5d8436e4dea9a28bdbced66e873a",
+      "rawHash": "e4645d5db9eaee91977f16b81242fdaf509d5d8436e4dea9a28bdbced66e873a"
+    },
+    "js/settings/settings-message-sounds.js": {
+      "hash": "sha256-33b0202fa496068c232828ecdaf3924d68b423ec76c511e627d42d4864fcdfd7",
+      "rawHash": "33b0202fa496068c232828ecdaf3924d68b423ec76c511e627d42d4864fcdfd7"
+    },
+    "js/settings/settings-nav.js": {
+      "hash": "sha256-8c18bcd0046a832a1cd7de6c7be0b66fe7da7027e33cba0653c8cbdefc7c59e4",
+      "rawHash": "8c18bcd0046a832a1cd7de6c7be0b66fe7da7027e33cba0653c8cbdefc7c59e4"
+    },
+    "js/settings/settings-notifications.js": {
+      "hash": "sha256-2b550c438f16889685a023980f987eecb10252d919feb9e82fdd5b883f8dfafc",
+      "rawHash": "2b550c438f16889685a023980f987eecb10252d919feb9e82fdd5b883f8dfafc"
+    },
+    "js/settings/settings-profile.js": {
+      "hash": "sha256-889201b3250704d7b2765beacf75842cf0df5bef0ef1d3ff331baf75c4cbaf99",
+      "rawHash": "889201b3250704d7b2765beacf75842cf0df5bef0ef1d3ff331baf75c4cbaf99"
+    },
+    "js/settings/settings-render.js": {
+      "hash": "sha256-099542b64e8955c2ef7e900636e76113a1a420fa1e9d6938d4e510bda4ed67d7",
+      "rawHash": "099542b64e8955c2ef7e900636e76113a1a420fa1e9d6938d4e510bda4ed67d7"
+    },
+    "js/settings/settings-security.js": {
+      "hash": "sha256-858d287ab7ac7abb5713a9dc89cff118673fef9378e4d091b95f73197d777869",
+      "rawHash": "858d287ab7ac7abb5713a9dc89cff118673fef9378e4d091b95f73197d777869"
+    },
+    "js/settings/settings-shortcuts.js": {
+      "hash": "sha256-4edc0e6efb9614d680010e9f39e4e283f558ccf0865e933dd77673853499b6ee",
+      "rawHash": "4edc0e6efb9614d680010e9f39e4e283f558ccf0865e933dd77673853499b6ee"
+    },
+    "js/settings/settings.js": {
+      "hash": "sha256-fbbf6bf1c96fd3789e1480bc1a82cfca63caf6a91ee69c467cf86fd622ef2fb0",
+      "rawHash": "fbbf6bf1c96fd3789e1480bc1a82cfca63caf6a91ee69c467cf86fd622ef2fb0"
+    },
+    "js/settings/theme.js": {
+      "hash": "sha256-27cd626801e63778843b2554df312f1e1a4e2b6502de69648eaa801aef5a2a67",
+      "rawHash": "27cd626801e63778843b2554df312f1e1a4e2b6502de69648eaa801aef5a2a67"
+    },
+    "js/sw-media/bundle-entry.js": {
+      "hash": "sha256-43ee1dddd140da8f70000ae3ffdb87655ad44a77e47c1ab1b0952dac60036f66",
+      "rawHash": "43ee1dddd140da8f70000ae3ffdb87655ad44a77e47c1ab1b0952dac60036f66"
+    },
+    "js/sw-media/handler-core.js": {
+      "hash": "sha256-93737f04d788fb26b3ac3683d3ae4e94c0d821251841208aa9d7bb43b37390c8",
+      "rawHash": "93737f04d788fb26b3ac3683d3ae4e94c0d821251841208aa9d7bb43b37390c8"
+    },
+    "js/sw-media/media-ciphertext.js": {
+      "hash": "sha256-decb68a884e63b963f140d09f17a627d3539f8bfdebdb3985d6f257e42c60679",
+      "rawHash": "decb68a884e63b963f140d09f17a627d3539f8bfdebdb3985d6f257e42c60679"
+    },
+    "js/sw-media/stream-registry.js": {
+      "hash": "sha256-f1052e41834602127dc6781a9801ff1397858d56833d8bacfffbff77ae67dcb8",
+      "rawHash": "f1052e41834602127dc6781a9801ff1397858d56833d8bacfffbff77ae67dcb8"
+    },
+    "js/ui/actions.js": {
+      "hash": "sha256-8d53b7cba9dfcbace69fad56528c2103ecf0d18f3ec6b27074a15c7f0a088de9",
+      "rawHash": "8d53b7cba9dfcbace69fad56528c2103ecf0d18f3ec6b27074a15c7f0a088de9"
+    },
+    "js/ui/avatar.js": {
+      "hash": "sha256-c88991678aaf479af83c4d145aef6b1864580068ca9128ac6d4492278e8f7635",
+      "rawHash": "c88991678aaf479af83c4d145aef6b1864580068ca9128ac6d4492278e8f7635"
+    },
+    "js/ui/confirm.js": {
+      "hash": "sha256-d090a977e2f8319d6e3d2433fdc4cd14a137d14589af2963e6f782f2e808acc5",
+      "rawHash": "d090a977e2f8319d6e3d2433fdc4cd14a137d14589af2963e6f782f2e808acc5"
+    },
+    "js/ui/dynamic-vars.js": {
+      "hash": "sha256-08f1eb3a56d0d2749f21cf6c5879d6b8de3faa17853048821247ff8adac6fe87",
+      "rawHash": "08f1eb3a56d0d2749f21cf6c5879d6b8de3faa17853048821247ff8adac6fe87"
+    },
+    "js/ui/emoji-picker.js": {
+      "hash": "sha256-d8f24c9de532c2561ed2247112d679965df2de072730ca69fbdc177db25ad28a",
+      "rawHash": "d8f24c9de532c2561ed2247112d679965df2de072730ca69fbdc177db25ad28a"
+    },
+    "js/ui/mobile-shell.js": {
+      "hash": "sha256-27b64e154c11d811d939e1e69ebc8ffbec2be5a5953a00f620912728dd948b6a",
+      "rawHash": "27b64e154c11d811d939e1e69ebc8ffbec2be5a5953a00f620912728dd948b6a"
+    },
+    "js/ui/new-chat-fab.js": {
+      "hash": "sha256-b2ccac179968b122c05a55dfe52673e3d136a160f356cc3d55a382274409602a",
+      "rawHash": "b2ccac179968b122c05a55dfe52673e3d136a160f356cc3d55a382274409602a"
+    },
+    "js/ui/profile-card.js": {
+      "hash": "sha256-d5093bcf48138658ad435c0e570a0167cbb8f9a36c1129ad8b2cebe27b120f70",
+      "rawHash": "d5093bcf48138658ad435c0e570a0167cbb8f9a36c1129ad8b2cebe27b120f70"
+    },
+    "js/ui/sidebar-resize.js": {
+      "hash": "sha256-30fc0ad6e97b08a9d1f75c3c086d9f04b444b375a13c63b8c9a14b3e77ff2087",
+      "rawHash": "30fc0ad6e97b08a9d1f75c3c086d9f04b444b375a13c63b8c9a14b3e77ff2087"
+    },
+    "js/ui/ui-enhance.js": {
+      "hash": "sha256-3cc149f3090d5e016632d55fff160492841fcb31bcadee359aeaa5817815b6cf",
+      "rawHash": "3cc149f3090d5e016632d55fff160492841fcb31bcadee359aeaa5817815b6cf"
+    },
+    "js/vendor/bidi-js.js": {
+      "hash": "sha256-9c94554140bcdefe7334024f0f1fbfdd95d709c140e3fecad1140a9393426d04",
+      "rawHash": "9c94554140bcdefe7334024f0f1fbfdd95d709c140e3fecad1140a9393426d04"
+    },
+    "js/vendor/capacitor-app.js": {
+      "hash": "sha256-245f35c39266231e24f28fea7cb7a6c86813861b81c4820a095b192cfcfc6c9a",
+      "rawHash": "245f35c39266231e24f28fea7cb7a6c86813861b81c4820a095b192cfcfc6c9a"
+    },
+    "js/vendor/capacitor.entry.js": {
+      "hash": "sha256-ddea90729a3f8c41063af11d8277970e09d94f7f4ad553fcdf760cb78a7e2d0d",
+      "rawHash": "ddea90729a3f8c41063af11d8277970e09d94f7f4ad553fcdf760cb78a7e2d0d"
+    },
+    "js/vendor/capacitor.js": {
+      "hash": "sha256-af2d4ce20f6de407d82c9cd5b5550bf68e93abfb1ecb88fa1c0d28e116e5180f",
+      "rawHash": "af2d4ce20f6de407d82c9cd5b5550bf68e93abfb1ecb88fa1c0d28e116e5180f"
+    },
+    "js/vendor/emoji-data.js": {
+      "hash": "sha256-660556df8062ad797245df321d0a71ff15fe94601929ddaa81c592c58f6c4886",
+      "rawHash": "660556df8062ad797245df321d0a71ff15fe94601929ddaa81c592c58f6c4886"
+    },
+    "js/vendor/emoji-mart-data.js": {
+      "hash": "sha256-ba8bd877dd59e2ffc3396441f5327357d02d38a3d8b9ebe36b07a9f470a57a7b",
+      "rawHash": "ba8bd877dd59e2ffc3396441f5327357d02d38a3d8b9ebe36b07a9f470a57a7b"
+    },
+    "js/vendor/socket.io-client.js": {
+      "hash": "sha256-bb3b6ec3caeb2b52c8816f0a1c35f3711bbbc6b1c4ed82b8e7f22a2fe6cba380",
+      "rawHash": "bb3b6ec3caeb2b52c8816f0a1c35f3711bbbc6b1c4ed82b8e7f22a2fe6cba380"
+    },
+    "js/wireguard/wireguard.js": {
+      "hash": "sha256-a3ec36906a0f464f27dfe1e37a94f48dbbfe3d026befdd81afa817f997fdbc39",
+      "rawHash": "a3ec36906a0f464f27dfe1e37a94f48dbbfe3d026befdd81afa817f997fdbc39"
+    },
+    "sw-manifest.js": {
+      "hash": "sha256-92e6ec4649065e88e23c4660b0b0a214d69e417e15a6146b9608ae7edf6aae68",
+      "rawHash": "92e6ec4649065e88e23c4660b0b0a214d69e417e15a6146b9608ae7edf6aae68"
+    },
+    "sw-media-bundle.js": {
+      "hash": "sha256-1080b12da0ba950f9c21408aa24ab6acc61dc440ddf5d5545912398b369e4043",
+      "rawHash": "1080b12da0ba950f9c21408aa24ab6acc61dc440ddf5d5545912398b369e4043"
+    },
+    "sw.js": {
+      "hash": "sha256-5cda7d9addba98b5760294426d3f61507564de9bd2d9a52c3a115c2dd1e75fff",
+      "rawHash": "5cda7d9addba98b5760294426d3f61507564de9bd2d9a52c3a115c2dd1e75fff"
+    }
+  }
+}

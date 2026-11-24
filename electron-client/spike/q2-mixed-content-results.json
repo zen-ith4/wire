@@ -1,0 +1,29 @@
+{
+  "origin": "wire-bundled://app",
+  "isSecureContext": true,
+  "tests": [
+    {
+      "name": "fetch to non-loopback HTTP",
+      "url": "http://192.168.1.14:34567/api/test",
+      "success": true,
+      "status": 200,
+      "blocked": false,
+      "responseText": "{\"success\":true,\"message\":\"Server reachable\"}"
+    },
+    {
+      "name": "WebSocket to non-loopback HTTP",
+      "url": "ws://192.168.1.14:34567",
+      "success": false,
+      "error": "WebSocket error",
+      "blocked": true
+    },
+    {
+      "name": "fetch to loopback HTTP (control)",
+      "url": "http://127.0.0.1:34567/api/test",
+      "success": true,
+      "status": 200,
+      "blocked": false,
+      "responseText": "{\"success\":true,\"message\":\"Server reachable\"}"
+    }
+  ]
+}

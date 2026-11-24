@@ -1,0 +1,49 @@
+{
+  "manifestGenerated": true,
+  "fileCount": 206,
+  "tests": [
+    {
+      "name": "Valid file request",
+      "success": false,
+      "error": "resp is not defined"
+    },
+    {
+      "name": "Tampered file (1 byte flipped)",
+      "success": false,
+      "error": "resp is not defined"
+    },
+    {
+      "name": "Path outside manifest",
+      "success": false,
+      "error": "resp is not defined"
+    },
+    {
+      "name": "Path traversal: ../etc/passwd",
+      "success": true
+    },
+    {
+      "name": "Path traversal: ..%2fetc%2fpasswd",
+      "success": true
+    },
+    {
+      "name": "Path traversal: ..%252fetc%252fpasswd",
+      "success": true
+    },
+    {
+      "name": "Path traversal: ..\\\\..\\\\windows\\\\system32",
+      "success": true
+    },
+    {
+      "name": "Path traversal: /etc/passwd",
+      "success": true
+    },
+    {
+      "name": "Path traversal: js/../../etc/passwd",
+      "success": true
+    },
+    {
+      "name": "Path traversal via fetch",
+      "success": true
+    }
+  ]
+}

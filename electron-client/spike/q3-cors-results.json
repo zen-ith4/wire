@@ -1,0 +1,29 @@
+{
+  "origin": "wire-bundled://app",
+  "isSecureContext": true,
+  "tests": [
+    {
+      "name": "fetch with CORS",
+      "url": "http://192.168.1.14:34567/api/test",
+      "success": true,
+      "status": 200,
+      "serverReportedOrigin": "wire-bundled://app",
+      "blocked": false
+    },
+    {
+      "name": "preflight OPTIONS",
+      "url": "http://192.168.1.14:34567/api/test",
+      "success": true,
+      "status": 204,
+      "blocked": false
+    },
+    {
+      "name": "fetch with Authorization header",
+      "url": "http://192.168.1.14:34567/api/test",
+      "success": true,
+      "status": 200,
+      "serverReportedOrigin": "wire-bundled://app",
+      "blocked": false
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "isSecureContext": true,
+  "cryptoSubtle": true,
+  "indexedDB": true,
+  "localStorage": true,
+  "sessionStorage": true,
+  "fetch": true,
+  "websocket": true,
+  "origin": "wire-bundled://app",
+  "cryptoSubtleWorks": true,
+  "keyGenerated": true,
+  "indexedDBWorks": true,
+  "indexedDBReadback": true,
+  "indexedDBItems": 2,
+  "localStorageWorks": true,
+  "sessionStorageWorks": true,
+  "fetchWorks": true,
+  "websocketConstructor": true
+}

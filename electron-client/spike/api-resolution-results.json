@@ -1,0 +1,22 @@
+{
+  "origin": "wire-bundled://app",
+  "isNativeApp": false,
+  "getServerEndpoint": "wire-bundled://app",
+  "resolveServerUrl": "/api/test",
+  "fetchBehavior": [
+    {
+      "url": "/api/version",
+      "resolved": "relative",
+      "status": "would fail - no server",
+      "note": "Relative URL resolves against page origin (wire-bundled://app)"
+    },
+    {
+      "url": "http://127.0.0.1:3000/api/version",
+      "error": "Failed to fetch"
+    }
+  ],
+  "socketIoBehavior": "socket.io-client available",
+  "isCapacitor": true,
+  "windowLocation": "wire-bundled://app/index.html",
+  "windowProtocol": "wire-bundled:"
+}

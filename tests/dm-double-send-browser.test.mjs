@@ -28,15 +28,18 @@ import { currentEngine } from './_dm-ui-helpers.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-let server = null;
+const servers = [];
 
 after(async () => {
   await closeUserBrowsers();
-  if (server) await server.stop().catch(() => {});
+  for (const s of servers) {
+    await s.stop().catch(() => {});
+  }
 });
 
 test('one send per trigger: rapid double click, later legitimate send', async (t) => {
-  server = await startRealServer({ csp: 'true' });
+  const server = await startRealServer({ csp: 'true' });
+  servers.push(server);
   await registerUser(server.origin, 'ds-alice');
   await registerUser(server.origin, 'ds-bob');
 
@@ -126,7 +129,8 @@ test('one send per trigger: double Enter (chromium only)', async (t) => {
     return;
   }
 
-  server = await startRealServer({ csp: 'true' });
+  const server = await startRealServer({ csp: 'true' });
+  servers.push(server);
   await registerUser(server.origin, 'ds-alice');
   await registerUser(server.origin, 'ds-bob');
 

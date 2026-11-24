@@ -22,7 +22,7 @@ puppeteer-core WebDriver BiDi, compared against Chromium controls.
 | tests/browser-launcher.test.mjs | 9 | 9 | 0 | 0 | GREEN |
 | tests/crypto/sw-media-bundle-browser.test.mjs | 5 | 3 | 2 | 0 | GREEN (5/5) |
 | tests/csp-confirm-enforced-browser.test.mjs | 7 | 6 | 0 | 1 | GREEN |
-| tests/csp-handlers-enforced-browser.test.mjs | 2 | 0 | 2 | 0 | GREEN (2/2) |
+| tests/csp-handlers-enforced-browser.test.mjs | 2 | 0 | 0 | 2 | GREEN (2/2) |
 | tests/dm-csp-handlers-enforced-browser.test.mjs | 2 | 2 | 0 | 0 | GREEN |
 | tests/dm-double-send-browser.test.mjs | 2 | 1 | 0 | 1 | GREEN (2/2) |
 | tests/dm-e2ee-default-browser.test.mjs | 1 | 1 | 0 | 0 | GREEN |
@@ -92,43 +92,45 @@ This is an **automation artifact**, not a product bug — the product's
 
 **Result:** All 42 previously failing tests now pass on Firefox.
 
-### 2. Service Worker lifecycle — engine limitation
+### 2. Service Worker target detection — automation artifact
 
 **Affected tests:** `tests/crypto/sw-media-bundle-browser.test.mjs` subtests 2 and 5 (2/5 fail on Firefox, 5/5 pass on Chromium).
 
-**Evidence:** Error: `the service worker must have the media bundle in its global scope, saw []`. The test probes the SW global scope for `self.WireMedia.decryptChunkRange` after registration and update. Firefox's SW lifecycle (module loading timing, update propagation) differs from Chromium's.
+**Evidence:** Error: `the service worker must have the media bundle in its global scope, saw []`. The test probes the SW global scope for `self.WireMedia.decryptChunkRange` after registration and update via `workerGlobals()` which uses `browser.targets().filter((t) => t.type() === 'service_worker')`. On Firefox, `browser.targets()` returns no service worker targets (returns empty array), while on Chromium it returns the registered SW.
 
-**Classification:** Engine limitation. Firefox's service worker implementation loads modules and handles updates on a different schedule. The test expects the bundle to be immediately available in the SW global scope after `registration.update()`, but Firefox may not have finished loading the updated module when the probe runs.
+**Root cause:** The puppeteer-core Firefox BiDi implementation does not expose service worker targets via `browser.targets()` the same way Chromium does. The SW registration succeeds (tests 1, 3, 4 pass - they check `installed.activeState === 'activated'` and `installed.controlled === true`), but the `workerGlobals()` probe returns empty.
 
-**Fix:** None applied (engine limitation). Could be addressed by adding a `waitForSWReady()` helper that polls `workerGlobals()` until the bundle appears, but this would mask the real difference.
+**Classification:** **Automation artifact**. The Firefox BiDi implementation lacks service worker target enumeration. The SW itself registers and controls the page correctly (evidenced by tests 1, 3, 4 passing).
 
-### 3. BiDi network emulation — automation artifact
+**MEDIA_STREAM_ENABLED note:** The `MEDIA_STREAM_ENABLED` flag in `public/sw.js` is `false` by default, but the media bundle is still imported via `importScripts('/sw-media-bundle.js')` unconditionally. The test failures are not related to this flag — the SW loads the bundle but the test's probe mechanism fails on Firefox.
 
-**Affected tests:** `tests/csp-handlers-enforced-browser.test.mjs` (2/2 fail on Firefox, 2/2 pass on Chromium).
+**Fix:** None applied (automation artifact). Would require puppeteer-core Firefox BiDi support for service worker targets.
+
+### 3. BiDi network emulation — automation artifact (SKIPPED)
+
+**Affected tests:** `tests/csp-handlers-enforced-browser.test.mjs` (2/2 failed on Firefox, 2/2 pass on Chromium).
 
 **Evidence:** `BidiPage.emulateNetworkConditions` throws in puppeteer-core's Firefox BiDi implementation (stack shows `Page.js:694`). The test uses `page.emulateNetworkConditions()` to simulate offline/online, which is not implemented in Firefox BiDi.
 
-**Classification:** Automation artifact. Firefox BiDi does not implement the network emulation command.
+**Classification:** **Automation artifact**. Firefox BiDi does not implement the network emulation command.
 
-**Fix:** None applied (automation artifact). Could be worked around by using a different offline simulation (e.g., `page.setOfflineMode()` if available, or skipping on Firefox with explicit reason).
+**Fix applied (commit d1129b3):** Skip on non-Chromium with reason: "page.emulateNetworkConditions is not implemented in puppeteer-core Firefox BiDi". Assertions unchanged for Chromium.
 
-### 4. MediaRecorder codec — test assumption
+### 4. MediaRecorder codec / audio timing — test assumption / UNKNOWN
 
 **Affected tests:**
-- `tests/dm-voice-message-browser.test.mjs` subtest 1 (1/2 fail on Firefox)
-- `tests/dm-audio-attachment-browser.test.mjs` subtest 1 (1/2 fail on Firefox)
+- `tests/dm-voice-message-browser.test.mjs` subtest 1 (1/2 fail on Firefox): `aria-valuenow 30 vs position 0.00`
+- `tests/dm-audio-attachment-browser.test.mjs` subtest 1 (1/2 fail on Firefox): `NotSupportedError: MediaRecorder constructor: audio/mp4;codecs=mp4a.40.2 indicates an unsupported container`
 
 **Evidence:**
-- dm-voice-message: `aria-valuenow 31 vs position 0.00` (playback position not updating)
-- dm-audio-attachment: `NotSupportedError: MediaRecorder constructor: audio/mp4;codecs=mp4a.40.2 indicates an unsupported container`
+- dm-voice-message: The waveform shows 30% progress (`aria-valuenow=30`) but `audio.currentTime / duration` computes to 0.00. The test waits for `currentTime > 0.3` before asserting, yet the assertion reads `currentTime` as 0. This suggests a timing/serialization issue with `audio.currentTime` in Firefox headless mode under puppeteer-core BiDi.
+- dm-audio-attachment: Firefox 160 does not support `audio/mp4;codecs=mp4a.40.2` for MediaRecorder. The **product** correctly picks a supported MIME type at runtime via `MediaRecorder.isTypeSupported()` (public/js/media/voice-recorder.js:47-58). The **test** hardcodes the unsupported codec.
 
-**Root cause:** The **product** correctly picks a supported MIME type at runtime via `MediaRecorder.isTypeSupported()` (public/js/media/voice-recorder.js:47-58). The **tests** hardcode specific codecs:
-- dm-audio-attachment explicitly uses `audio/mp4;codecs=mp4a.40.2` which Firefox 160 doesn't support
-- dm-voice-message uses the real composer (which picks a supported type), but the waveform/progress test expects a specific behaviour that differs with the Firefox-selected codec
+**Classification:** 
+- dm-audio-attachment: **Test assumption** — test hardcodes unsupported codec instead of using product's dynamic selection.
+- dm-voice-message: **UNKNOWN** — the audio timing issue could be a Firefox headless audio bug, a puppeteer-core BiDi serialization issue with `audio.currentTime`, or a test timing artifact. Without a minimal repro isolating the audio element behavior in headless Firefox BiDi, cannot definitively classify.
 
-**Classification:** Test assumption. The test forces a codec instead of using the product's dynamic selection, or expects Chrome-specific behaviour from the selected codec.
-
-**Fix:** Update tests to use the product's `pickSupportedMimeType()` logic or skip the unsupported codec with explicit reason. Not applied in this run (requires test-side changes with product-like MIME selection).
+**Fix for dm-audio-attachment:** Update test to use product's `pickSupportedMimeType()` logic or skip unsupported codec with explicit reason. Not applied in this run.
 
 ### 5. CDP-only tests — expected skips (no failures)
 
@@ -146,6 +148,7 @@ These tests are Chromium-only due to CDP usage and correctly skip on Firefox:
 | tests/groups/group-attachment-browser.test.mjs (#12) | no fake-microphone launch flags for Firefox - verify manually with a real microphone |
 | tests/media/sw-stream-browser.test.mjs (#7) | needs Chromium: CDP ServiceWorker.enable/stopAllWorkers (chromium-only) |
 | tests/dm-audio-attachment-browser.test.mjs (#2) | needs Chromium: captureDownloads uses CDP Browser.setDownloadBehavior (chromium-only) |
+| tests/csp-handlers-enforced-browser.test.mjs (both tests) | page.emulateNetworkConditions is not implemented in puppeteer-core Firefox BiDi |
 
 ## Mute-audio evidence
 
@@ -182,6 +185,8 @@ Same as desktop, plus:
 | cc2d23d | tests/_acceptance-harness.mjs |
 | e85ff92 | tests/_dm-ui-helpers.mjs, tests/csp-confirm-enforced-browser.test.mjs, tests/csp-handlers-enforced-browser.test.mjs, tests/dm-unencrypted-browser.test.mjs, tests/dm-v2-vanishing-row.test.mjs, tests/dm-v2-wire-browser-paths.test.mjs, tests/dm-v2-wire-browser.test.mjs, tests/peer-pin-upgrade-browser.test.mjs |
 | 90f52f1 | docs/TEST_ENGINE_FIREFOX_FULL_RUN.md |
+| 6ae78ea | docs/TEST_ENGINE_FIREFOX_FULL_RUN.md |
+| d1129b3 | tests/csp-handlers-enforced-browser.test.mjs |
 
 Nothing under `public/`, `config/`, `middleware/`, `controllers/`, `routes/`, `database/`, `scripts/` or server code changed. `git diff github/main --name-only` lists only tests/ and docs/ files.
 
@@ -189,27 +194,43 @@ Nothing under `public/`, `config/`, `middleware/`, `controllers/`, `routes/`, `d
 
 | File | Chromium result |
 |------|-----------------|
-| tests/crypto/*.test.mjs | 118 pass, 0 fail |
-| tests/browser-launcher.test.mjs | 9 pass, 0 fail |
-| tests/dm-double-send-browser.test.mjs | 2 pass, 0 fail |
-| tests/dm-verify-double-trigger-browser.test.mjs | 1 pass, 0 fail |
-| tests/dm-key-trust-hostile-strings-browser.test.mjs | 2 pass, 0 fail |
-| tests/groups/group-attachment-browser.test.mjs | 12 pass, 0 fail |
-| tests/media/sw-stream-browser.test.mjs | 11 pass, 0 fail |
+| tests/crypto/*.test.mjs | 118 pass, 0 fail, 0 cancelled, 0 skipped, 0 todo |
+| tests/browser-launcher.test.mjs | 9 pass, 0 fail, 0 cancelled, 0 skipped, 0 todo |
+| tests/dm-double-send-browser.test.mjs | 2 pass, 0 fail, 0 cancelled, 0 skipped, 0 todo |
+| tests/dm-verify-double-trigger-browser.test.mjs | 1 pass, 0 fail, 0 cancelled, 0 skipped, 0 todo |
+| tests/dm-key-trust-hostile-strings-browser.test.mjs | 2 pass, 0 fail, 0 cancelled, 0 skipped, 0 todo |
+| tests/groups/group-attachment-browser.test.mjs | 12 pass, 0 fail, 0 cancelled, 0 skipped, 0 todo (3/3 runs) |
+| tests/media/sw-stream-browser.test.mjs | 11 pass, 0 fail, 0 cancelled, 0 skipped, 0 todo (3/3 runs) |
 | tests/dm-verify-ui-browser.test.mjs | 5/5 whole-file runs pass |
-| tests/dm-unencrypted-browser.test.mjs | 14 pass, 0 fail |
-| tests/dm-v2-vanishing-row.test.mjs | 4 pass, 0 fail |
-| tests/dm-v2-wire-browser-paths.test.mjs | 14 pass, 0 fail |
-| tests/dm-v2-wire-browser.test.mjs | 1 pass, 0 fail |
-| tests/peer-pin-upgrade-browser.test.mjs | 4 pass, 0 fail |
-| tests/csp-confirm-enforced-browser.test.mjs | 6 pass, 0 fail |
-| tests/csp-handlers-enforced-browser.test.mjs | 2 pass, 0 fail |
+| tests/dm-unencrypted-browser.test.mjs | 14 pass, 0 fail, 0 cancelled, 0 skipped, 0 todo |
+| tests/dm-v2-vanishing-row.test.mjs | 4 pass, 0 fail, 0 cancelled, 0 skipped, 0 todo |
+| tests/dm-v2-wire-browser-paths.test.mjs | 14 pass, 0 fail, 0 cancelled, 0 skipped, 0 todo |
+| tests/dm-v2-wire-browser.test.mjs | 1 pass, 0 fail, 0 cancelled, 0 skipped, 0 todo |
+| tests/peer-pin-upgrade-browser.test.mjs | 4 pass, 0 fail, 0 cancelled, 0 skipped, 0 todo |
+| tests/csp-confirm-enforced-browser.test.mjs | 6 pass, 0 fail, 0 cancelled, 0 skipped, 1 todo |
+| tests/csp-handlers-enforced-browser.test.mjs | 2 pass, 0 fail, 0 cancelled, 0 skipped, 0 todo |
+| tests/dm-double-send-browser.test.mjs | 2 pass, 0 fail, 0 cancelled, 0 skipped, 0 todo |
 
 `npm audit --omit=dev`: 0 vulnerabilities.
 
+## Step 5 — sendComposerMessage timeout documentation
+
+The `sendComposerMessage(page)` helper added in commit e85ff92 uses the default `pollUntil` timeout of 15000 ms to wait for the composer input to clear. Two of the updated files previously used a 20000 ms timeout for this wait:
+
+- `tests/dm-v2-wire-browser-paths.test.mjs` (previously 20000 ms in `sendOnce`)
+- `tests/dm-v2-vanishing-row.test.mjs` (previously 20000 ms in `sendOnce`)
+
+The 15000 ms default has proven sufficient in all Chromium and Firefox runs. No timeout increase was needed. If a future flaky timeout occurs on a slow CI runner, the call sites can be updated to pass an explicit timeout.
+
 ## Push result
 
-- Branch `firefox-full-run` pushed to github: `90f52f1bc2f36da6f5ccc42052bec7b278728ab7` (plus new commits)
+- Branch `firefox-full-run` pushed to github: `d1129b3` (latest)
 - github main unchanged: `6899a3b87f42d23799e6f91e79fd0080722848c6`
+
+## Honest UNKNOWN list
+
+1. `tests/dm-voice-message-browser.test.mjs` subtest 1 on Firefox: The `aria-valuenow 30 vs position 0.00` failure could be a Firefox headless audio bug, a puppeteer-core BiDi serialization issue with `audio.currentTime`, or a test timing artifact. Without a minimal repro isolating the audio element behavior in headless Firefox BiDi, cannot definitively classify as PRODUCT BUG, automation artifact, or test bug.
+
+2. `tests/crypto/sw-media-bundle-browser.test.mjs` subtests 2 & 5 on Firefox: The `workerGlobals()` probe returns empty on Firefox due to `browser.targets()` not exposing service workers. While classified as automation artifact based on evidence (SW registration succeeds, tests 1/3/4 pass), a minimal repro demonstrating the BiDi target enumeration gap would strengthen this classification.
 
 Firefox automated run only. NOT verified: real-Firefox keyboard Enter, real microphone, Safari, Electron, real Android APK.

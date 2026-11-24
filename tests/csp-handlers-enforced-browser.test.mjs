@@ -37,7 +37,7 @@ import {
     groupProtocolHeaders,
     sleep,
 } from './_acceptance-harness.mjs';
-import { sendComposerMessage } from './_dm-ui-helpers.mjs';
+import { currentEngine, sendComposerMessage } from './_dm-ui-helpers.mjs';
 
 import path from 'node:path';
 import os from 'node:os';
@@ -811,9 +811,17 @@ async function scenario(t, cspEnforce) {
 }
 
 test('CSP_ENFORCE=true: settings/admin/dm delegated actions work with real clicks', { timeout: 300000 }, async (t) => {
+    if (currentEngine() !== 'chromium') {
+        t.skip('page.emulateNetworkConditions is not implemented in puppeteer-core Firefox BiDi');
+        return;
+    }
     await scenario(t, true);
 });
 
 test('CSP_ENFORCE=false (Report-Only): identical behaviour, nothing blocked', { timeout: 300000 }, async (t) => {
+    if (currentEngine() !== 'chromium') {
+        t.skip('page.emulateNetworkConditions is not implemented in puppeteer-core Firefox BiDi');
+        return;
+    }
     await scenario(t, false);
 });

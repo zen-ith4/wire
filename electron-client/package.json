@@ -15,8 +15,8 @@
     "dist:dir": "electron-builder --dir"
   },
   "devDependencies": {
-    "electron": "^44.4.1",
-    "electron-builder": "^26.15.3"
+    "electron": "^45.4.1",
+    "electron-builder": "^26.18.0"
   },
   "build": {
     "appId": "com.wire.desktopclient",
@@ -39,7 +39,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ]
     },
@@ -58,14 +60,30 @@
       "icon": "build/icons",
       "category": "Network",
       "target": [
-        { "target": "AppImage", "arch": ["x64"] },
-        { "target": "deb", "arch": ["x64"] }
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "maintainer": "Wire",
       "synopsis": "Wire desktop client"
     },
     "deb": {
-      "depends": ["libnotify4", "libnss3", "libxss1", "libxtst6", "xdg-utils"],
+      "depends": [
+        "libnotify4",
+        "libnss3",
+        "libxss1",
+        "libxtst6",
+        "xdg-utils"
+      ],
       "artifactName": "${productName}-${version}.${ext}"
     }
   }

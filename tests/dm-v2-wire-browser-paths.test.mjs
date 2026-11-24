@@ -44,6 +44,7 @@ import {
 } from './_acceptance-harness.mjs';
 import { PASSWORD } from './_acceptance-harness.mjs';
 import { Database, cleanupTmp, tmpDir, FIXTURE_DB } from './credentials/_fixture.mjs';
+import { sendComposerMessage } from './_dm-ui-helpers.mjs';
 
 const PLACEHOLDER = 'Unable to decrypt';
 
@@ -220,15 +221,7 @@ const envelopeOf = (row) => JSON.parse(row.content);
  */
 async function sendOnce(page, text) {
     await page.type('#dm-input', text);
-    await page.keyboard.press('Enter');
-    await pollUntil(async () => {
-        const v = await page.evaluate(() => document.getElementById('dm-input')?.value ?? null);
-        return v === '' ? { cleared: true } : null;
-    }, {
-        timeout: 20000,
-        what: `the composer to clear after sending ${JSON.stringify(text)}`,
-        describe: async () => JSON.stringify(await page.evaluate(() => document.getElementById('dm-input')?.value ?? null)),
-    });
+    await sendComposerMessage(page);
 }
 
 /** Open both threads and assert both start EMPTY, so every count below is exact. */

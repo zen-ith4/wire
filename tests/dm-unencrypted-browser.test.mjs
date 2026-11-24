@@ -30,6 +30,7 @@ import {
     PASSWORD,
 } from './_acceptance-harness.mjs';
 import { Database, cleanupTmp, tmpDir, FIXTURE_DB } from './credentials/_fixture.mjs';
+import { sendComposerMessage } from './_dm-ui-helpers.mjs';
 
 const HIDDEN = 'Message hidden: it was not encrypted';
 const MARK = 'Not encrypted';
@@ -113,11 +114,7 @@ const conversationPreview = (page, peerId) => page.evaluate((id) =>
 /** Send one message through the real composer and wait for the composer's own "sent". */
 async function sendOnce(page, text) {
     await page.type('#dm-input', text);
-    await page.keyboard.press('Enter');
-    await pollUntil(
-        async () => (await page.evaluate(() => document.getElementById('dm-input')?.value ?? null)) === '',
-        { what: `the composer to clear after sending ${JSON.stringify(text)}` }
-    );
+    await sendComposerMessage(page);
 }
 
 const threadShows = (page, text, what) => pollUntil(

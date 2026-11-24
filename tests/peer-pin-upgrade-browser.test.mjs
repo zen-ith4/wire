@@ -27,6 +27,7 @@ import {
     PASSWORD,
 } from './_acceptance-harness.mjs';
 import { Database, cleanupTmp, tmpDir, FIXTURE_DB } from './credentials/_fixture.mjs';
+import { sendComposerMessage } from './_dm-ui-helpers.mjs';
 
 const UNREADABLE = 'Unable to decrypt';
 const FORGED = 'FORGED-under-a-planted-key';
@@ -98,11 +99,7 @@ const threadShows = (page, text, what) => pollUntil(
 
 async function sendOnce(page, text) {
     await page.type('#dm-input', text);
-    await page.keyboard.press('Enter');
-    await pollUntil(
-        async () => (await page.evaluate(() => document.getElementById('dm-input')?.value ?? null)) === '',
-        { what: `the composer to clear after sending ${JSON.stringify(text)}` }
-    );
+    await sendComposerMessage(page);
 }
 
 /**

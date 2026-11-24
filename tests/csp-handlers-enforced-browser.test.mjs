@@ -37,6 +37,7 @@ import {
     groupProtocolHeaders,
     sleep,
 } from './_acceptance-harness.mjs';
+import { currentEngine, sendComposerMessage } from './_dm-ui-helpers.mjs';
 
 import path from 'node:path';
 import os from 'node:os';
@@ -352,7 +353,7 @@ async function scenario(t, cspEnforce) {
             (await aliceSession.api(`/api/dm/messages/${bobSession.id}/recent`)).body.map((m) => m.id)
         );
         await alicePageInfo.page.type('#dm-input', `message to reply ${tag}`);
-        await alicePageInfo.page.keyboard.press('Enter');
+        await sendComposerMessage(alicePageInfo.page);
         await sleep(1500);
         // DM send effect: exactly one new message on the server.
         const dmRecent = await aliceSession.api(`/api/dm/messages/${bobSession.id}/recent`);
@@ -471,7 +472,7 @@ async function scenario(t, cspEnforce) {
         }, bobSession.id, bobName);
         await alicePageInfo.page.waitForSelector('#dm-input', { timeout: 20000 });
         await alicePageInfo.page.type('#dm-input', `react target ${tag}`);
-        await alicePageInfo.page.keyboard.press('Enter');
+        await sendComposerMessage(alicePageInfo.page);
         await sleep(1500);
         await alicePageInfo.page.evaluate(async (id, name) => {
             await window.openDmConversation(id, name, { fromNav: true });
@@ -810,9 +811,17 @@ async function scenario(t, cspEnforce) {
 }
 
 test('CSP_ENFORCE=true: settings/admin/dm delegated actions work with real clicks', { timeout: 300000 }, async (t) => {
+    if (currentEngine() !== 'chromium') {
+        t.skip('page.emulateNetworkConditions is not implemented in puppeteer-core Firefox BiDi');
+        return;
+    }
     await scenario(t, true);
 });
 
 test('CSP_ENFORCE=false (Report-Only): identical behaviour, nothing blocked', { timeout: 300000 }, async (t) => {
+    if (currentEngine() !== 'chromium') {
+        t.skip('page.emulateNetworkConditions is not implemented in puppeteer-core Firefox BiDi');
+        return;
+    }
     await scenario(t, false);
 });

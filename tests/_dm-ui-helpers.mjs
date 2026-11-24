@@ -321,3 +321,22 @@ export function skipUnlessChromium(t, reason) {
     t.skip(`needs Chromium: ${reason}`);
   }
 }
+
+/**
+ * Send a composed DM message.
+ * On Chromium: uses page.keyboard.press('Enter') (original behaviour).
+ * On other engines: clicks the real Send button [data-action="dm-send"].
+ * This does NOT test the Enter key path on Firefox — it tests the send flow.
+ */
+export async function sendComposerMessage(page) {
+  if (currentEngine() === 'chromium') {
+    await page.keyboard.press('Enter');
+  } else {
+    await page.click('[data-action="dm-send"]');
+  }
+  // Wait for the composer input to clear (send completed)
+  await pollUntil(
+    async () => (await page.evaluate(() => document.getElementById('dm-input')?.value ?? null)) === '',
+    { what: 'the composer input to clear after sending' }
+  );
+}

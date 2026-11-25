@@ -1,7 +1,7 @@
 # Electron Bundled Client — Design Document
 
-**Branch:** `firefox-full-run`  
-**Base:** main at `6899a3b87f42d23799e6f91e79fd0080722848c6`  
+**Branch:** `electron-bundled-spike`  
+**Base:** main at `998fa50a6476693a6b7b7646424d7ccfeb8aabad`  
 **Phase:** 1 (Feasibility + Design) — NOT implementation  
 **Spike Results:** `docs/ELECTRON_BUNDLED_SPIKE_RESULTS.md`
 
@@ -49,9 +49,9 @@
 
 ### Central Decision: Q2 Answer Drives Everything
 
-**Q2 Answer:** From the bundled secure origin, `fetch()` to HTTP is ALLOWED, but WebSocket to HTTP is BLOCKED by mixed-content policy. The bundled origin (`wire-bundled://app`) is treated as a secure context.
+**Q2 Answer (verified against the real server, see `docs/ELECTRON_BUNDLED_SPIKE_RESULTS.md`, Q2):** In Electron 45.4.1, from the bundled secure origin `wire-bundled://app`, both `fetch()` and `WebSocket` to a non-loopback `http://`/`ws://` server succeed. (An earlier revision of this document said WebSocket was blocked and a bridge was required; that was wrong, it came from a test server that could not answer a WebSocket upgrade.)
 
-**Architectural Consequence:** `fetch()` API calls can go directly from renderer to server. WebSocket connections require a main-process proxy. The renderer cannot directly connect to an HTTP WebSocket server.
+**Architectural Consequence:** The renderer can talk to the server directly. A main-process network bridge is NOT technically required. It stays an OPTIONAL hardening choice (owner decision): the bridge would let the main process pin the destination server and refuse any other, instead of relying only on the CSP `connect-src` that the app applies to the page. Without a bridge, the app-applied CSP (section 6) is the control that stops the bundled client from sending data anywhere except the chosen server, so it becomes mandatory, not optional. The result is specific to Electron 45.4.1 / Chromium 156 and must be re-run on every Electron upgrade (`electron-client/spike/run-q2-real-server.sh`).
 
 ### Architecture Diagram
 
@@ -88,8 +88,8 @@
 ### Data Flow
 
 1. **Connect:** User enters server address → main process validates → saves to config → loads `wire-bundled://app/index.html`
-2. **API calls:** Renderer → `fetch()` directly to server (allowed, not mixed content) → Server → Renderer
-3. **WebSocket:** Renderer → IPC `mark-websocket` → Main process `new WebSocket(url)` → Server → IPC → Renderer
+2. **API calls:** Renderer → `fetch()` directly to the server (verified allowed, Q2) → Server → Renderer
+3. **WebSocket:** Renderer → `WebSocket`/Socket.IO directly to the server (verified allowed, Q2). Optional hardening variant: Renderer → IPC → Main process socket → Server.
 4. **E2EE keys:** Renderer → IPC `identity:store-unlock-key` → Main process `safeStorage.encryptString()` → disk
 5. **DM notifications:** Server → WebSocket → Main process → IPC → Renderer
 
@@ -104,9 +104,9 @@
 | `identity:store-unlock-key` | `event.sender.getURL()` vs `claimedOrigin` | ✅ Already validates origin |
 | `identity:get-unlock-key` | `event.sender.getURL()` vs `claimedOrigin` | ✅ Already validates origin |
 | `identity:clear-unlock-key` | `event.sender.getURL()` vs `claimedOrigin` | ✅ Already validates origin |
-| `networkBridge:fetch` | **NEW** | Validate `event.senderFrame.url === BUNDLED_ORIGIN`; allowlist target URL |
-| `networkBridge:ws-connect` | **NEW** | Validate `event.senderFrame.url === BUNDLED_ORIGIN`; allowlist target URL |
-| `networkBridge:ws-send` | **NEW** | Validate `event.senderFrame.url === BUNDLED_ORIGIN`; WS must be open |
+| `networkBridge:fetch` | **OPTIONAL, only if the owner chooses the bridge** | Validate `event.senderFrame.url === BUNDLED_ORIGIN`; allowlist target URL |
+| `networkBridge:ws-connect` | **OPTIONAL, only if the owner chooses the bridge** | Validate `event.senderFrame.url === BUNDLED_ORIGIN`; allowlist target URL |
+| `networkBridge:ws-send` | **OPTIONAL, only if the owner chooses the bridge** | Validate `event.senderFrame.url === BUNDLED_ORIGIN`; WS must be open |
 | `server:connect` | Validates address format | ✅ Already validates |
 | `server:get-saved` | Only from connect screen | ✅ Only exposed on `file:` protocol |
 | `server:forget` | Only from connect screen | ✅ Only exposed on `file:` protocol |
@@ -426,11 +426,12 @@ export function registerServiceWorker() {
 ### Non-Loopback IP Test (Critical for Q2)
 
 ```bash
-# Start test server on 0.0.0.0:34567
-# Run Electron app with bundled client
-# Verify: fetch to http://<LAN_IP>:34567 works
-# Verify: WebSocket to ws://<LAN_IP>:34567 is BLOCKED
-# Verify: IPC bridge WebSocket to ws://<LAN_IP>:34567 works
+# Implemented as electron-client/spike/run-q2-real-server.sh:
+# Start the real server (node server.js) on 0.0.0.0, take the IP from `hostname -I`
+# Verify from the bundled origin: fetch to http://<non-loopback-ip>:<port> works
+# Verify from the bundled origin: WebSocket to ws://<non-loopback-ip>:<port> opens
+# Controls: the same from an http:// origin page, and against loopback
+# Re-run on every Electron upgrade (Chromium mixed-content behaviour can change)
 ```
 
 ### Migration Test
@@ -452,8 +453,8 @@ export function registerServiceWorker() {
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|------------|--------|------------|
-| IPC bridge performance | Medium | Latency on every API call | Batch requests; WebSocket for real-time |
-| Main process bottleneck | Low | Single-threaded Node.js | Offload crypto to renderer; main only proxies |
+| IPC bridge performance (only if the bridge is adopted) | Medium | Latency on every API call | Batch requests; WebSocket for real-time |
+| Main process bottleneck (only if the bridge is adopted) | Low | Single-threaded Node.js | Offload crypto to renderer; main only proxies |
 | ASAR integrity bypass | Low | Modified app.asar | OS code signing + integrity manifest |
 | User ignores update notice | High | Stale client | Clear messaging; optional forced update after N versions |
 | Certificate pinning complexity | Medium | User friction | Optional fingerprint verification; document clearly |
@@ -461,7 +462,7 @@ export function registerServiceWorker() {
 ### Open Questions for Owner
 
 1. **Update mechanism:** Accept "notice only" or require auto-update with signed installers?
-2. **HTTPS for server:** Require HTTPS for all servers, or support HTTP via IPC bridge?
+2. **Network model:** Direct renderer connection with app-applied CSP `connect-src` (works per Q2), or a main-process bridge that pins the destination? Require HTTPS for all servers or allow HTTP (WireGuard)?
 3. **Certificate pinning:** Mandatory fingerprint verification at connect screen, or optional?
 4. **Code signing:** Budget for EV cert (Windows) and Apple Developer Program (macOS)?
 5. **Linux distribution:** AppImage + deb sufficient, or need Flatpak/Snap?
@@ -474,7 +475,7 @@ export function registerServiceWorker() {
 
 | Decision | Options | Recommendation |
 |----------|---------|----------------|
-| **HTTPS requirement** | Require HTTPS / Allow HTTP via bridge | **Allow HTTP via bridge** (LAN/WireGuard common) |
+| **Network model / HTTPS** | Direct connection + CSP / bridge that pins the server; require HTTPS / allow HTTP | Owner decision. Direct connection works per Q2; whether the bridge is worth its cost is a security-versus-complexity choice, not a technical necessity |
 | **Certificate pinning** | Mandatory / Optional / None | **Optional** — user verifies fingerprint at connect |
 | **Update delivery** | Notice only / Auto-download verified / Auto-install | **Notice only** (Phase 2); auto-download later |
 | **Code signing** | EV cert (Windows) + Notarization (macOS) + GPG (Linux) | **Required for production** |

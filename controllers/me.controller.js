@@ -34,6 +34,7 @@ const { AVATAR_MIME_MAP } = require('../config/multer');
 const {
   emitProfileAvatarUpdate,
   emitProfileBannerUpdate,
+  disconnectUserSockets,
 } = require('../services/socket.service');
 const {
   upsertPushToken,
@@ -287,9 +288,11 @@ async function changePassword(req, res) {
   }
 
   // The change revoked every existing session, this device's included.
-  // Hand back a token for the new version so this device stays signed in.
-  // A password-change token is never upgraded to a session here: that
-  // account still signs in normally after the forced change.
+  // Forcefully disconnect the user's other live sockets so they cannot
+  // keep sending/receiving with a now-revoked token. The client must
+  // reconnect with the fresh token returned below.
+  disconnectUserSockets(req.user.id);
+
   if (req.viaPasswordChangeToken) {
     return res.json({
       success: true

@@ -20,6 +20,16 @@ function emit(room, event, payload) {
     .emit(event, payload);
 }
 
+// Disconnect every live socket belonging to the given user (the
+// `user:${userId}` room). Called after a password change bumps
+// users.token_version so that old sessions are forcefully revoked;
+// the client must reconnect with the fresh token.
+function disconnectUserSockets(userId) {
+  const io = getIo();
+
+  io.in(`user:${userId}`).disconnectSockets(true);
+}
+
 function emitNewDirectMessage(message) {
   emit(
     `user:${message.sender_id}`,
@@ -242,4 +252,5 @@ module.exports = {
   emitGroupKdmDelivered,
   emitGroupUpdated,
   emitGroupChangesAfterUserDeletion,
+  disconnectUserSockets,
 };

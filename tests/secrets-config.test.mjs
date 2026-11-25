@@ -64,13 +64,21 @@ test('short EMAIL_VERIFICATION_SECRET is refused in development', () => {
   assert.match(r.stderr, /EMAIL_VERIFICATION_SECRET is unsafe: it must be at least 32/);
 });
 
-test('missing EMAIL_VERIFICATION_SECRET is refused in production', () => {
+test('missing EMAIL_VERIFICATION_SECRET is refused in production when email is enabled', () => {
   const r = load({
     NODE_ENV: 'production', SETUP_COMPLETED: 'true', ALLOWED_SUBNET: '10.10.0.0/24',
     JWT_SECRET: GOOD_JWT,
   });
   assert.equal(r.status, 1, r.stderr);
-  assert.match(r.stderr, /EMAIL_VERIFICATION_SECRET is required in production/);
+  assert.match(r.stderr, /EMAIL_VERIFICATION_SECRET is required in production when email is enabled/);
+});
+
+test('production + EMAIL_ENABLED=false + no secret starts', () => {
+  const r = load({
+    NODE_ENV: 'production', SETUP_COMPLETED: 'true', ALLOWED_SUBNET: '10.10.0.0/24',
+    JWT_SECRET: GOOD_JWT, EMAIL_ENABLED: 'false',
+  });
+  assert.equal(r.status, 0, r.stderr);
 });
 
 test('missing EMAIL_VERIFICATION_SECRET is still allowed in development', () => {

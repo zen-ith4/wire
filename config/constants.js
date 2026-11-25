@@ -2,6 +2,8 @@ const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs');
 
+const { isEmailEnabled } = require('../services/email.service');
+
 const isProduction = process.env.NODE_ENV === 'production';
 
 // DM E2EE: default floor for NEWLY REGISTERED accounts (docs/archive/e2ee-dm-hardening.md 5.1).
@@ -81,10 +83,11 @@ function getJwtSecret() {
 // the server at startup instead of failing on the first verification email.
 function checkEmailVerificationSecret() {
   const secret = process.env.EMAIL_VERIFICATION_SECRET;
+  const emailEnabled = isEmailEnabled();
 
   if (!secret) {
-    if (isProduction) {
-      fatal('EMAIL_VERIFICATION_SECRET is required in production.');
+    if (isProduction && emailEnabled) {
+      fatal('EMAIL_VERIFICATION_SECRET is required in production when email is enabled.');
     }
 
     return;

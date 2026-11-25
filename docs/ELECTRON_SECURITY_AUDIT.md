@@ -104,7 +104,7 @@ Keep: `contextIsolation:true`, `nodeIntegration:false`, `sandbox:true`, `webview
 +});
 ```
 
-(`session` must be added to the `require('electron')` on `main.js:16`. Screen sharing is deliberately not allowed here. Per the Electron 45 blog, a handler that grants `media` and denies everything else also blocks `display-capture` (screen sharing); allowing it is an owner decision.)
+(`session` must be added to the `require('electron')` on `main.js:16`. Screen sharing is deliberately not allowed here. Web Notifications (`public/js/notifications/web-notifications.js:31,50`) would also be denied by this handler: decide whether to allow `notifications` for the bundled origin or rely on the main-process notification path (`electronAPI.showDmNotification`). Per the Electron 45 blog, a handler that grants `media` and denies everything else also blocks `display-capture` (screen sharing); allowing it is an owner decision.)
 
 ### Diff C: sender frame check on every handler (NOT applied)
 

@@ -276,22 +276,43 @@ The Capacitor app (`isNativeApp() === true`):
 
 Earlier citations `core/api.js:115` and `core/auth.js:277` were wrong (an error-message line and a comment) and are removed. Not yet enumerated: media/attachment URL builders and push; do that before Phase 2 [NOT VERIFIED].
 
-## Missing Items (NOT VERIFIED)
+### Media, attachment, notification and push URL handling (code-reading, `sed -n` checked per line)
 
-- `public/js/files/links.js:41` share links built from `window.location.origin` — needs server origin
-- Push/notification URL handling in public/ (`push-registration.js`, notification-manager.js, etc.) — not covered; do that before Phase 2 [NOT VERIFIED]
+Goes through `resolveServerUrl` / `getServerEndpoint` (will follow the server base once `server.js:75` is changed):
 
-### Earlier citations ...
+| file:line | What |
+|---|---|
+| `public/js/core/api.js:84`, `:204` (`fetchBlob` at `:188`) | all API/blob fetches use `resolveServerUrl(url)` |
+| `public/js/crypto/identity-service.js:66,135,202,281,607` | identity fetches use `resolveServerUrl(` |
+| `public/js/media/attachment-e2ee.js:205-209`, `:235` | `attachmentUrl()` returns `resolveServerUrl(...)` |
+| `public/js/chat/group-attachments.js:670-671`, `:779` | `groupAttachmentUrl()` returns `resolveServerUrl(...)` |
+| `public/js/media/attachments.js:1412-1413`, `:1622-1626`, `:1643` | download links resolved before use |
+| `public/js/media/attachments.js:1032-1052` | relative `/api/{dm,chat}/attachments/<id>` passed to `fetchBlob` / `fetchDecryptedAttachment`, both resolved |
+| `public/js/media/audio-player.js:109`, `:135`, `:1027` | media paths resolved |
+| `public/js/media/voice-message.js:2314`, `:2761` | media paths resolved |
+| `public/js/ui/avatar.js:146` | `getMediaUrl` ends in `fetchBlob` (`api.js:188/204`) |
+| `public/js/media/mediaToken.js:37` | returns a relative `/api/dm/attachments/<id>`; callers resolve it (`audio-player.js:109`) |
 
-## Missing Items (NOT VERIFIED)
+Bypasses or needs a decision:
 
-- `public/js/files/links.js:41` share links built from `window.location.origin` — needs the server origin
-- Push/notification URL handling in public/ (`push-registration.js`, notification-manager.js, etc.) — not covered; do that before Phase 2 [NOT VERIFIED]
+| file:line | Problem | Proposed handling |
+|---|---|---|
+| `public/js/core/server.js:75` | root assumption: `window.location.origin` is the server | injectable server endpoint (diff above) |
+| `public/js/files/links.js:41` | share links built from `window.location.origin` (would be `wire-bundled://app`) | build from `getServerEndpoint()` (diff below) |
+| `public/js/notifications/message-sounds.js:64`, `:456` | `fetch(PRESET_URLS[...])` relative static assets | fine if those files are inside the bundled tree; confirm the manifest includes them [NOT VERIFIED] |
+| `public/js/notifications/web-notifications.js:31`, `:50` | Web Notification API (`Notification.requestPermission`, `new Notification`) | the permission handler in the audit (Diff B) would DENY `notifications`; decide whether Electron uses this path or only the main-process notification (`electronAPI.showDmNotification`) |
+| `public/js/notifications/push-registration.js:2` | FCM registration, Capacitor Android only (`isNativeApp`) | not used in Electron |
+| `public/js/media/sw-stream-client.js` | depends on a service worker | no service worker in the bundled origin (Q5); `MEDIA_STREAM_ENABLED` stays false |
 
-## Missing Items (NOT VERIFIED)
+Not traced to their source: `public/js/media/lazy-e2ee-media.js:154,198,299` (`mediaEl.src = resolved.src`), `public/js/files/viewer.js:217,249,285,356` (`media.url`), `public/js/media/video-player.js` (`resolveMediaSrc` consumer): [NOT VERIFIED].
 
-- `public/js/files/links.js:41` share links built from `window.location.origin` — needs server origin
-- Push/notification URL handling in public/ (`push-registration.js`, notification-manager.js, etc.) — not covered; do that before Phase 2 [NOT VERIFIED]
+Proposed diff for `public/js/files/links.js:41` (NOT applied):
+
+```diff
+-      : `${window.location.origin}${window.location.pathname}`;
++      : `${getServerEndpoint()}${window.location.pathname}`;
+```
+(needs `import { getServerEndpoint } from '../core/server.js';`; check whether the `pathname` part is still right for a `wire-bundled://app` page.)
 
 ### Required Client Changes for Bundled Electron
 
@@ -426,7 +447,33 @@ Command: `cd electron-client && xvfb-run -a node_modules/electron/dist/electron 
 smoke exit code: 0
 ```
 
-Not run in this revision: `npm run dist:dir`, `npm run dist:linux` (earlier claims of their output are not verified here), any Windows build, the regression test suites.
+## Linux builds (run in this session)
+
+`cd electron-client && npm run dist:dir` (electron-builder 26.18.0, electron 45.4.1): produced only `dist/linux-unpacked/` (with `resources/app.asar`, 101544 bytes) and `builder-debug.yml`; no AppImage or deb, as expected for `--dir`.
+
+```
+total 112
+drwxr-xr-x 2 root root   4096 Nov 25 11:43 .
+drwxr-xr-x 4 root root   4096 Nov 25 11:43 ..
+-rw-r--r-- 1 root root 101544 Nov 25 11:43 app.asar
+-rw-r--r-- 1 root root    258 Nov 25 11:43 apparmor-profile
+```
+
+`npm run dist:linux` (`electron-builder --linux AppImage deb`) produced:
+
+```
+total 221560
+drwxr-xr-x 3 root root      4096 Nov 25 11:45 .
+drwxr-xr-x 7 root root      4096 Nov 25 11:43 ..
+-rwxr-xr-x 1 root root 125770165 Nov 25 11:43 Wire-1.0.0.AppImage
+-rw-r--r-- 1 root root 101085228 Nov 25 11:45 Wire-1.0.0.deb
+-rw-r--r-- 1 root root       991 Nov 25 11:45 builder-debug.yml
+drwxr-xr-x 4 root root      4096 Nov 25 11:43 linux-unpacked
+```
+
+`dist/` was removed afterwards and is not committed (`git status` clean). Notes: electron-builder printed "no node modules found" (the client has no runtime dependencies); the packaged `app.asar` is about 99 KB, so it contains only the current `electron-client` sources, not `public/`, because the bundled client is not implemented in Phase 1. electron-builder also warned that `desktopName` is not set in `package.json`. Not built or tested: any Windows target (`dist:win`), AppImage/deb installation or launch, signing.
+
+Not run in this document: the browser regression suites.
 
 ---
 

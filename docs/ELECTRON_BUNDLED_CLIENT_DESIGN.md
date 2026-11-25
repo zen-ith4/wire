@@ -489,6 +489,8 @@ export function registerServiceWorker() {
 | **Update delivery** | Notice only / Auto-download verified / Auto-install | **Notice only** (Phase 2); auto-download later |
 | **Code signing** | EV cert (Windows) + Notarization (macOS) + GPG (Linux) | **Required for production** |
 | **Linux packaging** | AppImage + deb / Flatpak / Snap | **AppImage + deb** (Phase 2) |
+| **Web Notifications permission** | Allow `notifications` for the bundled origin / rely on main-process notifications only | Owner decision: `public/js/notifications/web-notifications.js:31,50` uses the Web Notification API; a microphone-only handler would deny it |
+| **Screen sharing (`display-capture`)** | Allow / deny | Owner decision: per the Electron 45 blog a handler that grants `media` and denies the rest also blocks screen sharing |
 | **Telemetry** | None / Opt-in crashes / Opt-in usage | **Opt-in crashes only** |
 
 ---

@@ -203,8 +203,9 @@ function normaliseVersion(value) {
  * The highest envelope version this browser has ever sent to or received from
  * `peerId`, or 1 when there is nothing recorded.
  *
- * Storage unavailable is a no-op that reports 1, which is the safe direction:
- * a pin we cannot read cannot block a send, and layer 3 still holds.
+ * Storage unavailable is a no-op that reports 1, the safe direction: the DM v2
+ * version pin is hardening (it must never block a send), and layer 3 (peer
+ * trust via mayTryRetiredKey) still holds the gate for retiring keys.
  */
 export function readDmV2Pin(peerId) {
     try {
@@ -225,7 +226,8 @@ export function noteDmV2Version(peerId, version) {
         pins[k] = v;
         writeJsonStore(PIN_STORAGE_KEY, pins);
     } catch {
-        /* storage unavailable: the pin is hardening, not a requirement */
+        /* storage unavailable: the DM v2 version pin is hardening (must not block
+         * sends); peer trust (mayTryRetiredKey) still fails closed below. */
     }
     return v;
 }

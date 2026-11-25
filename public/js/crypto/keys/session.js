@@ -298,8 +298,10 @@ async function buildArchivedSessionKeys(id) {
 
     // Loaded lazily to keep the static graph acyclic: auth.js statically
     // imports this module for clearSessionKeys(), and peer-key-gate.js reaches
-    // core/api.js -> core/auth.js. Awaiting the import here is deliberate;
-    // retired-key trust still fails closed below.
+    // core/api.js -> core/auth.js. Awaiting the import here is deliberate.
+    // When getPeerTrustContext() returns null (not logged in, no server
+    // endpoint, or storage unavailable), every retired key is skipped below:
+    // peer trust fails closed for retired keys.
     const { getPeerTrustContext } = await import('./peer-key-gate.js');
 
     const keys = [];

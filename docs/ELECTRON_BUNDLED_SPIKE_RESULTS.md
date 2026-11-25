@@ -79,7 +79,20 @@ protocol.handle('wire-bundled', async (request) => {
 
 **Path traversal protection:** Implemented via `path.normalize()` + `path.resolve()` + `startsWith(publicDir)` check.
 
-> Revision note: this section was not re-run here; its "Test file/Command" lines below named an unrelated test and are not evidence. Persistence and localStorage claims are [NOT RE-VERIFIED].
+> Revision note: the older table above comes from an earlier test and is superseded by the valid test below. The test added in the previous push (`mkdtempSync`, write and read in one process) could not prove persistence: every run used a new user-data directory.
+
+**Valid persistence test (verified).** Fixed user-data dir shared by two separate processes; run 2 only reads; a control with a different dir must not see the values. Command: `cd electron-client && bash spike/run-q1-persistence.sh` (Electron 45.4.1 under xvfb-run; `--no-sandbox` only because the container runs as root).
+
+```
+# RUN 1 (write) userData=/tmp/tmp.8F1UEWbfKp
+[q1] {"mode":"write","origin":"wire-bundled://app","wrote":true}
+# RUN 2 (read only, new process, same userData)
+[q1] {"mode":"read","origin":"wire-bundled://app","localStorage":"persist-ls-value-42","indexedDB":"persist-idb-value-42","lsOk":true,"idbOk":true}
+# CONTROL (read only, different userData=/tmp/tmp.loNW1Y49Ge)
+[q1] {"mode":"read","origin":"wire-bundled://app","localStorage":null,"lsOk":false,"idbOk":false}
+```
+
+Result: `localStorage` and `IndexedDB` of `wire-bundled://app` persist across a full app restart for the same user-data dir, and are isolated per user-data dir.
 
 ---
 
@@ -247,6 +260,20 @@ The Capacitor app (`isNativeApp() === true`):
 2. `getServerEndpoint()` reads from `localStorage`
 3. `resolveServerUrl('/api/test')` → `https://user-server.com/api/test`
 
+### Same-origin assumptions in `public/` (citations re-checked line by line)
+
+| file:line | Assumption | Capacitor solution |
+|---|---|---|
+| `public/js/core/server.js:75` | `getServerEndpoint()` returns `window.location.origin` when not Capacitor | reads the saved absolute server URL |
+| `public/js/core/server.js:104` | `resolveServerUrl(url)` is the single place that makes relative URLs absolute | prepends the saved base |
+| `public/js/core/api.js:85`, `:205` | API calls go through `resolveServerUrl(url)` | same |
+| `public/js/core/socket.js:90` | `io(serverEndpoint, ...)` uses `getServerEndpoint()` | same |
+| `public/js/chat/dm-key-trust.js:108` | identity scope = `getServerEndpoint()` | stored server origin |
+| `public/js/core/auth.js:282` | `getIdentityStorageOrigin()` (comment at `:270-280` says it equals `window.location.origin` in Electron) | selected backend server |
+| `public/js/files/links.js:41` | share links built from `window.location.origin` | not covered; needs the server origin |
+
+Earlier citations `core/api.js:115` and `core/auth.js:277` were wrong (an error-message line and a comment) and are removed. Not yet enumerated: media/attachment URL builders and push; do that before Phase 2 [NOT VERIFIED].
+
 ### Required Client Changes for Bundled Electron
 
 The bundled client needs an **absolute server base** configured at connect time, similar to Capacitor but without Capacitor APIs.
@@ -312,7 +339,16 @@ if (
 
 **Conclusion:** SW registration is correctly skipped. The bundled client doesn't need a SW since all assets are local (in `app.asar`). `MEDIA_STREAM_ENABLED` stays `false` in `public/sw.js` as required.
 
-> Revision note: analysis only; no experiment was run: [NOT VERIFIED by experiment].
+**Experiment (verified).** Command: `cd electron-client && xvfb-run -a node_modules/electron/dist/electron --no-sandbox --disable-gpu spike/test-q5-sw.js`
+
+```
+[q5] isSecureContext: true
+[q5] navigator.serviceWorker exists -> PASS   
+[q5] SW register attempt -> FAIL TypeError: Failed to register a ServiceWorker: The URL protocol of the current origin ('wire-bundled://app') is not supported.  
+[q5] public/sw.js mentions SW -> PASS   preview=<!doctype html><title>Q5 SW Test</title>
+```
+
+Result: `navigator.serviceWorker` exists, but registering from `wire-bundled://app` fails because the scheme is not supported for service workers. So the bundled origin never runs `public/sw.js`; `MEDIA_STREAM_ENABLED` stays `false` (`public/sw.js:102`) and was not touched. Consequence for Phase 2: any feature that relies on the service worker (offline cache, the existing "update the cached application" flow) does not exist in the bundled client and must be replaced, not ported.
 
 ---
 
@@ -350,11 +386,36 @@ Raw output (command: `cd electron-client && xvfb-run -a node_modules/electron/di
 
 ---
 
+## Electron 45 release-note items relied on (read in this session)
+
+Sources: https://www.electronjs.org/blog/electron-45-0 and the v45.0.0 release notes as mirrored at https://newreleases.io/project/npm/electron/release/45.0.0 (the mirror, not the official page, was read for the breaking-changes list; confirm against https://releases.electronjs.org/release/v45.0.0 before acting).
+
+- Stack: Chromium 156.0.8078.48, V8 15.6, Node v24.22.0 (blog).
+- Permission handlers: the blog says an app whose handler grants `media` and denies everything else must also grant `display-capture`, or screen sharing stops working. A microphone-only handler therefore also blocks screen sharing; whether to allow it is an owner decision.
+- `safeStorage`: the release notes say the synchronous methods are deprecated and will be removed in Electron 46. `main.js:505` and `:534` use the synchronous calls, so this is an upgrade blocker for Electron 46, not a present vulnerability.
+- Sandboxed preload scripts lost the `events`, `timers` and `url` modules and the `Buffer`, `setImmediate`, `clearImmediate` globals. `grep` finds none of these in `electron-client/preload.js`, so no impact is expected [not tested beyond the grep].
+- Not covered: `protocol.handle`/`registerSchemesAsPrivileged` and notification API changes: no item was found in the text read; [NOT VERIFIED] beyond the successful spikes above.
+
+## Smoke test: connect screen
+
+Command: `cd electron-client && xvfb-run -a node_modules/electron/dist/electron --no-sandbox --disable-gpu spike/smoke-connect-screen.js` (the older `spike/smoke.js` is a different, spawn-based script and was not used).
+
+```
+[smoke] URL: file:///home/claude/wire/electron-client/renderer/connect.html
+[smoke] wireClient exposed on file:// : true
+[smoke] PASS: true
+smoke exit code: 0
+```
+
+Not run in this revision: `npm run dist:dir`, `npm run dist:linux` (earlier claims of their output are not verified here), any Windows build, the regression test suites.
+
+---
+
 ## Summary of Spike Answers
 
 | Question | Answer | Status |
 |---|---|---|
-| Q1 | Custom scheme gives secure context and `crypto.subtle` (re-confirmed in the Q2 raw output); IndexedDB persistence across restarts | `isSecureContext`/`subtle` re-verified; persistence and localStorage [NOT RE-VERIFIED in this revision] |
+| Q1 | Custom scheme gives secure context, `crypto.subtle`; localStorage and IndexedDB persist across a restart (same userData) and are isolated per userData | verified (valid two-process test + control) |
 | Q2 | fetch and WebSocket from the bundled origin to a non-loopback http/ws server both work in Electron 45.4.1; no bridge required | verified (real server, controls) |
 | Q3 | Electron sends `Origin: wire-bundled://app`; `middleware/cors.js:26-29` reflects it; no server change needed | verified |
 | Q4 | Client assumes same-origin; an absolute server base is needed | code-reading analysis, [NOT RE-VERIFIED] |

@@ -58,7 +58,7 @@ Keep: `contextIsolation:true`, `nodeIntegration:false`, `sandbox:true`, `webview
 | 6 | MEDIUM | `main.js:338-347` | `new URL(targetUrl)` can throw on a malformed target inside the event handler | try/catch (included in diff A) |
 | 7 | LOW | no `onHeadersReceived` | If the server stops sending CSP, no protection | app-applied CSP (design doc section 6) |
 | 8 | LOW | `main.js:452-506` | `identity-unlock-keys.json` reveals which servers and user ids exist; strength of `safeStorage` depends on the OS backend (on Linux possibly a weak backend) [NOT VERIFIED] | hash the record id; document the Linux backend behaviour |
-| 9 | INFO / maintenance | `main.js:505,534` | none directly. The synchronous `safeStorage` calls may have async replacements in newer Electron; the release notes were NOT read in this session [NOT VERIFIED]; earlier claim of a "CRITICAL deprecation" was unsupported and is withdrawn | check the Electron 45 notes before any migration |
+| 9 | MEDIUM (maintenance blocker, not exploitable) | `main.js:505,534` | none directly. The Electron 45 release notes (https://newreleases.io/project/npm/electron/release/45.0.0, read in this session) say the synchronous `safeStorage` methods are deprecated and will be removed in Electron 46, so staying on the synchronous calls blocks the next major upgrade | migrate to the async `safeStorage` methods before Electron 46 (check the 45/46 API docs for exact names) |
 
 ### Diff A: openExternal allowlist and navigation (NOT applied)
 
@@ -104,7 +104,7 @@ Keep: `contextIsolation:true`, `nodeIntegration:false`, `sandbox:true`, `webview
 +});
 ```
 
-(`session` must be added to the `require('electron')` on `main.js:16`. Screen sharing is deliberately not allowed here; adding it is an owner decision.)
+(`session` must be added to the `require('electron')` on `main.js:16`. Screen sharing is deliberately not allowed here. Per the Electron 45 blog, a handler that grants `media` and denies everything else also blocks `display-capture` (screen sharing); allowing it is an owner decision.)
 
 ### Diff C: sender frame check on every handler (NOT applied)
 

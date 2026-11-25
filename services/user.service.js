@@ -611,7 +611,7 @@ function updateBanner(userId, bannerPath) {
 }
 
 
-// Sums attachment_size across chat + DM messages this user has sent.
+// Sums attachment_size across chat + DM + group messages this user has sent.
 function getStorageUsage(userId) {
 
   const chatTotal = getDb()
@@ -630,7 +630,15 @@ function getStorageUsage(userId) {
     `)
     .get(userId).total;
 
-  return chatTotal + dmTotal;
+  const groupTotal = getDb()
+    .prepare(`
+      SELECT COALESCE(SUM(attachment_size), 0) AS total
+      FROM group_messages
+      WHERE sender_id = ? AND attachment_path IS NOT NULL
+    `)
+    .get(userId).total;
+
+  return chatTotal + dmTotal + groupTotal;
 }
 
 

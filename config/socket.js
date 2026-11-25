@@ -115,9 +115,8 @@ function setupSocketIO(server) {
       online_user_ids: filterVisiblePresenceIds(getOnlineUserIds()),
     });
 
-    setupDmSocket(io, socket);
-    setupGroupSocket(io, socket);
-
+    // Register disconnect BEFORE setupDmSocket / setupGroupSocket so that
+    // disconnect cleanup still runs even if one of those setups throws.
     socket.on('disconnect', (reason) => {
       console.log(`User ${userId} disconnected (${reason})`);
 
@@ -138,6 +137,9 @@ function setupSocketIO(server) {
     socket.on('error', (err) => {
       console.error(`Socket error (${userId}): ${err.message}`);
     });
+
+    setupDmSocket(io, socket);
+    setupGroupSocket(io, socket);
   });
 
   return io;

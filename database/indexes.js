@@ -1,5 +1,11 @@
 function createIndexes(db) {
   db.exec(`
+    -- Remove duplicate indexes from earlier schema versions.
+    -- idx_messages_user_id duplicates idx_messages_user (both on messages(user_id)).
+    -- idx_dm_conversation duplicates idx_dm_sender_recipient (both on direct_messages(sender_id, recipient_id)).
+    DROP INDEX IF EXISTS idx_messages_user_id;
+    DROP INDEX IF EXISTS idx_dm_conversation;
+
     CREATE INDEX IF NOT EXISTS idx_messages_created_at
     ON messages(created_at);
 

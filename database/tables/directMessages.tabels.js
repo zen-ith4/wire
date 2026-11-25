@@ -55,9 +55,6 @@ CREATE TABLE IF NOT EXISTS direct_messages (
   )
 );
 
-CREATE INDEX IF NOT EXISTS idx_dm_conversation
-ON direct_messages(sender_id, recipient_id);
-
 CREATE INDEX IF NOT EXISTS idx_dm_recipient
 ON direct_messages(recipient_id);
 `;

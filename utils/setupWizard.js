@@ -100,6 +100,18 @@ class SetupWizard {
             }
         }
 
+        // Generate random secrets for any of JWT_SECRET / EMAIL_VERIFICATION_SECRET
+        // that is missing from the .env, without overwriting existing values.
+        for (const secretKey of ['JWT_SECRET', 'EMAIL_VERIFICATION_SECRET']) {
+            const regex = new RegExp(
+                `^${secretKey}=.*$`,
+                'm'
+            );
+            if (!regex.test(envContent)) {
+                envContent += `\n${secretKey}=${crypto.randomBytes(32).toString('hex')}`;
+            }
+        }
+
         fs.writeFileSync(
             envPath,
             envContent.trim() + '\n'
@@ -113,6 +125,14 @@ class SetupWizard {
         process.env.HTTPS_MODE = updates.HTTPS_MODE;
         process.env.DOMAIN = updates.DOMAIN;
         process.env.TLS_CERT_FINGERPRINT = updates.TLS_CERT_FINGERPRINT;
+        if (!process.env.JWT_SECRET) {
+            const m = envContent.match(/^JWT_SECRET=(.+)$/m);
+            if (m) process.env.JWT_SECRET = m[1];
+        }
+        if (!process.env.EMAIL_VERIFICATION_SECRET) {
+            const m = envContent.match(/^EMAIL_VERIFICATION_SECRET=(.+)$/m);
+            if (m) process.env.EMAIL_VERIFICATION_SECRET = m[1];
+        }
     }
 
     isValidIP(ip) {

@@ -13,6 +13,7 @@ const {
 const { moveFileSafe } = require('../utils/file');
 const { detectMimeFromBytes } = require('../utils/detectFileType');
 const { isInlineSafeMime } = require('../utils/inlineSafeMime');
+const { encodeRfc5987 } = require('../utils/mediaKind');
 const { describeMedia, sendInlineMedia } = require('../utils/streamMedia');
 const {
   signFileMediaToken,
@@ -292,7 +293,7 @@ async function previewFile(req, res) {
     res.setHeader('Content-Type', sniffedMime);
     res.setHeader(
       'Content-Disposition',
-      `inline; filename*=UTF-8''${encodeURIComponent(path.basename(file))}`
+      `inline; filename*=UTF-8''${encodeRfc5987(path.basename(file))}`
     );
     return res.sendFile(resolved.fullPath);
   }
@@ -304,7 +305,7 @@ async function previewFile(req, res) {
   res.setHeader('Content-Type', 'application/octet-stream');
   res.setHeader(
     'Content-Disposition',
-    `attachment; filename*=UTF-8''${encodeURIComponent(path.basename(file))}`
+    `attachment; filename*=UTF-8''${encodeRfc5987(path.basename(file))}`
   );
   return res.sendFile(resolved.fullPath);
 }

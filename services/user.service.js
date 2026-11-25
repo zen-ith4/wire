@@ -830,7 +830,21 @@ function collectUserOwnedFiles(userId) {
     `)
     .all(userId);
 
+  const groupAttachments = db
+    .prepare(`
+      SELECT attachment_path FROM group_messages
+      WHERE sender_id = ? AND attachment_path IS NOT NULL
+    `)
+    .all(userId);
+
+  const driveFolders = db
+    .prepare(`
+      SELECT path FROM folders WHERE owner_id = ?
+    `)
+    .all(userId);
+
   const files = [];
+  const driveDirs = new Set();
 
   if (user && user.avatar_path) {
     files.push(
@@ -868,7 +882,20 @@ function collectUserOwnedFiles(userId) {
     );
   }
 
-  return files;
+  for (const row of groupAttachments) {
+    files.push(
+      path.join(
+        constants.GROUP_UPLOAD_DIR,
+        row.attachment_path
+      )
+    );
+  }
+
+  for (const row of driveFolders) {
+    driveDirs.add(row.path);
+  }
+
+  return { files, driveDirs };
 }
 
 
@@ -876,10 +903,8 @@ function deleteUser(userId) {
 
   // Read out every file this user owns before the cascade delete
   // below removes the rows that record where they are.
-  const filesToRemove =
-    collectUserOwnedFiles(
-      userId
-    );
+  const { files: filesToRemove, driveDirs: driveDirsToRemove } =
+    collectUserOwnedFiles(userId);
 
   // Groups this user OWNS must not vanish or be left owner-less when the
   // account goes: hand each one to its successor (oldest admin, else
@@ -916,6 +941,15 @@ function deleteUser(userId) {
       change.files.forEach(
         unlinkGroupFileQuietly
       );
+    }
+
+    // Drive folders are directories — remove them recursively.
+    for (const dir of driveDirsToRemove) {
+      try {
+        fs.rmSync(dir, { recursive: true, force: true });
+      } catch {
+        // Best-effort: a missing or locked directory must not fail deletion.
+      }
     }
   }
 

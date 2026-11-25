@@ -102,6 +102,13 @@ function checkEmailVerificationSecret() {
 
 checkEmailVerificationSecret();
 
+// Validate that the value is a finite positive number; otherwise use the default.
+function parseMaxMB(envName, def) {
+  const n = Number(process.env[envName]);
+  if (!Number.isFinite(n) || n <= 0) return def;
+  return n;
+}
+
 const constants = {
   // ======================================================
   // Server
@@ -162,11 +169,12 @@ const constants = {
   // Upload Limits (MB)
   // ======================================================
 
-  UPLOAD_MAX_MB: Number(process.env.UPLOAD_MAX_MB) || 2048,
-  CHAT_UPLOAD_MAX_MB: Number(process.env.CHAT_UPLOAD_MAX_MB) || 50,
-  DM_UPLOAD_MAX_MB: Number(process.env.DM_UPLOAD_MAX_MB) || 50,
-  AVATAR_MAX_MB: Number(process.env.AVATAR_MAX_MB) || 5,
-  BANNER_MAX_MB: Number(process.env.BANNER_MAX_MB) || 8,
+  UPLOAD_MAX_MB: parseMaxMB('UPLOAD_MAX_MB', 2048),
+  CHAT_UPLOAD_MAX_MB: parseMaxMB('CHAT_UPLOAD_MAX_MB', 50),
+  DM_UPLOAD_MAX_MB: parseMaxMB('DM_UPLOAD_MAX_MB', 50),
+  AVATAR_MAX_MB: parseMaxMB('AVATAR_MAX_MB', 5),
+  BANNER_MAX_MB: parseMaxMB('BANNER_MAX_MB', 8),
+  GROUP_UPLOAD_MAX_MB: parseMaxMB('GROUP_UPLOAD_MAX_MB', 50),
 
   // ======================================================
   // Storage Directories
@@ -213,8 +221,6 @@ const constants = {
   // and /api/me reports groups_enabled=false, so no Groups UI appears.
   // Set GROUPS_ENABLED=true to turn the feature on.
   GROUPS_ENABLED: process.env.GROUPS_ENABLED === 'true',
-
-  GROUP_UPLOAD_MAX_MB: Number(process.env.GROUP_UPLOAD_MAX_MB) || 50,
 
   GROUP_UPLOAD_DIR:
     process.env.GROUP_UPLOAD_DIR ||

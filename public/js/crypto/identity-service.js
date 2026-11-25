@@ -5,7 +5,8 @@ import {
     encryptIdentityPkcs8,
     assertKnownIdentityFormat,
     deriveIdentityUnlockKey,
-    decryptIdentityPrivateKeyWithDerivedKey
+    decryptIdentityPrivateKeyWithDerivedKey,
+    importPrivateKey
 } from "./identity.js";
 
 import {
@@ -307,6 +308,17 @@ export async function createIdentity(
                 }
                 : null
         );
+
+    // Re-import the generated private key as non-extractable, matching
+    // restoreIdentity's pattern (importPrivateKey with extractable: false).
+    // Zero the exported PKCS8 buffer so the extractable key material cannot
+    // be recovered from this process's memory.
+    const pkcs8 = await crypto.subtle.exportKey(
+        "pkcs8",
+        identity.keyPair.privateKey
+    );
+    identity.keyPair.privateKey = await importPrivateKey(pkcs8);
+    new Uint8Array(pkcs8).fill(0);
 
     console.log(
         "[IdentityService] Encrypted identity generated"

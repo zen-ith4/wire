@@ -258,64 +258,6 @@ async function uploadIdentity(
         // Ignore invalid error responses.
     }
 
-    /*
-     * IMPORTANT:
-     *
-     * "User already exists" is NOT automatically treated as success.
-     *
-     * Verify the actual identity state first.
-     */
-    if (
-        typeof message === "string" &&
-        message.toLowerCase().includes(
-            "user already exists"
-        )
-    ) {
-        console.warn(
-            "[IdentityService] PUT returned 'User already exists'. " +
-            "Checking whether the identity was actually saved..."
-        );
-
-        try {
-            const verifyResponse =
-                await fetch(
-                    resolveServerUrl(
-                        IDENTITY_ENDPOINT
-                    ),
-                    {
-                        method: "GET",
-
-                        headers: {
-                            "Authorization":
-                                `Bearer ${token}`
-                        }
-                    }
-                );
-
-            if (verifyResponse.ok) {
-                const verifyData =
-                    await verifyResponse.json();
-
-                if (
-                    verifyData?.exists === true
-                ) {
-                    console.warn(
-                        "[IdentityService] Identity exists despite " +
-                        "the PUT error. Treating save as successful."
-                    );
-
-                    return;
-                }
-            }
-        } catch (verifyError) {
-            console.warn(
-                "[IdentityService] Failed to verify identity after " +
-                "the PUT error:",
-                verifyError
-            );
-        }
-    }
-
     throw new Error(message);
 }
 

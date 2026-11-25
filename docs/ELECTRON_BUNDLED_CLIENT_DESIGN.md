@@ -238,13 +238,22 @@ protocol.handle('wire-bundled', async (request) => {
 ```javascript
 const ALLOWED_CONNECT_ORIGINS = [
   BUNDLED_ORIGIN,           // Self (wire-bundled://app)
-  currentServerOrigin,      // Configured server (e.g., http://192.168.1.14:34567)
+  currentServerOrigin,      // Configured server (<server-ip>:<port>)
 ];
 ```
 
 **Rationale:** The app enforces its own CSP regardless of server headers. The server cannot weaken it.
 
 ---
+
+## Client Changes Needed
+
+- At connect screen, user enters server address
+- Main process validates and saves server origin to config
+- Renderer receives server origin via IPC (`server:get-saved`)
+- Client-side `getServerEndpoint()` returns the configured server origin (not `window.location.origin`)
+- `resolveServerUrl()` prepends server origin for relative URLs
+- Install absolute server base in client (proposed diff in design doc)
 
 ## 7. Update Strategy
 

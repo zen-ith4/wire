@@ -272,7 +272,26 @@ The Capacitor app (`isNativeApp() === true`):
 | `public/js/core/auth.js:282` | `getIdentityStorageOrigin()` (comment at `:270-280` says it equals `window.location.origin` in Electron) | selected backend server |
 | `public/js/files/links.js:41` | share links built from `window.location.origin` | not covered; needs the server origin |
 
+| `public/js/files/links.js:41` | share links built from `window.location.origin` | needs server origin |
+
 Earlier citations `core/api.js:115` and `core/auth.js:277` were wrong (an error-message line and a comment) and are removed. Not yet enumerated: media/attachment URL builders and push; do that before Phase 2 [NOT VERIFIED].
+
+## Missing Items (NOT VERIFIED)
+
+- `public/js/files/links.js:41` share links built from `window.location.origin` — needs server origin
+- Push/notification URL handling in public/ (`push-registration.js`, notification-manager.js, etc.) — not covered; do that before Phase 2 [NOT VERIFIED]
+
+### Earlier citations ...
+
+## Missing Items (NOT VERIFIED)
+
+- `public/js/files/links.js:41` share links built from `window.location.origin` — needs the server origin
+- Push/notification URL handling in public/ (`push-registration.js`, notification-manager.js, etc.) — not covered; do that before Phase 2 [NOT VERIFIED]
+
+## Missing Items (NOT VERIFIED)
+
+- `public/js/files/links.js:41` share links built from `window.location.origin` — needs server origin
+- Push/notification URL handling in public/ (`push-registration.js`, notification-manager.js, etc.) — not covered; do that before Phase 2 [NOT VERIFIED]
 
 ### Required Client Changes for Bundled Electron
 

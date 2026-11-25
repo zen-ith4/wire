@@ -610,81 +610,6 @@ function getUserProfile(req, res) {
   });
 }
 
-async function updatePublicKey(req, res) {
-
-  const publicKey =
-    req.body?.publicKey;
-
-
-  if (
-    typeof publicKey !== 'string' ||
-    !publicKey.trim()
-  ) {
-    return res.status(400).json({
-      error: 'Public key required'
-    });
-  }
-
-
-  const key = publicKey.trim();
-
-
-  // X25519 raw public key = 32 bytes = 43/44 chars in Base64
-  if (
-    key.length < 40 ||
-    key.length > 100
-  ) {
-    return res.status(400).json({
-      error: 'Invalid public key'
-    });
-  }
-
-
-  try {
-
-    const decoded = Buffer.from(key, 'base64');
-
-    if (decoded.length !== 32) {
-      return res.status(400).json({
-        error: 'Invalid X25519 public key'
-      });
-    }
-
-  } catch (e) {
-
-    return res.status(400).json({
-      error: 'Invalid public key'
-    });
-
-  }
-
-
-  const db = getDb();
-
-
-  const result = db.prepare(`
-    UPDATE users
-    SET public_key = ?,
-        updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-  `).run(
-    key,
-    req.user.id
-  );
-
-
-  if (result.changes === 0) {
-    return res.status(404).json({
-      error: 'User not found'
-    });
-  }
-
-
-  return res.json({
-    success: true
-  });
-}
-
 function getIdentityKey(req, res) {
     const db = getDb();
 
@@ -1171,7 +1096,6 @@ module.exports = {
   removeBanner,
   getBanner,
   getUserProfile,
-  updatePublicKey,
   getIdentityKey,
   saveIdentityKey,
   rotateIdentityKey,

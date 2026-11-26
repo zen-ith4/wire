@@ -53,22 +53,40 @@ mock.module(new URL('./js/crypto/account-kdf.js', PUBLIC).href, {
 // Mock identity.js: createEncryptedIdentity returns a minimal identity object.
 mock.module(new URL('./js/crypto/identity.js', PUBLIC).href, {
     namedExports: {
-        createEncryptedIdentity: async () => ({
-            publicKey: 'test-public-key',
-            encryptedPrivateKey: 'test-encrypted-key',
-            kdf: 'PBKDF2',
-            kdfParams: {},
-            salt: 'test-salt',
-            iv: 'test-iv',
-            version: 1,
-            keyPair: { privateKey: null, publicKey: null },
-        }),
+        createEncryptedIdentity: async () => {
+            const pair = await crypto.subtle.generateKey(
+                { name: 'X25519' },
+                true,
+                ['deriveBits']
+            );
+            const raw = await crypto.subtle.exportKey('raw', pair.publicKey);
+            const pkcs8 = await crypto.subtle.exportKey('pkcs8', pair.privateKey);
+            return {
+                keyPair: pair,
+                publicKey: Buffer.from(raw).toString('base64'),
+                encryptedPrivateKey: new Uint8Array(pkcs8),
+                kdf: 'PBKDF2',
+                kdfParams: {},
+                salt: 'test-salt',
+                iv: 'test-iv',
+                version: 1,
+            };
+        },
         decryptIdentityPrivateKeyWithDerivedKey: async () => null,
         encryptIdentityPkcs8: async () => new ArrayBuffer(0),
         decryptIdentityPkcs8: async () => null,
         assertKnownIdentityFormat: () => {},
         deriveIdentityUnlockKey: async () => new ArrayBuffer(0),
         restoreIdentityFromServer: async () => null,
+        importPrivateKey: async (pkcs8) => {
+            return crypto.subtle.importKey(
+                'pkcs8',
+                pkcs8,
+                { name: 'X25519' },
+                false,
+                ['deriveBits']
+            );
+        },
     },
 });
 

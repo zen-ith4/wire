@@ -115,7 +115,7 @@ test('deleteUser removes group message attachments, Drive folders, and other att
   assert.ok(fs.existsSync(path.join(constants.USER_DATA_ROOT, String(keepMeId), 'Drive', 'keep_me_drive_file.txt')));
 
   // Delete the user.
-  const result = deleteUser(deleteMeId);
+  const result = deleteUser(String(deleteMeId));
   assert.equal(result.changes, 1, 'user row deleted');
 
   // delete_me's files must be gone.

@@ -845,5 +845,6 @@ export async function decryptIdentityPrivateKeyWithDerivedKey(
 
 export {
     arrayBufferToBase64,
-    base64ToArrayBuffer
+    base64ToArrayBuffer,
+    importPrivateKey
 };

@@ -318,7 +318,13 @@ export async function createIdentity(
         identity.keyPair.privateKey
     );
     identity.keyPair.privateKey = await importPrivateKey(pkcs8);
-    new Uint8Array(pkcs8).fill(0);
+    // Zero the real buffer: `new Uint8Array(buf).fill(0)` only zeroes a copy
+    // when buf is already a Uint8Array, so handle both types directly.
+    if (pkcs8 instanceof Uint8Array) {
+        pkcs8.fill(0);
+    } else {
+        new Uint8Array(pkcs8).fill(0);
+    }
 
     console.log(
         "[IdentityService] Encrypted identity generated"
@@ -740,7 +746,13 @@ export async function prepareCredentialChange(
                 }
             );
     } finally {
-        new Uint8Array(pkcs8).fill(0);
+        // Zero the real buffer: `new Uint8Array(buf).fill(0)` only zeroes a
+        // copy when buf is already a Uint8Array, so handle both types directly.
+        if (pkcs8 instanceof Uint8Array) {
+            pkcs8.fill(0);
+        } else {
+            new Uint8Array(pkcs8).fill(0);
+        }
     }
 
     result.identity = {

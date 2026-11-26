@@ -135,6 +135,9 @@ test('after password change, old socket is disconnected and old token is refused
   });
   assert.equal(result.ok, true);
   assert.equal(storedVersion(), before + 1);
+  // The new token version returned by changeCredentialsV2 — the client must
+  // reconnect using this, not any previously minted token.
+  assert.equal(result.tokenVersion, before + 1);
 
   // Simulate what the controller does after a successful password change:
   // forcefully disconnect the user's other live sockets.
@@ -152,6 +155,11 @@ test('after password change, old socket is disconnected and old token is refused
   const oldConnect = openSocket(oldToken).then(() => true, () => false);
   assert.equal(await oldConnect, false, 'old token reconnect refused');
 
+  // Reconnect with the NEW token returned by changeCredentialsV2 must succeed.
+  const newToken = sessionAt(result.tokenVersion);
+  const sock3 = await openSocket(newToken);
+  assert.ok(sock3.connected, 'new token socket connected');
+
   // Restore the known auth key for cleanliness (so the test db state is sane).
   await changeCredentialsV2(userId, {
     currentHash: db().prepare('SELECT password_hash FROM users WHERE id = ?').get(userId).password_hash,
@@ -162,8 +170,49 @@ test('after password change, old socket is disconnected and old token is refused
   });
   assert.equal(storedVersion(), before + 2);
 
-  // Reconnect with a NEW token at the current version must succeed.
-  const newToken = sessionAt(storedVersion());
+  sock3.close();
+});
+
+test('after password change, reconnect with NEW token from changeCredentialsV2 result', async () => {
+  const before = storedVersion();
+
+  // Two live sockets on the old token.
+  const oldToken = sessionAt(before);
+  const sock1 = await openSocket(oldToken);
+  const sock2 = await openSocket(oldToken);
+  assert.ok(sock1.connected, 'socket 1 connected');
+  assert.ok(sock2.connected, 'socket 2 connected');
+
+  // Perform the password change; capture the NEW token version from the result.
+  const currentHash = db().prepare('SELECT password_hash FROM users WHERE id = ?').get(userId).password_hash;
+  const result = await changeCredentialsV2(userId, {
+    currentHash,
+    newAuthKey: 'B'.repeat(43),
+    kdfSalt: Buffer.alloc(16, 2).toString('base64'),
+    kdfIterations: 650000,
+    identity: null,
+  });
+  assert.equal(result.ok, true);
+  assert.equal(storedVersion(), before + 1);
+
+  // Simulate what the controller does after a successful password change:
+  // forcefully disconnect the user's other live sockets.
+  disconnectUserSockets(userId);
+
+  // Both old sockets should be forcefully disconnected.
+  await Promise.all([
+    waitForDisconnected(sock1),
+    waitForDisconnected(sock2),
+  ]);
+  assert.equal(sock1.connected, false, 'socket 1 disconnected');
+  assert.equal(sock2.connected, false, 'socket 2 disconnected');
+
+  // Reconnect with the OLD token must be refused (token_version no longer matches).
+  const oldConnect = openSocket(oldToken).then(() => true, () => false);
+  assert.equal(await oldConnect, false, 'old token reconnect refused');
+
+  // Reconnect with the NEW token built from changeCredentialsV2 result's tokenVersion.
+  const newToken = sessionAt(result.tokenVersion);
   const sock3 = await openSocket(newToken);
   assert.ok(sock3.connected, 'new token socket connected');
   sock3.close();

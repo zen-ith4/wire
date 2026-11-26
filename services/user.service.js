@@ -908,11 +908,19 @@ function collectUserOwnedFiles(userId) {
 
 
 function deleteUser(userId) {
+  // Strict integer validation: reject '0x10', '1e1', '01', '-5', '0', etc.
+  if (typeof userId !== 'string' || !/^[1-9]\d*$/.test(String(userId))) {
+    throw new Error('Invalid user id');
+  }
+  const id = Number(userId);
+  if (!Number.isSafeInteger(id)) {
+    throw new Error('Invalid user id');
+  }
 
   // Read out every file this user owns before the cascade delete
   // below removes the rows that record where they are.
   const { files: filesToRemove, driveDirs: driveDirsToRemove } =
-    collectUserOwnedFiles(userId);
+    collectUserOwnedFiles(id);
 
   // Groups this user OWNS must not vanish or be left owner-less when the
   // account goes: hand each one to its successor (oldest admin, else

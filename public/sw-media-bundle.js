@@ -327,7 +327,6 @@ var WireMedia = (() => {
     }
     if (options && typeof options === "object") {
       if (options.totalSize != null) totalSize = options.totalSize;
-      if (options.maxResponseChunks != null) options = options;
     }
     return { ciphertext, rawKey, baseIv, mimeType, range, totalSize, maxResponseChunks: options?.maxResponseChunks };
   }

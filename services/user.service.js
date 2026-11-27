@@ -14,6 +14,7 @@ const {
   isValidIterations,
 } = require('../utils/credentials');
 const constants = require('../config/constants');
+const { isStoredFolderAllowed } = require('../utils/folderPolicy');
 const {
   prepareOwnedGroupsForUserDeletion,
   unlinkQuietly: unlinkGroupFileQuietly,
@@ -947,6 +948,19 @@ function deleteUser(userId) {
           id
         );
 
+      // `folders.owner_id` is ON DELETE SET NULL (database/tables/
+      // folders.tabels.js), so deleting the user alone would leave the
+      // folders they owned behind as owner-less rows. Remove exactly the
+      // folders this user owns, in the same transaction: their
+      // user_folders and share_links rows then cascade away with the
+      // folders row. Rows that were ALREADY owner-less are not touched.
+      getDb()
+        .prepare(`
+          DELETE FROM folders
+          WHERE owner_id = ?
+        `)
+        .run(id);
+
       return getDb()
         .prepare(`
           DELETE FROM users
@@ -970,8 +984,22 @@ function deleteUser(userId) {
       );
     }
 
-    // Drive folders are directories — remove them recursively.
+    // Drive folders are directories — remove them recursively. The same
+    // policy gate as the owner's own folder deletion (share.controller.js)
+    // runs first: a stored path that no longer passes the policy is left
+    // on disk with a warning, and the account deletion still succeeds.
     for (const dir of driveDirsToRemove) {
+      if (!fs.existsSync(dir)) {
+        continue;
+      }
+
+      if (!isStoredFolderAllowed(dir)) {
+        console.warn(
+          `Refusing to remove a Drive folder outside the allowed roots while deleting user ${id}: ${dir}`
+        );
+        continue;
+      }
+
       try {
         fs.rmSync(dir, { recursive: true, force: true });
       } catch {

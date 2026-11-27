@@ -27,6 +27,7 @@ mock.module(jsPath('crypto/identity.js'), {
         decryptIdentityPkcs8: async () => ({}),
         encryptIdentityPkcs8: async () => ({}),
         assertKnownIdentityFormat: () => {},
+        importPrivateKey: async () => ({}),
     },
 });
 // identity-service.js now also imports the account-KDF helpers and the migration builder

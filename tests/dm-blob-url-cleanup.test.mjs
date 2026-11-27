@@ -129,7 +129,12 @@ mock.module(jsPath('chat/typing.js'), {
     },
 });
 mock.module(jsPath('core/socket.js'), {
-    namedExports: { disconnectSocket: () => {}, initSocket: () => {}, getSocket: () => null },
+    namedExports: {
+        disconnectSocket: () => {},
+        initSocket: () => {},
+        reconnectSocket: async () => {},
+        getSocket: () => null,
+    },
 });
 mock.module(jsPath('chat/composer.js'), {
     namedExports: {

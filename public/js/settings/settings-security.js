@@ -20,6 +20,10 @@ import {
 } from '../core/auth.js';
 
 import {
+  reconnectSocket
+} from '../core/socket.js';
+
+import {
   renderSettings
 } from './settings.js';
 
@@ -144,6 +148,11 @@ async function changePassword() {
     // device stays signed in.
     if (changed && changed.token) {
       setToken(changed.token);
+
+      // Reconnect the socket with the new token (server disconnected old sockets)
+      await reconnectSocket().catch((err) => {
+        console.error('[Settings] Socket reconnection failed after password change:', err);
+      });
     }
 
     // The cached auto-unlock key belongs to the old wrapKey and can no longer

@@ -407,6 +407,47 @@ export function disconnectSocket() {
   setOnlineSnapshot([]);
 }
 
+/**
+ * Reconnect the socket with the current token.
+ * Used after a password change where the server disconnects all sockets
+ * and issues a new token. This tears down the old socket and creates a
+ * fresh connection using the updated token (already stored by setToken()).
+ */
+export async function reconnectSocket() {
+  socketLog('Reconnecting socket after token change...');
+
+  // Tear down the old socket (if any)
+  disconnectSocket();
+
+  // Initialize a new socket with the current token
+  // initSocket reads the token from localStorage via getToken()
+  const newSocket = initSocket();
+
+  if (!newSocket) {
+    socketWarn('reconnectSocket: no token available, skipping');
+    return null;
+  }
+
+  // Wait for the new connection to establish
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error('Socket reconnection timeout'));
+    }, 15000);
+
+    newSocket.once('connect', () => {
+      clearTimeout(timeout);
+      socketLog('Socket reconnected successfully');
+      resolve(newSocket);
+    });
+
+    newSocket.once('connect_error', (err) => {
+      clearTimeout(timeout);
+      socketError('Socket reconnection failed:', err);
+      reject(err);
+    });
+  });
+}
+
 function handleDirectMessage(message) {
   const currentUser = getCurrentUser();
   const activePeer = getDmActivePeer();

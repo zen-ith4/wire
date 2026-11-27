@@ -1,3 +1,14 @@
+// Child-process fixture for tests/socket-disconnect-order.test.mjs.
+//
+// Boots the REAL Socket.IO server (real database, real JWT verification) with
+// only sockets/dm.socket.js mocked so setupDmSocket() throws SYNCHRONOUSLY on
+// connect. That lets the parent drive a real client connection and observe
+// whether the server's disconnect handler was registered before the throw.
+//
+// The uncaughtException handler then runs the listeners the server actually
+// registered for 'disconnect' (exactly what Socket.IO would do on a real
+// disconnect) and reports the CLEANUP effect: the user must be offline again
+// and last_seen_at must have been written to the real database.
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -6,21 +17,20 @@ import http from 'node:http';
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-console.log('STARTING SERVER SCRIPT');
-console.log('CHILD JWT_SECRET:', process.env.JWT_SECRET);
-
-// Mock setupDmSocket to throw SYNCHRONOUSLY
 const dmSocketPath = path.join(ROOT, 'sockets', 'dm.socket');
 const resolvedDmSocket = require.resolve(dmSocketPath);
-console.log('RESOLVED_DM_SOCKET:', resolvedDmSocket);
+
+let capturedSocket = null;
+let throwCount = 0;
+
 require.cache[resolvedDmSocket] = {
   id: resolvedDmSocket,
   filename: resolvedDmSocket,
   loaded: true,
   exports: {
     setupDmSocket: (io, socket) => {
-      const listenerCount = socket.listenerCount('disconnect');
-      console.log(`DISCONNECT_LISTENER_COUNT:${listenerCount}`);
+      capturedSocket = socket;
+      throwCount++;
       throw new Error('setupDmSocket threw synchronously');
     },
     setupGroupSocket: () => {},
@@ -36,70 +46,54 @@ require.cache[resolvedGroupSocket] = {
   exports: { setupGroupSocket: () => {} }
 };
 
+const { isOnline } = require(path.join(ROOT, 'services', 'presence.service.js'));
+const { getDb } = require(path.join(ROOT, 'config', 'database.js'));
+
 process.on('uncaughtException', (err) => {
-  console.log('UNCAUGHT_EXCEPTION:', err.message);
-  if (err instanceof Error && err.message.includes('setupDmSocket threw')) {
-    console.log('CAUGHT_EXPECTED_ERROR');
-    process.exit(0);
+  if (!(err instanceof Error) || !err.message.includes('setupDmSocket threw')) {
+    console.error('UNEXPECTED_UNCAUGHT_EXCEPTION:', err && err.message);
+    process.exit(1);
   }
-  console.error('UNEXPECTED_UNCAUGHT_EXCEPTION:', err.message);
-  process.exit(1);
+
+  const userId = capturedSocket?.user?.id;
+  const listeners = capturedSocket ? capturedSocket.listeners('disconnect') : [];
+
+  console.log(`DISCONNECT_LISTENER_COUNT:${listeners.length}`);
+
+  // Run exactly the handlers the server registered, as a real disconnect would.
+  for (const fn of listeners) {
+    try {
+      fn('forced close');
+    } catch (listenerErr) {
+      console.error('DISCONNECT_HANDLER_THREW:', listenerErr && listenerErr.message);
+      process.exit(1);
+    }
+  }
+
+  const offline = userId != null ? !isOnline(userId) : false;
+  const row = userId != null
+    ? getDb().prepare('SELECT last_seen_at FROM users WHERE id = ?').get(userId)
+    : null;
+
+  console.log(`CLEANUP_OFFLINE:${offline}`);
+  console.log(`CLEANUP_LAST_SEEN:${Boolean(row && row.last_seen_at)}`);
+  console.log(`THROW_COUNT:${throwCount}`);
+
+  process.exit(offline && row && row.last_seen_at ? 0 : 2);
 });
 
 try {
-  // Mock verifySessionToken BEFORE requiring config/socket.js
-  const jwtModule = require(path.join(ROOT, 'utils', 'jwt.js'));
-  jwtModule.verifySessionToken = function(token) {
-    console.log('MOCK verifySessionToken called with token:', token ? 'present' : 'missing');
-    return { id: 7, username: 'alice', is_admin: false, tv: 0 };
-  };
-  
-  // Mock the database to return a user
-  const dbModule = require(path.join(ROOT, 'config', 'database.js'));
-  const mockDb = {
-    prepare: (sql) => {
-      if (sql.includes('SELECT id, is_active, token_version FROM users WHERE id = ?')) {
-        return {
-          get: (id) => {
-            console.log('MOCK DB query for user:', id);
-            return { id: 7, is_active: 1, token_version: 0 };
-          }
-        };
-      }
-      return { get: () => null, run: () => ({}), all: () => [] };
-    },
-    pragma: (key, value) => { console.log('PRAGMA:', key, value); },
-    close: () => {},
-    transaction: (fn) => fn(),
-    exec: () => {},
-  };
-  
-  // Replace the getDb function
-  dbModule.getDb = () => mockDb;
-  
-  // Also mock the constants
-  const constants = require(path.join(ROOT, 'config', 'constants'));
-  console.log('CHILD CONSTANTS JWT_SECRET:', constants.JWT_SECRET ? 'SET (length: ' + constants.JWT_SECRET.length + ')' : 'NOT SET');
-  
-  const socketModule = require(path.join(ROOT, 'config', 'socket.js'));
-  console.log('SETUP_SOCKET_IO_LOADED');
+  const { initDatabase } = require(path.join(ROOT, 'config', 'database.js'));
+  initDatabase();
 
   const server = http.createServer();
-  const io = require(path.join(ROOT, 'config', 'socket.js')).setupSocketIO(server);
-  console.log('SOCKET_IO_SETUP_COMPLETE');
+  require(path.join(ROOT, 'config', 'socket.js')).setupSocketIO(server);
 
   server.listen(0, '127.0.0.1', () => {
-    const port = server.address().port;
-    console.log(`SERVER_PORT:${port}`);
-    server.on('close', () => process.exit(0));
+    console.log(`SERVER_PORT:${server.address().port}`);
   });
 } catch (err) {
   console.log('CAUGHT_SYNC_ERROR:', err.message);
-  if (err instanceof Error && err.message.includes('setupDmSocket threw')) {
-    console.log('CAUGHT_EXPECTED_ERROR_IN_TRY_CATCH');
-    process.exit(0);
-  }
-  console.error('UNEXPECTED_SYNC_ERROR:', err.message);
   process.exit(1);
 }
 

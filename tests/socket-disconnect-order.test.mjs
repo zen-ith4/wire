@@ -2,9 +2,11 @@
 // setupDmSocket / setupGroupSocket are called. If one of those setups
 // throws SYNCHRONOUSLY, disconnect cleanup still runs.
 //
-// This test runs the server in a CHILD PROCESS that mocks setupDmSocket
-// to throw synchronously. The child process has its own uncaughtException
-// handler that only accepts the exact expected error.
+// This test runs the real server in a CHILD PROCESS with only
+// sockets/dm.socket.js mocked to throw synchronously. The child then runs the
+// disconnect listeners the server actually registered and reports the REAL
+// cleanup effect: the user is offline again and last_seen_at was written to
+// the database. With the handler after setup, both are missing.
 // The test passes with current order and fails when handler is moved after setup.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -61,6 +63,8 @@ after(async () => {
 function runSyncThrowTest() {
   return new Promise((resolve, reject) => {
     const serverScript = path.join(ROOT, 'tests', '_socket-test-server.mjs');
+    let timeout = null;
+    let waitForPort = null;
     const child = spawn(process.execPath, [
       '--experimental-test-module-mocks',
       '--env-file=tests/test.env',
@@ -85,6 +89,8 @@ function runSyncThrowTest() {
 
     let serverPort = null;
     let listenerCount = null;
+    let cleanupOffline = null;
+    let cleanupLastSeen = null;
     let childExited = false;
     let stdoutBuffer = '';
     let stderrBuffer = '';
@@ -94,6 +100,10 @@ function runSyncThrowTest() {
       stdoutBuffer += output;
       const listenerMatch = output.match(/DISCONNECT_LISTENER_COUNT:(\d+)/);
       if (listenerMatch) listenerCount = parseInt(listenerMatch[1], 10);
+      const offlineMatch = output.match(/CLEANUP_OFFLINE:(true|false)/);
+      if (offlineMatch) cleanupOffline = offlineMatch[1] === 'true';
+      const lastSeenMatch = output.match(/CLEANUP_LAST_SEEN:(true|false)/);
+      if (lastSeenMatch) cleanupLastSeen = lastSeenMatch[1] === 'true';
       const portMatch = output.match(/SERVER_PORT:(\d+)/);
       if (portMatch) serverPort = parseInt(portMatch[1], 10);
     });
@@ -105,11 +115,13 @@ function runSyncThrowTest() {
 
     child.on('exit', (code, signal) => {
       childExited = true;
+      clearTimeout(timeout);
+      clearInterval(waitForPort);
       console.log('[Child exit] code:', code, 'signal:', signal);
       console.log('[Child stdout]:', stdoutBuffer);
       console.log('[Child stderr]:', stderrBuffer);
       if (code === 0) {
-        if (serverPort && listenerCount !== null) resolve({ port: serverPort, listenerCount });
+        if (serverPort && listenerCount !== null) resolve({ port: serverPort, listenerCount, cleanupOffline, cleanupLastSeen });
         else reject(new Error('Child exited without providing port or listener count'));
       } else {
         reject(new Error(`Child process exited with code ${code}, signal ${signal}`));
@@ -118,7 +130,7 @@ function runSyncThrowTest() {
 
     child.on('error', reject);
 
-    const waitForPort = setInterval(() => {
+    waitForPort = setInterval(() => {
       if (serverPort) {
         clearInterval(waitForPort);
         const token = signToken({ id: userId, username: 'alice', is_admin: false, token_version: 0 });
@@ -129,7 +141,7 @@ function runSyncThrowTest() {
       }
     }, 100);
 
-    setTimeout(() => {
+    timeout = setTimeout(() => {
       clearInterval(waitForPort);
       if (!childExited) { child.kill('SIGTERM'); reject(new Error('Child process timeout')); }
     }, 15000);
@@ -137,6 +149,11 @@ function runSyncThrowTest() {
 }
 
 test('disconnect handler is registered before setupDmSocket throws synchronously', async () => {
-  const { listenerCount } = await runSyncThrowTest();
+  parentDb.prepare('UPDATE users SET last_seen_at = NULL WHERE id = ?').run(userId);
+  const { listenerCount, cleanupOffline, cleanupLastSeen } = await runSyncThrowTest();
   assert.ok(listenerCount >= 1, `Disconnect handler should be registered before setupDmSocket is called (listenerCount was ${listenerCount})`);
+  assert.equal(cleanupOffline, true, 'running the registered handlers must mark the user offline');
+  assert.equal(cleanupLastSeen, true, 'running the registered handlers must write last_seen_at');
+  const row = parentDb.prepare('SELECT last_seen_at FROM users WHERE id = ?').get(userId);
+  assert.ok(row.last_seen_at, 'last_seen_at was persisted to the real database by the disconnect cleanup');
 });

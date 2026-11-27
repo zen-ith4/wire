@@ -1,6 +1,7 @@
 const readline = require('readline');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { Writable } = require('stream');
 
 const { hashPassword } = require('./password');

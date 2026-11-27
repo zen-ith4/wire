@@ -1,502 +1,426 @@
-# Electron Bundled Client — Design Document
+# Electron Bundled Client — Design Decisions
 
 **Branch:** `electron-bundled-spike`  
-**Base:** main at `998fa50a6476693a6b7b7646424d7ccfeb8aabad`  
-**Phase:** 1 (Feasibility + Design) — NOT implementation  
-**Spike Results:** `docs/ELECTRON_BUNDLED_SPIKE_RESULTS.md`
+**Base:** `998fa50a6476693a6b7b7646424d7ccfeb8aabad` (main)  
+**Phase:** 1 — decisions locked, **no Electron implementation in this phase**  
+**Spike evidence:** `docs/ELECTRON_BUNDLED_SPIKE_RESULTS.md`
+
+> **Status legend used throughout**
+>
+> - **Verified (code)** — read from this tree at this commit; file:line cited.
+> - **Verified (experiment)** — measured in the spike, not in this repo's product code.
+> - **Planned** — a decision for Phase 2; nothing implements it today.
+> - **Not verified** — stated as a requirement but not proven, or not testable in this environment.
+
+The existing `electron-client/` is **not** the bundled client. It is a thin shell that loads
+the chosen server's own web UI (`electron-client/main.js:380`). Everything below about
+`wire-bundled://app`, app-enforced CSP, partitions and permission handlers is therefore
+**Planned** unless marked otherwise.
 
 ---
 
-## 1. Threat Model
+## 1. Locked decisions
 
-### What a Malicious/Compromised Server Can Do TODAY (Server-Loaded UI)
+These are accepted; Phase 2 implements them. They are not options in the table any more.
 
-| Capability | Current State |
-|------------|---------------|
-| Replace client code | ✅ Can serve any JS — steal keys, disable E2EE, exfiltrate data |
-| Inject malicious CSP | ✅ Can weaken/remove CSP headers |
-| Serve different code per user | ✅ Targeted attacks possible |
-| Push malicious update | ✅ Controls `/api/version` and update flow |
-| Read all traffic | ✅ Terminates TLS, sees all plaintext |
-| Modify message content | ✅ Can inject/alter messages before encryption |
-| Exfiltrate keys | ✅ Can serve code that exports `crypto.subtle` keys |
-
-### What a Malicious/Compromised Server CANNOT Do AFTER Bundled Client
-
-| Capability | Mitigation |
-|------------|------------|
-| Replace client code | ❌ Code is bundled in `app.asar`, integrity-verified on every load |
-| Inject malicious CSP | ❌ CSP injected by app (`connect-src` restricted to server origin) |
-| Serve different code per user | ❌ All users get identical `app.asar` |
-| Push malicious update | ⚠️ Notice only; installer verified against pinned hash |
-| Read all traffic | ❌ E2EE keys never leave renderer; server only sees ciphertext |
-| Modify message content | ❌ Messages encrypted before leaving renderer |
-| Exfiltrate keys | ❌ Keys never leave renderer; `safeStorage` in main process |
-
-### What Remains Possible Even After Bundling
-
-| Risk | Mitigation |
-|-------|------------|
-| Metadata leakage | Server sees who talks to whom, when, how much |
-| Availability | Server can go offline, block connections |
-| Fake update prompt | Server can trigger `app-update:available`; user must manually verify |
-| Availability of new features | Server controls feature flags |
-| APK hash served by same server | Does NOT protect against that server — same trust boundary |
+| # | Decision | Notes |
+|---|----------|-------|
+| D1 | The bundled client connects to the server **directly**, restricted by an app-enforced CSP. | No main-process network bridge in Phase 2. The Q2 experiment showed direct `fetch()` and WebSocket work from the bundled scheme. The CSP is the control that limits where the page may connect. |
+| D2 | **HTTPS only**, and `wss://` for sockets. | Plain HTTP/WS is allowed **only** in unpackaged development/test builds (`app.isPackaged === false`), and only to `localhost`, `127.0.0.1` or `[::1]`. No user setting and no environment variable may enable HTTP in a packaged build. Saved addresses and redirects are covered. Certificate validation is never disabled globally. |
+| D3 | One **persistent session partition per server**. | Protocol handler, CSP header injection and permission handlers are registered on every partition, not just the default one. |
+| D4 | Existing users **log in again** and restore their identity from the server, and are **told** that this happens. | Conditional on the Phase 6 inventory of device-only data (peer pins, verified state, old DM keys, group sender keys, KDF pin). Do **not** claim nothing is lost. |
+| D5 | Updates are a **notification only**, with a fixed link inside the app. App code is **never** downloaded from the server. | The server's version endpoint may only cause a notice. |
+| D6 | Permissions: **microphone only**, and only for the allowed app origin; notifications through the main process; **screen sharing and everything else denied**. | Enforced in both `setPermissionRequestHandler` and `setPermissionCheckHandler` per partition. |
+| D7 | **Code signing: still open.** | No signing/notarization decision is made by this document. |
 
 ---
 
-## 2. Recommended Architecture
+## 2. What exists today (verified)
 
-### Central Decision: Q2 Answer Drives Everything
-
-**Q2 Answer (verified against the real server, see `docs/ELECTRON_BUNDLED_SPIKE_RESULTS.md`, Q2):** In Electron 45.4.1, from the bundled secure origin `wire-bundled://app`, both `fetch()` and `WebSocket` to a non-loopback `http://`/`ws://` server succeed. (An earlier revision of this document said WebSocket was blocked and a bridge was required; that was wrong, it came from a test server that could not answer a WebSocket upgrade.)
-
-**Architectural Consequence:** The renderer can talk to the server directly. A main-process network bridge is NOT technically required. It stays an OPTIONAL hardening choice (owner decision): the bridge would let the main process pin the destination server and refuse any other, instead of relying only on the CSP `connect-src` that the app applies to the page. Without a bridge, the app-applied CSP (section 6) is the control that stops the bundled client from sending data anywhere except the chosen server, so it becomes mandatory, not optional. The result is specific to Electron 45.4.1 / Chromium 156 and must be re-run on every Electron upgrade (`electron-client/spike/run-q2-real-server.sh`).
-
-### Architecture Diagram
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    ELECTRON MAIN PROCESS                         │
-│  ┌──────────────┐  ┌──────────────────┐  ┌──────────────────┐  │
-│  │  Protocol    │  │  Network Bridge  │  │  SafeStorage     │  │
-│  │  Handler     │  │  (fetch + WS     │  │  (identity keys) │  │
-│  │  (wire-      │  │   proxy via IPC) │  │                  │  │
-│  │   bundled)   │  │                  │  │                  │  │
-│  └──────┬───────┘  └──────┬───────────┘  └──────────────────┘  │
-│         │                 │                                       │
-│         ▼                 ▼                                       │
-│  ┌─────────────────────────────────────────────────────────────┐ │
-│  │             RENDERER PROCESS (wire-bundled://app)            │ │
-│  │  • Bundled HTML/JS/CSS (in app.asar)                          │ │
-│  • crypto.subtle — E2EE key operations                            │ │
-│  • IndexedDB — verification pins                                  │ │
-│  • localStorage — session state                                   │ │
-│  • fetch() → server (direct, allowed)                             │ │
-│  • IPC → main → WebSocket → server (proxy)                        │ │
-│  • IPC → main → identity keys (safeStorage)                      │ │
-│  └─────────────────────────────────────────────────────────────┘ │
-│                                                                   │
-│  ┌─────────────────────────────────────────────────────────────┐ │
-│  │                      SERVER (HTTP/WS)                         │ │
-│  │  • HTTP API endpoints                                         │ │
-│  • WebSocket for real-time DM                                     │ │
-│  └─────────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### Data Flow
-
-1. **Connect:** User enters server address → main process validates → saves to config → loads `wire-bundled://app/index.html`
-2. **API calls:** Renderer → `fetch()` directly to the server (verified allowed, Q2) → Server → Renderer
-3. **WebSocket:** Renderer → `WebSocket`/Socket.IO directly to the server (verified allowed, Q2). Optional hardening variant: Renderer → IPC → Main process socket → Server.
-4. **E2EE keys:** Renderer → IPC `identity:store-unlock-key` → Main process `safeStorage.encryptString()` → disk
-5. **DM notifications:** Server → WebSocket → Main process → IPC → Renderer
+| Area | Reality in this tree | Status |
+|------|----------------------|--------|
+| Bundled UI | `electron-client/package.json:25-32` packages only `main.js`, `preload.js`, `renderer/**/*`, an icon and `package.json`. **`public/` is not included.** | Not bundled |
+| Page origin | The window loads the remote server (`electron-client/main.js:380`). | Server-loaded UI |
+| Custom protocol | Only in `electron-client/spike/`; `main.js` has no `protocol.registerSchemesAsPrivileged` / `protocol.handle`. | Spike only |
+| App CSP | `main.js` has no `webRequest.onHeadersReceived`; the page receives the **server's** CSP. | Not implemented |
+| Session partition | `BrowserWindow` is created without `partition` (`electron-client/main.js:314-321`), so every server uses the default session. | Not implemented |
+| Permission handler | No `setPermissionRequestHandler` anywhere in `electron-client/`. | Not implemented |
+| Update flow | `checkServerVersion()` calls `/api/version` (`main.js:201-263`), then emits `app-update:available` (`main.js:382-397`). No download link, no installer execution. | Partial (notice only) |
+| Code signing | No build/signing configuration in the repo. | Open |
+| HTTPS enforcement | `normalizeServerAddress()` accepts `http:` and `https:` in both packaged and unpackaged builds (`main.js:141`). | Not implemented |
 
 ---
 
-## 3. IPC Hardening Plan
+## 3. Threat model
 
-### Current IPC Handlers (main.js)
+Only protections that are actually implemented and tested are marked **Implemented**.
+Everything that depends on the bundled client is **Planned** until Phase 2 ships and tests it.
 
-| Handler | Current Validation | Hardened Validation |
-|---------|-------------------|---------------------|
-| `identity:store-unlock-key` | `event.sender.getURL()` vs `claimedOrigin` | ✅ Already validates origin |
-| `identity:get-unlock-key` | `event.sender.getURL()` vs `claimedOrigin` | ✅ Already validates origin |
-| `identity:clear-unlock-key` | `event.sender.getURL()` vs `claimedOrigin` | ✅ Already validates origin |
-| `networkBridge:fetch` | **OPTIONAL, only if the owner chooses the bridge** | Validate `event.senderFrame.url === BUNDLED_ORIGIN`; allowlist target URL |
-| `networkBridge:ws-connect` | **OPTIONAL, only if the owner chooses the bridge** | Validate `event.senderFrame.url === BUNDLED_ORIGIN`; allowlist target URL |
-| `networkBridge:ws-send` | **OPTIONAL, only if the owner chooses the bridge** | Validate `event.senderFrame.url === BUNDLED_ORIGIN`; WS must be open |
-| `server:connect` | Validates address format | ✅ Already validates |
-| `server:get-saved` | Only from connect screen | ✅ Only exposed on `file:` protocol |
-| `server:forget` | Only from connect screen | ✅ Only exposed on `file:` protocol |
-| `server:show-connect-screen` | No origin check | Add `event.senderFrame.url === BUNDLED_ORIGIN` |
-| `app:hardware-acceleration:*` | No origin check | Low risk (local pref); add origin check for consistency |
-| `app:relaunch` | No origin check | Add origin check |
-| `dm-notification:show` | Checks `event.sender === mainWindow.webContents` | ✅ Good |
-| `dm-notification:clicked` | Main → renderer | ✅ One-way |
+### 3.1 Current state (server-loaded UI, what ships today)
 
-### Key Hardening Principle
+| Capability of a malicious/compromised server | Current state | Evidence |
+|---|---|---|
+| Replace client code | Can serve any JS. | `main.js:380` loads the server URL. |
+| Weaken CSP | It sends the CSP the page obeys. | `middleware/csp.js` runs on the server; the client does not override it. |
+| Serve different code per user | Possible (server-side). | Same. |
+| Trigger a fake update notice | Possible: it controls `/api/version`. | `main.js:201-263`, `382-397`. |
+| Read traffic | It terminates TLS. | Deployment-dependent. |
+| Read the encrypted identity blob | The server stores it. | `controllers/me.controller.js:619,639,756`; `public/js/crypto/identity-service.js:106`. |
+| Read message plaintext | No, for E2EE content; metadata is visible. | Existing E2EE design, unchanged. |
 
-> **Every `ipcMain.handle` must validate `event.senderFrame.url === BUNDLED_ORIGIN` (or `file:` for connect screen). Never trust a renderer-supplied origin string.**
+### 3.2 After bundling (target)
 
-### Identity Storage Binding
-
-- **Current:** Keys stored per `(origin, userId)` where origin comes from `event.sender.getURL()`
-- **Hardened:** Keys bound to the **origin the MAIN PROCESS connected to** (stored in config), not a renderer-supplied string
-- **Migration:** Existing keys remain accessible; new keys bound to config origin
-
----
-
-## 4. openExternal Allowlist
-
-### Current Behavior (main.js:329-331)
-
-```javascript
-mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-  shell.openExternal(url);
-  return { action: 'deny' };
-});
-```
-
-### Hardened Allowlist
-
-```javascript
-const ALLOWED_EXTERNAL_SCHEMES = ['http:', 'https:'];
-
-mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-  try {
-    const parsed = new URL(url);
-    if (!ALLOWED_EXTERNAL_SCHEMES.includes(parsed.protocol)) {
-      return { action: 'deny' };
-    }
-    shell.openExternal(url);
-  } catch {
-    // Invalid URL
-  }
-  return { action: 'deny' };
-});
-```
-
-**Forbidden:** `file:`, `mailto:`, `tel:`, `sms:`, custom protocols, `javascript:`, `data:`, `blob:`, `filesystem:`, `chrome:`, `chrome-extension:`.
+| Capability | Mitigation | Status |
+|---|---|---|
+| Replace client code | UI files ship in `app.asar`; the protocol handler serves only those files. | **Planned.** `public/` is not in the package today (`package.json:25-32`), and `main.js` has no handler. |
+| Serve different code per user | One identical bundle for all users. | **Planned.** |
+| Weaken CSP | The app sets its own CSP on every document response, regardless of server headers. | **Planned.** No CSP injection exists in `main.js`. |
+| Reach arbitrary hosts | App-enforced `connect-src` limited to the chosen server; HTTPS/wss gate. | **Planned.** Q2 only proved fetch/WS are *possible*; it did not test a restrictive CSP. |
+| Push executable updates | Notification only; fixed in-app link; no server-supplied code or installer. | **Planned.** Today the server already supplies the whole UI. |
+| Read message plaintext | E2EE stays end-to-end; server sees ciphertext and metadata. | **Implemented** in the existing protocol, unchanged by bundling. |
+| Read the raw private key | The server holds only an encrypted blob; decryption happens in the renderer. | **Implemented**, with the caveat that the blob and KDF parameters are server-supplied. Do **not** claim "keys never leave the renderer". |
+| Read the session token | The renderer stores it in `localStorage` (`public/js/core/auth.js:51,81`); a malicious server can read it. | **Not protected** by bundling. Token theft is outside this design's scope. |
 
 ---
 
-## 5. Navigation Lock
+## 4. Architecture (direct connection, no bridge)
 
-### Current (main.js:338-347)
-
-```javascript
-mainWindow.webContents.on('will-navigate', (event, targetUrl) => {
-  const target = new URL(targetUrl);
-  const isLocalConnectScreen = target.protocol === 'file:';
-  const isCurrentServer = currentServerOrigin && target.origin === currentServerOrigin;
-  if (!isLocalConnectScreen && !isCurrentServer) {
-    event.preventDefault();
-    shell.openExternal(targetUrl);
-  }
-});
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                        ELECTRON MAIN PROCESS                     │
+│                                                                  │
+│  wire-bundled:// handler        CSP injection (per partition)    │
+│  (per-session protocol.handle)  permission handlers (per part.)  │
+│                                                                  │
+│  safeStorage: encrypts the *derived unlock key* only             │
+│  (not the identity private key — that lives in the renderer)     │
+│                                                                  │
+│  one persistent partition per server: persist:server:<hash>      │
+└───────────────┬──────────────────────────────────────────────────┘
+                │ loads wire-bundled://app/index.html
+                ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                 RENDERER  (wire-bundled://app)                   │
+│  • bundled HTML/JS/CSS from app.asar                             │
+│  • crypto.subtle — E2EE key operations                           │
+│  • IndexedDB — pins, sender keys, unlock-key cache               │
+│  • localStorage — session token, UI preferences                  │
+│  • fetch() ───────────────────────────────────────► server HTTPS │
+│  • Socket.IO WebSocket ───────────────────────────► server WSS   │
+│  • IPC → main: notifications, safeStorage, connect screen        │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
-### Hardened Lock
+**There is no network bridge.** The earlier revision's diagram showed a main-process
+"fetch + WS proxy" next to the protocol handler, which contradicted the Q2 result and D1.
+The bridge is not part of Phase 2. IPC is used only for OS integration (notifications,
+safeStorage, the connect screen, settings), never to proxy HTTP or WebSocket traffic.
 
-```javascript
-mainWindow.webContents.on('will-navigate', (event, targetUrl) => {
-  try {
-    const target = new URL(targetUrl);
-    const allowed =
-      target.protocol === 'file:' ||
-      target.origin === BUNDLED_ORIGIN ||
-      (currentServerOrigin && target.origin === currentServerOrigin);
-    if (!allowed) {
-      event.preventDefault();
-      shell.openExternal(targetUrl);
-    }
-  } catch {
-    event.preventDefault();
-  }
-});
-```
+### Data flow
 
-**Also block:** `<meta http-equiv="refresh">`, `window.location = ...`, `history.pushState` to disallowed origins via `did-start-navigation` and `did-redirect-navigation`.
+1. Connect screen: user enters a server address → main validates it (D2) → saves it.
+2. Main creates/selects the persistent partition for that server and registers the
+   protocol, CSP and permission handlers on it (D3).
+3. Main loads `wire-bundled://app/index.html` in that partition.
+4. The renderer receives the server endpoint over IPC and sets the client's base URL.
+5. API calls and Socket.IO connect **directly** to the server, allowed by `connect-src`.
+6. Identity unlock key (remember-me) may be stored via main-process `safeStorage`; the
+   encrypted identity blob itself comes from the server, as today.
 
 ---
 
-## 6. CSP Applied by App
+## 5. Origin, URLs and storage — corrections checked against the code
 
-### Current: Server sends CSP headers
+### 5.1 Changing `getServerEndpoint()` alone is not enough
 
-### App-Enforced CSP (Protocol Handler)
+**Verified (code).** `getServerEndpoint()` returns `window.location.origin` outside
+Capacitor (`public/js/core/server.js:73-76`). But `resolveServerUrl()` returns the input
+unchanged when not Capacitor (`public/js/core/server.js:104-111`):
 
-```javascript
-protocol.handle('wire-bundled', async (request) => {
-  // ... file serving logic ...
-  
-  return new Response(content, {
-    headers: {
-      'Content-Type': contentType,
-      'Cache-Control': 'no-cache',
-      'Content-Security-Policy': [
-        "default-src 'self'",
-        "script-src 'self'",
-        "style-src 'self' 'unsafe-inline'",
-        "img-src 'self' data: blob:",
-        "font-src 'self' data:",
-        "connect-src 'self' " + currentServerOrigin,
-        "worker-src 'self' blob:",
-        "frame-ancestors 'none'",
-        "base-uri 'self'",
-        "form-action 'self'",
-      ].join('; '),
-    },
-  });
-});
-```
-
-### `connect-src` Allowlist
-
-```javascript
-const ALLOWED_CONNECT_ORIGINS = [
-  BUNDLED_ORIGIN,           // Self (wire-bundled://app)
-  currentServerOrigin,      // Configured server (<server-ip>:<port>)
-];
-```
-
-**Rationale:** The app enforces its own CSP regardless of server headers. The server cannot weaken it.
-
----
-
-## Client Changes Needed
-
-- At connect screen, user enters server address
-- Main process validates and saves server origin to config
-- Renderer receives server origin via IPC (`server:get-saved`)
-- Client-side `getServerEndpoint()` returns the configured server origin (not `window.location.origin`)
-- `resolveServerUrl()` prepends server origin for relative URLs
-- Install absolute server base in client (proposed diff in design doc)
-
-## 7. Update Strategy
-
-### Current Flow (main.js:201, 382)
-
-```javascript
-// checkServerVersion() calls /api/version
-// If newer, emits 'app-update:available' to renderer
-// Renderer shows notification
-```
-
-### Hardened Strategy
-
-| Aspect | Current | Hardened |
-|--------|---------|----------|
-| Version check | `GET /api/version` | Same, but via main-process bridge |
-| Notification | Renderer shows toast | Same |
-| Download | Server provides download URL | **NEVER download from server URL** |
-| Installation | User manually downloads | **Show notice only**; user downloads from trusted source |
-| Verification | None | **Pinned SHA-256 hash** (out-of-band) |
-| Code signing | Not mentioned | **macOS: notarized; Windows: EV cert; Linux: GPG-signed** |
-
-### Update Flow (Hardened)
-
-1. Main process checks `/api/version` via `net.fetch` (via bridge)
-2. If newer, emits `app-update:available` with `serverVersion`
-3. Renderer shows: "Wire v{X.Y.Z} available. Download from [official site / GitHub releases]."
-4. **No auto-download, no installer execution from server-provided URL**
-5. User manually downloads, verifies hash/signature, installs
-
-**Code-signing status:**
-- macOS: Notarized `.dmg` / `.app` (requires Apple Developer Program)
-- Windows: EV code-signed NSIS installer (requires EV certificate)
-- Linux: GPG-signed `.AppImage` and `.deb` (detached signature published)
-
-**Out-of-band hash:** Published on project website, GitHub releases, and optionally via DNS TXT record.
-
----
-
-## 8. Server-Side Changes (PROPOSED DIFFS)
-
-### 1. CORS Allowance for Bundled Origin
-
-**File:** `middleware/cors.js`
-
-```diff
- const corsMiddleware = cors({
-   origin: true,  // Already reflects request Origin — works for wire-bundled://app
-   credentials: false,
- });
-```
-
-**No change needed** — `origin: true` already reflects the request's `Origin` header.
-
-### 2. Version Endpoint (unchanged)
-
-**File:** `routes/version.routes.js` — No changes needed.
-
-### 3. Socket.IO CORS (if needed)
-
-**File:** `config/socket.js` (or wherever Socket.IO is configured)
-
-```diff
- const io = new Server(httpServer, {
-   cors: {
--    origin: true,
-+    origin: (origin, callback) => {
-+      if (origin === 'wire-bundled://app' || allowedOrigins.includes(origin)) {
-+        callback(null, true);
-+      } else {
-+        callback(new Error('CORS not allowed'));
-+      }
-+    },
-     credentials: false,
-   },
- });
-```
-
-### 4. APK Info Endpoint (for manual download link)
-
-**File:** `controllers/apk.controller.js` — Ensure returns `version`, `sha256`, `signature`, `downloadUrl` (pointing to GitHub releases, not server).
-
----
-
-## 9. Client Changes in public/ (PROPOSED DIFFS)
-
-### 1. `public/js/core/server.js` — Accept Absolute Server Base
-
-```diff
--export function getServerEndpoint() {
--  if (!isCapacitor()) {
--    return window.location.origin;
--  }
--  // ... Capacitor logic
--}
-+let injectedServerEndpoint = null;
-+
-+export function getServerEndpoint() {
-+  if (injectedServerEndpoint) return injectedServerEndpoint;
-+  if (isCapacitor()) {
-+    // ... existing Capacitor logic
-+  }
-+  return window.location.origin;  // Fallback for browser
-+}
-+
-+// Called by preload.js via IPC on app startup
-+export function __setServerEndpoint(endpoint) {
-+  injectedServerEndpoint = endpoint;
-+}
-```
-
-### 2. `public/js/core/api.js` — Use Absolute Base
-
-```diff
--const response = await fetch(resolveServerUrl(url), { ... });
-+const base = getServerEndpoint();
-+const fullUrl = url.startsWith('/') ? base + url : url;
-+const response = await fetch(fullUrl, { ... });
-```
-
-### 3. `public/js/core/socket.js` — Use Absolute Server Base
-
-```diff
--const serverEndpoint = getServerEndpoint();
--socket = io(serverEndpoint, { ... });
-+const serverEndpoint = getServerEndpoint();
-+socket = io(serverEndpoint, { ... });
-```
-
-### 4. `public/js/media/*.js` — Use Absolute Base
-
-All `resolveServerUrl()` calls already use `getServerEndpoint()` internally — no change needed if `getServerEndpoint()` returns the injected server origin.
-
-### 5. `public/js/core/pwa.js` — Skip SW for Bundled
-
-```diff
-export function registerServiceWorker() {
-  if (
-    !('serviceWorker' in navigator) ||
-    !window.isSecureContext ||
-    !/^https?:$/.test(location.protocol) ||
-    isNativeApp() ||
-+    location.protocol === 'wire-bundled:'  // Explicit check
-  ) {
-    return;
-  }
-  // ...
+```js
+if (!isCapacitor()) {
+  return url;      // stays relative
 }
 ```
 
----
+So with the bundled origin, a relative `/api/...` would be resolved by the renderer against
+`wire-bundled://app`, not against the server. Both functions must change together (or
+`resolveServerUrl()` must always join against the injected endpoint). The design previously
+listed only the `getServerEndpoint()` change.
 
-## 10. Test Plan
+### 5.2 `URL.origin` is `"null"` for `wire-bundled://app` in Node — do not compare it
 
-### Unit Tests (Node.js)
+**Verified (code/Node).**
 
-| Test | Description |
-|------|-------------|
-| Protocol handler path traversal | `../etc/passwd` → 403 |
-| Protocol handler integrity mismatch | Modified file → 500 |
-| IPC sender validation | Wrong origin → rejected |
-| URL allowlist | Non-allowed URL → rejected |
-| safeStorage async migration | Encrypt/decrypt round-trip |
-| Integrity manifest generation | All files hashed, manifest valid |
-
-### Electron Smoke Tests (CI)
-
-| Test | Command |
-|------|---------|
-| App starts, shows connect screen | `npm start` → wait for connect.html |
-| Connect to test server | Enter address → load real UI |
-| DM send/receive | Send message → verify received |
-| Verify button | Compare numbers → mark → reload → stays verified |
-| Voice message | Record → send → receive → play |
-| Hardware acceleration toggle | Toggle → relaunch → persists |
-| DM notification click | Click notification → opens conversation |
-| Update notice | Mock server v2.0.0 → notice appears |
-
-### Non-Loopback IP Test (Critical for Q2)
-
-```bash
-# Implemented as electron-client/spike/run-q2-real-server.sh:
-# Start the real server (node server.js) on 0.0.0.0, take the IP from `hostname -I`
-# Verify from the bundled origin: fetch to http://<non-loopback-ip>:<port> works
-# Verify from the bundled origin: WebSocket to ws://<non-loopback-ip>:<port> opens
-# Controls: the same from an http:// origin page, and against loopback
-# Re-run on every Electron upgrade (Chromium mixed-content behaviour can change)
+```
+new URL('wire-bundled://app/index.html').origin === 'null'
 ```
 
-### Migration Test
+The spike observed the renderer origin as `wire-bundled://app` (Q1), so the two sides
+disagree about `.origin`. The main process must compare a normalized
+`scheme://host` string (e.g. `url.protocol + '//' + url.host`), not `url.origin`.
 
-1. Install old version (server-loaded)
-2. Configure server, verify identity
-3. Upgrade to bundled version
-4. Verify: identity unlock keys still work
-5. Verify: server config preserved
-6. Verify: hardware acceleration setting preserved
+This matters in existing code:
 
-**Rollback:** User can uninstall new version, reinstall old — config files compatible.
+- `unlockKeyStoreOrigin()` returns `new URL(event.sender.getURL()).origin`
+  (`electron-client/main.js:456`). For the bundled scheme that is `"null"`.
+- The remember-me IPC handlers then compare it with the renderer-supplied
+  `claimedOrigin` and reject on mismatch (`main.js:481-486`, `515-519`, `542-546`).
+- The renderer's claimed origin comes from `getIdentityStorageOrigin()`, which returns
+  `getServerEndpoint()` (`public/js/core/auth.js:282-284`) — the **server** origin, not the
+  page origin.
 
----
+**Not verified inside Electron:** the exact string `event.sender.getURL()` returns for the
+custom scheme in this Electron version, and whether `claimedOrigin === serverOrigin` is the
+right pairing. The design requirement is: derive the server origin from the app's own
+per-partition mapping, normalize both sides identically, and add a test for the custom
+scheme. Until that test exists, remember-me under `wire-bundled://` must be treated as
+**broken/planned**, not as working.
 
-## 11. Risks & Open Questions
+### 5.3 All servers share one bundled origin → shared storage
 
-### Risks
+**Verified (code).** `wire-bundled://app` is one origin regardless of which server is
+selected. Therefore `localStorage` and IndexedDB are shared unless the app separates them.
+Some stores are namespaced by server endpoint:
 
-| Risk | Likelihood | Impact | Mitigation |
-|------|------------|--------|------------|
-| IPC bridge performance (only if the bridge is adopted) | Medium | Latency on every API call | Batch requests; WebSocket for real-time |
-| Main process bottleneck (only if the bridge is adopted) | Low | Single-threaded Node.js | Offload crypto to renderer; main only proxies |
-| ASAR integrity bypass | Low | Modified app.asar | OS code signing + integrity manifest |
-| User ignores update notice | High | Stale client | Clear messaging; optional forced update after N versions |
-| Certificate pinning complexity | Medium | User friction | Optional fingerprint verification; document clearly |
+- peer pins: `public/js/crypto/keys/peer-key-gate.js:143-151` + `peer-trust.js:191-193,225-229`
+- scheme-2 KDF pins: `public/js/crypto/account-kdf.js:28-35`
+- DM replay/pin scope: `public/js/crypto/messages/dm-v2-wire.js:157-165`
 
-### Open Questions for Owner
+Others are not, e.g. the session token key `'token'` (`public/js/core/auth.js:51,81`) and
+UI preferences (`theme.js`, `emoji-picker.js`, `message-sounds.js`). D3 (one persistent
+partition per server) is what isolates them; the endpoint-prefixed keys are defence in
+depth inside a partition, not a substitute for it.
 
-1. **Update mechanism:** Accept "notice only" or require auto-update with signed installers?
-2. **Network model:** Direct renderer connection with app-applied CSP `connect-src` (works per Q2), or a main-process bridge that pins the destination? Require HTTPS for all servers or allow HTTP (WireGuard)?
-3. **Certificate pinning:** Mandatory fingerprint verification at connect screen, or optional?
-4. **Code signing:** Budget for EV cert (Windows) and Apple Developer Program (macOS)?
-5. **Linux distribution:** AppImage + deb sufficient, or need Flatpak/Snap?
-6. **Auto-update check frequency:** Hourly, daily, on startup?
-7. **Telemetry:** Any crash/error reporting (opt-in)?
+### 5.4 Data under the old server origin is invisible to the bundled origin
 
----
+**Verified (code/browser model).** Browser storage is origin-scoped. IndexedDB databases
+such as `wire-peer-trust`, `wire-e2ee-store` and the unlock-key store
+(`public/js/crypto/keys/unlock-key-store.js:19,41`) opened by the old server-origin page
+cannot be read from `wire-bundled://app`. The executable's `safeStorage` file
+(`electron-client/main.js:452-480`) is outside the browser store, so it **can** survive —
+but its record key currently depends on the broken `.origin` comparison above.
 
-## 12. Decisions the Owner Must Make Before Phase 2
-
-| Decision | Options | Recommendation |
-|----------|---------|----------------|
-| **Network model / HTTPS** | Direct connection + CSP / bridge that pins the server; require HTTPS / allow HTTP | Owner decision. Direct connection works per Q2; whether the bridge is worth its cost is a security-versus-complexity choice, not a technical necessity |
-| **Certificate pinning** | Mandatory / Optional / None | **Optional** — user verifies fingerprint at connect |
-| **Update delivery** | Notice only / Auto-download verified / Auto-install | **Notice only** (Phase 2); auto-download later |
-| **Code signing** | EV cert (Windows) + Notarization (macOS) + GPG (Linux) | **Required for production** |
-| **Linux packaging** | AppImage + deb / Flatpak / Snap | **AppImage + deb** (Phase 2) |
-| **Web Notifications permission** | Allow `notifications` for the bundled origin / rely on main-process notifications only | Owner decision: `public/js/notifications/web-notifications.js:31,50` uses the Web Notification API; a microphone-only handler would deny it |
-| **Screen sharing (`display-capture`)** | Allow / deny | Owner decision: per the Electron 45 blog a handler that grants `media` and denies the rest also blocks screen sharing |
-| **Telemetry** | None / Opt-in crashes / Opt-in usage | **Opt-in crashes only** |
-
----
-
-*Phase 1 complete. Phase 2 implementation begins after owner decisions.*
+Consequence for D4: users must log in again against the server and restore the identity
+from the encrypted blob. Peer pins, verified marks, old DM keys, group sender keys and the
+KDF pin may be lost unless Phase 6 finds and migrates them. The UI must say so; the design
+must not promise "nothing is lost".
 
 ---
 
-**Phase 1 only. NOT verified: Windows build and install, real microphone in Electron, Safari, real Android APK, any server change.**
+## 6. Network policy enforcement (D2)
+
+| Situation | Allowed |
+|---|---|
+| Packaged build (`app.isPackaged === true`) | `https://` for HTTP APIs; `wss://` for Socket.IO. No `http:`/`ws:` at all. |
+| Unpackaged dev/test (`app.isPackaged === false`) | `http:`/`ws:` only when the host is exactly `localhost`, `127.0.0.1` or `[::1]`. |
+| Any user setting / environment variable | Cannot relax the above. Not read for this decision. |
+
+Enforcement points (all **Planned**):
+
+1. Address validation at connect time and again when a saved address is loaded. The current
+   validator accepts HTTP unconditionally (`electron-client/main.js:115-150`, especially
+   line 141) and must gain the packaged/unpackaged branch.
+2. Redirects: validate `will-redirect` / `did-redirect-navigation` targets with the same
+   rule; a redirect to a disallowed scheme/host is cancelled, never followed and then
+   blocked only by CSP.
+3. The renderer's own Socket.IO/API URLs come from the injected endpoint; they are validated
+   by the same function rather than trusted because the user typed them once.
+4. `connect-src` in the app CSP is built from the validated server origin only.
+
+Why the app must enforce it: `wire-bundled` is registered `secure: true`, so the page is a
+secure context and Web Crypto is available even when it talks to plain HTTP. The spike's Q2
+experiment confirmed Chromium does **not** block `http://`/`ws://` from this scheme.
+Therefore HTTPS-only is an application policy, not something the platform enforces.
+
+Certificate validation is never disabled globally: no `--ignore-certificate-errors`, no
+`certificate-error` handler that returns `callback(true)` for arbitrary certificates.
+
+---
+
+## 7. Session partitions (D3)
+
+**Verified (code, as a gap):** `electron-client/main.js:314-321` sets no `partition`, so
+all windows/servers share `session.defaultSession`.
+
+**Planned:** for each server origin:
+
+- `const partition = 'persist:server:' + sha256(origin)` (one stable partition per server).
+- Pass it as `webPreferences.partition`.
+- On that session, register:
+  - `protocol.handle('wire-bundled', ...)` (protocol handlers are per-session),
+  - `webRequest.onHeadersReceived` that sets the CSP,
+  - `setPermissionRequestHandler` and `setPermissionCheckHandler`.
+- `protocol.registerSchemesAsPrivileged` stays a one-time, app-level call before `ready`;
+  the scheme privileges are global, the handlers are per partition.
+- Switching servers switches partitions; clearing a server can clear only its partition.
+
+This is also what prevents server A's IndexedDB (`token`, pins, caches) from being visible
+to server B on the same machine.
+
+---
+
+## 8. CSP applied by the app (corrected)
+
+The previous draft's policy was incomplete. `middleware/csp.js:38-52` is the server's
+policy that the app must mirror **plus** the bundled client's cross-origin needs:
+
+| Directive | Value | Why |
+|---|---|---|
+| `default-src` | `'self'` | Baseline. |
+| `script-src` | `'self'` | Bundled module scripts only; no inline/eval. |
+| `style-src` | `'self' https://fonts.googleapis.com` | `public/index.html` links Google Fonts (`middleware/csp.js:21-24,41`). **No `'unsafe-inline'`**, matching the server policy. Inline `style=""`/handlers are why the server runs this Report-Only; enforcing it in the bundled client requires removing them first. |
+| `font-src` | `'self' https://fonts.gstatic.com` | Actual font files (`middleware/csp.js:42`). |
+| `img-src` | `'self' data: blob:` | Avatars/images and decrypted blobs. |
+| `media-src` | `'self' blob:` | **Missing from the old draft.** Audio/video playback and voice messages need it (`middleware/csp.js:44`). |
+| `connect-src` | `'self' https://<server> wss://<server>` (+ loopback `http://`/`ws://` only in unpackaged dev) | `https://host` does **not** authorize `wss://host`; both are required. Socket.IO starts with `websocket` and may fall back to `polling` (`public/js/core/socket.js:110`), so both the HTTP(S) and WS(S) origins of the server are needed. |
+| `worker-src` | `'self' blob:` | Any worker/blob worker. The service worker is separate (Q5). |
+| `object-src` | `'none'` | **Missing from the old draft**, present on the server (`middleware/csp.js:47`). |
+| `base-uri` | `'self'` | As on the server. |
+| `form-action` | `'self'` | As on the server. |
+| `frame-ancestors` | `'none'` | As on the server. |
+| `manifest-src` | `'self'` | **Missing from the old draft**, present on the server (`middleware/csp.js:51`). |
+
+`upgrade-insecure-requests` is only meaningful in an enforcing policy and should not be
+used as a substitute for the HTTPS gate in section 6 (it does not fix WebSocket or saved
+addresses). **Status: Planned.** The Q2 experiment did not test CSP enforcement; it only
+proved the connections are mechanically possible.
+
+### Q5 status (service workers)
+
+The spike's Q5 is **analysis only, not verified by experiment** (see
+`docs/ELECTRON_BUNDLED_SPIKE_RESULTS.md`). Decision: the bundled client does **not** register
+a service worker. The existing guard already skips non-HTTP(S) pages:
+
+```js
+!/^https?:$/.test(location.protocol)   // public/js/core/pwa.js:112-118
+```
+
+so `wire-bundled:` returns before `navigator.serviceWorker.register('/sw.js', ...)`.
+Consequence: service-worker media streaming (`public/js/media/sw-stream-client.js`) is not
+available; `MEDIA_STREAM_ENABLED` stays false. This is a stated limitation, not a claim that
+service workers are impossible on the scheme.
+
+---
+
+## 9. Permissions (D6)
+
+**Verified (code, as a gap):** no permission handlers exist in `electron-client/`.
+
+**Planned**, per persistent partition:
+
+- `media`: allow only `audio` (`microphone`), only when the requesting origin is exactly the
+  validated server origin. Camera and all other media types are denied.
+- `notifications`: **deny** in the renderer. Notifications go through the main process
+  (`dm-notification:show`, already validated in `electron-client/main.js:621-656`). The web
+  path currently calls `Notification.requestPermission()` / `new Notification()`
+  (`public/js/notifications/web-notifications.js:31,50`); in the bundled client that path
+  must be routed to the main process.
+- `display-capture` (screen sharing): **deny**.
+- Everything else: deny by default.
+
+Both `setPermissionRequestHandler` and `setPermissionCheckHandler` must implement the same
+table; a request handler alone can be bypassed by permission checks. This follows the
+owner decision; the Electron-45 screen-sharing note is a rationale, not a tested claim here.
+
+---
+
+## 10. Updates (D5)
+
+**Verified (code):** the main process calls `GET /api/version`
+(`electron-client/main.js:201-263`), compares versions (`main.js:265-289`), and sends
+`app-update:available` to the renderer (`main.js:382-397`). It never downloads or executes an
+installer.
+
+**Planned:** keep the check, show a notification plus a **fixed link** that is compiled into
+the app (project site / release page), and never load app code from the server. No
+auto-download, no server-provided installer URL, no update of the bundle over HTTP. Code
+signing remains open (D7), so no signed-update claim is made.
+
+---
+
+## 11. Self-signed and private-CA servers — open question
+
+`utils/tlsSetup.js` offers a "wireguard" mode that generates a **self-signed** certificate
+for a private IP (`utils/tlsSetup.js:9-20,38-50`). Its comment says the Electron client
+"pins the certificate's fingerprint on first connect (see main.js)"
+(`utils/tlsSetup.js:17-18`).
+
+**Verified false today:** `electron-client/main.js` contains no `certificate-error` handler,
+no `setCertificateVerifyProc`, and no fingerprint storage. Pinning exists only in the spike
+(`electron-client/spike/test-q2-options.js:329-351`). A packaged client pointed at a
+self-signed/private-CA server would therefore fail the TLS connection with a certificate
+error; there is no user path today.
+
+Options for the owner (none implemented):
+
+1. **Public CA only (recommended).** Domain mode with Caddy/Let's Encrypt. Private-IP users
+   are out of scope for the packaged client.
+2. **Operator installs a private CA** into the OS trust store. The client keeps normal
+   certificate validation; no bypass code. LAN operators can do this with their own CA.
+3. **Exact-certificate pinning at first connect.** Store the SHA-256 fingerprint per
+   server; on mismatch, hard-fail; check hostname and validity dates too. This replaces CA
+   chain validation with exact-certificate equality for that host. It is a deliberate,
+   reviewed exception — not "disable certificate validation" — and needs explicit owner
+   approval plus its own tests.
+4. **Unpackaged dev only:** loopback HTTP (section 6). This does not solve self-signed LAN
+   production servers.
+
+Recommendation: option 1, with option 2 for operators who control their own CA. Option 3
+only if the owner accepts the trade-off. The client must never ship an accept-all
+certificate handler.
+
+---
+
+## 12. Document-vs-code verification table
+
+| Claim checked | Result | Evidence |
+|---|---|---|
+| `resolveServerUrl()` returns relative URLs outside Capacitor, so changing only `getServerEndpoint()` is insufficient | **True** | `public/js/core/server.js:73-76` and `:104-111` |
+| `URL.origin` for `wire-bundled://app` is `"null"` in Node | **True** | `node -e` against WHATWG URL; renderer origin is `wire-bundled://app` per spike Q1 |
+| Origin checks (including remember-me) must not compare `.origin` | **True / planned fix** | `electron-client/main.js:456,481-486`; `public/js/core/auth.js:282-284` |
+| All servers would share storage under one bundled origin | **True** | one scheme origin; global `token` key `public/js/core/auth.js:51,81`; endpoint-prefixed stores are defence in depth only |
+| Browser data under the old server origin is not visible to the new origin | **True** | origin-scoped IndexedDB `public/js/crypto/keys/unlock-key-store.js:19,41`; `peer-trust.js:191-193` |
+| `config/socket.js` CORS uses `CLIENT_URL` or `false`, not `origin: true` | **True** | `config/socket.js:19-21`. The HTTP middleware does use `origin: true` (`middleware/cors.js:26-29`); do not conflate them. With `origin:false`, WebSocket transport is unaffected but the polling fallback has no CORS headers — relevant because the client lists `['websocket','polling']` (`public/js/core/socket.js:110`). |
+| The proposed CSP missed directives the server policy needs | **True** | old draft missed `media-src`, `object-src`, `manifest-src`, Google Fonts hosts, and explicit `wss:`/dev `ws:`; compare `middleware/csp.js:38-52` |
+| `electron-client/package.json` `build.files` does not include `public/` | **True** | `electron-client/package.json:25-32` |
+| Service worker (Q5) | **Analysis only, not experimentally verified**; decision: no SW in bundled client | `public/js/core/pwa.js:112-118`; spike Q5 |
+| `utils/tlsSetup.js` says `main.js` pins the certificate | **False today** | no cert handler in `electron-client/main.js`; pinning only in `spike/test-q2-options.js:329-351` |
+
+**Not verified inside Electron:** the exact origin string in `event.sender.getURL()` for
+`wire-bundled://`, behavior of the CSP on that scheme, per-partition protocol handlers,
+permission handler results, redirect handling, and any Windows/macOS build. These are Phase 2
+tests, not claims.
+
+---
+
+## 13. Phase 2 test plan (planned; nothing here is implemented)
+
+| Test | What it must prove |
+|---|---|
+| Origin normalization | `wire-bundled://app` compares equal across main and renderer without using `.origin`; IPC rejects a different host/port. |
+| HTTPS gate | Packaged: `http://` and `ws://` are rejected for connect, saved address and redirect. Unpackaged: only loopback allowed. No env/setting override. |
+| Partition isolation | Two servers get different `persist:server:*` partitions; the second cannot read the first's token/pins. |
+| CSP | Injected on every document response; `connect-src` includes exactly the chosen HTTPS/WSS origins; violation for another host is blocked. |
+| Permissions | Microphone allowed only for the server origin; camera, notifications in renderer, display-capture and unknown permissions denied; check handler agrees with request handler. |
+| Protocol handler | Traversal (`../`), absolute paths and files outside `public/` rejected; packaged files come from `app.asar`. |
+| Update notice | A newer `/api/version` produces only a notice; no fetch of app code/installer from the server. |
+| Migration | Old server-origin storage is not assumed; user is told to log in and restore; Phase 6 inventory drives the exact message. |
+| Certificate strategy | Whatever the owner picks in section 11 is tested: self-signed fails closed by default; a pinned cert only matches the stored fingerprint. |
+
+---
+
+## 14. Open questions
+
+1. **Code signing** (D7): EV certificate (Windows), Apple Developer Program/notarization
+   (macOS), GPG (Linux) — budget and timeline.
+2. **Self-signed/private-CA strategy** (section 11): public CA only, private CA in the OS
+   trust store, or exact-certificate pinning. No bypass is implemented either way.
+
+Everything else that used to be an open question is now a locked decision in section 1.
+
+---
+
+*Phase 1 only. No Electron implementation, no packaging change and no server change is made
+by this document. Windows/macOS builds, a real microphone in Electron, CSP enforcement on the
+custom scheme and permission-handler behaviour remain unverified.*

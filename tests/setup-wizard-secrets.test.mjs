@@ -1,87 +1,112 @@
-// A3: setupWizard.js must generate JWT_SECRET and EMAIL_VERIFICATION_SECRET
-// (random 32-byte hex) for any missing secret in the .env it writes, without
-// overwriting existing values.
+// A3: the setup wizard's real updateEnvFile() must leave the .env with one
+// usable value per secret:
+//   - a missing, empty or CHANGE_ME line is replaced with a fresh 32-byte hex
+//     secret;
+//   - a valid existing value is never overwritten;
+//   - the key is never duplicated in the file.
+//
+// The method is called on a temp .env (never the repo's), via the exported
+// class without constructing its readline interface.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import crypto from 'node:crypto';
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 
-function generateSecret() {
-  return crypto.randomBytes(32).toString('hex');
+const require = createRequire(import.meta.url);
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const { SetupWizard } = require(path.join(ROOT, 'utils', 'setupWizard.js'));
+
+const CONFIG = {
+  expressHost: '127.0.0.1',
+  publicHost: '127.0.0.1',
+  port: '3000',
+  httpsMode: 'none',
+  domain: '',
+  tlsFingerprint: '',
+};
+
+const SECRET_LINE = (key, value) => new RegExp(`^${key}=${value}$`, 'm');
+const HEX64 = '[0-9a-f]{64}';
+
+function withTempEnv(contents, fn) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wire-wizard-'));
+  const envFile = path.join(dir, '.env');
+  fs.writeFileSync(envFile, contents);
+  // Neither the constructor nor run() is used: only the real method.
+  const wizard = Object.create(SetupWizard.prototype);
+  try {
+    return fn({ dir, envFile, wizard });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 }
 
-test('JWT_SECRET and EMAIL_VERIFICATION_SECRET are generated when missing', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'wire-wizard-'));
-  const envPath = path.join(tmp, '.env');
-  fs.writeFileSync(envPath, 'SETUP_COMPLETED=false\nHOST=127.0.0.1\nPORT=3000\n');
+const countLines = (text, key) =>
+  (text.match(new RegExp(`^${key}=`, 'gm')) || []).length;
 
-  // Simulate updateEnvFile's secret generation:
-  let envContent = fs.readFileSync(envPath, 'utf8');
-  for (const secretKey of ['JWT_SECRET', 'EMAIL_VERIFICATION_SECRET']) {
-    const regex = new RegExp(`^${secretKey}=.*$`, 'm');
-    if (!regex.test(envContent)) {
-      envContent += `\n${secretKey}=${generateSecret()}`;
-    }
-  }
-  fs.writeFileSync(envPath, envContent.trim() + '\n');
+test('missing secrets: both are generated once as 64-char hex', () => {
+  withTempEnv('SETUP_COMPLETED=false\nHOST=127.0.0.1\nPORT=3000\n', ({ envFile, wizard }) => {
+    wizard.updateEnvFile(CONFIG, envFile);
 
-  const written = fs.readFileSync(envPath, 'utf8');
-  assert.ok(/^JWT_SECRET=[0-9a-f]{64}$/m.test(written), 'JWT_SECRET generated as 64-hex');
-  assert.ok(/^EMAIL_VERIFICATION_SECRET=[0-9a-f]{64}$/m.test(written), 'EMAIL_VERIFICATION_SECRET generated as 64-hex');
-  assert.equal(
-    (written.match(/^JWT_SECRET=/m) || []).length,
-    1,
-    'exactly one JWT_SECRET line'
-  );
-  assert.equal(
-    (written.match(/^EMAIL_VERIFICATION_SECRET=/m) || []).length,
-    1,
-    'exactly one EMAIL_VERIFICATION_SECRET line'
-  );
-
-  fs.rmSync(tmp, { recursive: true, force: true });
+    const written = fs.readFileSync(envFile, 'utf8');
+    assert.match(written, SECRET_LINE('JWT_SECRET', HEX64));
+    assert.match(written, SECRET_LINE('EMAIL_VERIFICATION_SECRET', HEX64));
+    assert.equal(countLines(written, 'JWT_SECRET'), 1);
+    assert.equal(countLines(written, 'EMAIL_VERIFICATION_SECRET'), 1);
+  });
 });
 
-test('existing secret values are not overwritten', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'wire-wizard-'));
-  const envPath = path.join(tmp, '.env');
-  const existingJwt = 'a'.repeat(64);
-  const existingEmail = 'b'.repeat(64);
-  fs.writeFileSync(
-    envPath,
-    `SETUP_COMPLETED=false\nJWT_SECRET=${existingJwt}\nEMAIL_VERIFICATION_SECRET=${existingEmail}\n`
-  );
+test('empty and CHANGE_ME values are replaced with random secrets', () => {
+  withTempEnv(
+    'SETUP_COMPLETED=false\nJWT_SECRET=\nEMAIL_VERIFICATION_SECRET=CHANGE_ME\n',
+    ({ envFile, wizard }) => {
+      wizard.updateEnvFile(CONFIG, envFile);
 
-  let envContent = fs.readFileSync(envPath, 'utf8');
-  for (const secretKey of ['JWT_SECRET', 'EMAIL_VERIFICATION_SECRET']) {
-    const regex = new RegExp(`^${secretKey}=.*$`, 'm');
-    if (!regex.test(envContent)) {
-      envContent += `\n${secretKey}=${generateSecret()}`;
+      const written = fs.readFileSync(envFile, 'utf8');
+      assert.doesNotMatch(written, /^JWT_SECRET=\s*$/m, 'empty JWT_SECRET was replaced');
+      assert.doesNotMatch(written, /^EMAIL_VERIFICATION_SECRET=CHANGE_ME$/m, 'placeholder was replaced');
+      assert.match(written, SECRET_LINE('JWT_SECRET', HEX64));
+      assert.match(written, SECRET_LINE('EMAIL_VERIFICATION_SECRET', HEX64));
+      assert.equal(countLines(written, 'JWT_SECRET'), 1);
+      assert.equal(countLines(written, 'EMAIL_VERIFICATION_SECRET'), 1);
     }
-  }
-  fs.writeFileSync(envPath, envContent.trim() + '\n');
-
-  const written = fs.readFileSync(envPath, 'utf8');
-  assert.ok(written.includes(`JWT_SECRET=${existingJwt}`), 'existing JWT_SECRET preserved');
-  assert.ok(written.includes(`EMAIL_VERIFICATION_SECRET=${existingEmail}`), 'existing EMAIL_VERIFICATION_SECRET preserved');
-  assert.equal(
-    (written.match(/^JWT_SECRET=/m) || []).length,
-    1,
-    'still exactly one JWT_SECRET line'
   );
-  assert.equal(
-    (written.match(/^EMAIL_VERIFICATION_SECRET=/m) || []).length,
-    1,
-    'still exactly one EMAIL_VERIFICATION_SECRET line'
-  );
-
-  fs.rmSync(tmp, { recursive: true, force: true });
 });
 
-test('generateSecret produces 64-char hex', () => {
-  const s = generateSecret();
-  assert.equal(s.length, 64);
-  assert.match(s, /^[0-9a-f]+$/);
+test('valid existing secrets are preserved byte for byte', () => {
+  const jwt = 'a'.repeat(64);
+  const email = 'b'.repeat(64);
+
+  withTempEnv(
+    `SETUP_COMPLETED=false\nJWT_SECRET=${jwt}\nEMAIL_VERIFICATION_SECRET=${email}\n`,
+    ({ envFile, wizard }) => {
+      wizard.updateEnvFile(CONFIG, envFile);
+
+      const written = fs.readFileSync(envFile, 'utf8');
+      assert.match(written, SECRET_LINE('JWT_SECRET', jwt));
+      assert.match(written, SECRET_LINE('EMAIL_VERIFICATION_SECRET', email));
+      assert.equal(countLines(written, 'JWT_SECRET'), 1);
+      assert.equal(countLines(written, 'EMAIL_VERIFICATION_SECRET'), 1);
+    }
+  );
+});
+
+test('duplicate secret lines collapse to one, keeping the first valid value', () => {
+  const jwt = 'c'.repeat(64);
+
+  withTempEnv(
+    `JWT_SECRET=${jwt}\nJWT_SECRET=CHANGE_ME\nEMAIL_VERIFICATION_SECRET=\nEMAIL_VERIFICATION_SECRET=CHANGE_ME\n`,
+    ({ envFile, wizard }) => {
+      wizard.updateEnvFile(CONFIG, envFile);
+
+      const written = fs.readFileSync(envFile, 'utf8');
+      assert.equal(countLines(written, 'JWT_SECRET'), 1, 'no duplicate JWT_SECRET');
+      assert.equal(countLines(written, 'EMAIL_VERIFICATION_SECRET'), 1, 'no duplicate EMAIL_VERIFICATION_SECRET');
+      assert.match(written, SECRET_LINE('JWT_SECRET', jwt), 'the valid value wins');
+      assert.match(written, SECRET_LINE('EMAIL_VERIFICATION_SECRET', HEX64));
+    }
+  );
 });

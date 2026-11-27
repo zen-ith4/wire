@@ -24,6 +24,66 @@ const {
 
 const envPath = path.join(__dirname, '..', '.env');
 
+const SECRET_KEYS = ['JWT_SECRET', 'EMAIL_VERIFICATION_SECRET'];
+const PLACEHOLDER_SECRETS = new Set(['', 'CHANGE_ME']);
+
+// A value counts as missing when it is empty or the documented placeholder,
+// so the wizard replaces it instead of leaving the server unable to start.
+function isPlaceholderSecret(value) {
+    if (typeof value !== 'string') {
+        return true;
+    }
+
+    return PLACEHOLDER_SECRETS.has(value.trim().toUpperCase());
+}
+
+// Ensures each secret appears exactly once with a usable value: a missing,
+// empty or CHANGE_ME line is replaced with a fresh random secret, while a
+// valid existing value is kept. Duplicate lines are collapsed to the first
+// value so the key is never written twice.
+function ensureSecretEnvLines(envContent) {
+    const lines = envContent.split('\n');
+
+    for (const secretKey of SECRET_KEYS) {
+        const prefix = `${secretKey}=`;
+        const indexes = [];
+        let value = null;
+
+        lines.forEach((line, index) => {
+            if (!line.startsWith(prefix)) {
+                return;
+            }
+
+            indexes.push(index);
+
+            if (value === null) {
+                const candidate = line.slice(prefix.length).trim();
+
+                if (!isPlaceholderSecret(candidate)) {
+                    value = candidate;
+                }
+            }
+        });
+
+        if (value === null) {
+            value = crypto.randomBytes(32).toString('hex');
+        }
+
+        if (indexes.length === 0) {
+            lines.push(`${secretKey}=${value}`);
+            continue;
+        }
+
+        lines[indexes[0]] = `${secretKey}=${value}`;
+
+        for (let i = indexes.length - 1; i >= 1; i--) {
+            lines.splice(indexes[i], 1);
+        }
+    }
+
+    return lines.join('\n');
+}
+
 class SetupWizard {
     constructor() {
         this.mutableStdout = new Writable({
@@ -65,12 +125,12 @@ class SetupWizard {
         });
     }
 
-    updateEnvFile(config) {
+    updateEnvFile(config, filePath = envPath) {
         let envContent = '';
 
-        if (fs.existsSync(envPath)) {
+        if (fs.existsSync(filePath)) {
             envContent = fs.readFileSync(
-                envPath,
+                filePath,
                 'utf8'
             );
         }
@@ -101,20 +161,13 @@ class SetupWizard {
             }
         }
 
-        // Generate random secrets for any of JWT_SECRET / EMAIL_VERIFICATION_SECRET
-        // that is missing from the .env, without overwriting existing values.
-        for (const secretKey of ['JWT_SECRET', 'EMAIL_VERIFICATION_SECRET']) {
-            const regex = new RegExp(
-                `^${secretKey}=.*$`,
-                'm'
-            );
-            if (!regex.test(envContent)) {
-                envContent += `\n${secretKey}=${crypto.randomBytes(32).toString('hex')}`;
-            }
-        }
+        // Generate random secrets for any JWT_SECRET / EMAIL_VERIFICATION_SECRET
+        // that is missing, empty or still the CHANGE_ME placeholder. A valid
+        // existing value is kept as is, and the key is never duplicated.
+        envContent = ensureSecretEnvLines(envContent);
 
         fs.writeFileSync(
-            envPath,
+            filePath,
             envContent.trim() + '\n'
         );
 
@@ -126,13 +179,16 @@ class SetupWizard {
         process.env.HTTPS_MODE = updates.HTTPS_MODE;
         process.env.DOMAIN = updates.DOMAIN;
         process.env.TLS_CERT_FINGERPRINT = updates.TLS_CERT_FINGERPRINT;
-        if (!process.env.JWT_SECRET) {
-            const m = envContent.match(/^JWT_SECRET=(.+)$/m);
-            if (m) process.env.JWT_SECRET = m[1];
-        }
-        if (!process.env.EMAIL_VERIFICATION_SECRET) {
-            const m = envContent.match(/^EMAIL_VERIFICATION_SECRET=(.+)$/m);
-            if (m) process.env.EMAIL_VERIFICATION_SECRET = m[1];
+        for (const secretKey of SECRET_KEYS) {
+            if (!isPlaceholderSecret(process.env[secretKey])) {
+                continue;
+            }
+
+            const m = envContent.match(new RegExp(`^${secretKey}=(.+)$`, 'm'));
+
+            if (m && !isPlaceholderSecret(m[1])) {
+                process.env[secretKey] = m[1].trim();
+            }
         }
     }
 
@@ -833,3 +889,7 @@ module.exports = async function runSetupWizard() {
 
     await wizard.run();
 };
+
+// Exposed for tests: updateEnvFile(config, filePath) can be driven against a
+// temp .env without constructing the readline interface.
+module.exports.SetupWizard = SetupWizard;

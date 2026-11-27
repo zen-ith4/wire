@@ -908,12 +908,23 @@ function collectUserOwnedFiles(userId) {
 
 
 function deleteUser(userId) {
-  // Strict integer validation: reject '0x10', '1e1', '01', '-5', '0', etc.
-  if (typeof userId !== 'string' || !/^[1-9]\d*$/.test(String(userId))) {
-    throw new Error('Invalid user id');
-  }
-  const id = Number(userId);
-  if (!Number.isSafeInteger(id)) {
+  // Accept a positive safe integer number OR a canonical decimal string (^[1-9]\d*$).
+  // Reject everything else (including '0x10', '1e1', '01', '-5', '0', non-strings, non-integers).
+  let id;
+  if (typeof userId === 'number') {
+    if (!Number.isInteger(userId) || userId <= 0 || !Number.isSafeInteger(userId)) {
+      throw new Error('Invalid user id');
+    }
+    id = userId;
+  } else if (typeof userId === 'string') {
+    if (!/^[1-9]\d*$/.test(userId)) {
+      throw new Error('Invalid user id');
+    }
+    id = Number(userId);
+    if (!Number.isSafeInteger(id)) {
+      throw new Error('Invalid user id');
+    }
+  } else {
     throw new Error('Invalid user id');
   }
 
@@ -933,7 +944,7 @@ function deleteUser(userId) {
     getDb().transaction(() => {
       groupChanges =
         prepareOwnedGroupsForUserDeletion(
-          userId
+          id
         );
 
       return getDb()
@@ -941,7 +952,7 @@ function deleteUser(userId) {
           DELETE FROM users
           WHERE id = ?
         `)
-        .run(userId);
+        .run(id);
     })();
 
   // Only clean up files once the row (and its cascade) actually

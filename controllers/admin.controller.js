@@ -325,9 +325,19 @@ async function transferAdminHandler(req, res) {
 // DELETE /api/admin/users/:id  { current_auth_key }
 async function deleteUser(req, res) {
 
-  const userId = Number(req.params.id);
+  const rawId = req.params.id;
 
-  if (!Number.isInteger(userId)) {
+  // Validate the RAW string strictly: must be a canonical decimal integer (^[1-9]\d*$)
+  // This rejects '0x10', '1e1', '01', '-5', '0', etc. before Number() conversion.
+  if (typeof rawId !== 'string' || !/^[1-9]\d*$/.test(rawId)) {
+    return res.status(400).json({
+      error: 'Invalid user id',
+    });
+  }
+
+  const userId = Number(rawId);
+  // Number() on a validated canonical string is always a safe integer, but double-check.
+  if (!Number.isSafeInteger(userId)) {
     return res.status(400).json({
       error: 'Invalid user id',
     });

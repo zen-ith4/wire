@@ -3,6 +3,10 @@ const crypto = require('crypto');
 const fs = require('fs');
 
 const { isEmailEnabled } = require('../services/email.service');
+const {
+  secretProblem,
+  isFirstRunSetupInProgress,
+} = require('../utils/envSecrets');
 
 const isProduction = process.env.NODE_ENV === 'production';
 
@@ -26,27 +30,9 @@ function getDmE2eeDefaultMinVersion() {
   process.exit(1);
 }
 
-// Example secrets that shipped in .env.example. They are public (they are in
-// the repository history), so a deployment that still uses one is not secret.
-const EXAMPLE_SECRETS = new Set([
-  'a7f3c9e2d1b80456fe2a8c91d4b673e5f01a9c8d7e3b2456a0c7d8e9f1b2c3d4',
-  'z6cfcf37ecf2f3956197d01ef9cb1138f020af4b8760f959ddd310df5d0529be7',
-]);
-
-const MIN_SECRET_LENGTH = 32;
-
-// Returns why a configured secret is unusable, or null if it is acceptable.
-function secretProblem(value) {
-  if (EXAMPLE_SECRETS.has(value)) {
-    return 'it is the example value from .env.example';
-  }
-
-  if (value.length < MIN_SECRET_LENGTH) {
-    return `it must be at least ${MIN_SECRET_LENGTH} characters`;
-  }
-
-  return null;
-}
+// Example secrets that shipped in .env.example are defined in
+// utils/envSecrets.js, shared with the setup pre-flight and the wizard, so
+// there is one definition of "usable".
 
 function fatal(message) {
   console.error('❌ FATAL: ' + message);
@@ -295,7 +281,14 @@ if (constants.NODE_ENV === 'production') {
     process.exit(1);
   }
 
-  if (process.env.SETUP_COMPLETED !== 'true') {
+  // A first run must reach the setup wizard before this can be required;
+  // server.js sets the module flag only while the pre-flight is preparing
+  // secrets for that wizard. Once setup completes, or for any direct
+  // require of this module, the check is unchanged.
+  if (
+    process.env.SETUP_COMPLETED !== 'true' &&
+    !isFirstRunSetupInProgress()
+  ) {
     console.error(
       '❌ FATAL: SETUP_COMPLETED=true is required in production.'
     );

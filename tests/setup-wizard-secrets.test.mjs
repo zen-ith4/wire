@@ -30,6 +30,26 @@ const CONFIG = {
 
 const SECRET_LINE = (key, value) => new RegExp(`^${key}=${value}$`, 'm');
 const HEX64 = '[0-9a-f]{64}';
+const SECRET_KEYS = ['JWT_SECRET', 'EMAIL_VERIFICATION_SECRET'];
+
+// The test runner itself is started with tests/test.env, which sets
+// JWT_SECRET. updateEnvFile() deliberately reuses a usable process.env value
+// so the file and the running process cannot disagree, so these cases must
+// clear it to exercise "nothing configured anywhere" and restore afterwards.
+function withoutProcessSecrets(fn) {
+  const saved = SECRET_KEYS.map((key) => [key, process.env[key]]);
+
+  for (const key of SECRET_KEYS) delete process.env[key];
+
+  try {
+    return fn();
+  } finally {
+    for (const [key, value] of saved) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
 
 function withTempEnv(contents, fn) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wire-wizard-'));
@@ -38,7 +58,7 @@ function withTempEnv(contents, fn) {
   // Neither the constructor nor run() is used: only the real method.
   const wizard = Object.create(SetupWizard.prototype);
   try {
-    return fn({ dir, envFile, wizard });
+    return withoutProcessSecrets(() => fn({ dir, envFile, wizard }));
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -72,6 +92,44 @@ test('empty and CHANGE_ME values are replaced with random secrets', () => {
       assert.match(written, SECRET_LINE('EMAIL_VERIFICATION_SECRET', HEX64));
       assert.equal(countLines(written, 'JWT_SECRET'), 1);
       assert.equal(countLines(written, 'EMAIL_VERIFICATION_SECRET'), 1);
+    }
+  );
+});
+
+test('a usable secret already in process.env is written to the file, not replaced', () => {
+  const runningJwt = 'd'.repeat(64);
+
+  withTempEnv(
+    'SETUP_COMPLETED=false\nJWT_SECRET=CHANGE_ME\nEMAIL_VERIFICATION_SECRET=\n',
+    ({ envFile, wizard }) => {
+      process.env.JWT_SECRET = runningJwt;
+      wizard.updateEnvFile(CONFIG, envFile);
+
+      const written = fs.readFileSync(envFile, 'utf8');
+      assert.match(written, SECRET_LINE('JWT_SECRET', runningJwt),
+        'the running process keeps its value and the file matches it');
+      assert.equal(process.env.JWT_SECRET, runningJwt);
+      assert.match(written, SECRET_LINE('EMAIL_VERIFICATION_SECRET', HEX64),
+        'the secret with no usable value anywhere is still generated');
+      assert.match(process.env.EMAIL_VERIFICATION_SECRET, new RegExp(`^${HEX64}$`));
+    }
+  );
+});
+
+test('quoted values are read the way dotenv reads them', () => {
+  const jwt = 'f'.repeat(64);
+
+  withTempEnv(
+    `export JWT_SECRET="${jwt}" # kept\nEMAIL_VERIFICATION_SECRET="CHANGE_ME"\n`,
+    ({ envFile, wizard }) => {
+      wizard.updateEnvFile(CONFIG, envFile);
+
+      const written = fs.readFileSync(envFile, 'utf8');
+      assert.match(written, new RegExp(`^export JWT_SECRET="${jwt}" # kept$`, 'm'),
+        'a usable double-quoted value (with export and comment) is untouched');
+      assert.doesNotMatch(written, /^EMAIL_VERIFICATION_SECRET="CHANGE_ME"$/m,
+        'a quoted placeholder is replaced');
+      assert.match(written, SECRET_LINE('EMAIL_VERIFICATION_SECRET', HEX64));
     }
   );
 });

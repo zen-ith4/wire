@@ -1,10 +1,13 @@
 const readline = require('readline');
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
 const { Writable } = require('stream');
 
 const { hashPassword } = require('./password');
+const {
+  ensureSecretEnvLines,
+  isUsableSecret
+} = require('./envSecrets');
 const {
     deriveCredentialsNode,
     newKdfSalt,
@@ -24,65 +27,6 @@ const {
 
 const envPath = path.join(__dirname, '..', '.env');
 
-const SECRET_KEYS = ['JWT_SECRET', 'EMAIL_VERIFICATION_SECRET'];
-const PLACEHOLDER_SECRETS = new Set(['', 'CHANGE_ME']);
-
-// A value counts as missing when it is empty or the documented placeholder,
-// so the wizard replaces it instead of leaving the server unable to start.
-function isPlaceholderSecret(value) {
-    if (typeof value !== 'string') {
-        return true;
-    }
-
-    return PLACEHOLDER_SECRETS.has(value.trim().toUpperCase());
-}
-
-// Ensures each secret appears exactly once with a usable value: a missing,
-// empty or CHANGE_ME line is replaced with a fresh random secret, while a
-// valid existing value is kept. Duplicate lines are collapsed to the first
-// value so the key is never written twice.
-function ensureSecretEnvLines(envContent) {
-    const lines = envContent.split('\n');
-
-    for (const secretKey of SECRET_KEYS) {
-        const prefix = `${secretKey}=`;
-        const indexes = [];
-        let value = null;
-
-        lines.forEach((line, index) => {
-            if (!line.startsWith(prefix)) {
-                return;
-            }
-
-            indexes.push(index);
-
-            if (value === null) {
-                const candidate = line.slice(prefix.length).trim();
-
-                if (!isPlaceholderSecret(candidate)) {
-                    value = candidate;
-                }
-            }
-        });
-
-        if (value === null) {
-            value = crypto.randomBytes(32).toString('hex');
-        }
-
-        if (indexes.length === 0) {
-            lines.push(`${secretKey}=${value}`);
-            continue;
-        }
-
-        lines[indexes[0]] = `${secretKey}=${value}`;
-
-        for (let i = indexes.length - 1; i >= 1; i--) {
-            lines.splice(indexes[i], 1);
-        }
-    }
-
-    return lines.join('\n');
-}
 
 class SetupWizard {
     constructor() {
@@ -162,9 +106,21 @@ class SetupWizard {
         }
 
         // Generate random secrets for any JWT_SECRET / EMAIL_VERIFICATION_SECRET
-        // that is missing, empty or still the CHANGE_ME placeholder. A valid
-        // existing value is kept as is, and the key is never duplicated.
-        envContent = ensureSecretEnvLines(envContent);
+        // that is missing, empty, quoted-empty, CHANGE_ME, too short or an
+        // example value. A usable existing value is kept as written, and the
+        // key is never duplicated. A usable value already in process.env (for
+        // example one loaded before the file was edited) is reused so the file
+        // and the running process cannot end up with different secrets.
+        const fallbacks = {};
+
+        for (const secretKey of ['JWT_SECRET', 'EMAIL_VERIFICATION_SECRET']) {
+            if (isUsableSecret(process.env[secretKey])) {
+                fallbacks[secretKey] = process.env[secretKey];
+            }
+        }
+
+        const secrets = ensureSecretEnvLines(envContent, { fallbacks });
+        envContent = secrets.content;
 
         fs.writeFileSync(
             filePath,
@@ -179,16 +135,12 @@ class SetupWizard {
         process.env.HTTPS_MODE = updates.HTTPS_MODE;
         process.env.DOMAIN = updates.DOMAIN;
         process.env.TLS_CERT_FINGERPRINT = updates.TLS_CERT_FINGERPRINT;
-        for (const secretKey of SECRET_KEYS) {
-            if (!isPlaceholderSecret(process.env[secretKey])) {
+        for (const secretKey of ['JWT_SECRET', 'EMAIL_VERIFICATION_SECRET']) {
+            if (isUsableSecret(process.env[secretKey])) {
                 continue;
             }
 
-            const m = envContent.match(new RegExp(`^${secretKey}=(.+)$`, 'm'));
-
-            if (m && !isPlaceholderSecret(m[1])) {
-                process.env[secretKey] = m[1].trim();
-            }
+            process.env[secretKey] = secrets.values[secretKey];
         }
     }
 

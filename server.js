@@ -15,6 +15,13 @@ process.env.UV_THREADPOOL_SIZE = process.env.UV_THREADPOOL_SIZE || '8';
 
 require('dotenv').config();
 
+// First-run pre-flight: a copied .env.example (or empty/quoted/placeholder
+// values) must be replaced BEFORE config/constants.js validates secrets,
+// otherwise the process exits before the setup wizard can run. On a
+// completed setup this is a no-op and the fatal checks below stay in force.
+const { prepareFirstRunSecrets, completeFirstRunSetup } = require('./utils/envSecrets');
+prepareFirstRunSecrets();
+
 const express = require('express');
 const cors = require('cors');
 const http = require('http');
@@ -46,6 +53,22 @@ async function startServer() {
 
     // 2. Run setup wizard (only if SETUP_COMPLETED is not 'true')
     await runSetupWizard();
+
+    // The pre-flight's temporary allowance ends here; from now on only the
+    // real SETUP_COMPLETED value counts.
+    completeFirstRunSetup();
+
+    // The wizard writes SETUP_COMPLETED=true. If a production first run
+    // somehow returns without completing it, keep the existing refusal.
+    if (
+      constants.NODE_ENV === 'production' &&
+      process.env.SETUP_COMPLETED !== 'true'
+    ) {
+      console.error(
+        '❌ FATAL: SETUP_COMPLETED=true is required in production.'
+      );
+      process.exit(1);
+    }
 
     // 3. Create HTTP server and attach WebSocket support
     const server = http.createServer(app);

@@ -247,20 +247,14 @@ function isPermissionAllowed(permission, details, currentServerOrigin) {
   // Clipboard write and fullscreen: allowed narrowly for the current server
   // origin main frame.
   //
-  // Electron 45 (Chromium 130) reports `navigator.clipboard.writeText()` — the
-  // only clipboard call the web UI makes — as the `clipboard-read` permission
-  // (Chromium's CLIPBOARD_READ_WRITE type), verified by E2E. Denying it breaks
-  // the app's copy buttons, so it is granted together with the older
-  // `clipboard-write` and Chromium's `clipboard-sanitized-write` names. The
-  // grant is origin- and main-frame-scoped like the rest of the list.
-  // `fullscreen` has an `automatic-fullscreen` variant (fullscreen without a
-  // user gesture, used by media elements); it is the same capability.
+  // Clipboard write and fullscreen: allowed narrowly for the current server
+  // origin main frame. `clipboard-read` is intentionally NOT granted: the web
+  // UI only calls navigator.clipboard.writeText(), and granting clipboard-read
+  // would let the page read arbitrary clipboard contents from outside the page.
   if (
     permission === 'clipboard-write' ||
     permission === 'clipboard-sanitized-write' ||
-    permission === 'clipboard-read' ||
-    permission === 'fullscreen' ||
-    permission === 'automatic-fullscreen'
+    permission === 'fullscreen'
   ) {
     return true;
   }

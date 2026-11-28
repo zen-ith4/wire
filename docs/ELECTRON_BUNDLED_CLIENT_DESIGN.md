@@ -410,12 +410,11 @@ blocks `display-capture` (screen sharing); allowing it is an owner decision.
 
 **Phase 2 (current server-loaded app, implemented):** the same rule runs with
 `currentServerOrigin` in place of `wire-bundled://app`, and additionally allows clipboard
-write and `fullscreen` for the server origin's main frame, because both worked before
-Phase 2 and the web UI uses them. Electron 45 reports `navigator.clipboard.writeText()` —
-the only clipboard call the web UI makes — as `clipboard-read` (Chromium's
-`CLIPBOARD_READ_WRITE` type); `clipboard-write` and `clipboard-sanitized-write` are kept
-for other Electron/Chromium versions. `fullscreen` also has an `automatic-fullscreen`
-variant (fullscreen without a user gesture, used by media elements). All of these are
+write (`clipboard-write` / `clipboard-sanitized-write`) and `fullscreen` for the server origin's
+main frame, because both worked before Phase 2 and the web UI uses them. `clipboard-read` is
+NOT granted: the web UI only calls `navigator.clipboard.writeText()`, and granting
+`clipboard-read` would let the page read arbitrary clipboard contents from outside the page.
+`clipboard-read` and `automatic-fullscreen` are intentionally not granted. All of these are
 still origin- and main-frame-scoped. The check handler decides `media` from
 `details.mediaType` (`audio` allowed, `video`/`unknown` denied); returning `false` for all
 `media` would have blocked microphone requests before the request handler ran.

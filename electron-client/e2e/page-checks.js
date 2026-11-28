@@ -160,6 +160,14 @@ module.exports = String.raw`
     bad('permission:clipboard-write', e && e.message ? e.message : String(e));
   }
 
+  // Clipboard read must be denied: the web UI never reads the clipboard.
+  try {
+    await navigator.clipboard.readText();
+    bad('permission:clipboard-read-denied', 'readText unexpectedly resolved');
+  } catch (e) {
+    ok('permission:clipboard-read-denied', 'readText denied: ' + (e && e.message ? e.message : String(e)));
+  }
+
   // --- 8. Fullscreen (allowed for the current server origin) ------------
   try {
     await withTimeout(document.documentElement.requestFullscreen(), 5000, 'requestFullscreen');

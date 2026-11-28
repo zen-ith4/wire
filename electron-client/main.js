@@ -968,14 +968,12 @@ if (!gotSingleInstanceLock) {
           if (permission === 'media') {
             return !!details && details.mediaType === 'audio';
           }
-          // Same narrow list as isPermissionAllowed(): Electron 45 reports
-          // navigator.clipboard.writeText() as 'clipboard-read'.
+          // Same narrow list as isPermissionAllowed(): clipboard write only
+          // (clipboard-read is intentionally NOT granted), and fullscreen.
           if (
             permission === 'clipboard-write' ||
             permission === 'clipboard-sanitized-write' ||
-            permission === 'clipboard-read' ||
-            permission === 'fullscreen' ||
-            permission === 'automatic-fullscreen'
+            permission === 'fullscreen'
           ) {
             return true;
           }

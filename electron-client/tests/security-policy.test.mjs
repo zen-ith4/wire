@@ -269,12 +269,12 @@ test('isPermissionAllowed allows clipboard-sanitized-write (Chromium 130+/Electr
   );
 });
 
-test('isPermissionAllowed allows clipboard-read (Electron 45 name for navigator.clipboard.writeText)', () => {
+test('isPermissionAllowed denies clipboard-read (web UI only writes clipboard)', () => {
+  // clipboard-read is intentionally NOT granted even on the server origin main frame.
   assert.equal(
     isPermissionAllowed('clipboard-read', { requestingUrl: 'https://example.com/', isMainFrame: true }, 'https://example.com'),
-    true
+    false
   );
-  // Still scoped: another origin or a sub frame gets nothing.
   assert.equal(
     isPermissionAllowed('clipboard-read', { requestingUrl: 'https://evil.com/', isMainFrame: true }, 'https://example.com'),
     false
@@ -302,8 +302,15 @@ test('isPermissionAllowed allows fullscreen for server origin main frame', () =>
     true
   );
   assert.equal(
+    isPermissionAllowed('fullscreen', { requestingUrl: 'https://evil.com/', isMainFrame: true }, 'https://example.com'),
+    false
+  );
+});
+
+test('isPermissionAllowed denies automatic-fullscreen', () => {
+  assert.equal(
     isPermissionAllowed('automatic-fullscreen', { requestingUrl: 'https://example.com/', isMainFrame: true }, 'https://example.com'),
-    true
+    false
   );
   assert.equal(
     isPermissionAllowed('automatic-fullscreen', { requestingUrl: 'https://evil.com/', isMainFrame: true }, 'https://example.com'),

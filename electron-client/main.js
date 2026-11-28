@@ -135,6 +135,9 @@ function normalizeServerAddress(rawInput) {
  */
 function openExternalSafely(rawUrl) {
   if (!isAllowedExternalScheme(rawUrl)) return;
+  if (process.env.WIRE_E2E === '1') {
+    console.log('[e2e] open-external ' + rawUrl);
+  }
   try {
     shell.openExternal(new URL(rawUrl).toString());
   } catch {
@@ -353,6 +356,9 @@ function createMainWindow() {
   // OAuth-style popups, etc.) is always denied in-app. Only http:/https:
   // URLs are handed to the user's OS browser via openExternalSafely.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (process.env.WIRE_E2E === '1') {
+      console.log('[e2e] window-open ' + url);
+    }
     openExternalSafely(url);
     return { action: 'deny' };
   });

@@ -112,9 +112,19 @@ async function waitFor(predicate, timeoutMs, label) {
 
 function killTree(child) {
   if (!child || child.killed) return;
-  try { child.kill('SIGTERM'); } catch (e) { /* ignore */ }
+  // Spawned detached, so kill the whole process group (xvfb-run + Xvfb +
+  // Electron renderer/GPU children). Fall back to the direct child.
+  try {
+    process.kill(-child.pid, 'SIGTERM');
+  } catch (e) {
+    try { child.kill('SIGTERM'); } catch (e2) { /* ignore */ }
+  }
   setTimeout(() => {
-    try { child.kill('SIGKILL'); } catch (e) { /* ignore */ }
+    try {
+      process.kill(-child.pid, 'SIGKILL');
+    } catch (e) {
+      try { child.kill('SIGKILL'); } catch (e2) { /* ignore */ }
+    }
   }, 1500).unref();
 }
 
@@ -203,6 +213,7 @@ function startTestServer(env) {
   const child = spawn(process.execPath, [TEST_SERVER_JS], {
     env: { ...process.env, ...env },
     stdio: ['ignore', 'pipe', 'pipe'],
+    detached: true,
   });
   const out = captureOutput(child);
   return { child, out };
@@ -236,6 +247,7 @@ function launchElectron({ userData, cdpPort, extraEnv }) {
     cwd: path.join(__dirname, '..'),
     env: { ...process.env, WIRE_E2E: '1', ...(extraEnv || {}) },
     stdio: ['ignore', 'pipe', 'pipe'],
+    detached: true,
   });
   const out = captureOutput(child);
   return { child, out };
@@ -251,6 +263,7 @@ async function seedLegacyKey({ userData, recordId }) {
     cwd: path.join(__dirname, '..'),
     env: { ...process.env, E2E_LEGACY_RECORD_ID: recordId, E2E_LEGACY_KEY: LEGACY_KEY },
     stdio: ['ignore', 'pipe', 'pipe'],
+    detached: true,
   });
   const out = captureOutput(child);
   await new Promise((resolve) => child.on('exit', resolve));
@@ -439,6 +452,14 @@ async function sessionB(report) {
       'no video request was granted in the main process'
     );
     report.check('notification:created-in-main', app.out.has('[e2e] dm-notification-created'), 'main log: dm-notification-created');
+
+    // window.open must reach the deny handler where Chromium allows the
+    // scheme through (smb:), and no scheme may be handed to the OS browser.
+    // Chromium itself blocks file: popups from an http page before
+    // setWindowOpenHandler, so file: is covered by the page-level null
+    // result plus the no-open-external assertion below.
+    report.check('window-open:handler-saw-smb', app.out.has('[e2e] window-open smb://server/share'), 'main log: window-open smb:');
+    report.check('window-open:no-external-call', !app.out.has('[e2e] open-external '), 'main log: no open-external line');
   } finally {
     killTree(app && app.child);
     killTree(main.child);

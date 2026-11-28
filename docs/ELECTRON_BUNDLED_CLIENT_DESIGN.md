@@ -388,6 +388,14 @@ owner decision; the Electron-45 screen-sharing note is a rationale, not a tested
 Per the Electron 45 blog, a handler that grants `media` and denies everything else also
 blocks `display-capture` (screen sharing); allowing it is an owner decision.
 
+**Phase 2 (current server-loaded app, implemented):** the same rule runs with
+`currentServerOrigin` in place of `wire-bundled://app`, and additionally allows
+`clipboard-sanitized-write` (Chromium 130+/Electron 45 name; `clipboard-write` on older
+versions) and `fullscreen` for the server origin's main frame, because both worked before
+Phase 2 and the web UI uses them. The check handler decides `media` from
+`details.mediaType` (`audio` allowed, `video`/`unknown` denied); returning `false` for all
+`media` would have blocked microphone requests before the request handler ran.
+
 ---
 
 ## 10. IPC hardening, openExternal, navigation (requirement c)

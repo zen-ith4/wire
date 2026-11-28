@@ -21,11 +21,14 @@ const { pathToFileURL } = await import('node:url');
 const CONNECT_PATH = '/home/operator/wire/electron-client/renderer/connect.html';
 const CONNECT_PATHNAME = pathToFileURL(CONNECT_PATH).pathname;
 
+// A WebFrameMain has `url` (and no `.protocol`); WebContents has `mainFrame`.
+// Keep the fake to exactly those properties so the tests cannot pass on a
+// shape real Electron never provides.
 function senderEvent(frameUrl, isMainFrame = true) {
-  const frame = frameUrl ? { url: frameUrl, protocol: new URL(frameUrl).protocol } : null;
+  const frame = frameUrl ? { url: frameUrl } : null;
   return {
     senderFrame: frame,
-    sender: { mainFrame: isMainFrame ? frame : { url: 'about:blank', protocol: 'about:' } },
+    sender: { mainFrame: isMainFrame ? frame : { url: 'about:blank' } },
   };
 }
 
@@ -217,7 +220,7 @@ test('senderIsTrusted accepts connect screen by exact file path (spaces OK)', ()
 });
 
 test('senderIsTrusted rejects invalid frame URL', () => {
-  const frame = { url: 'not-a-url', protocol: '' };
+  const frame = { url: 'not-a-url' };
   const event = { senderFrame: frame, sender: { mainFrame: frame } };
   assert.equal(senderIsTrusted(event, ['https://example.com'], CONNECT_PATHNAME), false);
 });

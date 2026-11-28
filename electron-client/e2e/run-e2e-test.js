@@ -233,6 +233,51 @@ async function evaluateOnTarget(target, expression, timeoutMs) {
   return cdpEvaluate(target.webSocketDebuggerUrl, expression, timeoutMs);
 }
 
+// Wait until the target's document is fully loaded. Used after every
+// navigation to avoid racing a page that is still loading.
+async function waitForPageReady(target, cdpPort, timeoutMs) {
+  return waitFor(async () => {
+    try {
+      const state = await cdpEvaluate(target.webSocketDebuggerUrl, 'document.readyState', 5000);
+      return state === 'complete';
+    } catch (e) {
+      return false;
+    }
+  }, timeoutMs, 'page ready');
+}
+
+// Wait until a specific bridge (e.g. window.wireClient) is defined on the
+// target. Polls separately from readyState so a slow bridge does not crash
+// the session — subsequent checks will fail naturally if it never appears.
+async function waitForBridge(target, cdpPort, bridgeExpr, timeoutMs) {
+  return waitFor(async () => {
+    try {
+      const bridge = await cdpEvaluate(target.webSocketDebuggerUrl, bridgeExpr, 5000);
+      return bridge !== undefined;
+    } catch (e) {
+      return false;
+    }
+  }, timeoutMs, 'bridge ' + bridgeExpr);
+}
+
+// Evaluate on a target, tolerating "navigated or closed" errors for calls that
+// trigger navigation. On such an error, re-find the matching target and retry
+// once with the new target's page-ready wait applied.
+async function evaluateOnTargetNav(target, cdpPort, urlPredicate, expression, timeoutMs, bridgeExpr) {
+  try {
+    return await cdpEvaluate(target.webSocketDebuggerUrl, expression, timeoutMs);
+  } catch (e) {
+    const msg = e && e.message ? e.message : String(e);
+    if (!msg.includes('navigated or closed')) throw e;
+    const newTarget = await waitForTarget(cdpPort, urlPredicate, timeoutMs, 'target after navigation');
+    await waitForPageReady(newTarget, cdpPort, timeoutMs);
+    if (bridgeExpr) {
+      await waitForBridge(newTarget, cdpPort, bridgeExpr, timeoutMs);
+    }
+    return cdpEvaluate(newTarget.webSocketDebuggerUrl, expression, timeoutMs);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Processes
 // ---------------------------------------------------------------------------
@@ -354,35 +399,39 @@ async function sessionA(report) {
       20000,
       'connect screen'
     );
+    await waitForPageReady(connectTarget, cdpPort, 10000);
+    await waitForBridge(connectTarget, cdpPort, 'window.wireClient', 10000);
     report.check('connect-screen:shown', true, connectTarget.url.replace(/^file:\/\/.*\/renderer\//, 'renderer/'));
 
     const apiPresent = await evaluateOnTarget(connectTarget, 'typeof window.wireClient');
     report.check('connect-screen:wireClient-exposed', apiPresent === 'object', 'typeof window.wireClient === ' + apiPresent);
 
-    // Wait until connect.js has run and attached the submit listener.
-    await waitFor(async () => {
-      const state = await evaluateOnTarget(connectTarget, 'document.readyState');
-      return state === 'complete';
-    }, 10000, 'connect screen readyState complete');
-
     const serverUrl = 'http://127.0.0.1:' + appPort;
-    await evaluateOnTarget(
-      connectTarget,
-      '(() => {' +
-        'const i = document.getElementById("address");' +
-        'i.value = ' + JSON.stringify(serverUrl) + ';' +
-        'const f = document.getElementById("connect-form");' +
-        'f.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));' +
-        'return i.value;' +
-      '})()'
-    );
-
+    // Form submit triggers navigation; tolerate "navigated or closed" and wait
+    // for the server page to be fully loaded with its bridge present.
+    try {
+      await evaluateOnTarget(
+        connectTarget,
+        '(() => {' +
+          'const i = document.getElementById("address");' +
+          'i.value = ' + JSON.stringify(serverUrl) + ';' +
+          'const f = document.getElementById("connect-form");' +
+          'f.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));' +
+          'return i.value;' +
+        '})()'
+      );
+    } catch (e) {
+      const msg = e && e.message ? e.message : String(e);
+      if (!msg.includes('navigated or closed')) throw e;
+    }
     const serverTarget = await waitForTarget(
       cdpPort,
       (t) => t.url === serverUrl + '/',
       25000,
       'server page after connect-screen submit'
     );
+    await waitForPageReady(serverTarget, cdpPort, 10000);
+    await waitForBridge(serverTarget, cdpPort, 'window.electronAPI', 10000);
     report.check('connect-screen:form-connect', true, serverTarget.url);
 
     await waitFor(() => fs.existsSync(configPath), 5000, 'server-config.json');
@@ -390,13 +439,21 @@ async function sessionA(report) {
     try { saved = JSON.parse(fs.readFileSync(configPath, 'utf-8')).serverUrl; } catch (e) { /* ignore */ }
     report.check('connect-screen:config-saved', saved === serverUrl, 'serverUrl=' + saved);
 
-    await evaluateOnTarget(serverTarget, 'window.electronAPI.showConnectScreen()');
+    // showConnectScreen() triggers navigation back to the connect screen.
+    try {
+      await evaluateOnTarget(serverTarget, 'window.electronAPI.showConnectScreen()');
+    } catch (e) {
+      const msg = e && e.message ? e.message : String(e);
+      if (!msg.includes('navigated or closed')) throw e;
+    }
     const backTarget = await waitForTarget(
       cdpPort,
       (t) => t.url.startsWith('file://') && t.url.includes('connect.html'),
       15000,
       'connect screen after showConnectScreen'
     );
+    await waitForPageReady(backTarget, cdpPort, 10000);
+    await waitForBridge(backTarget, cdpPort, 'window.wireClient', 10000);
 
     const savedServer = await evaluateOnTarget(backTarget, 'window.wireClient.getSavedServer()');
     report.check('connect-screen:get-saved', savedServer === serverUrl, 'getSavedServer()=' + savedServer);

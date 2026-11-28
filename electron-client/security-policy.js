@@ -295,10 +295,13 @@ function hasV10Prefix(ciphertext) {
 
 /**
  * Remove unprotected (v10) records from a parsed unlock-key store.
+ * Only Linux uses the public-password "v10" format; on darwin/win32, v10 is
+ * os_crypt's protected format and must never be deleted or refused.
  * Mutates the object and returns the number of records removed.
  */
-function pruneUnprotectedRecords(store) {
+function pruneUnprotectedRecords(store, platform) {
   if (!store || typeof store !== 'object') return 0;
+  if (platform !== 'linux') return 0;
   let removed = 0;
   for (const key of Object.keys(store)) {
     let bytes;

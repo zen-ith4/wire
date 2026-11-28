@@ -586,7 +586,7 @@ function hasUnprotectedStorage() {
 function dropUnprotectedRecords() {
   try {
     const store = loadUnlockKeyStore();
-    if (pruneUnprotectedRecords(store) > 0) {
+    if (pruneUnprotectedRecords(store, process.platform) > 0) {
       saveUnlockKeyStore(store);
       console.warn('Removed unprotected identity unlock key records');
     }
@@ -630,7 +630,7 @@ ipcMain.handle('identity:store-unlock-key', async (event, claimedOrigin, userId,
     const store = loadUnlockKeyStore();
     // Any record that is already unprotected must not survive a successful
     // keyring store either: prune before writing the new one.
-    const pruned = pruneUnprotectedRecords(store);
+    const pruned = pruneUnprotectedRecords(store, process.platform);
     const encrypted = await safeStorage.encryptStringAsync(unlockKey);
 
     // Second line of defence: never persist the unprotected v10 format on
@@ -673,7 +673,7 @@ ipcMain.handle('identity:get-unlock-key', async (event, claimedOrigin, userId) =
   // A record written by an unprotected backend is not safe to return, even if
   // the keyring is available now. Drop every v10 record and ask the user to
   // log in again.
-  if (pruneUnprotectedRecords(store) > 0) {
+  if (pruneUnprotectedRecords(store, process.platform) > 0) {
     try { saveUnlockKeyStore(store); } catch (e) { /* ignore */ }
   }
 

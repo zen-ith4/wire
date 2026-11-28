@@ -358,21 +358,41 @@ test('hasV10Prefix detects Chromium unprotected ciphertext only', () => {
   assert.equal(hasV10Prefix('v10abc'), true); // string is accepted
 });
 
-test('pruneUnprotectedRecords removes v10 entries and keeps protected ones', () => {
+test('pruneUnprotectedRecords removes v10 entries on linux and keeps protected ones', () => {
   const store = {
     'https://a::u1': Buffer.from('v10legacy').toString('base64'),
     'https://a::u2': Buffer.from('v11protected').toString('base64'),
     'https://a::u3': Buffer.from('v10another').toString('base64'),
   };
-  const removed = pruneUnprotectedRecords(store);
+  const removed = pruneUnprotectedRecords(store, 'linux');
   assert.equal(removed, 2);
   assert.deepEqual(Object.keys(store), ['https://a::u2']);
 });
 
+test('pruneUnprotectedRecords keeps v10 entries on darwin (os_crypt protected)', () => {
+  const store = {
+    'https://a::u1': Buffer.from('v10legacy').toString('base64'),
+    'https://a::u2': Buffer.from('v11protected').toString('base64'),
+  };
+  const removed = pruneUnprotectedRecords(store, 'darwin');
+  assert.equal(removed, 0);
+  assert.deepEqual(Object.keys(store), ['https://a::u1', 'https://a::u2']);
+});
+
+test('pruneUnprotectedRecords keeps v10 entries on win32 (os_crypt protected)', () => {
+  const store = {
+    'https://a::u1': Buffer.from('v10legacy').toString('base64'),
+    'https://a::u2': Buffer.from('v11protected').toString('base64'),
+  };
+  const removed = pruneUnprotectedRecords(store, 'win32');
+  assert.equal(removed, 0);
+  assert.deepEqual(Object.keys(store), ['https://a::u1', 'https://a::u2']);
+});
+
 test('pruneUnprotectedRecords tolerates junk and non-objects', () => {
-  assert.equal(pruneUnprotectedRecords(null), 0);
-  assert.equal(pruneUnprotectedRecords('nope'), 0);
+  assert.equal(pruneUnprotectedRecords(null, 'linux'), 0);
+  assert.equal(pruneUnprotectedRecords('nope', 'linux'), 0);
   const store = { 'x::y': 'not-base64-@@@' };
-  assert.equal(pruneUnprotectedRecords(store), 0);
+  assert.equal(pruneUnprotectedRecords(store, 'linux'), 0);
   assert.deepEqual(Object.keys(store), ['x::y']);
 });

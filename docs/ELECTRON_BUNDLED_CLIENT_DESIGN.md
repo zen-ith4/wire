@@ -234,9 +234,11 @@ Enforcement points (all **Planned**):
 1. Address validation at connect time and again when a saved address is loaded. The current
    validator accepts HTTP unconditionally (`electron-client/main.js:115-150`, especially
    line 141) and must gain the packaged/unpackaged branch.
-2. Redirects: validate `will-redirect` / `did-redirect-navigation` targets with the same
-   rule; a redirect to a disallowed scheme/host is cancelled, never followed and then
-   blocked only by CSP. See section 11.
+2. Redirects: validate `will-redirect` targets with the same rule; `will-redirect` is the
+   preventable webContents event. `did-redirect-navigation` fires after the redirect and
+   cannot cancel it; `webRequest.onBeforeRedirect` is a webRequest event, not a webContents
+   event, and cannot block. A redirect to a disallowed scheme/host is cancelled, never
+   followed and then blocked only by CSP. See section 11.
 3. The renderer's own Socket.IO/API URLs come from the injected endpoint; they are validated
    by the same function rather than trusted because the user typed them once.
 4. `connect-src` in the app CSP is built from the validated server origin only.
@@ -295,7 +297,7 @@ against `connect-src` (for fetch/XHR/WebSocket) or `img-src`/`media-src` (for el
 | API fetch (JSON) | `/api/version`, `/api/auth/...` | `public/js/core/api.js:84`, `:204` | `connect-src` |
 | Blob fetch → objectURL (avatars) | `/api/me/avatar/${userId}` fetched, then `URL.createObjectURL` | `public/js/ui/avatar.js:146` | `connect-src` (fetch) + `img-src` (`blob:`) |
 | Blob fetch → objectURL (banners) | `/api/me/banner/${userId}` | `public/js/ui/avatar.js:180` | `connect-src` (fetch) + `img-src` (`blob:`) |
-| Direct image load from server | attachment image set on `img.src`; also CSS `url()` background | `public/js/files/viewer.js:217`, `:356`; `public/js/ui/avatar.js:227`, `:271` | `img-src` (`https://<server>`) |
+| Direct image load from server | `media.url` from `item.getMedia()` set on `img.src` | `public/js/files/files.js:829-838` (produces `media.url`), `public/js/files/viewer.js:217`, `:356` | `img-src` (`https://<server>`) |
 | Direct audio load from server | attachment audio set on `audio.src` | `public/js/media/audio-player.js:1111`, `public/js/files/viewer.js:285` | `media-src` (`https://<server>`) |
 | Direct video load from server | attachment video set on `video.src` | `public/js/media/video-player.js`, `public/js/files/viewer.js:249` | `media-src` (`https://<server>`) |
 | Message sounds (local app asset, **not** a server resource) | `/audio/message-sent.wav` fetched then decoded | `public/js/notifications/message-sounds.js:64` | `connect-src` (`'self'` only) |
@@ -318,7 +320,7 @@ added explicitly per directive:
 | `script-src` | `'self'` | Bundled module scripts only; no inline/eval. |
 | `style-src` | `'self' https://fonts.googleapis.com` | `public/index.html` links Google Fonts (`middleware/csp.js:21-24,41`). No `'unsafe-inline'`. |
 | `font-src` | `'self' https://fonts.gstatic.com` | Actual font files (`middleware/csp.js:42`). |
-| `img-src` | `'self' data: blob: https://<server>` (+ loopback `http://localhost`/`127.0.0.1` in unpackaged dev) | Avatars/banners via `blob:` (fetched over `connect-src`), plus direct server image URLs set on `img.src`/`backgroundImage` (`viewer.js:217,356`, `avatar.js:227,271`). |
+| `img-src` | `'self' data: blob: https://<server>` (+ loopback `http://localhost`/`127.0.0.1` in unpackaged dev) | Avatars/banners via `blob:` (fetched over `connect-src` — `avatar.js:146,180` then `URL.createObjectURL`; `avatar.js:227,271` assign blob: URLs, **not** server URLs), plus direct server image URLs set on `img.src` from `media.url` produced at `files.js:829-838` (`viewer.js:217,356`). |
 | `media-src` | `'self' blob: https://<server>` (+ loopback `http://localhost`/`127.0.0.1` in unpackaged dev) | Audio/video via `blob:` (fetched over `connect-src`), plus direct server media URLs set on `audio.src`/`video.src` (`audio-player.js:1111`, `video-player.js`, `viewer.js:249,285`). Message sounds are bundled app assets, so they are `'self'`, not the server origin. |
 | `connect-src` | `'self' https://<server> wss://<server>` (+ loopback `http://`/`ws://` only in unpackaged dev) | Both HTTPS and WSS origins are required; `https://host` does **not** authorize `wss://host`. Socket.IO starts with `websocket` and may fall back to `polling` (`public/js/core/socket.js:110`), so both the HTTP(S) and WS(S) origins of the server are needed. |
 | `worker-src` | `'self' blob:` | Any worker/blob worker. The service worker is separate (Q5). |
@@ -431,15 +433,49 @@ console.log({ bundled, evil, https, invalid });
 // invalid   === 'THREW'              -> reject
 ```
 
-**Phase 2 — current server-loaded app.** `allowedOrigins` is `[originKey(currentServerOrigin)]`
-plus the local connect screen. The connect screen is loaded via `loadFile` (`file:` protocol;
-`electron-client/main.js:375`), so its `event.senderFrame.url` begins with `file://`. The
-`file:` connect screen may only call the connect-screen channels (`server:get-saved`,
-`server:forget`, `server:connect` — gated by the `file:` preload check in `preload.js:10-14`).
-All other handlers (`identity:*`, `app:*`, `dm-notification:show`, `server:show-connect-screen`)
-require the server-origin frame. `currentServerOrigin` is the exact server origin the main
-process connected to (`normalizeServerAddress` result, `main.js:115-150`), compared with
-`originKey()`, never `.origin`.
+**Phase 2 — current server-loaded app.** The server-origin frame is matched with
+`originKey(currentServerOrigin)` (never `.origin`). The connect screen is loaded via
+`loadFile` (`file:` protocol; `electron-client/main.js:375`) so its `event.senderFrame.url`
+begins with `file://`; **`originKey()` must NOT be used for the connect screen**, because it
+reduces every `file:` URL to `file://` and cannot distinguish `renderer/connect.html` from
+other local files. Match it by exact file path instead:
+
+```js
+// PROPOSED, not applied. Phase 2.
+const { pathToFileURL } = require('node:url');
+const CONNECT_SCREEN_PATH = path.join(__dirname, 'renderer', 'connect.html');
+const CONNECT_SCREEN_PATHNAME = pathToFileURL(CONNECT_SCREEN_PATH).pathname; // e.g. '/renderer/connect.html'
+
+function senderIsConnectScreen(event) {
+  const f = event.senderFrame;
+  if (!f || f !== event.sender.mainFrame) return false;
+  try {
+    return f.protocol === 'file:' && new URL(f.url).pathname === CONNECT_SCREEN_PATHNAME;
+  } catch { return false; }
+}
+```
+
+Allowed senders per channel (Phase 2):
+
+| Channel | file:line | Allowed sender | Rule |
+|---|---|---|---|
+| `server:get-saved` | `main.js:662` | connect screen only | `senderIsConnectScreen(event)` |
+| `server:forget` | `main.js:667` | connect screen only | `senderIsConnectScreen(event)` |
+| `server:connect` | `main.js:672` | connect screen only | `senderIsConnectScreen(event)` (validates address format in `normalizeServerAddress`) |
+| `server:show-connect-screen` | `main.js:598` | server-origin frame only | `originKey(f.url) === originKey(currentServerOrigin)` |
+| `identity:store-unlock-key` | `main.js:481` | server-origin frame only | `originKey(f.url) === originKey(currentServerOrigin)` |
+| `identity:get-unlock-key` | `main.js:515` | server-origin frame only | `originKey(f.url) === originKey(currentServerOrigin)` |
+| `identity:clear-unlock-key` | `main.js:542` | server-origin frame only | `originKey(f.url) === originKey(currentServerOrigin)` |
+| `app:hardware-acceleration:get/set` | `main.js:571,575` | server-origin frame only | `originKey(f.url) === originKey(currentServerOrigin)` |
+| `app:relaunch` | `main.js:583` | server-origin frame only | `originKey(f.url) === originKey(currentServerOrigin)` |
+| `dm-notification:show` | `main.js:621` | server-origin frame only | `originKey(f.url) === originKey(currentServerOrigin)` |
+| `app:hardware-acceleration:*` via `preload.js` | `preload.js` | — | preload gate only exposes these to remote pages; main-handler rule above applies |
+
+`currentServerOrigin` is the exact server origin the main process connected to
+(`normalizeServerAddress` result, `main.js:115-150`), compared with `originKey()`, never
+`.origin`. `claimedOrigin` supplied by the renderer is dropped — the bucket is derived from
+the origin the main process connected to plus the user id (`docs/ELECTRON_SECURITY_AUDIT.md`,
+section b).
 
 **Phase 4 — bundled client.** `allowedOrigins` is `['wire-bundled://app']` only. Server pages
 never load in the window (§10.3), so no server origin is ever allowed. The helper accepts
@@ -481,7 +517,9 @@ to the OS browser only for `http:`/`https:`:
 
 ```js
 // PROPOSED, not applied. Phase 2 variant.
-const CONNECT_SCREEN = path.join(__dirname, 'renderer', 'connect.html');
+const { pathToFileURL } = require('node:url');
+const CONNECT_SCREEN_PATH = path.join(__dirname, 'renderer', 'connect.html');
+const CONNECT_SCREEN_PATHNAME = pathToFileURL(CONNECT_SCREEN_PATH).pathname; // e.g. '/renderer/connect.html'
 
 mainWindow.webContents.setWindowOpenHandler(({ url }) => {
   openExternalSafely(url);
@@ -491,7 +529,9 @@ mainWindow.webContents.setWindowOpenHandler(({ url }) => {
 mainWindow.webContents.on('will-navigate', (event, targetUrl) => {
   let target;
   try { target = new URL(targetUrl); } catch { event.preventDefault(); return; }
-  const isConnectScreen = target.protocol === 'file:' && target.pathname === CONNECT_SCREEN;
+  // Ignore query/hash: loadFile(path, { query }) appends ?auto=1 etc.
+  const isConnectScreen =
+    target.protocol === 'file:' && target.pathname === CONNECT_SCREEN_PATHNAME;
   const isCurrentServer = currentServerOrigin && target.origin === currentServerOrigin;
   if (!isConnectScreen && !isCurrentServer) {
     event.preventDefault();            // cancel: never followed in-process
@@ -500,8 +540,10 @@ mainWindow.webContents.on('will-navigate', (event, targetUrl) => {
 });
 ```
 
-`file:` is **not** generally allowed — only the exact connect-screen file. `new URL()` is
-wrapped in try/catch (`main.js:338-347` gap).
+`file:` is **not** generally allowed — only the exact connect-screen path (with any query
+string). `new URL()` is wrapped in try/catch (`main.js:338-347` gap). Comparing against
+`pathToFileURL(CONNECT_SCREEN_PATH).pathname` avoids breaking on spaces or Windows paths,
+where a naive string compare against `CONNECT_SCREEN_PATH` would fail.
 
 **Phase 4 — bundled client.** Only the exact bundled origin may load in the window; server
 pages never load (the window loads `wire-bundled://app/index.html` directly), and `file:`
@@ -593,9 +635,10 @@ and origin **before** the navigation is followed. A disallowed target is **cance
 
 `will-navigate` covers top-frame navigations in the window only. It does **not** cover
 server-driven HTTP redirects (those are handled by the network stack / CSP, see §11.2 and
-§11.3). `webRequest.onBeforeRedirect` / `will-redirect` is the webContents event that can
-be prevented for a redirect target; `did-redirect-navigation` fires **after** the redirect
-has been followed and therefore **cannot** block it (§11.4).
+§11.3). `will-redirect` is the webContents event for in-window redirects that can be
+prevented; `did-redirect-navigation` fires after the redirect has been followed and
+therefore **cannot** block it (§11.4). `webRequest.onBeforeRedirect` is a webRequest event,
+not a webContents event, and cannot block navigation.
 
 ### 11.2 Renderer `fetch()` / XHR / WebSocket
 
@@ -615,14 +658,55 @@ neither installs a `'redirect'` handler, so redirects are followed automatically
 is **no** per-redirect allowlist or blocking hook on `net.request` itself. `will-navigate`
 does not apply to `net.request`.
 
+**Required policy (Step 1c — implement both calls):**
+
+```js
+// PROPOSED, not applied. Use for every net.request call.
+function buildRequestOptions(serverUrl, path) {
+  const url = serverUrl.endsWith('/') ? serverUrl.slice(0, -1) + path : serverUrl + path;
+  return {
+    method: 'GET',
+    url,
+    redirect: 'manual',          // never follow redirects blindly
+  };
+}
+
+// Called inside the 'redirect' event handler.
+function onRedirect(event, redirectUrl) {
+  try {
+    const target = new URL(redirectUrl);              // event.redirectUrl, not response.url
+    const allowed =
+      target.origin === currentServerOrigin &&
+      (target.protocol === 'https:' ||
+        (!app.isPackaged && /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])/.test(target.origin)));
+    if (allowed) {
+      event.followRedirect();                          // proceed only for same-origin HTTPS
+    } else {
+      event.abort();                                    // redirect to a different host/scheme
+      showUserMessage('Server redirected to a different address. Please enter the final address.');
+    }
+  } catch {
+    event.abort();
+    showUserMessage('Server redirected to an invalid address.');
+  }
+}
+```
+
+The rule applied to both `net.request` calls:
+
 | Call | file:line | `redirect` policy | What happens on redirect |
+|---|---|---|---|
+| `testServerReachable()` | `electron-client/main.js:162` | `'manual'` | Follow only if `redirectUrl` is `currentServerOrigin` and passes the HTTPS rule (§6); otherwise abort and ask the user to enter the final address. Any final HTTP response still counts as reachable. |
+| `checkServerVersion()` | `electron-client/main.js:205` | `'manual'` | Same rule; on abort or failure, resolve to `null` (non-fatal) so connecting is never blocked by the version check (`main.js:268-289`). |
+
+**Use `event.redirectUrl`, not `response.url`** — `response.url` is the final URL after following, which defeats the check.
+
+| Call | file:line | Current `redirect` policy | What happens on redirect today |
 |---|---|---|---|
 | `testServerReachable()` | `electron-client/main.js:162` | `'follow'` (default, not set) | Any final HTTP response (even 401/403/404) counts as reachable; redirects to another host are followed. Non-fatal: network failure rejects. |
 | `checkServerVersion()` | `electron-client/main.js:205` | `'follow'` (default, not set) | Only the final response body is parsed for the version string; a failed/non-200 version check resolves to `null` and is non-fatal (`main.js:268-289`). |
 
-**PROPOSED (not applied):** if a server may redirect `/api/version` to an untrusted host, set
-`redirect: 'manual'` and handle the `'redirect'` event to inspect `response.url` against the
-allowed server origin before calling `followRedirect()`. This is not currently implemented.
+**Not currently implemented:** the `'manual'` policy and `'redirect'` handler above; they must be added in Phase 2.
 
 ### 11.4 Official Electron 45 docs citation and untested behavior
 

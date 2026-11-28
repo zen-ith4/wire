@@ -13,9 +13,21 @@
  * never bundled, imported, or started here.
  */
 
-const { app, BrowserWindow, ipcMain, net, shell, Menu, safeStorage, Notification } = require('electron');
+const { app, BrowserWindow, ipcMain, net, shell, Menu, safeStorage, Notification, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const {
+  isAllowedExternalScheme,
+  originKey,
+  isAllowedAddress,
+  normalizeServerAddress: normalizeAddressPolicy,
+  buildRequestOptions,
+  onRedirect,
+  connectScreenPathname,
+  isConnectScreenUrl,
+  senderIsTrusted,
+  isPermissionAllowed,
+} = require('./security-policy');
 
 // ---------------------------------------------------------------------------
 // Persisted config (just the server address — nothing else)
@@ -113,41 +125,21 @@ if (!initialAppSettings.hardwareAccelerationEnabled) {
  * Throws with a user-friendly message if the input is invalid.
  */
 function normalizeServerAddress(rawInput) {
-  if (!rawInput || typeof rawInput !== 'string') {
-    throw new Error('Please enter a server address.');
-  }
+  return normalizeAddressPolicy(rawInput, app.isPackaged);
+}
 
-  let input = rawInput.trim();
-
-  if (!input) {
-    throw new Error('Please enter a server address.');
-  }
-
-  // Default to http:// if no scheme was given (LAN servers are usually
-  // plain HTTP; users can type https:// explicitly when needed).
-  if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(input)) {
-    input = 'http://' + input;
-  }
-
-  let parsed;
+/**
+ * Hand URLs to the OS browser only when the scheme is http: or https:,
+ * with safe URL parsing. Every other scheme (file:, smb:, ms-*,
+ * custom app protocols, javascript:, data:, blob:, ...) is denied.
+ */
+function openExternalSafely(rawUrl) {
+  if (!isAllowedExternalScheme(rawUrl)) return;
   try {
-    parsed = new URL(input);
-  } catch (e) {
-    throw new Error(
-      "That doesn't look like a valid address. Try formats like 192.168.1.100:3000 or https://example.com"
-    );
+    shell.openExternal(new URL(rawUrl).toString());
+  } catch {
+    // ignore: URL already validated by isAllowedExternalScheme
   }
-
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw new Error('Only http:// and https:// servers are supported.');
-  }
-
-  if (!parsed.hostname) {
-    throw new Error('Please include a host or IP address.');
-  }
-
-  // origin = protocol + host + port, with no trailing slash, path, or query.
-  return parsed.origin;
 }
 
 /**
@@ -159,10 +151,7 @@ function testServerReachable(serverUrl, timeoutMs = 7000) {
   return new Promise((resolve, reject) => {
     let settled = false;
 
-    const request = net.request({
-      method: 'GET',
-      url: serverUrl + '/',
-    });
+    const request = net.request(buildRequestOptions(serverUrl, '/'));
 
     const timer = setTimeout(() => {
       if (settled) return;
@@ -170,6 +159,24 @@ function testServerReachable(serverUrl, timeoutMs = 7000) {
       request.abort();
       reject(new Error('Connection timed out. Check the address and that the server is running.'));
     }, timeoutMs);
+
+    request.on('redirect', (event, redirectUrl) => {
+      const decision = onRedirect(redirectUrl, currentServerOrigin, app.isPackaged);
+      if (decision.follow) {
+        event.followRedirect();
+      } else {
+        event.abort();
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          reject(
+            new Error(
+              `Server redirected to a disallowed address (${decision.reason}). Please enter the final address directly.`
+            )
+          );
+        }
+      }
+    });
 
     request.on('response', (response) => {
       if (settled) return;
@@ -202,9 +209,25 @@ function checkServerVersion(serverUrl) {
   return new Promise((resolve) => {
     let settled = false;
 
-    const request = net.request({
-      method: 'GET',
-      url: serverUrl + '/api/version',
+    const request = net.request(buildRequestOptions(serverUrl, '/api/version'));
+
+    const timer = setTimeout(() => {
+      request.abort();
+      finish(null);
+    }, 5000);
+
+    request.on('redirect', (event, redirectUrl) => {
+      const decision = onRedirect(redirectUrl, currentServerOrigin, app.isPackaged);
+      if (decision.follow) {
+        event.followRedirect();
+      } else {
+        event.abort();
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          finish(null);
+        }
+      }
     });
 
     const finish = (result) => {
@@ -212,11 +235,6 @@ function checkServerVersion(serverUrl) {
       settled = true;
       resolve(result);
     };
-
-    const timer = setTimeout(() => {
-      request.abort();
-      finish(null);
-    }, 5000);
 
     request.on('response', (response) => {
       let body = '';
@@ -324,25 +342,40 @@ function createMainWindow() {
   mainWindow.once('ready-to-show', () => mainWindow.show());
 
   // Any content trying to open a new window/tab (target=_blank, window.open,
-  // OAuth-style popups, etc.) is sent to the user's normal OS browser
-  // instead of spawning a new uncontrolled Electron window.
+  // OAuth-style popups, etc.) is always denied in-app. Only http:/https:
+  // URLs are handed to the user's OS browser via openExternalSafely.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    openExternalSafely(url);
     return { action: 'deny' };
   });
 
-  // Block in-app navigation to a different origin than the connected
-  // server (protects against link-jacking to arbitrary sites); the
-  // local connect screen (file://) and the chosen server's own origin
-  // remain allowed.
+  // Block in-app navigation to anywhere except the current server origin
+  // and the exact connect screen. Invalid URLs are blocked. Redirects are
+  // handled separately by will-redirect (see below).
   mainWindow.webContents.on('will-navigate', (event, targetUrl) => {
-    const target = new URL(targetUrl);
-    const isLocalConnectScreen = target.protocol === 'file:';
-    const isCurrentServer = currentServerOrigin && target.origin === currentServerOrigin;
+    try {
+      const target = new URL(targetUrl);
+      const isConnectScreen = isConnectScreenUrl(targetUrl, CONNECT_SCREEN_PATHNAME);
+      const isCurrentServer = currentServerOrigin && target.origin === currentServerOrigin;
+      if (!isConnectScreen && !isCurrentServer) {
+        event.preventDefault(); // cancel: never followed in-process
+      }
+    } catch {
+      event.preventDefault(); // invalid URL: block
+    }
+  });
 
-    if (!isLocalConnectScreen && !isCurrentServer) {
+  // Block server-driven HTTP redirects to any origin other than the
+  // configured server, and any redirect that violates the HTTPS rule.
+  mainWindow.webContents.on('will-redirect', (event, targetUrl) => {
+    try {
+      const target = new URL(targetUrl);
+      const isCurrentServer = currentServerOrigin && target.origin === currentServerOrigin;
+      if (!isCurrentServer || !isAllowedAddress(target, app.isPackaged)) {
+        event.preventDefault();
+      }
+    } catch {
       event.preventDefault();
-      shell.openExternal(targetUrl);
     }
   });
 
@@ -366,6 +399,10 @@ function createMainWindow() {
 }
 
 let currentServerOrigin = null;
+
+const CONNECT_SCREEN_PATHNAME = connectScreenPathname(
+  path.join(__dirname, 'renderer', 'connect.html')
+);
 
 function showConnectScreen({ autoAttempt, errorMessage } = {}) {
   const query = {};
@@ -453,7 +490,7 @@ const UNLOCK_KEYS_PATH = path.join(app.getPath('userData'), 'identity-unlock-key
 
 function unlockKeyStoreOrigin(event) {
   try {
-    return new URL(event.sender.getURL()).origin;
+    return originKey(event.senderFrame.url);
   } catch (e) {
     return null;
   }
@@ -478,12 +515,15 @@ function saveUnlockKeyStore(store) {
   fs.writeFileSync(UNLOCK_KEYS_PATH, JSON.stringify(store), 'utf-8');
 }
 
-ipcMain.handle('identity:store-unlock-key', (event, claimedOrigin, userId, unlockKey) => {
-  const realOrigin = unlockKeyStoreOrigin(event);
-
-  if (!realOrigin || realOrigin !== claimedOrigin) {
+ipcMain.handle('identity:store-unlock-key', async (event, claimedOrigin, userId, unlockKey) => {
+  if (!senderIsTrusted(event, [currentServerOrigin].filter(Boolean), CONNECT_SCREEN_PATHNAME) ||
+      !currentServerOrigin) {
     return { success: false, error: 'Origin mismatch' };
   }
+
+  // The bucket is derived from the origin the main process connected to,
+  // never from a renderer-supplied claimedOrigin.
+  const storeOrigin = currentServerOrigin;
 
   if (typeof unlockKey !== 'string' || !unlockKey) {
     return { success: false, error: 'Invalid unlock key' };
@@ -502,8 +542,10 @@ ipcMain.handle('identity:store-unlock-key', (event, claimedOrigin, userId, unloc
 
   try {
     const store = loadUnlockKeyStore();
-    const encrypted = safeStorage.encryptString(unlockKey);
-    store[unlockKeyRecordId(realOrigin, userId)] = encrypted.toString('base64');
+    // Async API (encryptStringAsync) — sync encryptString is deprecated in
+    // Electron 46. Same OS backend, so previously stored keys still open.
+    const encrypted = await safeStorage.encryptStringAsync(Buffer.from(unlockKey));
+    store[unlockKeyRecordId(storeOrigin, userId)] = encrypted.toString('base64');
     saveUnlockKeyStore(store);
     return { success: true };
   } catch (err) {
@@ -512,26 +554,30 @@ ipcMain.handle('identity:store-unlock-key', (event, claimedOrigin, userId, unloc
   }
 });
 
-ipcMain.handle('identity:get-unlock-key', (event, claimedOrigin, userId) => {
-  const realOrigin = unlockKeyStoreOrigin(event);
-
-  if (!realOrigin || realOrigin !== claimedOrigin) {
+ipcMain.handle('identity:get-unlock-key', async (event, claimedOrigin, userId) => {
+  if (!senderIsTrusted(event, [currentServerOrigin].filter(Boolean), CONNECT_SCREEN_PATHNAME) ||
+      !currentServerOrigin) {
     return null;
   }
+
+  const storeOrigin = currentServerOrigin;
 
   if (!safeStorage.isEncryptionAvailable()) {
     return null;
   }
 
   const store = loadUnlockKeyStore();
-  const record = store[unlockKeyRecordId(realOrigin, userId)];
+  const record = store[unlockKeyRecordId(storeOrigin, userId)];
 
   if (!record) {
     return null;
   }
 
   try {
-    const unlockKey = safeStorage.decryptString(Buffer.from(record, 'base64'));
+    // Async API (decryptStringAsync). Never delete a key because decryption
+    // failed temporarily — on failure return null and let the user log in
+    // again instead of destroying stored data.
+    const unlockKey = await safeStorage.decryptStringAsync(Buffer.from(record, 'base64'));
     return { unlockKey };
   } catch (err) {
     console.error('Failed to decrypt identity unlock key:', err);
@@ -539,16 +585,17 @@ ipcMain.handle('identity:get-unlock-key', (event, claimedOrigin, userId) => {
   }
 });
 
-ipcMain.handle('identity:clear-unlock-key', (event, claimedOrigin, userId) => {
-  const realOrigin = unlockKeyStoreOrigin(event);
-
-  if (!realOrigin || realOrigin !== claimedOrigin) {
+ipcMain.handle('identity:clear-unlock-key', async (event, claimedOrigin, userId) => {
+  if (!senderIsTrusted(event, [currentServerOrigin].filter(Boolean), CONNECT_SCREEN_PATHNAME) ||
+      !currentServerOrigin) {
     return false;
   }
 
+  const storeOrigin = currentServerOrigin;
+
   try {
     const store = loadUnlockKeyStore();
-    delete store[unlockKeyRecordId(realOrigin, userId)];
+    delete store[unlockKeyRecordId(storeOrigin, userId)];
     saveUnlockKeyStore(store);
     return true;
   } catch (err) {
@@ -563,16 +610,18 @@ ipcMain.handle('identity:clear-unlock-key', (event, claimedOrigin, userId) => {
 //
 // Exposed to the remote site's Settings page (see preload.js's
 // `electronAPI` branch), same as the identity-unlock-key handlers above.
-// Not security-sensitive (it's a local rendering preference, not
-// per-account data), so unlike those handlers this doesn't need to verify
-// the caller's origin.
-// ---------------------------------------------------------------------------
-
-ipcMain.handle('app:hardware-acceleration:get', () => {
+// Only the connected server's frame may read/write this local preference.
+ipcMain.handle('app:hardware-acceleration:get', (event) => {
+  if (!senderIsTrusted(event, [currentServerOrigin].filter(Boolean), CONNECT_SCREEN_PATHNAME)) {
+    return undefined;
+  }
   return loadAppSettings().hardwareAccelerationEnabled;
 });
 
 ipcMain.handle('app:hardware-acceleration:set', (event, enabled) => {
+  if (!senderIsTrusted(event, [currentServerOrigin].filter(Boolean), CONNECT_SCREEN_PATHNAME)) {
+    return { success: false, error: 'Origin mismatch' };
+  }
   const value = enabled !== false;
   saveAppSettings({ hardwareAccelerationEnabled: value });
   // Takes effect on next launch (see the disableHardwareAcceleration() call
@@ -580,7 +629,10 @@ ipcMain.handle('app:hardware-acceleration:set', (event, enabled) => {
   return { success: true, enabled: value };
 });
 
-ipcMain.handle('app:relaunch', () => {
+ipcMain.handle('app:relaunch', (event) => {
+  if (!senderIsTrusted(event, [currentServerOrigin].filter(Boolean), CONNECT_SCREEN_PATHNAME)) {
+    return false;
+  }
   app.relaunch();
   app.exit(0);
 });
@@ -595,7 +647,10 @@ ipcMain.handle('app:relaunch', () => {
 // above.
 // ---------------------------------------------------------------------------
 
-ipcMain.handle('server:show-connect-screen', () => {
+ipcMain.handle('server:show-connect-screen', (event) => {
+  if (!senderIsTrusted(event, [currentServerOrigin].filter(Boolean), CONNECT_SCREEN_PATHNAME)) {
+    return false;
+  }
   showConnectScreen({ autoAttempt: false });
   return true;
 });
@@ -619,11 +674,13 @@ function isPlainString(value) {
 }
 
 ipcMain.on('dm-notification:show', (event, payload) => {
-  // Only the app's one real window can trigger a notification — this
-  // channel carries no secrets, but validating the sender and the
-  // payload shape keeps a malformed or unexpected call from ever
-  // reaching Electron's native Notification API.
-  if (!mainWindow || event.sender !== mainWindow.webContents) return;
+  // Only the connected server's frame may trigger a desktop notification.
+  // Notifications are created in the main process via Electron's native
+  // Notification API; the renderer's Web Notification path is denied by
+  // the permission handler (§6 D6) and is not used by Electron.
+  if (
+    !senderIsTrusted(event, [currentServerOrigin].filter(Boolean), CONNECT_SCREEN_PATHNAME)
+  ) return;
   if (!payload || typeof payload !== 'object') return;
   if (!Notification.isSupported()) return;
 
@@ -659,17 +716,26 @@ ipcMain.on('dm-notification:show', (event, payload) => {
 // IPC — only reachable from the local connect.html screen (see preload.js)
 // ---------------------------------------------------------------------------
 
-ipcMain.handle('server:get-saved', () => {
+ipcMain.handle('server:get-saved', (event) => {
+  if (!senderIsTrusted(event, [], CONNECT_SCREEN_PATHNAME)) {
+    return null;
+  }
   const { serverUrl } = loadConfig();
   return serverUrl;
 });
 
-ipcMain.handle('server:forget', () => {
+ipcMain.handle('server:forget', (event) => {
+  if (!senderIsTrusted(event, [], CONNECT_SCREEN_PATHNAME)) {
+    return false;
+  }
   clearConfig();
   return true;
 });
 
 ipcMain.handle('server:connect', async (event, rawAddress) => {
+  if (!senderIsTrusted(event, [], CONNECT_SCREEN_PATHNAME)) {
+    return { success: false, error: 'Origin mismatch' };
+  }
   let normalized;
   try {
     normalized = normalizeServerAddress(rawAddress);
@@ -706,6 +772,31 @@ if (!gotSingleInstanceLock) {
 
   app.whenReady().then(() => {
     createMainWindow();
+
+    // Permission handlers (Phase 2, D6): allow only microphone for the
+    // current server origin's main frame; deny camera, screen sharing
+    // (display-capture), notifications in the renderer, and everything
+    // else. Both request and check handlers implement the same rule so a
+    // request handler alone cannot be bypassed.
+    const ses = session.defaultSession;
+    ses.setPermissionRequestHandler((webContents, permission, callback, details) => {
+      const allowed =
+        currentServerOrigin &&
+        isPermissionAllowed(permission, details, currentServerOrigin);
+      callback(!!allowed);
+    });
+    ses.setPermissionCheckHandler((webContents, permission, requestingOrigin) => {
+      if (permission !== 'media') return false;
+      try {
+        return (
+          currentServerOrigin &&
+          originKey(requestingOrigin) === currentServerOrigin &&
+          isPermissionAllowed(permission, { requestingUrl: requestingOrigin }, currentServerOrigin)
+        );
+      } catch {
+        return false;
+      }
+    });
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createMainWindow();

@@ -70,6 +70,10 @@ function isAllowedAddress(u, isPackaged) {
 /**
  * Parse and validate a server address against the HTTPS rule. Returns the
  * normalized origin string or throws with a user-friendly message.
+ *
+ * A bare address without a scheme now defaults to https:// (not http://),
+ * so packaged builds accept it by default. Explicit loopback http:// still
+ * works in unpackaged builds.
  */
 function normalizeServerAddress(rawInput, isPackaged) {
   if (!rawInput || typeof rawInput !== 'string') {
@@ -82,7 +86,7 @@ function normalizeServerAddress(rawInput, isPackaged) {
   }
 
   if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(input)) {
-    input = 'http://' + input;
+    input = 'https://' + input; // Default to https://
   }
 
   let parsed;
@@ -90,7 +94,7 @@ function normalizeServerAddress(rawInput, isPackaged) {
     parsed = new URL(input);
   } catch {
     throw new Error(
-      "That doesn't look like a valid address. Try formats like 192.168.1.100:3000 or https://example.com"
+      "That doesn't look like a valid address. Try formats like https://example.com or 192.168.1.100:3000"
     );
   }
 
@@ -125,17 +129,21 @@ function buildRequestOptions(serverUrl, path) {
 }
 
 /**
- * Handle a net.request 'redirect' event. Follows the redirect synchronously
- * only when redirectUrl is the same origin as the configured server and
- * passes the HTTPS rule; otherwise aborts.
+ * Handle a net.request 'redirect' event.
  *
- * Returns an object { follow: boolean, reason?: string }. main.js calls
- * event.followRedirect() or event.abort() synchronously inside the handler.
+ * Electron 45 passes (statusCode, method, redirectUrl, responseHeaders) to
+ * the 'redirect' handler. The request object exposes followRedirect() and
+ * abort() synchronously.
+ *
+ * Follows the redirect synchronously only when redirectUrl is the same
+ * origin as allowedOrigin AND passes the HTTPS rule; otherwise aborts.
+ *
+ * Returns an object { follow: boolean, reason?: string }.
  */
-function onRedirect(redirectUrl, currentServerOrigin, isPackaged) {
+function onRedirect(redirectUrl, allowedOrigin, isPackaged) {
   try {
     const target = new URL(redirectUrl);
-    if (target.origin !== currentServerOrigin) {
+    if (target.origin !== allowedOrigin) {
       return { follow: false, reason: 'redirects to a different origin' };
     }
     if (!isAllowedAddress(target, isPackaged)) {
@@ -174,16 +182,22 @@ function isConnectScreenUrl(targetUrl, connectScreenPathname) {
  * Phase 2: allowedOrigins = [originKey(currentServerOrigin)] plus the
  * connect screen matched by exact file path (isConnectScreenSender).
  * Phase 4: allowedOrigins = ['wire-bundled://app'] only.
+ *
+ * WebFrameMain has no "protocol" property; protocol is derived from f.url.
  */
 function senderIsTrusted(event, allowedOrigins, connectScreenPathname) {
   const f = event.senderFrame;
   if (!f || f !== event.sender.mainFrame) return false; // top frame only
 
   // Connect screen: exact file path, never originKey (file:// collapses
-  // every local file to the same opaque origin).
-  if (connectScreenPathname && f.protocol === 'file:') {
+  // every local file to the same opaque origin). Derive protocol from f.url
+  // since WebFrameMain has no .protocol property.
+  if (connectScreenPathname) {
     try {
-      return new URL(f.url).pathname === connectScreenPathname;
+      const url = new URL(f.url);
+      if (url.protocol === 'file:' && url.pathname === connectScreenPathname) {
+        return true;
+      }
     } catch {
       return false;
     }
@@ -199,15 +213,21 @@ function senderIsTrusted(event, allowedOrigins, connectScreenPathname) {
 /**
  * Whether a permission request should be allowed.
  *
- * Phase 2: allow only `media` with `audio` (microphone), only when the
- * requesting frame's origin equals the current server origin (top frame
- * only). Deny camera, screen sharing (display-capture), notifications in
- * the renderer, and everything else.
+ * Phase 2:
+ * - media: allow only `audio` (microphone), only when the requesting
+ *   frame's origin equals the current server origin (top frame only).
+ * - clipboard-write: allow narrowly for current server origin main frame.
+ * - fullscreen: allow narrowly for current server origin main frame.
+ * - camera, screen sharing (display-capture), notifications in the
+ *   renderer, and everything else: denied.
  */
 function isPermissionAllowed(permission, details, currentServerOrigin) {
-  if (permission !== 'media') return false;
+  // Main frame only: a cross-origin iframe embedded by the server must never
+  // inherit the app's microphone/clipboard/fullscreen grants.
+  if (!details || details.isMainFrame === false) return false;
 
-  const requestingUrl = details && details.requestingUrl ? details.requestingUrl : null;
+  const requestingUrl =
+    details && details.requestingUrl ? details.requestingUrl : null;
   if (!requestingUrl) return false;
 
   let origin;
@@ -219,8 +239,24 @@ function isPermissionAllowed(permission, details, currentServerOrigin) {
 
   if (origin !== currentServerOrigin) return false;
 
-  const mediaTypes = details.mediaTypes || [];
-  return mediaTypes.length > 0 && mediaTypes.every((t) => t === 'audio');
+  if (permission === 'media') {
+    const mediaTypes = details.mediaTypes || [];
+    return mediaTypes.length > 0 && mediaTypes.every((t) => t === 'audio');
+  }
+
+  // clipboard-write and fullscreen: allowed narrowly for current server
+  // origin main frame. Chromium 130+ (Electron 45) reports the clipboard
+  // permission as 'clipboard-sanitized-write'; older versions use
+  // 'clipboard-write'. Accept both names.
+  if (
+    permission === 'clipboard-write' ||
+    permission === 'clipboard-sanitized-write' ||
+    permission === 'fullscreen'
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 module.exports = {

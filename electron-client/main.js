@@ -160,12 +160,16 @@ function testServerReachable(serverUrl, timeoutMs = 7000) {
       reject(new Error('Connection timed out. Check the address and that the server is running.'));
     }, timeoutMs);
 
-    request.on('redirect', (event, redirectUrl) => {
-      const decision = onRedirect(redirectUrl, currentServerOrigin, app.isPackaged);
+    // Electron 45 redirect event args: (statusCode, method, redirectUrl,
+    // responseHeaders). Use request.followRedirect() / request.abort()
+    // synchronously. During first connect currentServerOrigin is null, so
+    // validate redirects against the serverUrl being requested.
+    request.on('redirect', (statusCode, method, redirectUrl, responseHeaders) => {
+      const decision = onRedirect(redirectUrl, serverUrl, app.isPackaged);
       if (decision.follow) {
-        event.followRedirect();
+        request.followRedirect();
       } else {
-        event.abort();
+        request.abort();
         if (!settled) {
           settled = true;
           clearTimeout(timer);
@@ -211,17 +215,27 @@ function checkServerVersion(serverUrl) {
 
     const request = net.request(buildRequestOptions(serverUrl, '/api/version'));
 
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
+
     const timer = setTimeout(() => {
       request.abort();
       finish(null);
     }, 5000);
 
-    request.on('redirect', (event, redirectUrl) => {
-      const decision = onRedirect(redirectUrl, currentServerOrigin, app.isPackaged);
+    // Electron 45 redirect event args: (statusCode, method, redirectUrl,
+    // responseHeaders). Use request.followRedirect() / request.abort()
+    // synchronously. During first connect currentServerOrigin is null, so
+    // validate redirects against the serverUrl being requested.
+    request.on('redirect', (statusCode, method, redirectUrl, responseHeaders) => {
+      const decision = onRedirect(redirectUrl, serverUrl, app.isPackaged);
       if (decision.follow) {
-        event.followRedirect();
+        request.followRedirect();
       } else {
-        event.abort();
+        request.abort();
         if (!settled) {
           settled = true;
           clearTimeout(timer);
@@ -229,12 +243,6 @@ function checkServerVersion(serverUrl) {
         }
       }
     });
-
-    const finish = (result) => {
-      if (settled) return;
-      settled = true;
-      resolve(result);
-    };
 
     request.on('response', (response) => {
       let body = '';
@@ -533,7 +541,7 @@ ipcMain.handle('identity:store-unlock-key', async (event, claimedOrigin, userId,
     return { success: false, error: 'Invalid user id' };
   }
 
-  if (!safeStorage.isEncryptionAvailable()) {
+  if (!(await safeStorage.isAsyncEncryptionAvailable())) {
     return {
       success: false,
       error: 'OS-level secure storage is not available on this system.',
@@ -542,9 +550,10 @@ ipcMain.handle('identity:store-unlock-key', async (event, claimedOrigin, userId,
 
   try {
     const store = loadUnlockKeyStore();
-    // Async API (encryptStringAsync) — sync encryptString is deprecated in
-    // Electron 46. Same OS backend, so previously stored keys still open.
-    const encrypted = await safeStorage.encryptStringAsync(Buffer.from(unlockKey));
+    // Async API: encryptStringAsync takes a string (not Buffer). New keys are
+    // written in the async format; legacy sync-format keys are still readable
+    // through the fallback in identity:get-unlock-key.
+    const encrypted = await safeStorage.encryptStringAsync(unlockKey);
     store[unlockKeyRecordId(storeOrigin, userId)] = encrypted.toString('base64');
     saveUnlockKeyStore(store);
     return { success: true };
@@ -562,7 +571,7 @@ ipcMain.handle('identity:get-unlock-key', async (event, claimedOrigin, userId) =
 
   const storeOrigin = currentServerOrigin;
 
-  if (!safeStorage.isEncryptionAvailable()) {
+  if (!(await safeStorage.isAsyncEncryptionAvailable())) {
     return null;
   }
 
@@ -574,14 +583,38 @@ ipcMain.handle('identity:get-unlock-key', async (event, claimedOrigin, userId) =
   }
 
   try {
-    // Async API (decryptStringAsync). Never delete a key because decryption
-    // failed temporarily — on failure return null and let the user log in
-    // again instead of destroying stored data.
-    const unlockKey = await safeStorage.decryptStringAsync(Buffer.from(record, 'base64'));
+    // Async API: decryptStringAsync resolves to { result, shouldReEncrypt }.
+    // Never delete a key because decryption failed temporarily — return null
+    // and let the user log in again instead of destroying stored data.
+    const { result: unlockKey, shouldReEncrypt } = await safeStorage.decryptStringAsync(
+      Buffer.from(record, 'base64')
+    );
+    if (shouldReEncrypt) {
+      // Re-encrypt with the current backend and persist so future reads use
+      // the updated encryption.
+      const reEncrypted = await safeStorage.encryptStringAsync(unlockKey);
+      store[unlockKeyRecordId(storeOrigin, userId)] = reEncrypted.toString('base64');
+      saveUnlockKeyStore(store);
+    }
     return { unlockKey };
   } catch (err) {
-    console.error('Failed to decrypt identity unlock key:', err);
-    return null;
+    // Electron 45's async and sync safeStorage APIs are NOT interchangeable:
+    // a key written by the pre-Phase-2 sync API fails decryptStringAsync
+    // (verified on Electron 45.4.1 / Linux). Fall back to the deprecated sync
+    // API for legacy records, then re-encrypt with the async API so the next
+    // read uses the new format. The sync API is still present in Electron 45
+    // and is removed in Electron 46.
+    try {
+      const legacyKey = safeStorage.decryptString(Buffer.from(record, 'base64'));
+      const reEncrypted = await safeStorage.encryptStringAsync(legacyKey);
+      const latest = loadUnlockKeyStore();
+      latest[unlockKeyRecordId(storeOrigin, userId)] = reEncrypted.toString('base64');
+      saveUnlockKeyStore(latest);
+      return { unlockKey: legacyKey };
+    } catch (legacyErr) {
+      console.error('Failed to decrypt identity unlock key:', err);
+      return null;
+    }
   }
 });
 
@@ -695,6 +728,10 @@ ipcMain.on('dm-notification:show', (event, payload) => {
     silent: false,
   });
 
+  if (process.env.WIRE_E2E === '1') {
+    console.log('[e2e] dm-notification-created');
+  }
+
   notification.on('click', () => {
     if (!mainWindow) return;
     if (mainWindow.isMinimized()) mainWindow.restore();
@@ -776,23 +813,47 @@ if (!gotSingleInstanceLock) {
     // Permission handlers (Phase 2, D6): allow only microphone for the
     // current server origin's main frame; deny camera, screen sharing
     // (display-capture), notifications in the renderer, and everything
-    // else. Both request and check handlers implement the same rule so a
-    // request handler alone cannot be bypassed.
+    // else. Allow clipboard-write and fullscreen narrowly for the current
+    // server origin main frame, since both worked before Phase 2 and are
+    // used by the web UI. Both request and check handlers implement the
+    // same rule so a request handler alone cannot be bypassed.
     const ses = session.defaultSession;
     ses.setPermissionRequestHandler((webContents, permission, callback, details) => {
       const allowed =
         currentServerOrigin &&
         isPermissionAllowed(permission, details, currentServerOrigin);
+      if (process.env.WIRE_E2E === '1') {
+        console.log(
+          '[e2e] permission-request ' + permission +
+          ' allowed=' + !!allowed +
+          ' mainFrame=' + (details && details.isMainFrame) +
+          ' mediaTypes=' + JSON.stringify((details && details.mediaTypes) || []) +
+          ' url=' + (details && details.requestingUrl)
+        );
+      }
       callback(!!allowed);
     });
-    ses.setPermissionCheckHandler((webContents, permission, requestingOrigin) => {
-      if (permission !== 'media') return false;
+    ses.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
+      if (!currentServerOrigin) return false;
       try {
-        return (
-          currentServerOrigin &&
-          originKey(requestingOrigin) === currentServerOrigin &&
-          isPermissionAllowed(permission, { requestingUrl: requestingOrigin }, currentServerOrigin)
-        );
+        const origin = originKey(requestingOrigin);
+        if (origin !== currentServerOrigin) return false;
+        if (details && details.isMainFrame === false) return false;
+
+        // The check handler receives details.mediaType ('audio' | 'video' |
+        // 'unknown'), so media can be decided here consistently with the
+        // request handler: microphone only, never camera.
+        if (permission === 'media') {
+          return !!details && details.mediaType === 'audio';
+        }
+        if (
+          permission === 'clipboard-write' ||
+          permission === 'clipboard-sanitized-write' ||
+          permission === 'fullscreen'
+        ) {
+          return true;
+        }
+        return false;
       } catch {
         return false;
       }

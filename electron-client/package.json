@@ -12,7 +12,9 @@
     "dist": "electron-builder --win nsis --linux AppImage deb",
     "dist:win": "electron-builder --win nsis",
     "dist:linux": "electron-builder --linux AppImage deb",
-    "dist:dir": "electron-builder --dir"
+    "dist:dir": "electron-builder --dir",
+    "test": "node --test \"tests/*.test.mjs\"",
+    "test:e2e": "node e2e/run-e2e-test.js"
   },
   "devDependencies": {
     "electron": "^45.4.1",

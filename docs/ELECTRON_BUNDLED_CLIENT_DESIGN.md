@@ -140,6 +140,17 @@ safeStorage, the connect screen, settings), never to proxy HTTP or WebSocket tra
 6. Identity unlock key (remember-me) may be stored via main-process `safeStorage`; the
    encrypted identity blob itself comes from the server, as today.
 
+**Verified on Electron 45.4.1 (Linux, real keyring, Phase 2 E2E):** the deprecated sync
+`safeStorage` API (`encryptString`/`decryptString`) and the async API
+(`encryptStringAsync`/`decryptStringAsync`) are **not** interchangeable. A key written by
+`encryptString` fails `decryptStringAsync` and a key written by `encryptStringAsync` fails
+`decryptString`. Phase 2 therefore keeps a legacy read path: `decryptStringAsync` first, and
+on failure `decryptString` for records written before the change, then re-encrypts them with
+the async API. The sync API is removed in Electron 46, so every legacy record must be read
+and migrated before that upgrade. `safeStorage.isEncryptionAvailable()` is also deprecated
+in 45 and can report `false` when only the async backend is usable; use
+`await safeStorage.isAsyncEncryptionAvailable()` instead.
+
 ---
 
 ## 5. Origin, URLs and storage — corrections checked against the code

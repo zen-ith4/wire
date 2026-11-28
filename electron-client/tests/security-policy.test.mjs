@@ -248,3 +248,46 @@ test('isPermissionAllowed denies missing requestingUrl', () => {
   assert.equal(isPermissionAllowed('media', {}, 'https://example.com'), false);
   assert.equal(isPermissionAllowed('media', null, 'https://example.com'), false);
 });
+
+test('isPermissionAllowed allows clipboard-write for server origin main frame', () => {
+  assert.equal(
+    isPermissionAllowed('clipboard-write', { requestingUrl: 'https://example.com/', isMainFrame: true }, 'https://example.com'),
+    true
+  );
+});
+
+test('isPermissionAllowed allows clipboard-sanitized-write (Chromium 130+/Electron 45 name)', () => {
+  assert.equal(
+    isPermissionAllowed('clipboard-sanitized-write', { requestingUrl: 'https://example.com/', isMainFrame: true }, 'https://example.com'),
+    true
+  );
+});
+
+test('isPermissionAllowed allows fullscreen for server origin main frame', () => {
+  assert.equal(
+    isPermissionAllowed('fullscreen', { requestingUrl: 'https://example.com/', isMainFrame: true }, 'https://example.com'),
+    true
+  );
+});
+
+test('isPermissionAllowed denies clipboard/fullscreen from a sub frame', () => {
+  assert.equal(
+    isPermissionAllowed('clipboard-sanitized-write', { requestingUrl: 'https://example.com/', isMainFrame: false }, 'https://example.com'),
+    false
+  );
+  assert.equal(
+    isPermissionAllowed('fullscreen', { requestingUrl: 'https://example.com/', isMainFrame: false }, 'https://example.com'),
+    false
+  );
+  assert.equal(
+    isPermissionAllowed('media', { requestingUrl: 'https://example.com/', isMainFrame: false, mediaTypes: ['audio'] }, 'https://example.com'),
+    false
+  );
+});
+
+test('isPermissionAllowed denies media when video is mixed with audio', () => {
+  assert.equal(
+    isPermissionAllowed('media', { requestingUrl: 'https://example.com/', isMainFrame: true, mediaTypes: ['audio', 'video'] }, 'https://example.com'),
+    false
+  );
+});

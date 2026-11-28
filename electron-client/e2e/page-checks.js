@@ -27,6 +27,10 @@ module.exports = String.raw`
       ),
     ]);
 
+  // Every IPC call gets its own budget: a wedged keyring prompt or a hung
+  // main-process handler must fail one check, not stall the whole suite.
+  const call = (label, promise) => withTimeout(promise, 15000, label);
+
   if (!API) {
     bad('preload:electronAPI', 'window.electronAPI is missing on the server page');
     return { failures: 1, total: 1, failures_detail: results, results: results };
@@ -42,15 +46,15 @@ module.exports = String.raw`
 
   // --- 1. IPC round-trip -------------------------------------------------
   try {
-    const before = await API.getHardwareAcceleration();
-    const set = await API.setHardwareAcceleration(!before);
-    const after = await API.getHardwareAcceleration();
+    const before = await call('getHardwareAcceleration', API.getHardwareAcceleration());
+    const set = await call('setHardwareAcceleration', API.setHardwareAcceleration(!before));
+    const after = await call('getHardwareAcceleration', API.getHardwareAcceleration());
     if (set && set.success === true && after === !before) {
       ok('ipc:channel-alive', 'hardware acceleration get/set/get round-trip');
     } else {
       bad('ipc:channel-alive', 'before=' + before + ' set=' + JSON.stringify(set) + ' after=' + after);
     }
-    await API.setHardwareAcceleration(before);
+    await call('setHardwareAcceleration', API.setHardwareAcceleration(before));
   } catch (e) {
     bad('ipc:channel-alive', e && e.message ? e.message : String(e));
   }
@@ -58,7 +62,7 @@ module.exports = String.raw`
   // --- 2. Remember-me: legacy (pre-Phase-2, sync-encrypted) key ----------
   const origin = window.location.origin;
   try {
-    const legacy = await API.getIdentityUnlockKey(origin, cfg.legacyUser);
+    const legacy = await call('getIdentityUnlockKey(legacy)', API.getIdentityUnlockKey(origin, cfg.legacyUser));
     if (legacy && legacy.unlockKey === cfg.legacyKey) {
       ok('identity:legacy-key-opens', 'pre-Phase-2 sync-encrypted key decrypted');
     } else {
@@ -72,28 +76,28 @@ module.exports = String.raw`
   const userId = 'e2e-user-' + Date.now();
   const unlockKey = 'e2e-unlock-key-' + Date.now();
   try {
-    const stored = await API.storeIdentityUnlockKey(origin, userId, unlockKey);
+    const stored = await call('storeIdentityUnlockKey', API.storeIdentityUnlockKey(origin, userId, unlockKey));
     if (stored && stored.success === true) {
       ok('identity:store', 'store succeeded');
     } else {
       bad('identity:store', 'store returned ' + JSON.stringify(stored));
     }
 
-    const got = await API.getIdentityUnlockKey(origin, userId);
+    const got = await call('getIdentityUnlockKey', API.getIdentityUnlockKey(origin, userId));
     if (got && got.unlockKey === unlockKey) {
       ok('identity:get', 'returned the stored key');
     } else {
       bad('identity:get', 'got ' + JSON.stringify(got));
     }
 
-    const cleared = await API.clearIdentityUnlockKey(origin, userId);
+    const cleared = await call('clearIdentityUnlockKey', API.clearIdentityUnlockKey(origin, userId));
     if (cleared === true) {
       ok('identity:clear', 'clear returned true');
     } else {
       bad('identity:clear', 'clear returned ' + JSON.stringify(cleared));
     }
 
-    const afterClear = await API.getIdentityUnlockKey(origin, userId);
+    const afterClear = await call('getIdentityUnlockKey(after-clear)', API.getIdentityUnlockKey(origin, userId));
     if (!afterClear) {
       ok('identity:get-after-clear', 'returns null after clear');
     } else {
@@ -105,7 +109,7 @@ module.exports = String.raw`
 
   // --- 4. Claimed-origin spoofing is ignored (main re-derives origin) ----
   try {
-    const spoof = await API.storeIdentityUnlockKey('https://evil.example', 'spoof-user', 'spoof-key');
+    const spoof = await call('storeIdentityUnlockKey(spoof)', API.storeIdentityUnlockKey('https://evil.example', 'spoof-user', 'spoof-key'));
     if (spoof && spoof.success === true) {
       ok('identity:claimed-origin-ignored', 'stored under the real origin (verified on disk by harness)');
     } else {

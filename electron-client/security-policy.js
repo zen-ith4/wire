@@ -216,8 +216,8 @@ function senderIsTrusted(event, allowedOrigins, connectScreenPathname) {
  * Phase 2:
  * - media: allow only `audio` (microphone), only when the requesting
  *   frame's origin equals the current server origin (top frame only).
- * - clipboard-write: allow narrowly for current server origin main frame.
- * - fullscreen: allow narrowly for current server origin main frame.
+ * - clipboard write (Electron reports it as `clipboard-read`) and fullscreen:
+ *   allow narrowly for current server origin main frame.
  * - camera, screen sharing (display-capture), notifications in the
  *   renderer, and everything else: denied.
  */
@@ -244,19 +244,75 @@ function isPermissionAllowed(permission, details, currentServerOrigin) {
     return mediaTypes.length > 0 && mediaTypes.every((t) => t === 'audio');
   }
 
-  // clipboard-write and fullscreen: allowed narrowly for current server
-  // origin main frame. Chromium 130+ (Electron 45) reports the clipboard
-  // permission as 'clipboard-sanitized-write'; older versions use
-  // 'clipboard-write'. Accept both names.
+  // Clipboard write and fullscreen: allowed narrowly for the current server
+  // origin main frame.
+  //
+  // Electron 45 (Chromium 130) reports `navigator.clipboard.writeText()` — the
+  // only clipboard call the web UI makes — as the `clipboard-read` permission
+  // (Chromium's CLIPBOARD_READ_WRITE type), verified by E2E. Denying it breaks
+  // the app's copy buttons, so it is granted together with the older
+  // `clipboard-write` and Chromium's `clipboard-sanitized-write` names. The
+  // grant is origin- and main-frame-scoped like the rest of the list.
+  // `fullscreen` has an `automatic-fullscreen` variant (fullscreen without a
+  // user gesture, used by media elements); it is the same capability.
   if (
     permission === 'clipboard-write' ||
     permission === 'clipboard-sanitized-write' ||
-    permission === 'fullscreen'
+    permission === 'clipboard-read' ||
+    permission === 'fullscreen' ||
+    permission === 'automatic-fullscreen'
   ) {
     return true;
   }
 
   return false;
+}
+
+/**
+ * Linux safeStorage backends that do not protect data with an OS keyring.
+ *
+ * `basic_text` means Chromium's public hardcoded password; `unknown` means
+ * Electron could not determine the backend. For remember-me both are
+ * equivalent to "no OS-level secure storage" and must be refused.
+ */
+function isUnprotectedStorageBackend(platform, backend) {
+  return (
+    platform === 'linux' &&
+    (backend === 'basic_text' || backend === 'unknown')
+  );
+}
+
+/**
+ * Chromium's Linux "v10" ciphertext prefix marks AES-128-CBC data encrypted
+ * with the public hardcoded password ("peanuts"), not a keyring-held key.
+ * Such data is readable by anyone and must never be persisted for remember-me.
+ */
+function hasV10Prefix(ciphertext) {
+  if (!ciphertext || typeof ciphertext.length !== 'number') return false;
+  const bytes = Buffer.isBuffer(ciphertext) ? ciphertext : Buffer.from(ciphertext);
+  return bytes.length >= 3 && bytes.subarray(0, 3).toString('latin1') === 'v10';
+}
+
+/**
+ * Remove unprotected (v10) records from a parsed unlock-key store.
+ * Mutates the object and returns the number of records removed.
+ */
+function pruneUnprotectedRecords(store) {
+  if (!store || typeof store !== 'object') return 0;
+  let removed = 0;
+  for (const key of Object.keys(store)) {
+    let bytes;
+    try {
+      bytes = Buffer.from(String(store[key]), 'base64');
+    } catch {
+      continue;
+    }
+    if (hasV10Prefix(bytes)) {
+      delete store[key];
+      removed++;
+    }
+  }
+  return removed;
 }
 
 module.exports = {
@@ -270,4 +326,7 @@ module.exports = {
   isConnectScreenUrl,
   senderIsTrusted,
   isPermissionAllowed,
+  isUnprotectedStorageBackend,
+  hasV10Prefix,
+  pruneUnprotectedRecords,
 };

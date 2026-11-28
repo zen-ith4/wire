@@ -15,6 +15,9 @@ import {
   isConnectScreenUrl,
   senderIsTrusted,
   isPermissionAllowed,
+  isUnprotectedStorageBackend,
+  hasV10Prefix,
+  pruneUnprotectedRecords,
 } from '../security-policy.js';
 
 const { pathToFileURL } = await import('node:url');
@@ -266,10 +269,45 @@ test('isPermissionAllowed allows clipboard-sanitized-write (Chromium 130+/Electr
   );
 });
 
+test('isPermissionAllowed allows clipboard-read (Electron 45 name for navigator.clipboard.writeText)', () => {
+  assert.equal(
+    isPermissionAllowed('clipboard-read', { requestingUrl: 'https://example.com/', isMainFrame: true }, 'https://example.com'),
+    true
+  );
+  // Still scoped: another origin or a sub frame gets nothing.
+  assert.equal(
+    isPermissionAllowed('clipboard-read', { requestingUrl: 'https://evil.com/', isMainFrame: true }, 'https://example.com'),
+    false
+  );
+  assert.equal(
+    isPermissionAllowed('clipboard-read', { requestingUrl: 'https://example.com/', isMainFrame: false }, 'https://example.com'),
+    false
+  );
+});
+
+test('isPermissionAllowed denies display-capture and renderer notifications', () => {
+  assert.equal(
+    isPermissionAllowed('display-capture', { requestingUrl: 'https://example.com/', isMainFrame: true }, 'https://example.com'),
+    false
+  );
+  assert.equal(
+    isPermissionAllowed('notifications', { requestingUrl: 'https://example.com/', isMainFrame: true }, 'https://example.com'),
+    false
+  );
+});
+
 test('isPermissionAllowed allows fullscreen for server origin main frame', () => {
   assert.equal(
     isPermissionAllowed('fullscreen', { requestingUrl: 'https://example.com/', isMainFrame: true }, 'https://example.com'),
     true
+  );
+  assert.equal(
+    isPermissionAllowed('automatic-fullscreen', { requestingUrl: 'https://example.com/', isMainFrame: true }, 'https://example.com'),
+    true
+  );
+  assert.equal(
+    isPermissionAllowed('automatic-fullscreen', { requestingUrl: 'https://evil.com/', isMainFrame: true }, 'https://example.com'),
+    false
   );
 });
 
@@ -293,4 +331,48 @@ test('isPermissionAllowed denies media when video is mixed with audio', () => {
     isPermissionAllowed('media', { requestingUrl: 'https://example.com/', isMainFrame: true, mediaTypes: ['audio', 'video'] }, 'https://example.com'),
     false
   );
+});
+
+// ---------------------------------------------------------------------------
+// Remember-me: Linux safeStorage backend guard
+// ---------------------------------------------------------------------------
+
+test('isUnprotectedStorageBackend: basic_text and unknown are unprotected on Linux only', () => {
+  assert.equal(isUnprotectedStorageBackend('linux', 'basic_text'), true);
+  assert.equal(isUnprotectedStorageBackend('linux', 'unknown'), true);
+  assert.equal(isUnprotectedStorageBackend('linux', 'gnome_libsecret'), false);
+  assert.equal(isUnprotectedStorageBackend('linux', 'kwallet6'), false);
+  // The backend names only exist on Linux; other platforms must never be
+  // refused because of a string they cannot produce.
+  assert.equal(isUnprotectedStorageBackend('win32', 'basic_text'), false);
+  assert.equal(isUnprotectedStorageBackend('darwin', 'unknown'), false);
+  assert.equal(isUnprotectedStorageBackend('linux', null), false);
+});
+
+test('hasV10Prefix detects Chromium unprotected ciphertext only', () => {
+  assert.equal(hasV10Prefix(Buffer.from('v10' + 'anything')), true);
+  assert.equal(hasV10Prefix(Buffer.from('v11' + 'anything')), false);
+  assert.equal(hasV10Prefix(Buffer.from('v1')), false);
+  assert.equal(hasV10Prefix(Buffer.alloc(0)), false);
+  assert.equal(hasV10Prefix(null), false);
+  assert.equal(hasV10Prefix('v10abc'), true); // string is accepted
+});
+
+test('pruneUnprotectedRecords removes v10 entries and keeps protected ones', () => {
+  const store = {
+    'https://a::u1': Buffer.from('v10legacy').toString('base64'),
+    'https://a::u2': Buffer.from('v11protected').toString('base64'),
+    'https://a::u3': Buffer.from('v10another').toString('base64'),
+  };
+  const removed = pruneUnprotectedRecords(store);
+  assert.equal(removed, 2);
+  assert.deepEqual(Object.keys(store), ['https://a::u2']);
+});
+
+test('pruneUnprotectedRecords tolerates junk and non-objects', () => {
+  assert.equal(pruneUnprotectedRecords(null), 0);
+  assert.equal(pruneUnprotectedRecords('nope'), 0);
+  const store = { 'x::y': 'not-base64-@@@' };
+  assert.equal(pruneUnprotectedRecords(store), 0);
+  assert.deepEqual(Object.keys(store), ['x::y']);
 });

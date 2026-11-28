@@ -25,6 +25,7 @@ const MAIN_JS = path.join(__dirname, '..', 'main.js');
 const TEST_SERVER_JS = path.join(__dirname, 'test-server.js');
 const SEED_JS = path.join(__dirname, 'seed-legacy-key.js');
 const PAGE_CHECKS = require('./page-checks.js');
+const NO_KEYRING_CHECKS = require('./no-keyring-checks.js');
 
 const LEGACY_USER = 'e2e-legacy-user';
 const LEGACY_KEY = 'e2e-legacy-key-123';
@@ -50,22 +51,28 @@ function findFreePort() {
 
 function makeReporter() {
   const rows = [];
-  const check = (name, condition, detail) => {
-    const status = condition ? 'PASS' : 'FAIL';
+  const push = (name, status, detail) => {
     rows.push({ name, status, detail: detail || '' });
-    const line = '  ' + status + '  ' + name + (detail ? '  — ' + detail : '');
-    console.log(line);
-    return condition;
+    console.log('  ' + status + '  ' + name + (detail ? '  — ' + detail : ''));
+    return status;
   };
+  const check = (name, condition, detail) => push(name, condition ? 'PASS' : 'FAIL', detail);
+  const skip = (name, detail) => push(name, 'SKIP', detail);
   const section = (title) => console.log('\n=== ' + title + ' ===');
   const summary = () => {
     const failures = rows.filter((r) => r.status === 'FAIL');
+    const skipped = rows.filter((r) => r.status === 'SKIP');
+    const passed = rows.filter((r) => r.status === 'PASS');
     console.log('\n========================================');
-    console.log('E2E: ' + (rows.length - failures.length) + ' passed / ' + rows.length + ' total, ' + failures.length + ' failed');
+    console.log(
+      'E2E: ' + passed.length + ' passed / ' + rows.length + ' total, ' +
+      failures.length + ' failed, ' + skipped.length + ' skipped'
+    );
+    for (const s of skipped) console.log('  SKIP: ' + s.name + ' — ' + s.detail);
     for (const f of failures) console.log('  FAIL: ' + f.name + ' — ' + f.detail);
     return failures.length;
   };
-  return { check, section, summary, rows };
+  return { check, skip, section, summary, rows };
 }
 
 function captureOutput(child) {
@@ -126,6 +133,27 @@ function killTree(child) {
       try { child.kill('SIGKILL'); } catch (e2) { /* ignore */ }
     }
   }, 1500).unref();
+}
+
+// Every spawned process gets a hard timeout. A missing keyring, a hung keyring
+// prompt or a wedged Electron must never leave the suite waiting forever.
+function armTimeout(child, ms, label) {
+  const timer = setTimeout(() => {
+    console.error('  CHILD TIMEOUT: ' + label + ' after ' + ms + 'ms');
+    killTree(child);
+  }, ms);
+  timer.unref();
+  child.on('exit', () => clearTimeout(timer));
+  return timer;
+}
+
+function waitForExit(child, timeoutMs) {
+  return Promise.race([
+    new Promise((resolve) => {
+      child.on('exit', (code, signal) => resolve({ code, signal, timedOut: false }));
+    }),
+    sleep(timeoutMs).then(() => ({ code: null, signal: null, timedOut: true })),
+  ]);
 }
 
 // ---------------------------------------------------------------------------
@@ -216,6 +244,7 @@ function startTestServer(env) {
     detached: true,
   });
   const out = captureOutput(child);
+  armTimeout(child, 300000, 'test-server');
   return { child, out };
 }
 
@@ -232,43 +261,69 @@ function electronCommand(electronArgs) {
   return { cmd: 'xvfb-run', args: ['-a', '--', ELECTRON, ...electronArgs] };
 }
 
-function launchElectron({ userData, cdpPort, extraEnv }) {
-  const { cmd, args } = electronCommand([
+function electronEnv(extraEnv) {
+  const env = { ...process.env, WIRE_E2E: '1', ...(extraEnv || {}) };
+  // A Wayland session leaking in makes Electron exit before it can be driven
+  // over CDP. Force the X11 ozone backend under xvfb.
+  delete env.WAYLAND_DISPLAY;
+  return env;
+}
+
+function launchElectron({ userData, cdpPort, extraEnv, passwordStore }) {
+  const args = [
     '--disable-gpu',
     '--disable-gpu-compositing',
     '--disable-software-rasterizer',
     '--disable-features=VizDisplayCompositor,GpuProcess',
+    '--ozone-platform=x11',
+    // Deterministic microphone: Chromium's fake capture device. Permissions
+    // are still decided by the app's handlers; this only supplies a device.
+    '--use-fake-device-for-media-stream',
     '--no-sandbox',
     '--remote-debugging-port=' + cdpPort,
     '--user-data-dir=' + userData,
-    MAIN_JS,
-  ]);
-  const child = spawn(cmd, args, {
+  ];
+  if (passwordStore) args.push('--password-store=' + passwordStore);
+  args.push(MAIN_JS);
+  const { cmd, args: fullArgs } = electronCommand(args);
+  const child = spawn(cmd, fullArgs, {
     cwd: path.join(__dirname, '..'),
-    env: { ...process.env, WIRE_E2E: '1', ...(extraEnv || {}) },
+    env: electronEnv(extraEnv),
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: true,
   });
   const out = captureOutput(child);
+  armTimeout(child, 180000, 'electron');
   return { child, out };
 }
 
-async function seedLegacyKey({ userData, recordId }) {
-  const { cmd, args } = electronCommand([
+async function seedLegacyKey({ userData, recordId, passwordStore }) {
+  const args = [
     '--no-sandbox',
+    '--ozone-platform=x11',
     '--user-data-dir=' + userData,
-    SEED_JS,
-  ]);
-  const child = spawn(cmd, args, {
+  ];
+  if (passwordStore) args.push('--password-store=' + passwordStore);
+  args.push(SEED_JS);
+  const { cmd, args: fullArgs } = electronCommand(args);
+  const child = spawn(cmd, fullArgs, {
     cwd: path.join(__dirname, '..'),
-    env: { ...process.env, E2E_LEGACY_RECORD_ID: recordId, E2E_LEGACY_KEY: LEGACY_KEY },
+    env: electronEnv({
+      E2E_LEGACY_RECORD_ID: recordId,
+      E2E_LEGACY_KEY: LEGACY_KEY,
+    }),
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: true,
   });
   const out = captureOutput(child);
-  await new Promise((resolve) => child.on('exit', resolve));
+  const exit = await waitForExit(child, 40000);
+  if (exit.timedOut) {
+    console.error('  CHILD TIMEOUT: legacy-key seed after 40000ms');
+    killTree(child);
+    await sleep(500);
+  }
   out.flush();
-  return out;
+  return { out, exit };
 }
 
 // ---------------------------------------------------------------------------
@@ -292,7 +347,7 @@ async function sessionA(report) {
     await waitForServer(main.out, appPort);
     await waitForServer(cross.out, crossPort);
 
-    app = launchElectron({ userData, cdpPort });
+    app = launchElectron({ userData, cdpPort, passwordStore: process.env.E2E_PASSWORD_STORE || null });
     const connectTarget = await waitForTarget(
       cdpPort,
       (t) => t.url.startsWith('file://') && t.url.includes('connect.html'),
@@ -369,8 +424,14 @@ async function sessionB(report) {
   const serverUrl = 'http://127.0.0.1:' + appPort;
   fs.writeFileSync(path.join(userData, 'server-config.json'), JSON.stringify({ serverUrl }, null, 2));
 
-  const seed = await seedLegacyKey({ userData, recordId: serverUrl + '::' + LEGACY_USER });
-  report.check('seed:legacy-key', seed.has('[seed] wrote legacy key'), 'sync safeStorage.encryptString key written');
+  const passwordStore = process.env.E2E_PASSWORD_STORE || null;
+  const seed = await seedLegacyKey({ userData, recordId: serverUrl + '::' + LEGACY_USER, passwordStore });
+  report.check(
+    'seed:legacy-key',
+    seed.exit.code === 0 && seed.out.has('[seed] wrote legacy key'),
+    'sync-only seed exit=' + seed.exit.code + (seed.exit.timedOut ? ' (timed out)' : '') +
+      '; ' + (seed.out.lines.find((l) => l.includes('[seed]')) || 'no seed output')
+  );
 
   const cross = startTestServer({ E2E_ROLE: 'cross-target', E2E_PORT: String(crossPort), E2E_CROSS_PORT: String(crossPort) });
   const main = startTestServer({ E2E_ROLE: 'main', E2E_PORT: String(appPort), E2E_CROSS_PORT: String(crossPort), E2E_VERSION_MODE: 'same' });
@@ -380,15 +441,36 @@ async function sessionB(report) {
     await waitForServer(main.out, appPort);
     await waitForServer(cross.out, crossPort);
 
-    app = launchElectron({ userData, cdpPort });
+    app = launchElectron({ userData, cdpPort, passwordStore });
     const pageTarget = await waitForTarget(cdpPort, (t) => t.url === serverUrl + '/', 25000, 'server page (auto-connect)');
     report.check('auto-connect:after-restart', true, pageTarget.url);
 
     await evaluateOnTarget(pageTarget, 'window.__E2E__ = ' + JSON.stringify({ legacyUser: LEGACY_USER, legacyKey: LEGACY_KEY }) + '; "ok"');
-    const checks = await evaluateOnTarget(pageTarget, PAGE_CHECKS, 90000);
+    const checks = await evaluateOnTarget(pageTarget, PAGE_CHECKS, 150000);
 
     for (const r of checks.results) {
-      report.check(r.name, r.status !== 'FAIL', r.status === 'SKIP' ? 'SKIP: ' + r.detail : r.detail);
+      if (r.status === 'SKIP') report.skip(r.name, r.detail);
+      else report.check(r.name, r.status !== 'FAIL', r.detail);
+    }
+
+    // The legacy seed must use the same Electron app name as the app under
+    // test: Linux keyring entries are scoped per application name.
+    await waitFor(() => app.out.has('[e2e] app-name='), 10000, 'app-name log');
+    const seedName = (seed.out.lines.find((l) => l.startsWith('[seed] app-name=')) || '').replace('[seed] app-name=', '');
+    const appName = (app.out.lines.find((l) => l.startsWith('[e2e] app-name=')) || '').replace('[e2e] app-name=', '');
+    report.check(
+      'storage:app-name-matches-seed',
+      Boolean(seedName) && seedName === appName,
+      'seed="' + seedName + '" app="' + appName + '"'
+    );
+
+    // The detected backend must match the requested password store.
+    const backend = (app.out.lines.find((l) => l.startsWith('[e2e] safe-storage-backend=')) || '').replace('[e2e] safe-storage-backend=', '');
+    const expectedBackend = passwordStore === 'gnome-libsecret' ? 'gnome_libsecret' : null;
+    if (expectedBackend) {
+      report.check('storage:backend', backend === expectedBackend, 'detected backend=' + backend);
+    } else {
+      report.skip('storage:backend', 'no E2E_PASSWORD_STORE requested; detected=' + (backend || 'n/a'));
     }
 
     // The claimed origin must be ignored: the record is keyed by the real
@@ -410,6 +492,17 @@ async function sessionB(report) {
       'identity:legacy-record-kept',
       Object.prototype.hasOwnProperty.call(store, serverUrl + '::' + LEGACY_USER),
       'legacy record still present'
+    );
+
+    // Nothing we wrote may use the unprotected Linux v10 format.
+    const v10Records = Object.entries(store).filter(([, value]) => {
+      try { return Buffer.from(String(value), 'base64').subarray(0, 3).toString('latin1') === 'v10'; }
+      catch (e) { return false; }
+    });
+    report.check(
+      'storage:no-v10-records',
+      v10Records.length === 0,
+      'v10 records: ' + v10Records.length
     );
 
     // Same-origin redirect in the window must be followed.
@@ -441,24 +534,51 @@ async function sessionB(report) {
     );
 
     // Main-process evidence for permission decisions and notification creation.
+    // Depending on ordering, Chromium may satisfy getUserMedia from the check
+    // handler without invoking the request handler, so accept either grant.
+    const audioGranted =
+      /permission-request media allowed=true[^\n]*"audio"/.test(app.out.text()) ||
+      /permission-check media allowed=true[^\n]*mediaType=audio/.test(app.out.text());
     report.check(
       'permission:audio-granted-in-main',
-      /permission-request media allowed=true[^\n]*"audio"/.test(app.out.text()),
-      'main log shows a granted audio request'
+      audioGranted,
+      'main log shows a granted audio request or check'
     );
     report.check(
       'permission:no-video-grant-in-main',
-      !/permission-request media allowed=true[^\n]*"video"/.test(app.out.text()),
+      !/permission-request media allowed=true[^\n]*"video"/.test(app.out.text()) &&
+        !/permission-check media allowed=true[^\n]*mediaType=video/.test(app.out.text()),
       'no video request was granted in the main process'
     );
-    report.check('notification:created-in-main', app.out.has('[e2e] dm-notification-created'), 'main log: dm-notification-created');
+
+    // The trusted-sender decision is independent of whether this machine can
+    // display notifications. If Electron cannot create one, report SKIP with
+    // the reason; never turn that into PASS.
+    const notificationAccepted = app.out.has('[e2e] dm-notification-accepted');
+    report.check('notification:ipc-accepted', notificationAccepted, 'main log: dm-notification-accepted');
+    if (!notificationAccepted) {
+      report.check('notification:created-in-main', false, 'IPC handler did not accept the trusted sender');
+    } else if (app.out.has('[e2e] dm-notification-created')) {
+      report.check('notification:created-in-main', true, 'main log: dm-notification-created');
+      // Creation is not delivery: without a notification daemon the OS call
+      // fails. Report that honestly as SKIP, never as PASS.
+      const failure = app.out.lines.find((l) => l.includes('dm-notification-failed'));
+      if (failure) {
+        report.skip('notification:shown', failure.replace('[e2e] ', ''));
+      } else {
+        report.check('notification:shown', true, 'main log: no dm-notification-failed');
+      }
+    } else {
+      const reason = (app.out.lines.find((l) => l.includes('dm-notification-unsupported') || l.includes('dm-notification-failed')) || 'no notification support in this environment');
+      report.skip('notification:created-in-main', reason.replace('[e2e] ', ''));
+    }
 
     // window.open must reach the deny handler where Chromium allows the
     // scheme through (smb:), and no scheme may be handed to the OS browser.
     // Chromium itself blocks file: popups from an http page before
     // setWindowOpenHandler, so file: is covered by the page-level null
     // result plus the no-open-external assertion below.
-    report.check('window-open:handler-saw-smb', app.out.has('[e2e] window-open smb://server/share'), 'main log: window-open smb:');
+    report.check('window-open:handler-saw-smb', app.out.has('[e2e] window-open scheme=smb origin=smb://server'), 'main log: window-open scheme=smb');
     report.check('window-open:no-external-call', !app.out.has('[e2e] open-external '), 'main log: no open-external line');
   } finally {
     killTree(app && app.child);
@@ -487,7 +607,7 @@ async function sessionC(report) {
     await waitForServer(main.out, appPort);
     await waitForServer(cross.out, crossPort);
 
-    app = launchElectron({ userData, cdpPort });
+    app = launchElectron({ userData, cdpPort, passwordStore: process.env.E2E_PASSWORD_STORE || null });
     const pageTarget = await waitForTarget(cdpPort, (t) => t.url === serverUrl + '/', 25000, 'server page');
     report.check('cross-version:app-still-connects', true, pageTarget.url);
 
@@ -504,15 +624,88 @@ async function sessionC(report) {
 }
 
 // ---------------------------------------------------------------------------
+// D. no keyring
+// ---------------------------------------------------------------------------
+
+async function sessionD(report) {
+  report.section('D. no keyring (--password-store=basic): remember-me refuses to store or return');
+
+  const appPort = await findFreePort();
+  const cdpPort = await findFreePort();
+  const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'wire-e2e-d-'));
+  const serverUrl = 'http://127.0.0.1:' + appPort;
+  fs.writeFileSync(path.join(userData, 'server-config.json'), JSON.stringify({ serverUrl }, null, 2));
+
+  // Pretend a previous build already wrote an unprotected v10 record. The app
+  // must not serve it and must delete it.
+  const storePath = path.join(userData, 'identity-unlock-keys.json');
+  const v10Record = Buffer.from('v10' + 'unprotected-ciphertext-for-e2e').toString('base64');
+  fs.writeFileSync(
+    storePath,
+    JSON.stringify({ [serverUrl + '::v10-user']: v10Record }, null, 2)
+  );
+
+  const main = startTestServer({
+    E2E_ROLE: 'main',
+    E2E_PORT: String(appPort),
+    E2E_CROSS_PORT: String(appPort),
+    E2E_VERSION_MODE: 'same',
+  });
+  let app = null;
+
+  try {
+    await waitForServer(main.out, appPort);
+
+    app = launchElectron({ userData, cdpPort, passwordStore: 'basic' });
+    const pageTarget = await waitForTarget(cdpPort, (t) => t.url === serverUrl + '/', 25000, 'server page (no keyring)');
+    report.check('nokeyring:auto-connect', true, pageTarget.url);
+
+    await waitFor(() => app.out.has('[e2e] safe-storage-backend='), 10000, 'backend log');
+    const backend = (app.out.lines.find((l) => l.startsWith('[e2e] safe-storage-backend=')) || '').replace('[e2e] safe-storage-backend=', '');
+    report.check('nokeyring:backend', backend === 'basic_text', 'detected backend=' + backend);
+
+    const checks = await evaluateOnTarget(pageTarget, NO_KEYRING_CHECKS, 30000);
+    for (const r of checks.results) {
+      report.check(r.name, r.status !== 'FAIL', r.detail);
+    }
+
+    let store = {};
+    try { store = JSON.parse(fs.readFileSync(storePath, 'utf-8')); } catch (e) { /* ignore */ }
+    report.check(
+      'nokeyring:nothing-written',
+      !Object.prototype.hasOwnProperty.call(store, serverUrl + '::nokeyring-user'),
+      'record keys: ' + Object.keys(store).join(', ')
+    );
+    report.check(
+      'nokeyring:v10-record-deleted',
+      !Object.prototype.hasOwnProperty.call(store, serverUrl + '::v10-user'),
+      'record keys: ' + Object.keys(store).join(', ')
+    );
+  } finally {
+    killTree(app && app.child);
+    killTree(main.child);
+    await sleep(800);
+    try { fs.rmSync(userData, { recursive: true, force: true }); } catch (e) { /* ignore */ }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
 
 async function main() {
   const report = makeReporter();
-  const all = { A: sessionA, B: sessionB, C: sessionC };
-  const wanted = (process.env.E2E_SESSIONS || 'A,B,C').split(',').map((s) => s.trim().toUpperCase());
+  const all = { A: sessionA, B: sessionB, C: sessionC, D: sessionD };
+  const wanted = (process.env.E2E_SESSIONS || 'A,B,C,D').split(',').map((s) => s.trim().toUpperCase());
   const sessions = wanted.map((k) => all[k]).filter(Boolean);
   let crashed = 0;
+
+  // Hard ceiling for the whole run. A wedged child must not hang CI forever.
+  const watchdog = setTimeout(() => {
+    console.error('[harness] global timeout after 20 minutes');
+    process.exit(1);
+  }, 20 * 60 * 1000);
+  watchdog.unref();
 
   for (const session of sessions) {
     try {
@@ -524,6 +717,7 @@ async function main() {
     }
   }
 
+  clearTimeout(watchdog);
   const failures = report.summary();
   process.exit(failures === 0 && crashed === 0 ? 0 : 1);
 }

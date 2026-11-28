@@ -27,7 +27,43 @@ const {
   isConnectScreenUrl,
   senderIsTrusted,
   isPermissionAllowed,
+  isUnprotectedStorageBackend,
+  hasV10Prefix,
+  pruneUnprotectedRecords,
 } = require('./security-policy');
+
+// ---------------------------------------------------------------------------
+// E2E diagnostics
+//
+// Off in production. Never available in a packaged build, and never logs a
+// full URL: only the scheme and the normalized origin, which is all the
+// harness needs to prove which URL reached a handler.
+// ---------------------------------------------------------------------------
+
+function e2eLoggingEnabled() {
+  return process.env.WIRE_E2E === '1' && !app.isPackaged;
+}
+
+function describeUrl(rawUrl) {
+  try {
+    const u = new URL(rawUrl);
+    return 'scheme=' + u.protocol.replace(':', '') + ' origin=' + originKey(rawUrl);
+  } catch {
+    return 'scheme=invalid origin=invalid';
+  }
+}
+
+function describeOrigin(rawUrl) {
+  try {
+    return originKey(rawUrl);
+  } catch {
+    return 'invalid';
+  }
+}
+
+function e2eLog(line) {
+  if (e2eLoggingEnabled()) console.log('[e2e] ' + line);
+}
 
 // ---------------------------------------------------------------------------
 // Persisted config (just the server address — nothing else)
@@ -135,9 +171,7 @@ function normalizeServerAddress(rawInput) {
  */
 function openExternalSafely(rawUrl) {
   if (!isAllowedExternalScheme(rawUrl)) return;
-  if (process.env.WIRE_E2E === '1') {
-    console.log('[e2e] open-external ' + rawUrl);
-  }
+  e2eLog('open-external ' + describeUrl(rawUrl));
   try {
     shell.openExternal(new URL(rawUrl).toString());
   } catch {
@@ -356,9 +390,7 @@ function createMainWindow() {
   // OAuth-style popups, etc.) is always denied in-app. Only http:/https:
   // URLs are handed to the user's OS browser via openExternalSafely.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (process.env.WIRE_E2E === '1') {
-      console.log('[e2e] window-open ' + url);
-    }
+    e2eLog('window-open ' + describeUrl(url));
     openExternalSafely(url);
     return { action: 'deny' };
   });
@@ -529,6 +561,40 @@ function saveUnlockKeyStore(store) {
   fs.writeFileSync(UNLOCK_KEYS_PATH, JSON.stringify(store), 'utf-8');
 }
 
+const SECURE_STORAGE_UNAVAILABLE =
+  'OS-level secure storage is not available on this system.';
+
+// Linux only: safeStorage.getSelectedStorageBackend() reports which secret
+// store Electron picked. `basic_text` means Chromium's public hardcoded
+// password, and `unknown` means it could not tell — both are "no keyring".
+function selectedStorageBackend() {
+  if (process.platform !== 'linux') return null;
+  try {
+    return safeStorage.getSelectedStorageBackend();
+  } catch {
+    return 'unknown';
+  }
+}
+
+function hasUnprotectedStorage() {
+  return isUnprotectedStorageBackend(process.platform, selectedStorageBackend());
+}
+
+// Remove records encrypted with the unprotected "v10" format. Called whenever
+// the app detects that the current backend cannot protect them (and on read,
+// so a stale record cannot be served even after the keyring comes back).
+function dropUnprotectedRecords() {
+  try {
+    const store = loadUnlockKeyStore();
+    if (pruneUnprotectedRecords(store) > 0) {
+      saveUnlockKeyStore(store);
+      console.warn('Removed unprotected identity unlock key records');
+    }
+  } catch (e) {
+    // best effort; never fail an IPC call because cleanup failed
+  }
+}
+
 ipcMain.handle('identity:store-unlock-key', async (event, claimedOrigin, userId, unlockKey) => {
   if (!senderIsTrusted(event, [currentServerOrigin].filter(Boolean), CONNECT_SCREEN_PATHNAME) ||
       !currentServerOrigin) {
@@ -547,19 +613,35 @@ ipcMain.handle('identity:store-unlock-key', async (event, claimedOrigin, userId,
     return { success: false, error: 'Invalid user id' };
   }
 
+  // Without an OS keyring, safeStorage still reports the *async* API as
+  // available and encrypts with Chromium's public hardcoded password ("v10"),
+  // which anyone can decrypt. Refuse exactly like the pre-Phase-2 sync check
+  // did, and delete any such records already on disk.
+  if (hasUnprotectedStorage()) {
+    dropUnprotectedRecords();
+    return { success: false, error: SECURE_STORAGE_UNAVAILABLE };
+  }
+
   if (!(await safeStorage.isAsyncEncryptionAvailable())) {
-    return {
-      success: false,
-      error: 'OS-level secure storage is not available on this system.',
-    };
+    return { success: false, error: SECURE_STORAGE_UNAVAILABLE };
   }
 
   try {
     const store = loadUnlockKeyStore();
-    // Async API: encryptStringAsync takes a string (not Buffer). New keys are
-    // written in the async format; legacy sync-format keys are still readable
-    // through the fallback in identity:get-unlock-key.
+    // Any record that is already unprotected must not survive a successful
+    // keyring store either: prune before writing the new one.
+    const pruned = pruneUnprotectedRecords(store);
     const encrypted = await safeStorage.encryptStringAsync(unlockKey);
+
+    // Second line of defence: never persist the unprotected v10 format on
+    // Linux, even if the backend check above was fooled.
+    if (process.platform === 'linux' && hasV10Prefix(encrypted)) {
+      if (pruned > 0) {
+        try { saveUnlockKeyStore(store); } catch (e) { /* ignore */ }
+      }
+      return { success: false, error: SECURE_STORAGE_UNAVAILABLE };
+    }
+
     store[unlockKeyRecordId(storeOrigin, userId)] = encrypted.toString('base64');
     saveUnlockKeyStore(store);
     return { success: true };
@@ -577,11 +659,24 @@ ipcMain.handle('identity:get-unlock-key', async (event, claimedOrigin, userId) =
 
   const storeOrigin = currentServerOrigin;
 
+  if (hasUnprotectedStorage()) {
+    dropUnprotectedRecords();
+    return null;
+  }
+
   if (!(await safeStorage.isAsyncEncryptionAvailable())) {
     return null;
   }
 
   const store = loadUnlockKeyStore();
+
+  // A record written by an unprotected backend is not safe to return, even if
+  // the keyring is available now. Drop every v10 record and ask the user to
+  // log in again.
+  if (pruneUnprotectedRecords(store) > 0) {
+    try { saveUnlockKeyStore(store); } catch (e) { /* ignore */ }
+  }
+
   const record = store[unlockKeyRecordId(storeOrigin, userId)];
 
   if (!record) {
@@ -589,38 +684,31 @@ ipcMain.handle('identity:get-unlock-key', async (event, claimedOrigin, userId) =
   }
 
   try {
-    // Async API: decryptStringAsync resolves to { result, shouldReEncrypt }.
-    // Never delete a key because decryption failed temporarily — return null
-    // and let the user log in again instead of destroying stored data.
+    // decryptStringAsync resolves to { result, shouldReEncrypt }.
     const { result: unlockKey, shouldReEncrypt } = await safeStorage.decryptStringAsync(
       Buffer.from(record, 'base64')
     );
+
     if (shouldReEncrypt) {
-      // Re-encrypt with the current backend and persist so future reads use
-      // the updated encryption.
-      const reEncrypted = await safeStorage.encryptStringAsync(unlockKey);
-      store[unlockKeyRecordId(storeOrigin, userId)] = reEncrypted.toString('base64');
-      saveUnlockKeyStore(store);
+      // A failed re-encrypt must not lose the key we just decrypted: keep the
+      // old record and return the key. A re-encrypt that would produce the
+      // unprotected v10 format is also refused.
+      try {
+        const reEncrypted = await safeStorage.encryptStringAsync(unlockKey);
+        if (!(process.platform === 'linux' && hasV10Prefix(reEncrypted))) {
+          const latest = loadUnlockKeyStore();
+          latest[unlockKeyRecordId(storeOrigin, userId)] = reEncrypted.toString('base64');
+          saveUnlockKeyStore(latest);
+        }
+      } catch (reEncryptErr) {
+        console.error('Failed to re-encrypt identity unlock key:', reEncryptErr);
+      }
     }
+
     return { unlockKey };
   } catch (err) {
-    // Electron 45's async and sync safeStorage APIs are NOT interchangeable:
-    // a key written by the pre-Phase-2 sync API fails decryptStringAsync
-    // (verified on Electron 45.4.1 / Linux). Fall back to the deprecated sync
-    // API for legacy records, then re-encrypt with the async API so the next
-    // read uses the new format. The sync API is still present in Electron 45
-    // and is removed in Electron 46.
-    try {
-      const legacyKey = safeStorage.decryptString(Buffer.from(record, 'base64'));
-      const reEncrypted = await safeStorage.encryptStringAsync(legacyKey);
-      const latest = loadUnlockKeyStore();
-      latest[unlockKeyRecordId(storeOrigin, userId)] = reEncrypted.toString('base64');
-      saveUnlockKeyStore(latest);
-      return { unlockKey: legacyKey };
-    } catch (legacyErr) {
-      console.error('Failed to decrypt identity unlock key:', err);
-      return null;
-    }
+    console.error('Failed to decrypt identity unlock key:', err);
+    return null;
   }
 });
 
@@ -721,22 +809,39 @@ ipcMain.on('dm-notification:show', (event, payload) => {
     !senderIsTrusted(event, [currentServerOrigin].filter(Boolean), CONNECT_SCREEN_PATHNAME)
   ) return;
   if (!payload || typeof payload !== 'object') return;
-  if (!Notification.isSupported()) return;
 
   const { conversationId, senderName, preview } = payload;
 
   if (!Number.isInteger(conversationId)) return;
 
-  const notification = new Notification({
-    title: isPlainString(senderName) ? senderName : 'New message',
-    body: isPlainString(preview) ? preview : '',
-    icon: APP_ICON_PATH,
-    silent: false,
-  });
+  // The trusted sender and a valid payload passed validation. Record that
+  // separately from whether this machine can actually display a notification,
+  // so the E2E can prove the IPC trust decision even without a daemon.
+  e2eLog('dm-notification-accepted');
 
-  if (process.env.WIRE_E2E === '1') {
-    console.log('[e2e] dm-notification-created');
+  if (!Notification.isSupported()) {
+    e2eLog('dm-notification-unsupported');
+    return;
   }
+
+  let notification;
+  try {
+    notification = new Notification({
+      title: isPlainString(senderName) ? senderName : 'New message',
+      body: isPlainString(preview) ? preview : '',
+      icon: APP_ICON_PATH,
+      silent: false,
+    });
+  } catch (err) {
+    e2eLog('dm-notification-failed ' + (err && err.message ? err.message : 'constructor error'));
+    return;
+  }
+
+  e2eLog('dm-notification-created');
+
+  notification.on('failed', (event, error) => {
+    e2eLog('dm-notification-failed ' + (error || 'notification failed'));
+  });
 
   notification.on('click', () => {
     if (!mainWindow) return;
@@ -752,7 +857,11 @@ ipcMain.on('dm-notification:show', (event, payload) => {
     });
   });
 
-  notification.show();
+  try {
+    notification.show();
+  } catch (err) {
+    e2eLog('dm-notification-failed ' + (err && err.message ? err.message : 'show failed'));
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -814,6 +923,12 @@ if (!gotSingleInstanceLock) {
   });
 
   app.whenReady().then(() => {
+    e2eLog('app-name=' + app.getName());
+    e2eLog('packaged=' + app.isPackaged);
+    if (process.platform === 'linux') {
+      e2eLog('safe-storage-backend=' + selectedStorageBackend());
+    }
+
     createMainWindow();
 
     // Permission handlers (Phase 2, D6): allow only microphone for the
@@ -828,13 +943,13 @@ if (!gotSingleInstanceLock) {
       const allowed =
         currentServerOrigin &&
         isPermissionAllowed(permission, details, currentServerOrigin);
-      if (process.env.WIRE_E2E === '1') {
+      if (e2eLoggingEnabled()) {
         console.log(
           '[e2e] permission-request ' + permission +
           ' allowed=' + !!allowed +
           ' mainFrame=' + (details && details.isMainFrame) +
           ' mediaTypes=' + JSON.stringify((details && details.mediaTypes) || []) +
-          ' url=' + (details && details.requestingUrl)
+          ' origin=' + (details && details.requestingUrl ? describeOrigin(details.requestingUrl) : 'none')
         );
       }
       callback(!!allowed);
@@ -843,23 +958,40 @@ if (!gotSingleInstanceLock) {
       if (!currentServerOrigin) return false;
       try {
         const origin = originKey(requestingOrigin);
-        if (origin !== currentServerOrigin) return false;
-        if (details && details.isMainFrame === false) return false;
+        const decide = () => {
+          if (origin !== currentServerOrigin) return false;
+          if (details && details.isMainFrame === false) return false;
 
-        // The check handler receives details.mediaType ('audio' | 'video' |
-        // 'unknown'), so media can be decided here consistently with the
-        // request handler: microphone only, never camera.
-        if (permission === 'media') {
-          return !!details && details.mediaType === 'audio';
+          // The check handler receives details.mediaType ('audio' | 'video' |
+          // 'unknown'), so media can be decided here consistently with the
+          // request handler: microphone only, never camera.
+          if (permission === 'media') {
+            return !!details && details.mediaType === 'audio';
+          }
+          // Same narrow list as isPermissionAllowed(): Electron 45 reports
+          // navigator.clipboard.writeText() as 'clipboard-read'.
+          if (
+            permission === 'clipboard-write' ||
+            permission === 'clipboard-sanitized-write' ||
+            permission === 'clipboard-read' ||
+            permission === 'fullscreen' ||
+            permission === 'automatic-fullscreen'
+          ) {
+            return true;
+          }
+          return false;
+        };
+        const allowed = decide();
+        if (e2eLoggingEnabled()) {
+          console.log(
+            '[e2e] permission-check ' + permission +
+            ' allowed=' + allowed +
+            ' mediaType=' + (details && details.mediaType) +
+            ' mainFrame=' + (details && details.isMainFrame) +
+            ' origin=' + origin
+          );
         }
-        if (
-          permission === 'clipboard-write' ||
-          permission === 'clipboard-sanitized-write' ||
-          permission === 'fullscreen'
-        ) {
-          return true;
-        }
-        return false;
+        return allowed;
       } catch {
         return false;
       }

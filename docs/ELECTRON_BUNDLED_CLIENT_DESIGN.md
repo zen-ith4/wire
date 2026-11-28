@@ -140,16 +140,36 @@ safeStorage, the connect screen, settings), never to proxy HTTP or WebSocket tra
 6. Identity unlock key (remember-me) may be stored via main-process `safeStorage`; the
    encrypted identity blob itself comes from the server, as today.
 
-**Verified on Electron 45.4.1 (Linux, real keyring, Phase 2 E2E):** the deprecated sync
+**Verified on Electron 45.4.1 (Linux, throwaway gnome-keyring, Phase 2 E2E):** the sync
 `safeStorage` API (`encryptString`/`decryptString`) and the async API
-(`encryptStringAsync`/`decryptStringAsync`) are **not** interchangeable. A key written by
-`encryptString` fails `decryptStringAsync` and a key written by `encryptStringAsync` fails
-`decryptString`. Phase 2 therefore keeps a legacy read path: `decryptStringAsync` first, and
-on failure `decryptString` for records written before the change, then re-encrypts them with
-the async API. The sync API is removed in Electron 46, so every legacy record must be read
-and migrated before that upgrade. `safeStorage.isEncryptionAvailable()` is also deprecated
-in 45 and can report `false` when only the async backend is usable; use
-`await safeStorage.isAsyncEncryptionAvailable()` instead.
+(`encryptStringAsync`/`decryptStringAsync`) **interoperate** when they resolve the same
+Linux keyring entry: a key written by the sync API is read by the async API across
+processes, and the reverse also works. An earlier Phase 2 test wrongly concluded they
+were incompatible; its seed called `app.setName()`, so it wrote to a different keyring
+entry than the app under test (Linux keyring entries are scoped per application name).
+Phase 2 therefore uses only the async API for new records and has **no sync fallback**.
+A re-encrypt that fails does not discard the key that was just decrypted: the handler
+still returns it and keeps the old record.
+
+**Linux without a keyring (security rule).** `safeStorage.getSelectedStorageBackend()`
+can report `basic_text` (or `unknown`). In that state `isAsyncEncryptionAvailable()` is
+still true, but the ciphertext starts with `v10` — AES-128-CBC under Chromium's public
+hardcoded password, readable by anyone. Remember-me must not use it. On Linux, when the
+backend is `basic_text` or `unknown`:
+
+- `identity:store-unlock-key` returns the pre-Phase-2 failure
+  `{ success: false, error: 'OS-level secure storage is not available on this system.' }`
+  and writes nothing;
+- `identity:get-unlock-key` returns `null`;
+- any existing `v10` record is deleted when detected (on store, on get, and whenever
+  that backend is selected).
+
+As a second line of defence, a Linux ciphertext with the `v10` prefix is never
+persisted, even if the backend check were bypassed. `safeStorage.isEncryptionAvailable()`
+is deprecated in Electron 45 and is false on `basic_text`; the backend check is what
+protects the async-only path. The web UI needs no change: it ignores the store result
+and treats `null` from get as "no cached key" (password prompt), exactly as before
+Phase 2.
 
 ---
 
@@ -389,10 +409,14 @@ Per the Electron 45 blog, a handler that grants `media` and denies everything el
 blocks `display-capture` (screen sharing); allowing it is an owner decision.
 
 **Phase 2 (current server-loaded app, implemented):** the same rule runs with
-`currentServerOrigin` in place of `wire-bundled://app`, and additionally allows
-`clipboard-sanitized-write` (Chromium 130+/Electron 45 name; `clipboard-write` on older
-versions) and `fullscreen` for the server origin's main frame, because both worked before
-Phase 2 and the web UI uses them. The check handler decides `media` from
+`currentServerOrigin` in place of `wire-bundled://app`, and additionally allows clipboard
+write and `fullscreen` for the server origin's main frame, because both worked before
+Phase 2 and the web UI uses them. Electron 45 reports `navigator.clipboard.writeText()` —
+the only clipboard call the web UI makes — as `clipboard-read` (Chromium's
+`CLIPBOARD_READ_WRITE` type); `clipboard-write` and `clipboard-sanitized-write` are kept
+for other Electron/Chromium versions. `fullscreen` also has an `automatic-fullscreen`
+variant (fullscreen without a user gesture, used by media elements). All of these are
+still origin- and main-frame-scoped. The check handler decides `media` from
 `details.mediaType` (`audio` allowed, `video`/`unknown` denied); returning `false` for all
 `media` would have blocked microphone requests before the request handler ran.
 

@@ -92,8 +92,7 @@ Everything that depends on the bundled client is **Planned** until Phase 4 ships
 | Push executable updates | Notification only; fixed in-app link; no server-supplied code or installer. | 7 | **Planned.** Today the server already supplies the whole UI. |
 | Read message plaintext | E2EE stays end-to-end; server sees ciphertext and metadata. | — | **Implemented** in the existing protocol, unchanged by bundling. |
 | Read the raw private key | The server holds only an encrypted blob; decryption happens in the renderer. | — | **Implemented**, with the caveat that the blob and KDF parameters are server-supplied. Do **not** claim "keys never leave the renderer". |
-| Read the session token | The renderer stores it in `localStorage` (`public/js/core/auth.js:51,81`); a malicious server can read it. | — | **Not protected** by bundling. Token theft is outside this design's scope. |
-| Read renderer storage from server code | **Impossible:** bundled server code runs in Node on the server; renderer `localStorage`/`IndexedDB` live in the Electron renderer process and are never exposed to the server. | 4 | **By architecture.** The bundled server code cannot read renderer storage; the server still receives the tokens it issues over the network (the `Authorization: Bearer` header on every API call), which is unavoidable and expected. |
+| Server code vs renderer storage / session tokens | **Impossible for server code to run in the renderer or read renderer storage:** bundled server code runs in Node on the server; renderer `localStorage`/`IndexedDB` live in the Electron renderer process and are never exposed to it. However, the server **issues and receives session tokens** (`Authorization: Bearer` on every API call, `public/js/core/auth.js:51,81`). Bundling does not protect against a malicious server acting with those tokens — token theft and misuse remain in scope of server trust, not of client bundling. | — | **By architecture** for storage isolation; **not mitigated** for token use by a malicious server. |
 
 ---
 
@@ -294,15 +293,18 @@ against `connect-src` (for fetch/XHR/WebSocket) or `img-src`/`media-src` (for el
 | Resource class | Example endpoint | file:line | CSP directive |
 |---|---|---|---|
 | API fetch (JSON) | `/api/version`, `/api/auth/...` | `public/js/core/api.js:84`, `:204` | `connect-src` |
-| Blob fetch (avatars, attachments) | `/api/me/avatar/${userId}` | `public/js/ui/avatar.js:146` | `connect-src` + `img-src` |
-| Banner fetch | `/api/me/banner/${userId}` | `public/js/ui/avatar.js:180` | `connect-src` + `img-src` |
-| Audio playback | `/audio/message-sent.wav` | `public/js/notifications/message-sounds.js:64` | `media-src` |
-| Video playback | attachment media URL | `public/js/files/viewer.js:249` | `media-src` |
-| Media streams | `sw-stream-client.js` (SW, not registered on bundled origin) | `public/js/media/sw-stream-client.js` | `media-src` (SW not used) |
+| Blob fetch → objectURL (avatars) | `/api/me/avatar/${userId}` fetched, then `URL.createObjectURL` | `public/js/ui/avatar.js:146` | `connect-src` (fetch) + `img-src` (`blob:`) |
+| Blob fetch → objectURL (banners) | `/api/me/banner/${userId}` | `public/js/ui/avatar.js:180` | `connect-src` (fetch) + `img-src` (`blob:`) |
+| Direct image load from server | attachment image set on `img.src`; also CSS `url()` background | `public/js/files/viewer.js:217`, `:356`; `public/js/ui/avatar.js:227`, `:271` | `img-src` (`https://<server>`) |
+| Direct audio load from server | attachment audio set on `audio.src` | `public/js/media/audio-player.js:1111`, `public/js/files/viewer.js:285` | `media-src` (`https://<server>`) |
+| Direct video load from server | attachment video set on `video.src` | `public/js/media/video-player.js`, `public/js/files/viewer.js:249` | `media-src` (`https://<server>`) |
+| Message sounds (local app asset, **not** a server resource) | `/audio/message-sent.wav` fetched then decoded | `public/js/notifications/message-sounds.js:64` | `connect-src` (`'self'` only) |
 | File downloads | `/api/dm/attachments/<id>?download=1` | `public/js/files/download.js:88`, `:145` | `connect-src` |
 | Socket.IO WebSocket | `/socket.io/?EIO=4&transport=websocket` | `public/js/core/socket.js:110` (`transports`) | `connect-src` (`wss://`) |
 | Socket.IO polling fallback | `/socket.io/?EIO=4&transport=polling` | `public/js/core/socket.js:110` | `connect-src` (`https://`) |
 | Share links | built from server origin | `public/js/files/links.js:41` | `connect-src` (when fetched) |
+
+**Element vs fetch separation:** element `src`/`poster`/`backgroundImage` assignments that point directly at a server URL load through `img-src`/`media-src` and therefore need `https://<server>` in those directives. Avatar/banner/media blobs are fetched first (`connect-src`) and then exposed via `URL.createObjectURL`, so the element itself only ever sees a `blob:` URL (covered by `blob:` in `img-src`/`media-src`). Message sounds are bundled app assets (`public/audio/*.wav` served as `wire-bundled://app`), so they are `'self'`, not the server origin.
 
 ### 8.3 Directive table — exactly the required origins, no wildcards
 
@@ -316,8 +318,8 @@ added explicitly per directive:
 | `script-src` | `'self'` | Bundled module scripts only; no inline/eval. |
 | `style-src` | `'self' https://fonts.googleapis.com` | `public/index.html` links Google Fonts (`middleware/csp.js:21-24,41`). No `'unsafe-inline'`. |
 | `font-src` | `'self' https://fonts.gstatic.com` | Actual font files (`middleware/csp.js:42`). |
-| `img-src` | `'self' data: blob:` | Avatars, images and decrypted blob URLs. |
-| `media-src` | `'self' blob:` | Audio/video playback and voice messages (`middleware/csp.js:44`). |
+| `img-src` | `'self' data: blob: https://<server>` (+ loopback `http://localhost`/`127.0.0.1` in unpackaged dev) | Avatars/banners via `blob:` (fetched over `connect-src`), plus direct server image URLs set on `img.src`/`backgroundImage` (`viewer.js:217,356`, `avatar.js:227,271`). |
+| `media-src` | `'self' blob: https://<server>` (+ loopback `http://localhost`/`127.0.0.1` in unpackaged dev) | Audio/video via `blob:` (fetched over `connect-src`), plus direct server media URLs set on `audio.src`/`video.src` (`audio-player.js:1111`, `video-player.js`, `viewer.js:249,285`). Message sounds are bundled app assets, so they are `'self'`, not the server origin. |
 | `connect-src` | `'self' https://<server> wss://<server>` (+ loopback `http://`/`ws://` only in unpackaged dev) | Both HTTPS and WSS origins are required; `https://host` does **not** authorize `wss://host`. Socket.IO starts with `websocket` and may fall back to `polling` (`public/js/core/socket.js:110`), so both the HTTP(S) and WS(S) origins of the server are needed. |
 | `worker-src` | `'self' blob:` | Any worker/blob worker. The service worker is separate (Q5). |
 | `object-src` | `'none'` | Missing from the old draft, present on the server (`middleware/csp.js:47`). |
@@ -388,30 +390,71 @@ are Planned for Phase 2:
 
 ### 10.1 IPC hardening with `senderFrame` checks
 
-Every `ipcMain.handle`/`ipcMain.on` must validate the caller's frame before acting:
+Every `ipcMain.handle`/`ipcMain.on` must validate the caller's frame before acting.
+**`URL.origin` must NOT be used:** `new URL('wire-bundled://app/index.html').origin === 'null'`
+in Node, so an `.origin` comparison would reject the bundled app itself. Compare the
+normalized `protocol + '//' + host` instead.
 
 ```js
-function senderIsTrusted(event) {
+// PROPOSED, not applied. Compares scheme://host, never .origin.
+function originKey(url) {
+  const u = new URL(url);
+  return u.protocol + '//' + u.host;
+}
+
+function senderIsTrusted(event, allowedOrigins) {
   const f = event.senderFrame;
-  if (!f || f !== event.sender.mainFrame) return false;   // top frame only
+  if (!f || f !== event.sender.mainFrame) return false; // top frame only
   try {
-    return new URL(f.url).origin === TRUSTED_ORIGIN();     // bundled origin
+    return allowedOrigins.includes(originKey(f.url));
   } catch { return false; }
 }
 ```
 
-`TRUSTED_ORIGIN()` is `wire-bundled://app` once the bundled client ships; during Phase 2
-(hardening the current server-loaded app) it is the server origin the main process
-connected to (`currentServerOrigin`). For identity storage, drop the renderer-supplied
-`claimedOrigin` and derive the bucket from the server origin the main process connected to
-plus the bundled origin — `claimedOrigin` adds nothing because the main process already
-knows the real origin (`docs/ELECTRON_SECURITY_AUDIT.md`, section b).
+**Node check** (run with plain `node`; demonstrates the bundled helper accepts
+`wire-bundled://app` and rejects `wire-bundled://evil`, `https://app` and invalid URLs):
 
-Apply the same first line to every handler: `identity:store-unlock-key` (`main.js:481`),
+```js
+function originKey(url) {
+  const u = new URL(url);
+  return u.protocol + '//' + u.host;
+}
+const bundled = originKey('wire-bundled://app/index.html');   // 'wire-bundled://app'
+const evil    = originKey('wire-bundled://evil/index.html');   // 'wire-bundled://evil'
+const https   = originKey('https://app/index.html');            // 'https://app'
+let invalid   = null;
+try { invalid = originKey('not-a-url'); } catch { invalid = 'THREW'; }
+console.log({ bundled, evil, https, invalid });
+// bundled === 'wire-bundled://app'  -> accept
+// evil      === 'wire-bundled://evil' -> reject (not in allowlist)
+// https     === 'https://app'        -> reject (not in allowlist)
+// invalid   === 'THREW'              -> reject
+```
+
+**Phase 2 — current server-loaded app.** `allowedOrigins` is `[originKey(currentServerOrigin)]`
+plus the local connect screen. The connect screen is loaded via `loadFile` (`file:` protocol;
+`electron-client/main.js:375`), so its `event.senderFrame.url` begins with `file://`. The
+`file:` connect screen may only call the connect-screen channels (`server:get-saved`,
+`server:forget`, `server:connect` — gated by the `file:` preload check in `preload.js:10-14`).
+All other handlers (`identity:*`, `app:*`, `dm-notification:show`, `server:show-connect-screen`)
+require the server-origin frame. `currentServerOrigin` is the exact server origin the main
+process connected to (`normalizeServerAddress` result, `main.js:115-150`), compared with
+`originKey()`, never `.origin`.
+
+**Phase 4 — bundled client.** `allowedOrigins` is `['wire-bundled://app']` only. Server pages
+never load in the window (§10.3), so no server origin is ever allowed. The helper accepts
+`wire-bundled://app` and rejects `wire-bundled://evil`, `https://app`, `http://...`,
+`file://...` and invalid URLs (per the Node check above).
+
+Apply `senderIsTrusted` to every handler: `identity:store-unlock-key` (`main.js:481`),
 `identity:get-unlock-key` (`:515`), `identity:clear-unlock-key` (`:542`),
 `app:hardware-acceleration:get/set` (`:571,575`), `app:relaunch` (`:583`),
 `server:show-connect-screen` (`:598`), `dm-notification:show` (`:621`),
 `server:get-saved` (`:662`), `server:forget` (`:667`), `server:connect` (`:672`).
+For identity storage, drop the renderer-supplied `claimedOrigin` and derive the bucket from
+the origin the main process connected to (Phase 2: `currentServerOrigin`; Phase 4: the
+per-partition bundled mapping) plus the user id — `claimedOrigin` adds nothing because the
+main process already knows the real frame origin (`docs/ELECTRON_SECURITY_AUDIT.md`, section b).
 
 ### 10.2 `openExternal` allowlist
 
@@ -431,7 +474,15 @@ allowed.
 
 ### 10.3 Navigation lock / window open handler
 
+**Phase 2 — current server-loaded app.** Only the exact connect-screen `file:` URL may
+load locally; server pages load via `loadURL(serverUrl)`. `will-navigate` allows only the
+connect screen file and the current server origin; everything else is cancelled and offered
+to the OS browser only for `http:`/`https:`:
+
 ```js
+// PROPOSED, not applied. Phase 2 variant.
+const CONNECT_SCREEN = path.join(__dirname, 'renderer', 'connect.html');
+
 mainWindow.webContents.setWindowOpenHandler(({ url }) => {
   openExternalSafely(url);
   return { action: 'deny' };
@@ -440,14 +491,45 @@ mainWindow.webContents.setWindowOpenHandler(({ url }) => {
 mainWindow.webContents.on('will-navigate', (event, targetUrl) => {
   let target;
   try { target = new URL(targetUrl); } catch { event.preventDefault(); return; }
-  const isLocalConnectScreen = target.protocol === 'file:';
+  const isConnectScreen = target.protocol === 'file:' && target.pathname === CONNECT_SCREEN;
   const isCurrentServer = currentServerOrigin && target.origin === currentServerOrigin;
-  if (!isLocalConnectScreen && !isCurrentServer) {
+  if (!isConnectScreen && !isCurrentServer) {
+    event.preventDefault();            // cancel: never followed in-process
+    openExternalSafely(targetUrl);     // http/https only to the OS browser
+  }
+});
+```
+
+`file:` is **not** generally allowed — only the exact connect-screen file. `new URL()` is
+wrapped in try/catch (`main.js:338-347` gap).
+
+**Phase 4 — bundled client.** Only the exact bundled origin may load in the window; server
+pages never load (the window loads `wire-bundled://app/index.html` directly), and `file:`
+is not generally allowed:
+
+```js
+// PROPOSED, not applied. Phase 4 variant.
+const BUNDLED = 'wire-bundled://app';
+
+mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+  openExternalSafely(url);
+  return { action: 'deny' };
+});
+
+mainWindow.webContents.on('will-navigate', (event, targetUrl) => {
+  let target;
+  try { target = new URL(targetUrl); } catch { event.preventDefault(); return; }
+  const isBundled = target.protocol === 'wire-bundled:' && originKey(target) === BUNDLED;
+  if (!isBundled) {
     event.preventDefault();
     openExternalSafely(targetUrl);
   }
 });
 ```
+
+`originKey()` is the protocol+host helper from §10.1. `window.open` is always denied
+(`action: 'deny'`) and, if `http:`/`https:`, opened in the user's OS browser via
+`openExternalSafely`.
 
 ### 10.4 Protocol path safety + build-time integrity manifest (spike Q6)
 
@@ -502,11 +584,18 @@ comes from bundling the client at all.
 Redirects can reach the bundled client through four paths. Each is listed below with the
 control that applies and its verification status.
 
-### 11.1 Navigation (`will-navigate`)
+### 11.1 Navigation (`will-navigate`) — blocking for in-window navigation
 
 The main-process `will-navigate` handler (section 10.3) validates the target URL's scheme
-and origin before allowing it. A disallowed target is **cancelled** (`event.preventDefault()`)
-and optionally opened externally via `openExternalSafely` — it is never followed in-process.
+and origin **before** the navigation is followed. A disallowed target is **cancelled**
+(`event.preventDefault()`) and optionally offered to the OS browser via `openExternalSafely`
+— it is never followed in-process.
+
+`will-navigate` covers top-frame navigations in the window only. It does **not** cover
+server-driven HTTP redirects (those are handled by the network stack / CSP, see §11.2 and
+§11.3). `webRequest.onBeforeRedirect` / `will-redirect` is the webContents event that can
+be prevented for a redirect target; `did-redirect-navigation` fires **after** the redirect
+has been followed and therefore **cannot** block it (§11.4).
 
 ### 11.2 Renderer `fetch()` / XHR / WebSocket
 
@@ -517,24 +606,33 @@ The renderer's `fetch()` calls go through `resolveServerUrl()` → injected serv
 enforcement. There is **no** main-process interception of renderer-level redirects — the
 CSP is the control.
 
-### 11.3 Main-process `net.request`
+### 11.3 Main-process `net.request` — policy per call
 
-`checkServerVersion()` (`main.js:201-263`) and `testServerReachable()` (`main.js:128-164`)
-use `net.request({ url: serverUrl + '/...' })`. A redirect from `/api/version` to another
-host is followed by Chromium's network stack automatically; Electron's `net` module does
-not expose a per-redirect blocking hook in this usage. The response is read only for the
-version string, and a failed version check is non-fatal (`main.js:268-289` — resolve(null)
-and continue). There is **no** redirect allowlist on `net.request` in the current code.
+Electron's `net.request`/`ClientRequest` supports `redirect: 'follow'` (default) |
+`'error'` | `'manual'`, with a `'redirect'` event and `followRedirect()` (Electron 45
+`net` API). Neither current call sets `redirect`, so both use the default `'follow'`;
+neither installs a `'redirect'` handler, so redirects are followed automatically and there
+is **no** per-redirect allowlist or blocking hook on `net.request` itself. `will-navigate`
+does not apply to `net.request`.
+
+| Call | file:line | `redirect` policy | What happens on redirect |
+|---|---|---|---|
+| `testServerReachable()` | `electron-client/main.js:162` | `'follow'` (default, not set) | Any final HTTP response (even 401/403/404) counts as reachable; redirects to another host are followed. Non-fatal: network failure rejects. |
+| `checkServerVersion()` | `electron-client/main.js:205` | `'follow'` (default, not set) | Only the final response body is parsed for the version string; a failed/non-200 version check resolves to `null` and is non-fatal (`main.js:268-289`). |
+
+**PROPOSED (not applied):** if a server may redirect `/api/version` to an untrusted host, set
+`redirect: 'manual'` and handle the `'redirect'` event to inspect `response.url` against the
+allowed server origin before calling `followRedirect()`. This is not currently implemented.
 
 ### 11.4 Official Electron 45 docs citation and untested behavior
 
-Electron 45 documentation (https://www.electronjs.org/docs/latest/api/web-contents) describes
-`will-navigate`, `did-start-navigation`, `did-redirect-navigation` and `did-navigate` as
-**events that fire after the navigation decision has begun**; `did-redirect-navigation` in
-particular fires **after** a redirect has been followed, so it is **not a blocking control** —
-it observes, it does not prevent. `will-navigate` is the blocking event (`event.preventDefault()`
-cancels the navigation). The claim that `did-redirect-navigation` can block a redirect is
-**false** and is **not** restored here.
+Electron 45 documentation
+(https://www.electronjs.org/docs/latest/api/web-contents) describes `will-navigate`,
+`did-start-navigation`, `did-redirect-navigation` and `did-navigate`. `will-navigate` is the
+blocking event (`event.preventDefault()` cancels the navigation). `did-redirect-navigation`
+fires **after** a redirect has been followed, so it is **not a blocking control** — it
+observes, it does not prevent. The claim that `did-redirect-navigation` can block a redirect
+is **false** and is **not** restored here.
 
 **Not verified inside Electron:** exact redirect behaviour for `wire-bundled://` pages,
 behaviour of the CSP on that scheme, per-partition protocol handlers, and any
@@ -558,6 +656,20 @@ signing remains open (D7), so no signed-update claim is made.
 component-wise; prerelease suffixes are accepted but ignored in comparison. A test must
 cover: equal version → no notice; server newer → notice; server older → no notice; malformed
 version → no notice, no crash.
+
+**New client against an old server.** A bundled client may connect to a server that pre-dates
+the bundled-client requirements (for example one without the Socket.IO CORS allowance for
+`wire-bundled://app`, §10.5). Detection:
+- Socket.IO polling fallback fails CORS when `config/socket.js` has `origin: false` and no
+  `CLIENT_URL`/`wire-bundled://app` allowance (`config/socket.js:19-21`); the client falls
+  back to WebSocket-only (`transports: ['websocket','polling']`, `socket.js:110`) and the
+  polling transport errors.
+- `/api/version` still returns the server version (`main.js:205`), so `isNewerVersion()` can
+  compare, but the server has no bundled-client awareness.
+- The bundled client cannot upgrade the server. What the user sees is an owner decision
+  (open question): show the fixed update notice pointing at the server operator, or allow
+  the connection with degraded real-time transport (WebSocket only) and warn that polling is
+  unavailable. Not decided — mark as open question (§17, item 5).
 
 **Upgrade test:** install old version → connect → configure server → upgrade to bundled
 version → verify the app starts and shows the connect screen (or migrates per D4).
@@ -622,7 +734,7 @@ tests, not claims.
 
 ---
 
-## 15. Phase 2 test plan (planned; nothing here is implemented)
+## 15. Phase test plan (phases 2-7; planned, nothing here is implemented)
 
 | Test | Phase | What it must prove |
 |---|---|---|
@@ -638,7 +750,7 @@ tests, not claims.
 | Socket.IO CORS | 5 | `wire-bundled://app` allowed; arbitrary origins rejected; `CLIENT_URL` or explicit allowlist, not blanket `origin: true`. |
 | Update notice | 7 | A newer `/api/version` produces only a notice; no fetch of app code/installer from the server. |
 | Migration | 6 | Old server-origin storage is not assumed; user is told to log in and restore; Phase 6 inventory drives the exact message. |
-| Certificate strategy | 11 | Whatever the owner picks in section 13 is tested: self-signed fails closed by default; a pinned cert only matches the stored fingerprint. |
+| Certificate strategy | — (§13, open question) | Whatever the owner picks in section 13 is tested: self-signed fails closed by default; a pinned cert only matches the stored fingerprint. Not assigned to a numbered phase; owner decision pending (D7). |
 
 ---
 
@@ -646,30 +758,32 @@ tests, not claims.
 
 The previous revision of this document (`git show 93f44ae:docs/ELECTRON_BUNDLED_CLIENT_DESIGN.md`)
 had the sections below. Each is mapped to its new location, or explained why it was dropped.
+Subsections are included where they exist in the old file.
 
-| Old section | New location / disposition |
+| Old section (line in `93f44ae`) | New location / disposition |
 |---|---|
-| 1. Threat Model | §3 Threat model (rewritten: token row added, server-storage claim corrected, status labels added) |
-| 2. Recommended Architecture | §4 Architecture (direct connection; bridge diagram removed — contradicted by Q2 and D1) |
-| 3. IPC Hardening Plan | §10 IPC hardening, openExternal, navigation (restored with `senderFrame` checks, updated to accepted decisions D1-D6) |
-| 4. openExternal Allowlist | §10.2 (restored, merged into IPC/navigation hardening) |
-| 5. Navigation Lock | §10.3 (restored, merged; `try/catch` added around `new URL`) |
-| 6. CSP Applied by App | §8 (rewritten: `'self'` = `wire-bundled://app`, resource trace table added, directive table with exact origins, no wildcards) |
-| 7. Client Changes Needed | §5 Origin, URLs and storage (rewritten: `resolveServerUrl()` must change too; injectable server endpoint) |
-| 8. Update Strategy | §12 Updates (rewritten: notification only, version compatibility, upgrade/rollback tests) |
-| 9. Server-Side Changes (PROPOSED DIFFS) | §10.5 Socket.IO CORS (CORS allowance for bundled origin only); version endpoint unchanged (§12) |
-| 10. Client Changes in public/ (PROPOSED DIFFS) | §5.1 `getServerEndpoint()` + `resolveServerUrl()` must change together; `public/js/files/links.js:41` diff noted as NOT applied |
-| 11. Test Plan | §15 Phase 2 test plan (rewritten with phase numbers) |
-| 12. Risks & Open Questions | §13 Self-signed/private-CA (kept); other risks folded into §1-§4 |
-| 13. Decisions the Owner Must Make Before Phase 2 | §1 Locked decisions (D1-D7); remaining open questions in §14 open questions |
+| 1. Threat Model (line 10) | §3 Threat model (token row corrected, status labels added) |
+| 2. Recommended Architecture (line 48) | §4 Architecture (direct connection; no network bridge — Q2/D1). Old line 52-54 already states the bridge is **not** technically required, only optional. |
+| 3. IPC Hardening Plan (line 98) | §10 IPC hardening, openExternal, navigation (protocol+host checks, not `.origin`) |
+| 4. openExternal Allowlist (line 131) | §10.2 `openExternal` allowlist (`http:`/`https:` only) |
+| 5. Navigation Lock (line 165) | §10.3 Navigation lock — Phase 2 allows only the exact connect-screen `file:`; Phase 4 allows only the exact bundled origin (old line 201's `did-redirect-navigation` blocking claim is not restored — it cannot block) |
+| 6. CSP Applied by App (line 205) | §8 CSP (`'self'` = `wire-bundled://app`, server origin listed explicitly per directive) |
+| Client Changes Needed (line 249, unnumbered) | §5 Origin, URLs and storage (`resolveServerUrl()` must change with `getServerEndpoint()`) |
+| 7. Update Strategy (line 258) | §12 Updates (notification only; version compatibility added; new-client/old-server behavior) |
+| 8. Server-Side Changes (PROPOSED DIFFS) (line 296) | §10.5 Socket.IO CORS for bundled origin only; version endpoint unchanged (§12) |
+| 8. Server-Side Changes → 4. APK Info Endpoint (line 335) | Not restored as a requirement: APK download link is out of scope for the bundled client; update is a notice with a fixed in-app link (D5, §12). |
+| 9. Client Changes in public/ (PROPOSED DIFFS) (line 341) | §5.1 + proposed client diffs (`getServerEndpoint()`/`resolveServerUrl()` injectable server base) |
+| 10. Test Plan (line 409) | §15 Phase test plan (phases 2-7 only) |
+| 11. Risks & Open Questions (line 459) | §13 Self-signed/private-CA; §17 Open questions |
+| 12. Decisions the Owner Must Make Before Phase 2 (line 483) | §1 Locked decisions (D1-D7); remaining open questions in §17 |
 
-Claims from the old draft that are **contradicted by code or decisions and therefore not restored**:
-- "WebSocket is blocked from the bundled origin; a bridge is required" — **false** (Q2 verified: fetch and WebSocket both work; D1).
-- "ASAR provides filesystem-level integrity (tampering breaks the archive)" — **false** (ASAR gives no integrity by default; manifest check added in §10.4).
-- "CSP `connect-src 'self'` covers the server" — **false** (`'self'` is `wire-bundled://app`, not the server; server origin must be listed explicitly, §8.1).
-- "Microphone allowed for the server origin" — **false** (microphone allowed for `wire-bundled://app` main frame only, §9).
-- "Origin compared with `URL.origin`" — **false** (`URL.origin` is `"null"` for `wire-bundled://`; compare protocol+host, §5.2 and §9).
-- "`did-redirect-navigation` is a blocking control" — **false** (it fires after the redirect; `will-navigate` is the blocking event, §11.4).
+Claims from the old draft that are **contradicted by code or decisions and therefore not restored** (each quoted with a line number from `93f44ae`):
+- Old line 28: "Code is bundled in `app.asar`, integrity-verified on every load" — **false**: ASAR gives no integrity or tamper detection by default; a build-time integrity manifest with per-read SHA-256 comparison is used instead (§10.4).
+- Old lines 189-190: `target.origin === BUNDLED_ORIGIN` in the navigation lock — **false**: `new URL('wire-bundled://app/index.html').origin === 'null'`, so `.origin` must not be compared; use `protocol + '//' + host` (§5.2, §10.1).
+- Old line 201: block disallowed targets "via `did-start-navigation` and `did-redirect-navigation`" — **false**: `did-redirect-navigation` fires after the redirect has been followed and cannot block it; only `will-navigate` can prevent a navigation (§11).
+- Old line 272: version check "Same, but via main-process bridge" — **false**: there is no network bridge; `net.request` is used directly (`main.js:205`, Q2/D1).
+
+Not removed as "claimed by the old draft" because the old draft does not contain a quotable line for them: "microphone allowed for the server origin" (no permission section in the old draft), and "CSP `connect-src 'self'` covers the server" (old line 225 lists `currentServerOrigin` separately, so it does not claim `'self'` alone covers the server).
 
 ---
 
@@ -685,6 +799,10 @@ Claims from the old draft that are **contradicted by code or decisions and there
 4. **Web Notifications** (§9): decide whether the renderer's `Notification.requestPermission()`
    path is allowed for `wire-bundled://app` or relies only on the main-process path
    (`electronAPI.showDmNotification`).
+5. **New client against an old server** (§12): whether a bundled client connecting to a server
+   without the Socket.IO CORS allowance (`wire-bundled://app`) shows the fixed update notice
+   pointing at the server operator, or allows the connection with WebSocket-only real-time
+   transport and a polling-unavailable warning. Undecided.
 
 ---
 
